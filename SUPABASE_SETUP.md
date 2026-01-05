@@ -141,6 +141,60 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 ```
 
+### Drills Table
+```sql
+CREATE TABLE drills (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL,
+  source TEXT NOT NULL, -- Video URL or content source
+  type TEXT DEFAULT 'video', -- 'video', 'pdf', or 'text'
+  description TEXT,
+  xp_value INTEGER DEFAULT 50,
+  estimated_minutes INTEGER DEFAULT 10,
+  level TEXT DEFAULT 'Foundation', -- 'Foundation', 'Performance', or 'Elite'
+  access_type TEXT DEFAULT 'free', -- 'free' or 'premium'
+  complexity INTEGER DEFAULT 2, -- 1-5 star rating
+  mechanic TEXT, -- 'Ball Striking', 'Short Game', 'Putting', 'Strategy'
+  practice_mode TEXT, -- 'Technique', 'Skill', or 'Performance'
+  duration TEXT, -- For video drills
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable Row Level Security
+ALTER TABLE drills ENABLE ROW LEVEL SECURITY;
+
+-- Policy: All authenticated users can read drills
+CREATE POLICY "Anyone can view drills"
+  ON drills FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- Policy: Only admins can insert drills (you'll need to set up admin role)
+-- For now, allow authenticated users to insert (you can restrict this later)
+CREATE POLICY "Authenticated users can insert drills"
+  ON drills FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+-- Policy: Only admins can update drills
+CREATE POLICY "Authenticated users can update drills"
+  ON drills FOR UPDATE
+  TO authenticated
+  USING (true);
+
+-- Policy: Only admins can delete drills
+CREATE POLICY "Authenticated users can delete drills"
+  ON drills FOR DELETE
+  TO authenticated
+  USING (true);
+
+-- Create index for faster queries
+CREATE INDEX idx_drills_category ON drills(category);
+CREATE INDEX idx_drills_level ON drills(level);
+```
+
 ## 5. Test Your Setup
 
 1. Start your development server:

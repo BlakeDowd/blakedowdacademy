@@ -60,18 +60,25 @@ export default function LoginPage() {
     try {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
+      
+      // Check if environment variables are set
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        throw new Error("Supabase is not configured. Please check your environment variables.");
+      }
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/`,
+          redirectTo: `${window.location.origin}/auth/callback?next=/`,
         },
       });
       if (error) {
         setError(error.message || "Failed to sign in with Google");
+        setLoading(false);
       }
+      // Note: If successful, the user will be redirected, so we don't set loading to false here
     } catch (err: any) {
       setError(err.message || "An error occurred with Google login");
-    } finally {
       setLoading(false);
     }
   };

@@ -106,8 +106,27 @@ const getBenchmarkGoals = (handicap: number) => {
 };
 
 export default function StatsPage() {
-  const { rounds } = useStats();
-  const { user } = useAuth();
+  const { rounds, loading: statsLoading } = useStats();
+  const { user, loading: authLoading } = useAuth();
+  
+  // Log rounds data for debugging
+  useEffect(() => {
+    console.log('Rounds data in Stats page:', rounds);
+    console.log('Rounds length:', rounds?.length || 0);
+    console.log('Stats loading state:', statsLoading);
+  }, [rounds, statsLoading]);
+  
+  // Show loading state while data is being fetched
+  if (authLoading || statsLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-[#014421] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
   
   // Format user name from email
   const getUserDisplayName = () => {
@@ -393,13 +412,13 @@ export default function StatsPage() {
   }, [practiceTimeframe, practiceInsights]);
 
   // Get last 10 rounds for handicap trend
-  const last10Rounds = rounds.length > 0 
+  const last10Rounds = rounds?.length > 0 
     ? rounds.slice(-10).filter(r => r.handicap !== null && r.handicap !== undefined)
     : [];
 
   // Calculate averages for performance rings and proximity metrics
   const calculateAverages = () => {
-    if (rounds.length === 0) {
+    if (!rounds || rounds.length === 0) {
       return { 
         fir: 0, 
         gir: 0, 
@@ -479,12 +498,12 @@ export default function StatsPage() {
       : 0;
 
     // Calculate Penalty Rate %
-    const totalPenalties = rounds.reduce((sum, r) => sum + r.totalPenalties, 0);
+    const totalPenalties = rounds?.length > 0 ? rounds.reduce((sum, r) => sum + (r.totalPenalties || 0), 0) : 0;
     const penaltyRate = totalHoles > 0 ? (totalPenalties / totalHoles) * 100 : 0;
     
     // Calculate < 6ft Make %
-    const totalPuttsUnder6ftAttempts = rounds.reduce((sum, r) => sum + r.puttsUnder6ftAttempts, 0);
-    const totalMissed6ft = rounds.reduce((sum, r) => sum + r.missed6ftAndIn, 0);
+    const totalPuttsUnder6ftAttempts = rounds?.length > 0 ? rounds.reduce((sum, r) => sum + (r.puttsUnder6ftAttempts || 0), 0) : 0;
+    const totalMissed6ft = rounds?.length > 0 ? rounds.reduce((sum, r) => sum + (r.missed6ftAndIn || 0), 0) : 0;
     const puttMake6ft = totalPuttsUnder6ftAttempts > 0
       ? ((totalPuttsUnder6ftAttempts - totalMissed6ft) / totalPuttsUnder6ftAttempts) * 100
       : 0;
@@ -589,7 +608,7 @@ export default function StatsPage() {
 
   // Calculate Driving Distribution (Left/Hit/Right percentages)
   const calculateDrivingDistribution = () => {
-    if (rounds.length === 0) {
+    if (!rounds || rounds.length === 0) {
       return {
         hitPercent: 0,
         leftPercent: 0,
@@ -634,7 +653,7 @@ export default function StatsPage() {
 
   // Calculate putting averages (Missed < 6ft and 3-Putts as primary metrics)
   const calculatePuttingStats = () => {
-    if (rounds.length === 0) {
+    if (!rounds || rounds.length === 0) {
       return { 
         avgTotalPutts: 0, 
         avgMissed6ft: 0, 
@@ -643,9 +662,9 @@ export default function StatsPage() {
       };
     }
 
-    const totalPutts = rounds.reduce((sum, r) => sum + r.totalPutts, 0);
-    const totalMissed = rounds.reduce((sum, r) => sum + r.missed6ftAndIn, 0);
-    const totalThreePutts = rounds.reduce((sum, r) => sum + r.threePutts, 0);
+    const totalPutts = rounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0);
+    const totalMissed = rounds.reduce((sum, r) => sum + (r.missed6ftAndIn || 0), 0);
+    const totalThreePutts = rounds.reduce((sum, r) => sum + (r.threePutts || 0), 0);
     
     // Calculate Make % from < 6ft for last 5 rounds
     const last5Rounds = rounds.slice(-5).reverse(); // Most recent first
@@ -659,9 +678,9 @@ export default function StatsPage() {
     });
 
     return {
-      avgTotalPutts: totalPutts / rounds.length,
-      avgMissed6ft: totalMissed / rounds.length,
-      avgThreePutts: totalThreePutts / rounds.length,
+      avgTotalPutts: rounds.length > 0 ? totalPutts / rounds.length : 0,
+      avgMissed6ft: rounds.length > 0 ? totalMissed / rounds.length : 0,
+      avgThreePutts: rounds.length > 0 ? totalThreePutts / rounds.length : 0,
       makePercent6ft: makePercent6ft // Array for trend graph
     };
   };
@@ -679,7 +698,7 @@ export default function StatsPage() {
 
   // Determine most needed improvement with gap analysis
   const getMostNeededImprovement = () => {
-    if (rounds.length === 0) {
+    if (!rounds || rounds.length === 0) {
       return { 
         category: 'Get Started', 
         message: 'Log your first round to see personalized insights!', 
@@ -691,6 +710,17 @@ export default function StatsPage() {
     }
 
     // PRIORITY CHECK: Missed < 6ft > 2
+    if (!rounds || rounds.length === 0) {
+      return { 
+        category: 'Get Started', 
+        message: 'Log your first round to see personalized insights!', 
+        severity: 0,
+        isPriority: false,
+        libraryCategory: null,
+        recommendedDrillId: null
+      };
+    }
+    
     const lastRound = rounds[rounds.length - 1];
     if (lastRound && lastRound.missed6ftAndIn > 2) {
       return {
@@ -770,20 +800,24 @@ export default function StatsPage() {
     }
 
     // Check Bunker Saves
-    const totalBunkerAttempts = rounds.reduce((sum, r) => sum + r.bunkerAttempts, 0);
-    if (totalBunkerAttempts > 0) {
-      const totalBunkerSaves = rounds.reduce((sum, r) => sum + r.bunkerSaves, 0);
+    if (rounds && rounds.length > 0) {
+      const totalBunkerAttempts = rounds.reduce((sum, r) => sum + (r.bunkerAttempts || 0), 0);
+      if (totalBunkerAttempts > 0) {
+        const totalBunkerSaves = rounds.reduce((sum, r) => sum + (r.bunkerSaves || 0), 0);
       const bunkerSaveRate = (totalBunkerSaves / totalBunkerAttempts) * 100;
       
-      if (bunkerSaveRate < 30) {
-        issues.push({ 
-          category: 'Sand Play', 
-          message: 'Sand Play is your biggest weakness', 
-          severity: 30 - bunkerSaveRate,
-          isPriority: false,
-          libraryCategory: errorToDrillMapping['Sand Play']?.libraryCategory || 'Short Game',
-          recommendedDrillId: errorToDrillMapping['Sand Play']?.drillId || null
-        });
+        const bunkerSavesPercent = (totalBunkerSaves / totalBunkerAttempts) * 100;
+        const bunkerGap = goals.bunkerSaves - bunkerSavesPercent;
+        if (bunkerGap > 0) {
+          issues.push({ 
+            category: 'Sand Play', 
+            message: `You are currently ${Math.round(bunkerGap)}% away from your Bunker Saves goal`,
+            severity: bunkerGap,
+            isPriority: false,
+            libraryCategory: errorToDrillMapping['Sand Play']?.libraryCategory || 'Short Game',
+            recommendedDrillId: errorToDrillMapping['Sand Play']?.drillId || null
+          });
+        }
       }
     }
 
@@ -806,13 +840,11 @@ export default function StatsPage() {
 
   // Simplified AreaChart Component
   const renderMasterCorrelationChart = () => {
-    if (rounds.length === 0) return null;
-
     // Filter rounds by hole count (binary: 9 or 18 only)
     const filteredRounds = rounds.filter(r => r.holes === (holeFilter === '9' ? 9 : 18));
     
-    // Check if filtered rounds exist
-    if (filteredRounds.length === 0) {
+    // Check if filtered rounds exist or no rounds at all
+    if (rounds.length === 0 || filteredRounds.length === 0) {
       return (
         <div className="px-4 mb-6">
           <div className="rounded-2xl p-4" style={{ backgroundColor: '#014421' }}>
@@ -878,15 +910,14 @@ export default function StatsPage() {
               </div>
             </div>
             <div className="py-20 text-center">
-              <p className="text-white/80 text-sm">No Data for this Filter</p>
+              <p className="text-white/80 text-sm">
+                {rounds.length === 0 ? 'No data available. Log your first round to see trends!' : 'No data for this filter'}
+              </p>
             </div>
           </div>
         </div>
       );
     }
-    
-    // Use actual rounds data from context
-    if (rounds.length === 0) return null;
     
     // Filter by hole filter (9 or 18) first
     const holeFilteredRounds = rounds.filter(r => {
@@ -894,7 +925,80 @@ export default function StatsPage() {
       return r.holes === 18;
     });
     
-    if (holeFilteredRounds.length === 0) return null;
+    if (holeFilteredRounds.length === 0) {
+      return (
+        <div className="px-4 mb-6">
+          <div className="rounded-2xl p-4" style={{ backgroundColor: '#014421' }}>
+            <div className="flex flex-col gap-4 mb-4">
+              <h2 className="text-lg font-semibold text-white text-center">Performance Trend</h2>
+              <div className="flex flex-col items-center gap-3">
+                <div className="flex items-center gap-2 w-full justify-center">
+                  <label className="text-sm font-medium text-white whitespace-nowrap">Select Metric:</label>
+                  <select
+                    value={selectedMetric}
+                    onChange={(e) => setSelectedMetric(e.target.value as typeof selectedMetric)}
+                    className="px-4 py-2 rounded-lg text-sm font-medium bg-white text-black border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#FFA500] focus:border-[#FFA500] min-w-[200px]"
+                    style={{
+                      color: '#000000',
+                      backgroundColor: '#ffffff'
+                    }}
+                  >
+                    <option value="gross" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Gross Score</option>
+                    <option value="nettScore" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Nett Score</option>
+                    <option value="birdies" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Birdies</option>
+                    <option value="pars" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Pars</option>
+                    <option value="bogeys" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Bogeys</option>
+                    <option value="doubleBogeys" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Double Bogeys</option>
+                    <option value="eagles" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Eagles</option>
+                    <option value="fir" style={{ color: '#000000', backgroundColor: '#ffffff' }}>FIR %</option>
+                    <option value="gir" style={{ color: '#000000', backgroundColor: '#ffffff' }}>GIR %</option>
+                    <option value="totalPenalties" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Total Penalties</option>
+                    <option value="penaltyRate" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Penalty Rate %</option>
+                    <option value="gir8ft" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Within 8ft %</option>
+                    <option value="gir20ft" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Within 20ft %</option>
+                    <option value="upAndDown" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Up & Down %</option>
+                    <option value="bunkerSaves" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Bunker Saves %</option>
+                    <option value="chipInside6ft" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Chip Inside 6ft</option>
+                    <option value="doubleChips" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Double Chips</option>
+                    <option value="totalPutts" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Total Putts</option>
+                    <option value="puttMake6ft" style={{ color: '#000000', backgroundColor: '#ffffff' }}>&lt; 6ft Make %</option>
+                    <option value="threePutts" style={{ color: '#000000', backgroundColor: '#ffffff' }}>3-Putts</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-white/70">Filter:</span>
+                  <button
+                    onClick={() => setHoleFilter('9')}
+                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                      holeFilter === '9' 
+                        ? 'bg-white text-[#014421]' 
+                        : 'bg-white/20 text-white/70'
+                    }`}
+                  >
+                    9 Holes
+                  </button>
+                  <button
+                    onClick={() => setHoleFilter('18')}
+                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                      holeFilter === '18' 
+                        ? 'bg-white text-[#014421]' 
+                        : 'bg-white/20 text-white/70'
+                    }`}
+                  >
+                    18 Holes
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="py-20 text-center">
+              <p className="text-white/80 text-sm">
+                {rounds.length === 0 ? 'No data available. Log your first round to see trends!' : 'No data for this filter'}
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
     
     // Sort by date (oldest to newest for chart)
     const allRounds = [...holeFilteredRounds].sort((a, b) => 
@@ -1461,56 +1565,6 @@ export default function StatsPage() {
       </div>
     );
   };
-
-  // Welcome screen for new users with no data
-  if (rounds.length === 0) {
-    return (
-      <div className="min-h-screen bg-gray-50 pb-24">
-        <div className="max-w-md mx-auto bg-white min-h-screen">
-          <div className="pt-6 pb-4 px-4">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Game Overview</h1>
-                <p className="text-gray-600 text-sm mt-1">Track your performance metrics</p>
-              </div>
-            </div>
-          </div>
-          
-          {/* Welcome Screen */}
-          <div className="px-4 py-12">
-            <div className="text-center">
-              <div className="mb-6">
-                <div className="w-24 h-24 mx-auto rounded-full flex items-center justify-center" style={{ backgroundColor: '#014421' }}>
-                  <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                </div>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                Welcome, {userDisplayName}!
-              </h2>
-              <p className="text-gray-600 mb-8">
-                Start tracking your golf performance by adding your first round.
-              </p>
-              <Link
-                href="/log-round"
-                className="inline-flex items-center justify-center px-6 py-3 rounded-lg font-semibold text-white transition-all hover:shadow-lg"
-                style={{ backgroundColor: '#014421' }}
-              >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                Add Your First Round
-              </Link>
-              <p className="text-sm text-gray-500 mt-4">
-                Once you log rounds, you'll see detailed stats, trends, and insights here.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">

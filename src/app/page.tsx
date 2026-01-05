@@ -3,19 +3,28 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { useStats } from "@/contexts/StatsContext";
 import HomeDashboard from "@/components/HomeDashboard";
 
 export default function Home() {
   const router = useRouter();
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { rounds, loading: statsLoading } = useStats();
+  
+  // Log rounds data for debugging
+  useEffect(() => {
+    console.log('Rounds data in Home page:', rounds);
+    console.log('Stats loading state:', statsLoading);
+  }, [rounds, statsLoading]);
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
+    if (!authLoading && !isAuthenticated) {
       router.push("/login");
     }
-  }, [isAuthenticated, loading, router]);
+  }, [isAuthenticated, authLoading, router]);
 
-  if (loading) {
+  // Show loading if either auth or stats are loading
+  if (authLoading || statsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -30,5 +39,7 @@ export default function Home() {
     return null; // Will redirect
   }
 
+  // ALWAYS render HomeDashboard - no conditional checks for rounds.length
+  // Dashboard will show 0s or 'No data' messages if database is empty
   return <HomeDashboard />;
 }

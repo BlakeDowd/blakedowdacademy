@@ -31,11 +31,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   
   // Only create Supabase client if env vars are available
-  const supabase = typeof window !== 'undefined' && 
-    process.env.NEXT_PUBLIC_SUPABASE_URL && 
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    ? createClient()
-    : null;
+  let supabase: ReturnType<typeof createClient> | null = null;
+  if (typeof window !== 'undefined' && 
+      process.env.NEXT_PUBLIC_SUPABASE_URL && 
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    try {
+      supabase = createClient();
+    } catch (error) {
+      console.error('Failed to create Supabase client:', error);
+      supabase = null;
+    }
+  }
 
   useEffect(() => {
     // Check authentication status on mount

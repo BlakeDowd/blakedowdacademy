@@ -38,6 +38,7 @@ interface RoundData {
 
 interface StatsContextType {
   rounds: RoundData[];
+  loading: boolean;
   refreshRounds: () => void;
 }
 
@@ -45,18 +46,25 @@ const StatsContext = createContext<StatsContextType | undefined>(undefined);
 
 export function StatsProvider({ children }: { children: ReactNode }) {
   const [rounds, setRounds] = useState<RoundData[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
   const refreshRounds = async () => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined') {
+      setLoading(false);
+      setRounds([]);
+      return;
+    }
     
     try {
+      setLoading(true);
       const { createClient } = await import('@/lib/supabase/client');
       const supabase = createClient();
       
       // Get the current user
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
       
-      if (!user) {
+      if (userError || !user) {
+        console.error('Error getting user:', userError);
         setRounds([]);
         return;
       }
@@ -74,8 +82,18 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      // Log what we received from the database
+      console.log('Rounds data from database:', data);
+      
+      // If data is null or empty, set empty array immediately
+      if (!data || data.length === 0) {
+        console.log('No rounds found in database, setting empty array');
+        setRounds([]);
+        return;
+      }
+
       // Transform Supabase data to RoundData format
-      const transformedRounds: RoundData[] = (data || []).map((round: any) => ({
+      const transformedRounds: RoundData[] = data.map((round: any) => ({
         date: round.date,
         course: round.course,
         handicap: round.handicap,
@@ -110,9 +128,14 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       }));
 
       setRounds(transformedRounds);
+      console.log('Transformed rounds:', transformedRounds);
     } catch (error) {
       console.error('Error refreshing rounds:', error);
       setRounds([]);
+    } finally {
+      // Always set loading to false, even if database returns empty list
+      setLoading(false);
+      console.log('Loading set to false');
     }
   };
 
@@ -149,7 +172,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <StatsContext.Provider value={{ rounds, refreshRounds }}>
+    <StatsContext.Provider value={{ rounds, loading, refreshRounds }}>
       {children}
     </StatsContext.Provider>
   );
