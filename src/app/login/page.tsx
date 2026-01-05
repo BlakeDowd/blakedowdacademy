@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, User, LogIn, UserPlus } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { login, signup } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,56 +33,47 @@ export default function LoginPage() {
       return;
     }
 
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-
     try {
       if (isSignUp) {
-        // Sign up logic
-        const userData = {
-          email,
-          initialHandicap: parseFloat(initialHandicap),
-          createdAt: new Date().toISOString(),
-        };
-
-        // Store user data in localStorage
-        localStorage.setItem("user", JSON.stringify(userData));
-        localStorage.setItem("isAuthenticated", "true");
-        
-        // Set initial handicap in stats context if needed
-        if (initialHandicap) {
-          const handicap = parseFloat(initialHandicap);
-          if (!isNaN(handicap)) {
-            // You can store this for the stats context
-            localStorage.setItem("initialHandicap", handicap.toString());
-          }
-        }
-      } else {
-        // Login logic - check if user exists
-        const savedUser = localStorage.getItem("user");
-        if (!savedUser) {
-          setError("No account found. Please sign up first.");
+        const handicap = parseFloat(initialHandicap);
+        if (isNaN(handicap) || handicap < 0 || handicap > 36) {
+          setError("Please enter a valid handicap (0-36)");
           setLoading(false);
           return;
         }
-
-        // In a real app, you'd verify the password here
-        localStorage.setItem("isAuthenticated", "true");
+        await signup(email, password, handicap);
+        // Navigation handled by AuthContext
+      } else {
+        await login(email, password);
+        // Navigation handled by AuthContext
       }
-
-      // Redirect to home
-      router.push("/");
-    } catch (err) {
-      setError("An error occurred. Please try again.");
+    } catch (err: any) {
+      setError(err.message || "An error occurred. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogleLogin = () => {
-    // Placeholder for Google OAuth
-    // In a real app, you'd integrate with Google OAuth here
-    setError("Google login coming soon!");
+  const handleGoogleLogin = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/`,
+        },
+      });
+      if (error) {
+        setError(error.message || "Failed to sign in with Google");
+      }
+    } catch (err: any) {
+      setError(err.message || "An error occurred with Google login");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

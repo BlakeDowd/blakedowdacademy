@@ -43,218 +43,107 @@ interface StatsContextType {
 
 const StatsContext = createContext<StatsContextType | undefined>(undefined);
 
-// Sample rounds data for demonstration
-const sampleRounds: RoundData[] = [
-  {
-    date: '2024-01-15',
-    course: 'Pebble Beach',
-    handicap: 10.2,
-    holes: 18,
-    score: 82,
-    nett: 71.8,
-    eagles: 0,
-    birdies: 1,
-    pars: 8,
-    bogeys: 7,
-    doubleBogeys: 2,
-    firLeft: 3,
-    firHit: 6,
-    firRight: 5,
-    totalGir: 9, // 50% of 18 holes
-    totalPenalties: 1,
-    teePenalties: 1,
-    approachPenalties: 0,
-    goingForGreen: 2,
-    gir8ft: 2,
-    gir20ft: 4,
-    upAndDownConversions: 3,
-    missed: 4,
-    bunkerAttempts: 2,
-    bunkerSaves: 0,
-    chipInside6ft: 5,
-    doubleChips: 0,
-    totalPutts: 34,
-    threePutts: 2,
-    missed6ftAndIn: 3,
-    puttsUnder6ftAttempts: 10,
-  },
-  {
-    date: '2024-01-22',
-    course: 'Augusta National',
-    handicap: 9.8,
-    holes: 18,
-    score: 79,
-    nett: 69.2,
-    eagles: 0,
-    birdies: 2,
-    pars: 10,
-    bogeys: 5,
-    doubleBogeys: 1,
-    firLeft: 2,
-    firHit: 8,
-    firRight: 4,
-    totalGir: 12, // 65% of 18 holes
-    totalPenalties: 0,
-    teePenalties: 0,
-    approachPenalties: 0,
-    goingForGreen: 3,
-    gir8ft: 3,
-    gir20ft: 5,
-    upAndDownConversions: 4,
-    missed: 2,
-    bunkerAttempts: 1,
-    bunkerSaves: 1,
-    chipInside6ft: 6,
-    doubleChips: 0,
-    totalPutts: 31,
-    threePutts: 1,
-    missed6ftAndIn: 2,
-    puttsUnder6ftAttempts: 12,
-  },
-  {
-    date: '2024-01-29',
-    course: 'St. Andrews',
-    handicap: 9.5,
-    holes: 18,
-    score: 78,
-    nett: 68.5,
-    eagles: 0,
-    birdies: 3,
-    pars: 9,
-    bogeys: 5,
-    doubleBogeys: 1,
-    firLeft: 1,
-    firHit: 9,
-    firRight: 4,
-    totalGir: 11, // 61% of 18 holes
-    totalPenalties: 1,
-    teePenalties: 1,
-    approachPenalties: 0,
-    goingForGreen: 4,
-    gir8ft: 4,
-    gir20ft: 4,
-    upAndDownConversions: 5,
-    missed: 2,
-    bunkerAttempts: 2,
-    bunkerSaves: 1,
-    chipInside6ft: 7,
-    doubleChips: 0,
-    totalPutts: 30,
-    threePutts: 0,
-    missed6ftAndIn: 2,
-    puttsUnder6ftAttempts: 11,
-  },
-  {
-    date: '2024-02-05',
-    course: 'Pinehurst',
-    handicap: 9.1,
-    holes: 18,
-    score: 77,
-    nett: 67.9,
-    eagles: 0,
-    birdies: 2,
-    pars: 11,
-    bogeys: 4,
-    doubleBogeys: 1,
-    firLeft: 2,
-    firHit: 10,
-    firRight: 2,
-    totalGir: 13, // 72% of 18 holes
-    totalPenalties: 0,
-    teePenalties: 0,
-    approachPenalties: 0,
-    goingForGreen: 5,
-    gir8ft: 5,
-    gir20ft: 5,
-    upAndDownConversions: 4,
-    missed: 1,
-    bunkerAttempts: 1,
-    bunkerSaves: 1,
-    chipInside6ft: 8,
-    doubleChips: 0,
-    totalPutts: 29,
-    threePutts: 0,
-    missed6ftAndIn: 1,
-    puttsUnder6ftAttempts: 10,
-  },
-  {
-    date: '2024-02-12',
-    course: 'Torrey Pines',
-    handicap: 8.7,
-    holes: 18,
-    score: 76,
-    nett: 67.3,
-    eagles: 0,
-    birdies: 3,
-    pars: 12,
-    bogeys: 3,
-    doubleBogeys: 0,
-    firLeft: 1,
-    firHit: 11,
-    firRight: 2,
-    totalGir: 14, // 78% of 18 holes
-    totalPenalties: 0,
-    teePenalties: 0,
-    approachPenalties: 0,
-    goingForGreen: 6,
-    gir8ft: 6,
-    gir20ft: 5,
-    upAndDownConversions: 3,
-    missed: 1,
-    bunkerAttempts: 0,
-    bunkerSaves: 0,
-    chipInside6ft: 9,
-    doubleChips: 0,
-    totalPutts: 28,
-    threePutts: 0,
-    missed6ftAndIn: 3, // High missed putts to trigger alert
-    puttsUnder6ftAttempts: 12,
-  },
-];
-
 export function StatsProvider({ children }: { children: ReactNode }) {
   const [rounds, setRounds] = useState<RoundData[]>([]);
 
-  const refreshRounds = () => {
+  const refreshRounds = async () => {
     if (typeof window === 'undefined') return;
     
-    const savedRounds = localStorage.getItem('rounds');
-    if (savedRounds) {
-      try {
-        const parsedRounds = JSON.parse(savedRounds);
-        setRounds(parsedRounds.length > 0 ? parsedRounds : sampleRounds);
-      } catch (e) {
-        console.error('Error parsing rounds:', e);
-        setRounds(sampleRounds);
+    try {
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+      
+      // Get the current user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        setRounds([]);
+        return;
       }
-    } else {
-      // Use sample data when no real data exists
-      setRounds(sampleRounds);
+
+      // Fetch rounds from Supabase for the authenticated user
+      const { data, error } = await supabase
+        .from('rounds')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching rounds:', error);
+        setRounds([]);
+        return;
+      }
+
+      // Transform Supabase data to RoundData format
+      const transformedRounds: RoundData[] = (data || []).map((round: any) => ({
+        date: round.date,
+        course: round.course,
+        handicap: round.handicap,
+        holes: round.holes,
+        score: round.score,
+        nett: round.nett,
+        eagles: round.eagles || 0,
+        birdies: round.birdies || 0,
+        pars: round.pars || 0,
+        bogeys: round.bogeys || 0,
+        doubleBogeys: round.double_bogeys || 0,
+        firLeft: round.fir_left || 0,
+        firHit: round.fir_hit || 0,
+        firRight: round.fir_right || 0,
+        totalGir: round.total_gir || 0,
+        totalPenalties: round.total_penalties || 0,
+        teePenalties: round.tee_penalties || 0,
+        approachPenalties: round.approach_penalties || 0,
+        goingForGreen: round.going_for_green || 0,
+        gir8ft: round.gir_8ft || 0,
+        gir20ft: round.gir_20ft || 0,
+        upAndDownConversions: round.up_and_down_conversions || 0,
+        missed: round.missed || 0,
+        bunkerAttempts: round.bunker_attempts || 0,
+        bunkerSaves: round.bunker_saves || 0,
+        chipInside6ft: round.chip_inside_6ft || 0,
+        doubleChips: round.double_chips || 0,
+        totalPutts: round.total_putts || 0,
+        threePutts: round.three_putts || 0,
+        missed6ftAndIn: round.missed_6ft_and_in || 0,
+        puttsUnder6ftAttempts: round.putts_under_6ft_attempts || 0,
+      }));
+
+      setRounds(transformedRounds);
+    } catch (error) {
+      console.error('Error refreshing rounds:', error);
+      setRounds([]);
     }
   };
 
   useEffect(() => {
     refreshRounds();
 
-    // Listen for storage changes (cross-tab)
-    const handleStorageChange = () => {
-      refreshRounds();
+    // Listen for auth state changes to refresh rounds when user logs in/out
+    let subscription: { unsubscribe: () => void } | null = null;
+
+    const setupAuthListener = async () => {
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+
+      const {
+        data: { subscription: sub },
+      } = supabase.auth.onAuthStateChange(() => {
+        refreshRounds();
+      });
+
+      subscription = sub;
     };
 
-    // Listen for custom event (same-tab immediate updates)
-    const handleRoundsUpdated = () => {
-      refreshRounds();
-    };
+    setupAuthListener();
 
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('roundsUpdated', handleRoundsUpdated);
-    
-    // Poll for changes as backup
-    const interval = setInterval(refreshRounds, 500);
+    // Poll for changes as backup (every 5 seconds)
+    const interval = setInterval(refreshRounds, 5000);
 
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('roundsUpdated', handleRoundsUpdated);
+      if (subscription) {
+        subscription.unsubscribe();
+      }
       clearInterval(interval);
     };
   }, []);

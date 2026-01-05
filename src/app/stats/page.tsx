@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useStats } from "@/contexts/StatsContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { AreaChart, Area, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, CartesianGrid, Tooltip, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from "recharts";
 import Link from "next/link";
 import { ArrowRight, Share2, CheckCircle2 } from "lucide-react";
@@ -106,6 +107,20 @@ const getBenchmarkGoals = (handicap: number) => {
 
 export default function StatsPage() {
   const { rounds } = useStats();
+  const { user } = useAuth();
+  
+  // Format user name from email
+  const getUserDisplayName = () => {
+    if (!user?.email) return 'Player';
+    const emailParts = user.email.split('@')[0];
+    const nameParts = emailParts.split('.');
+    if (nameParts.length >= 2) {
+      return nameParts.map((part: string) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+    }
+    return emailParts.charAt(0).toUpperCase() + emailParts.slice(1);
+  };
+  
+  const userDisplayName = getUserDisplayName();
   const [categoryTimes, setCategoryTimes] = useState<CategoryTime[]>([]);
   const [selectedGoal, setSelectedGoal] = useState<number>(8.7); // Default to 8.7 handicap
   const [holeFilter, setHoleFilter] = useState<'9' | '18'>('18'); // Filter for 9 vs 18 holes (binary, no 'all')
@@ -870,46 +885,21 @@ export default function StatsPage() {
       );
     }
     
-    // TEMPORARY: Mock data for testing
-    const mockRounds = Array.from({ length: 20 }, (_, i) => ({
-      id: i + 1,
-      roundNumber: i + 1,
-      date: `2025-12-${String(i + 1).padStart(2, '0')}`,
-      holes: 18,
-      score: 85 - (i * 0.5) + 8.7, // Gross score (nett + handicap)
-      nett: 85 - (i * 0.5), // Trending down from 85 to 75
-      handicap: 8.7,
-      totalGir: Math.round((30 + (i * 2)) / 100 * 18), // GIR count (30% to 70% of 18 holes)
-      totalPenalties: Math.max(0, 4 - Math.floor(i / 5)), // Decreasing penalties
-      firLeft: Math.floor(Math.random() * 3),
-      firHit: Math.round((50 + (i * 1.5)) / 100 * 14), // FIR trending up
-      firRight: Math.floor(Math.random() * 3),
-      birdies: Math.floor(Math.random() * 3),
-      pars: Math.floor(10 + Math.random() * 5),
-      bogeys: Math.floor(5 + Math.random() * 3),
-      doubleBogeys: Math.max(0, Math.floor(3 - i * 0.1)),
-      eagles: 0,
-      upAndDownConversions: Math.round((40 + (i * 1.5)) / 100 * 5),
-      missed: Math.round((60 - (i * 1.5)) / 100 * 5),
-      bunkerSaves: Math.round((30 + (i * 1)) / 100 * 2),
-      bunkerAttempts: 2,
-      chipInside6ft: Math.round((50 + (i * 1.5)) / 100 * 5),
-      doubleChips: Math.max(0, 2 - Math.floor(i / 7)),
-      totalPutts: Math.round(32 - (i * 0.2)),
-      puttsUnder6ftAttempts: Math.round(15 + Math.random() * 5),
-      missed6ftAndIn: Math.max(0, Math.round(5 - (i * 0.2))),
-      threePutts: Math.max(0, Math.floor(2 - i * 0.1)),
-      gir8ft: Math.round((20 + (i * 1.5)) / 100 * 18),
-      gir20ft: Math.round((40 + (i * 1.5)) / 100 * 18),
-      gross: 85 - (i * 0.5) + 8.7,
-    }));
+    // Use actual rounds data from context
+    if (rounds.length === 0) return null;
     
-    // Sort by date (oldest to newest for chart) - TEMPORARILY using mock data
-    const allRounds = mockRounds.sort((a, b) => 
+    // Filter by hole filter (9 or 18) first
+    const holeFilteredRounds = rounds.filter(r => {
+      if (holeFilter === '9') return r.holes === 9;
+      return r.holes === 18;
+    });
+    
+    if (holeFilteredRounds.length === 0) return null;
+    
+    // Sort by date (oldest to newest for chart)
+    const allRounds = [...holeFilteredRounds].sort((a, b) => 
       new Date(a.date).getTime() - new Date(b.date).getTime()
     );
-    
-    if (allRounds.length === 0) return null;
     
     // Apply history limit to create displayed data
     const displayedData = historyLimit === 'all' 
@@ -1471,6 +1461,56 @@ export default function StatsPage() {
       </div>
     );
   };
+
+  // Welcome screen for new users with no data
+  if (rounds.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 pb-24">
+        <div className="max-w-md mx-auto bg-white min-h-screen">
+          <div className="pt-6 pb-4 px-4">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Game Overview</h1>
+                <p className="text-gray-600 text-sm mt-1">Track your performance metrics</p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Welcome Screen */}
+          <div className="px-4 py-12">
+            <div className="text-center">
+              <div className="mb-6">
+                <div className="w-24 h-24 mx-auto rounded-full flex items-center justify-center" style={{ backgroundColor: '#014421' }}>
+                  <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                </div>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Welcome, {userDisplayName}!
+              </h2>
+              <p className="text-gray-600 mb-8">
+                Start tracking your golf performance by adding your first round.
+              </p>
+              <Link
+                href="/log-round"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-lg font-semibold text-white transition-all hover:shadow-lg"
+                style={{ backgroundColor: '#014421' }}
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Add Your First Round
+              </Link>
+              <p className="text-sm text-gray-500 mt-4">
+                Once you log rounds, you'll see detailed stats, trends, and insights here.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -2679,7 +2719,7 @@ export default function StatsPage() {
                   Elite Academy
                 </div>
                 <div style={{ fontSize: '16px', fontWeight: 600, color: '#ffffff', marginBottom: '4px' }}>
-                  Player: Jordan Mills
+                  Player: {userDisplayName}
                 </div>
                 <div style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.7)' }}>
                   Date of Review: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}

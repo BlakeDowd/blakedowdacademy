@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useStats } from "@/contexts/StatsContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { 
   Play,
   Flame,
@@ -94,6 +95,18 @@ interface CommunityRound {
 export default function HomeDashboard() {
   const router = useRouter();
   const { rounds } = useStats();
+  const { user } = useAuth();
+  
+  // Format user name from email
+  const getUserDisplayName = () => {
+    if (!user?.email) return 'Player';
+    const emailParts = user.email.split('@')[0];
+    const nameParts = emailParts.split('.');
+    if (nameParts.length >= 2) {
+      return nameParts.map((part: string) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+    }
+    return emailParts.charAt(0).toUpperCase() + emailParts.slice(1);
+  };
   const [totalXP, setTotalXP] = useState(1250);
   const [dailyVideo, setDailyVideo] = useState(() => getDailyVideo());
   const [refreshKey, setRefreshKey] = useState(0);
@@ -273,6 +286,69 @@ export default function HomeDashboard() {
     };
   }, [refreshKey, rounds]);
 
+  // Empty state for users with no rounds
+  if (rounds.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 pb-20">
+        <div className="max-w-md mx-auto bg-white min-h-screen">
+          {/* Top Section - Premium Header */}
+          <div className="px-5 pt-6 pb-4 flex items-center justify-between mb-4 bg-white">
+            <div className="flex items-center gap-3">
+              <div className="w-14 h-14 rounded-full overflow-hidden ring-2 ring-gray-100 shadow-sm">
+                <div 
+                  className="w-full h-full flex items-center justify-center"
+                  style={{ background: 'linear-gradient(to bottom right, #4ade80, #22c55e, #16a34a)' }}
+                >
+                  <span className="text-white font-bold text-lg">
+                    {getUserDisplayName().split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <p className="text-gray-400 text-xs">Welcome back,</p>
+                <p className="text-gray-900 font-bold text-xl">
+                  {getUserDisplayName()}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Empty State */}
+          <div className="px-5 py-12">
+            <div className="text-center">
+              <div className="mb-6">
+                <div className="w-24 h-24 mx-auto rounded-full flex items-center justify-center" style={{ backgroundColor: '#014421' }}>
+                  <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                </div>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Welcome to Blake Dowd Academy!
+              </h2>
+              <p className="text-gray-600 mb-8">
+                Tap the button below to log your first round and start tracking your performance.
+              </p>
+              <Link
+                href="/log-round"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-lg font-semibold text-white transition-all hover:shadow-lg"
+                style={{ backgroundColor: '#014421' }}
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Log Your First Round
+              </Link>
+              <p className="text-sm text-gray-500 mt-4">
+                Once you log rounds, you'll see your stats, progress, and insights here.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <div className="max-w-md mx-auto bg-white min-h-screen">
@@ -289,7 +365,9 @@ export default function HomeDashboard() {
             </div>
             <div>
               <p className="text-gray-400 text-xs">Welcome back,</p>
-              <p className="text-gray-900 font-bold text-xl">Jordan Mills</p>
+              <p className="text-gray-900 font-bold text-xl">
+                {getUserDisplayName()}
+              </p>
             </div>
           </div>
           <div 

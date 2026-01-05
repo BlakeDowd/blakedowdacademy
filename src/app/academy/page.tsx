@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useStats } from "@/contexts/StatsContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { Trophy, Award, Medal, Crown, TrendingUp, TrendingDown, Search, X, Lock, Target, BookOpen, Clock, Zap, Star, Flame } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -854,6 +855,7 @@ function calculateTotalXPByTimeframe(rounds: any[], userProgress: { totalXP: num
 
 export default function AcademyPage() {
   const { rounds } = useStats();
+  const { user } = useAuth();
   const [userProgress, setUserProgress] = useState<{ totalXP: number; completedDrills: string[] }>({
     totalXP: 0,
     completedDrills: []
@@ -931,27 +933,15 @@ export default function AcademyPage() {
   const userTier = getTier();
   const userLevel = getLevel(userTier);
 
-  // Get user name from localStorage
+  // Get user name from auth context
   const getUserName = () => {
-    if (typeof window === 'undefined') return 'Jordan Mills';
-    try {
-      const userData = localStorage.getItem('user');
-      if (userData) {
-        const user = JSON.parse(userData);
-        // Extract name from email (e.g., "jordan.mills@example.com" -> "Jordan Mills")
-        if (user.email) {
-          const emailParts = user.email.split('@')[0];
-          const nameParts = emailParts.split('.');
-          if (nameParts.length >= 2) {
-            return nameParts.map((part: string) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
-          }
-          return emailParts.charAt(0).toUpperCase() + emailParts.slice(1);
-        }
-      }
-    } catch (error) {
-      console.error('Error parsing user data:', error);
+    if (!user?.email) return 'Player';
+    const emailParts = user.email.split('@')[0];
+    const nameParts = emailParts.split('.');
+    if (nameParts.length >= 2) {
+      return nameParts.map((part: string) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
     }
-    return 'Jordan Mills'; // Default fallback
+    return emailParts.charAt(0).toUpperCase() + emailParts.slice(1);
   };
 
   const userName = getUserName();
