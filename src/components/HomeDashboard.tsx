@@ -294,8 +294,10 @@ export default function HomeDashboard() {
     };
   }, [refreshKey, safeRounds]);
 
-  return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+  // Wrap return in try-catch to prevent crashes
+  try {
+    return (
+      <div className="min-h-screen bg-gray-50 pb-20">
       <div className="max-w-md mx-auto bg-white min-h-screen">
         {/* Top Section - Premium Header */}
         <div className="px-5 pt-6 pb-4 flex items-center justify-between mb-4 bg-white">
@@ -753,6 +755,22 @@ export default function HomeDashboard() {
       </div>
     </div>
   );
+  } catch (error) {
+    console.error('Error rendering HomeDashboard:', error);
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">Something went wrong. Please refresh the page.</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-[#014421] text-white rounded-lg"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+    );
+  }
 }
 
 

@@ -109,12 +109,15 @@ export default function StatsPage() {
   const { rounds, loading: statsLoading } = useStats();
   const { user, loading: authLoading } = useAuth();
   
+  // Ensure rounds is always an array, never null or undefined
+  const safeRounds = rounds || [];
+  
   // Log rounds data for debugging
   useEffect(() => {
-    console.log('Rounds data in Stats page:', rounds);
-    console.log('Rounds length:', rounds?.length || 0);
+    console.log('Rounds data in Stats page:', safeRounds);
+    console.log('Rounds length:', safeRounds?.length || 0);
     console.log('Stats loading state:', statsLoading);
-  }, [rounds, statsLoading]);
+  }, [safeRounds, statsLoading]);
   
   // Show loading state while data is being fetched
   if (authLoading || statsLoading) {
@@ -412,13 +415,13 @@ export default function StatsPage() {
   }, [practiceTimeframe, practiceInsights]);
 
   // Get last 10 rounds for handicap trend
-  const last10Rounds = rounds?.length > 0 
-    ? rounds.slice(-10).filter(r => r.handicap !== null && r.handicap !== undefined)
+  const last10Rounds = safeRounds?.length > 0 
+    ? safeRounds.slice(-10).filter(r => r.handicap !== null && r.handicap !== undefined)
     : [];
 
   // Calculate averages for performance rings and proximity metrics
   const calculateAverages = () => {
-    if (!rounds || rounds.length === 0) {
+    if (!safeRounds || safeRounds.length === 0) {
       return { 
         fir: 0, 
         gir: 0, 
@@ -449,7 +452,7 @@ export default function StatsPage() {
     let totalChipOpportunities = 0;
     let totalDoubleChips = 0;
 
-    rounds.forEach(round => {
+    safeRounds.forEach(round => {
       const totalFIRShots = round.firLeft + round.firHit + round.firRight;
       if (totalFIRShots > 0) {
         totalFIR += (round.firHit / totalFIRShots) * 100;
@@ -490,26 +493,26 @@ export default function StatsPage() {
       : 0;
 
     // Double Chips: Season Average (per round, not percentage)
-    const avgDoubleChips = rounds.length > 0 ? totalDoubleChips / rounds.length : 0;
+    const avgDoubleChips = safeRounds.length > 0 ? totalDoubleChips / (safeRounds.length || 1) : 0;
 
     // Approach Penalties: Average per round
-    const avgApproachPenalties = rounds.length > 0 
-      ? rounds.reduce((sum, r) => sum + (r.approachPenalties || 0), 0) / rounds.length 
+    const avgApproachPenalties = safeRounds.length > 0 
+      ? safeRounds.reduce((sum, r) => sum + (r.approachPenalties || 0), 0) / (safeRounds.length || 1) 
       : 0;
 
     // Calculate Penalty Rate %
-    const totalPenalties = rounds?.length > 0 ? rounds.reduce((sum, r) => sum + (r.totalPenalties || 0), 0) : 0;
+    const totalPenalties = safeRounds?.length > 0 ? safeRounds.reduce((sum, r) => sum + (r.totalPenalties || 0), 0) : 0;
     const penaltyRate = totalHoles > 0 ? (totalPenalties / totalHoles) * 100 : 0;
     
     // Calculate < 6ft Make %
-    const totalPuttsUnder6ftAttempts = rounds?.length > 0 ? rounds.reduce((sum, r) => sum + (r.puttsUnder6ftAttempts || 0), 0) : 0;
-    const totalMissed6ft = rounds?.length > 0 ? rounds.reduce((sum, r) => sum + (r.missed6ftAndIn || 0), 0) : 0;
+    const totalPuttsUnder6ftAttempts = safeRounds?.length > 0 ? safeRounds.reduce((sum, r) => sum + (r.puttsUnder6ftAttempts || 0), 0) : 0;
+    const totalMissed6ft = safeRounds?.length > 0 ? safeRounds.reduce((sum, r) => sum + (r.missed6ftAndIn || 0), 0) : 0;
     const puttMake6ft = totalPuttsUnder6ftAttempts > 0
       ? ((totalPuttsUnder6ftAttempts - totalMissed6ft) / totalPuttsUnder6ftAttempts) * 100
       : 0;
 
     return {
-      fir: rounds.length > 0 ? totalFIR / rounds.length : 0,
+      fir: safeRounds.length > 0 ? totalFIR / (safeRounds.length || 1) : 0,
       gir: totalHoles > 0 ? (totalGIR / totalHoles) * 100 : 0,
       upAndDown: totalUpAndDownOpps > 0 ? (totalUpAndDown / totalUpAndDownOpps) * 100 : 0,
       bunkerSaves: bunkerSaves,
@@ -653,21 +656,21 @@ export default function StatsPage() {
 
   // Calculate putting averages (Missed < 6ft and 3-Putts as primary metrics)
   const calculatePuttingStats = () => {
-    if (!rounds || rounds.length === 0) {
-      return { 
-        avgTotalPutts: 0, 
-        avgMissed6ft: 0, 
+    if (!safeRounds || safeRounds.length === 0) {
+      return {
+        avgTotalPutts: 0,
+        avgMissed6ft: 0,
         avgThreePutts: 0,
         makePercent6ft: [] // Array for trend graph
       };
     }
 
-    const totalPutts = rounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0);
-    const totalMissed = rounds.reduce((sum, r) => sum + (r.missed6ftAndIn || 0), 0);
-    const totalThreePutts = rounds.reduce((sum, r) => sum + (r.threePutts || 0), 0);
+    const totalPutts = safeRounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0);
+    const totalMissed = safeRounds.reduce((sum, r) => sum + (r.missed6ftAndIn || 0), 0);
+    const totalThreePutts = safeRounds.reduce((sum, r) => sum + (r.threePutts || 0), 0);
     
     // Calculate Make % from < 6ft for last 5 rounds
-    const last5Rounds = rounds.slice(-5).reverse(); // Most recent first
+    const last5Rounds = safeRounds.slice(-5).reverse(); // Most recent first
     const makePercent6ft = last5Rounds.map(round => {
       // Use puttsUnder6ftAttempts if available, otherwise estimate
       const attempts = round.puttsUnder6ftAttempts > 0 
@@ -678,9 +681,9 @@ export default function StatsPage() {
     });
 
     return {
-      avgTotalPutts: rounds.length > 0 ? totalPutts / rounds.length : 0,
-      avgMissed6ft: rounds.length > 0 ? totalMissed / rounds.length : 0,
-      avgThreePutts: rounds.length > 0 ? totalThreePutts / rounds.length : 0,
+      avgTotalPutts: safeRounds.length > 0 ? totalPutts / (safeRounds.length || 1) : 0,
+      avgMissed6ft: safeRounds.length > 0 ? totalMissed / (safeRounds.length || 1) : 0,
+      avgThreePutts: safeRounds.length > 0 ? totalThreePutts / (safeRounds.length || 1) : 0,
       makePercent6ft: makePercent6ft // Array for trend graph
     };
   };
@@ -800,10 +803,10 @@ export default function StatsPage() {
     }
 
     // Check Bunker Saves
-    if (rounds && rounds.length > 0) {
-      const totalBunkerAttempts = rounds.reduce((sum, r) => sum + (r.bunkerAttempts || 0), 0);
+    if (safeRounds && safeRounds.length > 0) {
+      const totalBunkerAttempts = safeRounds.reduce((sum, r) => sum + (r.bunkerAttempts || 0), 0);
       if (totalBunkerAttempts > 0) {
-        const totalBunkerSaves = rounds.reduce((sum, r) => sum + (r.bunkerSaves || 0), 0);
+        const totalBunkerSaves = safeRounds.reduce((sum, r) => sum + (r.bunkerSaves || 0), 0);
       const bunkerSaveRate = (totalBunkerSaves / totalBunkerAttempts) * 100;
       
         const bunkerSavesPercent = (totalBunkerSaves / totalBunkerAttempts) * 100;
@@ -1566,8 +1569,11 @@ export default function StatsPage() {
     );
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+  // Render function wrapped in try-catch to prevent crashes
+  const renderContent = () => {
+    try {
+      return (
+        <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-md mx-auto bg-white min-h-screen">
         <div className="pt-6 pb-4 px-4">
           <div className="flex items-center justify-between mb-2">
@@ -1616,32 +1622,32 @@ export default function StatsPage() {
               const dynamicGoals = getBenchmarkGoals(selectedGoal);
               
               // Calculate additional averages needed for all metrics
-              const avgGross = rounds.length > 0 
-                ? rounds.reduce((sum, r) => sum + (r.score || 0), 0) / rounds.length 
+              const avgGross = safeRounds.length > 0 
+                ? safeRounds.reduce((sum, r) => sum + (r.score || 0), 0) / (safeRounds.length || 1) 
                 : 0;
-              const avgNett = rounds.length > 0 
-                ? rounds.reduce((sum, r) => sum + (r.nett || 0), 0) / rounds.length 
+              const avgNett = safeRounds.length > 0 
+                ? safeRounds.reduce((sum, r) => sum + (r.nett || 0), 0) / (safeRounds.length || 1) 
                 : 0;
-              const avgBirdies = rounds.length > 0 
-                ? rounds.reduce((sum, r) => sum + (r.birdies || 0), 0) / rounds.length 
+              const avgBirdies = safeRounds.length > 0 
+                ? safeRounds.reduce((sum, r) => sum + (r.birdies || 0), 0) / (safeRounds.length || 1) 
                 : 0;
-              const avgPars = rounds.length > 0 
-                ? rounds.reduce((sum, r) => sum + (r.pars || 0), 0) / rounds.length 
+              const avgPars = safeRounds.length > 0 
+                ? safeRounds.reduce((sum, r) => sum + (r.pars || 0), 0) / (safeRounds.length || 1) 
                 : 0;
-              const avgBogeys = rounds.length > 0 
-                ? rounds.reduce((sum, r) => sum + (r.bogeys || 0), 0) / rounds.length 
+              const avgBogeys = safeRounds.length > 0 
+                ? safeRounds.reduce((sum, r) => sum + (r.bogeys || 0), 0) / (safeRounds.length || 1) 
                 : 0;
-              const avgDoubleBogeys = rounds.length > 0 
-                ? rounds.reduce((sum, r) => sum + (r.doubleBogeys || 0), 0) / rounds.length 
+              const avgDoubleBogeys = safeRounds.length > 0 
+                ? safeRounds.reduce((sum, r) => sum + (r.doubleBogeys || 0), 0) / (safeRounds.length || 1) 
                 : 0;
-              const avgEagles = rounds.length > 0 
-                ? rounds.reduce((sum, r) => sum + (r.eagles || 0), 0) / rounds.length 
+              const avgEagles = safeRounds.length > 0 
+                ? safeRounds.reduce((sum, r) => sum + (r.eagles || 0), 0) / (safeRounds.length || 1) 
                 : 0;
-              const avgTotalPutts = rounds.length > 0 
-                ? rounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0) / rounds.length 
+              const avgTotalPutts = safeRounds.length > 0 
+                ? safeRounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0) / (safeRounds.length || 1) 
                 : 0;
-              const avgThreePutts = rounds.length > 0 
-                ? rounds.reduce((sum, r) => sum + (r.threePutts || 0), 0) / rounds.length 
+              const avgThreePutts = safeRounds.length > 0 
+                ? safeRounds.reduce((sum, r) => sum + (r.threePutts || 0), 0) / (safeRounds.length || 1) 
                 : 0;
               
               // Calculate goal values for all metrics (use dynamicGoals for scoring metrics)
@@ -2045,8 +2051,8 @@ export default function StatsPage() {
             <div className="rounded-2xl p-6 bg-white border-2 border-gray-200 shadow-sm">
               <div className="text-center">
                 <div className="text-3xl font-bold mb-1" style={{ color: '#FFA500' }}>
-                  {rounds.length > 0 
-                    ? (rounds.reduce((sum, r) => sum + (r.teePenalties || 0), 0) / rounds.length).toFixed(1)
+                  {safeRounds.length > 0 
+                    ? (safeRounds.reduce((sum, r) => sum + (r.teePenalties || 0), 0) / (safeRounds.length || 1)).toFixed(1)
                     : '0.0'}
                 </div>
                 <div className="text-sm font-medium text-gray-700 mb-2">Tee Penalties (Avg)</div>
@@ -2206,24 +2212,24 @@ export default function StatsPage() {
           {(() => {
             // Filter rounds based on historyLimit
             const filteredRounds = historyLimit === 'all' 
-              ? rounds 
-              : rounds.slice(-historyLimit);
+              ? safeRounds 
+              : safeRounds.slice(-historyLimit);
             
             // Calculate averages for scoring distribution
             const avgEagles = filteredRounds.length > 0
-              ? filteredRounds.reduce((sum, r) => sum + (r.eagles || 0), 0) / filteredRounds.length
+              ? filteredRounds.reduce((sum, r) => sum + (r.eagles || 0), 0) / (filteredRounds.length || 1)
               : 0;
             const avgBirdies = filteredRounds.length > 0
-              ? filteredRounds.reduce((sum, r) => sum + (r.birdies || 0), 0) / filteredRounds.length
+              ? filteredRounds.reduce((sum, r) => sum + (r.birdies || 0), 0) / (filteredRounds.length || 1)
               : 0;
             const avgPars = filteredRounds.length > 0
-              ? filteredRounds.reduce((sum, r) => sum + (r.pars || 0), 0) / filteredRounds.length
+              ? filteredRounds.reduce((sum, r) => sum + (r.pars || 0), 0) / (filteredRounds.length || 1)
               : 0;
             const avgBogeys = filteredRounds.length > 0
-              ? filteredRounds.reduce((sum, r) => sum + (r.bogeys || 0), 0) / filteredRounds.length
+              ? filteredRounds.reduce((sum, r) => sum + (r.bogeys || 0), 0) / (filteredRounds.length || 1)
               : 0;
             const avgDoubleBogeys = filteredRounds.length > 0
-              ? filteredRounds.reduce((sum, r) => sum + (r.doubleBogeys || 0), 0) / filteredRounds.length
+              ? filteredRounds.reduce((sum, r) => sum + (r.doubleBogeys || 0), 0) / (filteredRounds.length || 1)
               : 0;
 
             return (
@@ -2601,8 +2607,8 @@ export default function StatsPage() {
         {/* Comprehensive 10-Round Trend Coach's Report - Using ONLY inline styles with HEX colors */}
         {(() => {
           // Get last 10 rounds for report
-          const last10Rounds = rounds.slice(-10);
-          const reportRounds = last10Rounds.length > 0 ? last10Rounds : rounds;
+          const last10Rounds = safeRounds.slice(-10);
+          const reportRounds = last10Rounds.length > 0 ? last10Rounds : safeRounds;
           
           // Calculate averages from last 10 rounds only
           const calculateReportAverages = () => {
@@ -2659,13 +2665,13 @@ export default function StatsPage() {
             const within8ft = totalGIR > 0 ? (totalWithin8ft / totalGIR) * 100 : 0;
             const within20ft = totalGIR > 0 ? (totalWithin20ft / totalGIR) * 100 : 0;
             const chipsInside6ft = totalChipOpportunities > 0 ? (totalChipInside6ft / totalChipOpportunities) * 100 : 0;
-            const avgDoubleChips = reportRounds.length > 0 ? totalDoubleChips / reportRounds.length : 0;
+            const avgDoubleChips = reportRounds.length > 0 ? totalDoubleChips / (reportRounds.length || 1) : 0;
             const puttMake6ft = totalPuttsUnder6ftAttempts > 0
               ? ((totalPuttsUnder6ftAttempts - totalMissed6ft) / totalPuttsUnder6ftAttempts) * 100
               : 0;
 
             return {
-              fir: reportRounds.length > 0 ? totalFIR / reportRounds.length : 0,
+              fir: reportRounds.length > 0 ? totalFIR / (reportRounds.length || 1) : 0,
               gir: totalHoles > 0 ? (totalGIR / totalHoles) * 100 : 0,
               upAndDown: totalUpAndDownOpps > 0 ? (totalUpAndDown / totalUpAndDownOpps) * 100 : 0,
               bunkerSaves: bunkerSaves,
@@ -2674,9 +2680,9 @@ export default function StatsPage() {
               chipsInside6ft: chipsInside6ft,
               doubleChips: avgDoubleChips,
               puttMake6ft: puttMake6ft,
-              avgTotalPutts: reportRounds.length > 0 ? totalPutts / reportRounds.length : 0,
-              avgThreePutts: reportRounds.length > 0 ? totalThreePutts / reportRounds.length : 0,
-              avgTeePenalties: reportRounds.length > 0 ? totalTeePenalties / reportRounds.length : 0
+              avgTotalPutts: reportRounds.length > 0 ? totalPutts / (reportRounds.length || 1) : 0,
+              avgThreePutts: reportRounds.length > 0 ? totalThreePutts / (reportRounds.length || 1) : 0,
+              avgTeePenalties: reportRounds.length > 0 ? totalTeePenalties / (reportRounds.length || 1) : 0
             };
           };
 
@@ -2860,7 +2866,7 @@ export default function StatsPage() {
                   </div>
                   <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: 'rgba(255, 255, 255, 0.7)' }}>
                     <span>Best: {minScore.toFixed(0)}</span>
-                    <span>Average: {reportRounds.length > 0 ? (reportRounds.reduce((sum, r) => sum + (r.nett || 0), 0) / reportRounds.length).toFixed(1) : 'N/A'}</span>
+                    <span>Average: {reportRounds.length > 0 ? (reportRounds.reduce((sum, r) => sum + (r.nett || 0), 0) / (reportRounds.length || 1)).toFixed(1) : 'N/A'}</span>
                     <span>Worst: {maxScore.toFixed(0)}</span>
                   </div>
                 </div>
@@ -2901,7 +2907,7 @@ export default function StatsPage() {
                     <span style={{ fontSize: '16px', color: 'rgba(255, 255, 255, 0.9)' }}>Average Nett Score</span>
                     <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#FFA500' }}>
                       {reportRounds.length > 0 
-                        ? (reportRounds.reduce((sum, r) => sum + (r.nett || 0), 0) / reportRounds.length).toFixed(1)
+                        ? (reportRounds.reduce((sum, r) => sum + (r.nett || 0), 0) / (reportRounds.length || 1)).toFixed(1)
                         : 'N/A'}
                     </span>
                   </div>
@@ -3390,7 +3396,26 @@ export default function StatsPage() {
         )}
       </div>
     </div>
-  );
+      );
+    } catch (error) {
+      console.error('Error rendering Stats page:', error);
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="text-center">
+            <p className="text-gray-600 mb-4">Something went wrong. Please refresh the page.</p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="px-4 py-2 bg-[#014421] text-white rounded-lg"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+      );
+    }
+  };
+  
+  return renderContent();
 }
 
 

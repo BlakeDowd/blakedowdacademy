@@ -84,11 +84,12 @@ export function StatsProvider({ children }: { children: ReactNode }) {
           // Log what we received from the database
           console.log('Rounds data from database:', data);
           
-          // If data is null or empty, set empty array immediately
+          // If data is null or empty, set empty array immediately and stop loading
           if (!data || data.length === 0) {
             console.log('No rounds found in database, setting empty array');
             setRounds([]); // Ensure empty array, never null
-            // Don't return here - let finally block set loading to false
+            setLoading(false); // Set loading to false immediately for empty array
+            return; // Return early since we have empty data
           } else {
             // Transform Supabase data to RoundData format
             const transformedRounds: RoundData[] = data.map((round: any) => ({
