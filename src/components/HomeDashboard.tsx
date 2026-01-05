@@ -97,6 +97,9 @@ export default function HomeDashboard() {
   const { rounds } = useStats();
   const { user } = useAuth();
   
+  // Ensure rounds is always an array, never null or undefined
+  const safeRounds = rounds || [];
+  
   // Format user name from email
   const getUserDisplayName = () => {
     if (!user?.email) return 'Player';
@@ -216,9 +219,9 @@ export default function HomeDashboard() {
       }
     }
     
-    // Load rounds
-    if (rounds && rounds.length > 0) {
-      rounds.forEach((round, index) => {
+    // Load rounds - use safeRounds with optional chaining
+    if (safeRounds && safeRounds.length > 0) {
+      safeRounds.forEach((round, index) => {
         allActivities.push({
           id: `round-${index}`,
           type: 'round',
@@ -240,8 +243,8 @@ export default function HomeDashboard() {
   
   // Check if round is personal best
   const isPersonalBest = (round: { score?: number | null }): boolean => {
-    if (!rounds || rounds.length === 0) return false;
-    const userRounds = rounds.filter((r: { score?: number | null }) => r.score !== null && r.score !== undefined);
+    if (!safeRounds || safeRounds.length === 0) return false;
+    const userRounds = safeRounds.filter((r: { score?: number | null }) => r.score !== null && r.score !== undefined);
     if (userRounds.length === 0) return false;
     // Bulletproof: Ensure we have valid scores before using Math.min
     const scores = userRounds.map((r: { score?: number | null }) => r.score || 999).filter(s => s !== null && s !== undefined);
@@ -289,7 +292,7 @@ export default function HomeDashboard() {
       window.removeEventListener('practiceActivityUpdated', handlePracticeUpdate);
       window.removeEventListener('roundsUpdated', handleRoundsUpdate);
     };
-  }, [refreshKey, rounds]);
+  }, [refreshKey, safeRounds]);
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
@@ -466,9 +469,14 @@ export default function HomeDashboard() {
                   fontFamily: 'system-ui, -apple-system, sans-serif'
                 }}
               >
-                {rounds?.length > 0 && rounds[rounds.length - 1]?.handicap !== null 
-                  ? rounds[rounds.length - 1].handicap?.toFixed(1) || '0.0'
-                  : 'N/A'}
+                {(() => {
+                  // Safeguard: if no rounds, return 0
+                  if (!safeRounds || safeRounds.length === 0) return 'N/A';
+                  const lastRound = safeRounds[safeRounds.length - 1];
+                  return lastRound?.handicap !== null && lastRound?.handicap !== undefined
+                    ? lastRound.handicap.toFixed(1)
+                    : 'N/A';
+                })()}
               </p>
               <p className="text-gray-400 text-xs mt-1">Handicap</p>
             </Link>
@@ -658,9 +666,9 @@ export default function HomeDashboard() {
           
           {/* Scores List */}
           {scoreTab === 'myRounds' ? (
-            rounds?.length > 0 ? (
+            safeRounds?.length > 0 ? (
               <div className="space-y-3">
-                {rounds
+                {safeRounds
                   .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                   .slice(0, 3)
                   .map((round, index) => {

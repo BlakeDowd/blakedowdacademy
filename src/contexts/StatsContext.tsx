@@ -45,6 +45,7 @@ interface StatsContextType {
 const StatsContext = createContext<StatsContextType | undefined>(undefined);
 
 export function StatsProvider({ children }: { children: ReactNode }) {
+  // Always initialize rounds as empty array, never null or undefined
   const [rounds, setRounds] = useState<RoundData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -77,7 +78,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
 
         if (error) {
           console.error('Error fetching rounds:', error);
-          setRounds([]);
+          setRounds([]); // Ensure empty array, never null
           // Don't return here - let finally block set loading to false
         } else {
           // Log what we received from the database
@@ -86,7 +87,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
           // If data is null or empty, set empty array immediately
           if (!data || data.length === 0) {
             console.log('No rounds found in database, setting empty array');
-            setRounds([]);
+            setRounds([]); // Ensure empty array, never null
             // Don't return here - let finally block set loading to false
           } else {
             // Transform Supabase data to RoundData format
@@ -131,7 +132,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('Error refreshing rounds:', error);
-      setRounds([]);
+      setRounds([]); // Ensure empty array, never null
     } finally {
       // Always set loading to false, even if database returns empty list
       setLoading(false);
@@ -171,8 +172,11 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Ensure rounds is always an array, never null or undefined
+  const safeRounds = rounds || [];
+  
   return (
-    <StatsContext.Provider value={{ rounds, loading, refreshRounds }}>
+    <StatsContext.Provider value={{ rounds: safeRounds, loading, refreshRounds }}>
       {children}
     </StatsContext.Provider>
   );

@@ -11,11 +11,14 @@ export default function Home() {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const { rounds, loading: statsLoading } = useStats();
   
+  // Ensure rounds is always an array, never null or undefined
+  const safeRounds = rounds || [];
+  
   // Log rounds data for debugging
   useEffect(() => {
-    console.log('Rounds data in Home page:', rounds);
+    console.log('Rounds data in Home page:', safeRounds);
     console.log('Stats loading state:', statsLoading);
-  }, [rounds, statsLoading]);
+  }, [safeRounds, statsLoading]);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
