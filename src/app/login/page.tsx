@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, User, LogIn, UserPlus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -87,32 +88,49 @@ export default function LoginPage() {
     <div 
       className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden"
       style={{ 
-        backgroundColor: '#014421',
-        backgroundImage: 'linear-gradient(135deg, rgba(1, 68, 33, 0.95) 0%, rgba(1, 90, 46, 0.95) 100%)'
+        backgroundColor: '#1a1a1a',
+        backgroundImage: 'linear-gradient(135deg, rgba(26, 26, 26, 0.98) 0%, rgba(54, 54, 54, 0.95) 50%, rgba(26, 26, 26, 0.98) 100%)'
       }}
     >
-      {/* Optional: Add a blurred golf course image background here */}
+      {/* Subtle gradient overlay with orange accent */}
       <div 
         className="absolute inset-0"
-        style={{ background: 'linear-gradient(to bottom right, rgba(20, 83, 45, 0.2), rgba(22, 101, 52, 0.2))' }}
+        style={{ 
+          background: 'linear-gradient(to bottom right, rgba(255, 140, 0, 0.05), rgba(54, 54, 54, 0.1))' 
+        }}
       />
       
       <div className="relative z-10 w-full max-w-md">
         {/* Logo and Branding */}
         <div className="text-center mb-8">
+          {/* Logo Image */}
+          <div className="flex justify-center mb-6">
+            <div className="relative w-64 h-32">
+              <Image
+                src="/Blake-Dowd-Golf-Logo-Transparent (1).png"
+                alt="Blake Dowd Golf Logo"
+                fill
+                className="object-contain"
+                priority
+                style={{ filter: 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5))' }}
+              />
+            </div>
+          </div>
+          
+          {/* Academy Text */}
           <div 
-            className="text-6xl font-bold mb-4"
+            className="text-3xl font-bold mb-2"
             style={{ 
               color: '#FFA500',
-              fontFamily: 'Georgia, serif',
-              textShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              textShadow: '0 2px 8px rgba(0, 0, 0, 0.5)',
               letterSpacing: '0.05em'
             }}
           >
-            The Academy
+            Blake Dowd Academy
           </div>
-          <p className="text-white/80 text-sm">
-            {isSignUp ? "Create your account" : "Welcome back"}
+          <p className="text-gray-300 text-sm">
+            {isSignUp ? "Create your account to get started" : "Welcome to Blake Dowd Academy"}
           </p>
         </div>
 
