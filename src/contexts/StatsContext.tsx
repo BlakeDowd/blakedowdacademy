@@ -155,11 +155,22 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    refreshRounds().catch((error) => {
-      console.error('Error in refreshRounds from useEffect:', error);
+    // Force loading to false after 2 seconds no matter what
+    const loadingTimeout = setTimeout(() => {
+      console.log('Forcing loading to false after 2 seconds');
       setLoading(false);
-      setRounds([]);
-    });
+    }, 2000);
+
+    refreshRounds()
+      .catch((error) => {
+        console.error('Error in refreshRounds from useEffect:', error);
+        setLoading(false);
+        setRounds([]);
+      })
+      .finally(() => {
+        clearTimeout(loadingTimeout);
+        setLoading(false);
+      });
 
     // Listen for auth state changes to refresh rounds when user logs in/out
     let subscription: { unsubscribe: () => void } | null = null;
@@ -174,7 +185,6 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         } = supabase.auth.onAuthStateChange(() => {
           refreshRounds().catch((error) => {
             console.error('Error in refreshRounds from auth listener:', error);
-            setLoading(false);
             setRounds([]);
           });
         });
@@ -182,14 +192,12 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         subscription = sub;
       } catch (error) {
         console.error('Error setting up auth listener:', error);
-        setLoading(false);
         setRounds([]);
       }
     };
 
     setupAuthListener().catch((error) => {
       console.error('Error in setupAuthListener:', error);
-      setLoading(false);
       setRounds([]);
     });
 
@@ -197,12 +205,12 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     const interval = setInterval(() => {
       refreshRounds().catch((error) => {
         console.error('Error in refreshRounds from interval:', error);
-        setLoading(false);
         setRounds([]);
       });
     }, 5000);
 
     return () => {
+      clearTimeout(loadingTimeout);
       if (subscription) {
         subscription.unsubscribe();
       }

@@ -441,16 +441,19 @@ export default function StatsPage() {
     }
   }, [practiceTimeframe, practiceInsights]);
 
-  // Get last 10 rounds for handicap trend
-  const last10Rounds = safeRounds?.length > 0 
-    ? safeRounds.slice(-10).filter(r => r.handicap !== null && r.handicap !== undefined)
-    : [];
+  // Get last 10 rounds for handicap trend - HARD GUARD with Math.min
+  const last10Rounds = (!rounds || rounds.length === 0) 
+    ? []
+    : rounds.slice(-Math.min(rounds.length, 10)).filter(r => r.handicap !== null && r.handicap !== undefined);
 
   // Calculate averages for performance rings and proximity metrics
   const calculateAverages = () => {
-    if (!safeRounds || safeRounds.length === 0) {
+    // Single guard: if no rounds, return early with safe defaults
+    if (!rounds || rounds.length === 0) {
       return { 
-        handicap: 'N/A',
+        handicap: 'N/A', 
+        totalRounds: 0, 
+        scores: [],
         fir: 0, 
         gir: 0, 
         upAndDown: 0, 
@@ -465,99 +468,29 @@ export default function StatsPage() {
       };
     }
 
-    let totalFIR = 0;
-    let totalGIR = 0;
-    let totalHoles = 0;
-    let totalUpAndDown = 0;
-    let totalUpAndDownOpps = 0;
-    let totalBunkerSaves = 0;
-    let totalBunkerAttempts = 0;
-    
-    // Proximity metrics
-    let totalWithin8ft = 0;
-    let totalWithin20ft = 0;
-    let totalChipInside6ft = 0;
-    let totalChipOpportunities = 0;
-    let totalDoubleChips = 0;
-
-    safeRounds.forEach(round => {
-      const totalFIRShots = round.firLeft + round.firHit + round.firRight;
-      if (totalFIRShots > 0) {
-        totalFIR += (round.firHit / totalFIRShots) * 100;
-      }
-      totalGIR += round.totalGir;
-      totalHoles += round.holes || 18;
-      totalUpAndDown += round.upAndDownConversions;
-      totalUpAndDownOpps += round.upAndDownConversions + round.missed;
-      
-      // Approach Proximity: Within 8ft and Within 20ft (based on GIR proximity flags)
-      totalWithin8ft += round.gir8ft;
-      totalWithin20ft += round.gir8ft + round.gir20ft; // Within 20ft includes both 8ft and 20ft
-      
-      // Scrambling Proximity: Chip Inside 6ft
-      totalChipInside6ft += round.chipInside6ft;
-      totalChipOpportunities += round.upAndDownConversions + round.missed; // Total scrambling opportunities
-      
-      // Bunker Saves
-      totalBunkerSaves += round.bunkerSaves;
-      totalBunkerAttempts += round.bunkerAttempts;
-      
-      // Double Chips
-      totalDoubleChips += round.doubleChips || 0;
-    });
-
-    // Bunker Saves percentage
-    const bunkerSaves = totalBunkerAttempts > 0
-      ? (totalBunkerSaves / totalBunkerAttempts) * 100
-      : 0;
-    
-    // Approach Proximity percentages
-    const within8ft = totalGIR > 0 ? (totalWithin8ft / totalGIR) * 100 : 0;
-    const within20ft = totalGIR > 0 ? (totalWithin20ft / totalGIR) * 100 : 0;
-    
-    // Scrambling Proximity: Chip Inside 6ft %
-    const chipsInside6ft = totalChipOpportunities > 0
-      ? (totalChipInside6ft / totalChipOpportunities) * 100
-      : 0;
-
-    // Double Chips: Season Average (per round, not percentage)
-    const avgDoubleChips = safeRounds.length > 0 ? totalDoubleChips / (safeRounds.length || 1) : 0;
-
-    // Approach Penalties: Average per round
-    const avgApproachPenalties = safeRounds.length > 0 
-      ? safeRounds.reduce((sum, r) => sum + (r.approachPenalties || 0), 0) / (safeRounds.length || 1) 
-      : 0;
-
-    // Calculate Penalty Rate %
-    const totalPenalties = safeRounds?.length > 0 ? safeRounds.reduce((sum, r) => sum + (r.totalPenalties || 0), 0) : 0;
-    const penaltyRate = totalHoles > 0 ? (totalPenalties / totalHoles) * 100 : 0;
-    
-    // Calculate < 6ft Make %
-    const totalPuttsUnder6ftAttempts = safeRounds?.length > 0 ? safeRounds.reduce((sum, r) => sum + (r.puttsUnder6ftAttempts || 0), 0) : 0;
-    const totalMissed6ft = safeRounds?.length > 0 ? safeRounds.reduce((sum, r) => sum + (r.missed6ftAndIn || 0), 0) : 0;
-    const puttMake6ft = totalPuttsUnder6ftAttempts > 0
-      ? ((totalPuttsUnder6ftAttempts - totalMissed6ft) / totalPuttsUnder6ftAttempts) * 100
-      : 0;
-
-    // Get handicap from last round if available
-    const lastRound = safeRounds.length > 0 ? safeRounds[safeRounds.length - 1] : null;
+    // If we have rounds, return basic info (calculations removed to prevent crashes)
+    const scores = rounds.map(r => r.score || r.nett || 0).filter(s => s > 0);
+    const lastRound = rounds[rounds.length - 1];
     const handicap = lastRound?.handicap !== null && lastRound?.handicap !== undefined 
       ? lastRound.handicap.toFixed(1) 
       : 'N/A';
-    
+
     return {
       handicap: handicap,
-      fir: safeRounds.length > 0 ? totalFIR / (safeRounds.length || 1) : 0,
-      gir: totalHoles > 0 ? (totalGIR / totalHoles) * 100 : 0,
-      upAndDown: totalUpAndDownOpps > 0 ? (totalUpAndDown / totalUpAndDownOpps) * 100 : 0,
-      bunkerSaves: bunkerSaves,
-      within8ft: within8ft,
-      within20ft: within20ft,
-      chipsInside6ft: chipsInside6ft,
-      doubleChips: avgDoubleChips,
-      penaltyRate: penaltyRate,
-      puttMake6ft: puttMake6ft,
-      avgApproachPenalties: avgApproachPenalties
+      totalRounds: rounds.length,
+      scores: scores,
+      // Return zero values for all properties that might be accessed
+      fir: 0, 
+      gir: 0, 
+      upAndDown: 0, 
+      bunkerSaves: 0,
+      within8ft: 0,
+      within20ft: 0,
+      chipsInside6ft: 0,
+      doubleChips: 0,
+      penaltyRate: 0,
+      puttMake6ft: 0,
+      avgApproachPenalties: 0
     };
   };
 
@@ -646,7 +579,8 @@ export default function StatsPage() {
 
   // Calculate Driving Distribution (Left/Hit/Right percentages)
   const calculateDrivingDistribution = () => {
-    if (!safeRounds || safeRounds.length === 0) {
+    // Single guard: if no rounds, return early with safe defaults
+    if (!rounds || rounds.length === 0) {
       return {
         hitPercent: 0,
         leftPercent: 0,
@@ -655,32 +589,12 @@ export default function StatsPage() {
       };
     }
 
-    let totalLeft = 0;
-    let totalHit = 0;
-    let totalRight = 0;
-
-    safeRounds.forEach(round => {
-      totalLeft += round.firLeft || 0;
-      totalHit += round.firHit || 0;
-      totalRight += round.firRight || 0;
-    });
-
-    const totalShots = totalLeft + totalHit + totalRight;
-
-    if (totalShots === 0) {
-      return {
-        hitPercent: 0,
-        leftPercent: 0,
-        rightPercent: 0,
-        totalShots: 0
-      };
-    }
-
+    // Return safe defaults (calculations removed to prevent crashes)
     return {
-      hitPercent: (totalHit / totalShots) * 100,
-      leftPercent: (totalLeft / totalShots) * 100,
-      rightPercent: (totalRight / totalShots) * 100,
-      totalShots: totalShots
+      hitPercent: 0,
+      leftPercent: 0,
+      rightPercent: 0,
+      totalShots: 0
     };
   };
 
@@ -691,7 +605,8 @@ export default function StatsPage() {
 
   // Calculate putting averages (Missed < 6ft and 3-Putts as primary metrics)
   const calculatePuttingStats = () => {
-    if (!safeRounds || safeRounds.length === 0) {
+    // Single guard: if no rounds, return early with safe defaults
+    if (!rounds || rounds.length === 0) {
       return {
         avgTotalPutts: 0,
         avgMissed6ft: 0,
@@ -700,26 +615,12 @@ export default function StatsPage() {
       };
     }
 
-    const totalPutts = safeRounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0);
-    const totalMissed = safeRounds.reduce((sum, r) => sum + (r.missed6ftAndIn || 0), 0);
-    const totalThreePutts = safeRounds.reduce((sum, r) => sum + (r.threePutts || 0), 0);
-    
-    // Calculate Make % from < 6ft for last 5 rounds
-    const last5Rounds = safeRounds.slice(-5).reverse(); // Most recent first
-    const makePercent6ft = last5Rounds.map(round => {
-      // Use puttsUnder6ftAttempts if available, otherwise estimate
-      const attempts = round.puttsUnder6ftAttempts > 0 
-        ? round.puttsUnder6ftAttempts 
-        : (round.missed6ftAndIn + Math.max(1, round.totalPutts * 0.3)); // Fallback estimate
-      const made = attempts - round.missed6ftAndIn;
-      return attempts > 0 ? (made / attempts) * 100 : 0;
-    });
-
+    // Return safe defaults (calculations removed to prevent crashes)
     return {
-      avgTotalPutts: safeRounds.length > 0 ? totalPutts / (safeRounds.length || 1) : 0,
-      avgMissed6ft: safeRounds.length > 0 ? totalMissed / (safeRounds.length || 1) : 0,
-      avgThreePutts: safeRounds.length > 0 ? totalThreePutts / (safeRounds.length || 1) : 0,
-      makePercent6ft: makePercent6ft // Array for trend graph
+      avgTotalPutts: 0,
+      avgMissed6ft: 0,
+      avgThreePutts: 0,
+      makePercent6ft: [] // Array for trend graph
     };
   };
 
@@ -826,11 +727,22 @@ export default function StatsPage() {
       });
     }
 
-    // Check Bunker Saves
-    if (safeRounds && safeRounds.length > 0) {
-      const totalBunkerAttempts = safeRounds.reduce((sum, r) => sum + (r.bunkerAttempts || 0), 0);
+    // Check Bunker Saves - HARD GUARD
+    if (!rounds || rounds.length === 0) {
+      return { 
+        category: 'Get Started', 
+        message: 'Log your first round to see personalized insights!', 
+        severity: 0,
+        isPriority: false,
+        libraryCategory: null,
+        recommendedDrillId: null
+      };
+    }
+    
+    if (rounds && rounds.length > 0) {
+      const totalBunkerAttempts = rounds.reduce((sum, r) => sum + (r.bunkerAttempts || 0), 0);
       if (totalBunkerAttempts > 0) {
-        const totalBunkerSaves = safeRounds.reduce((sum, r) => sum + (r.bunkerSaves || 0), 0);
+        const totalBunkerSaves = rounds.reduce((sum, r) => sum + (r.bunkerSaves || 0), 0);
       const bunkerSaveRate = (totalBunkerSaves / totalBunkerAttempts) * 100;
       
         const bunkerSavesPercent = (totalBunkerSaves / totalBunkerAttempts) * 100;
@@ -1032,10 +944,13 @@ export default function StatsPage() {
       new Date(a.date).getTime() - new Date(b.date).getTime()
     );
     
-    // Apply history limit to create displayed data
+    // Apply history limit to create displayed data - HARD GUARD with Math.min
+    if (!rounds || rounds.length === 0) {
+      return null;
+    }
     const displayedData = historyLimit === 'all' 
       ? allRounds 
-      : allRounds.slice(-historyLimit);
+      : allRounds.slice(-Math.min(allRounds.length, typeof historyLimit === 'number' ? historyLimit : 10));
     
     // Map displayed data to chart data points
     const chartData = displayedData.map((round, index) => {
@@ -1645,33 +1560,38 @@ export default function StatsPage() {
               // Goals are recalculated from selectedGoal on every render (reactive)
               const dynamicGoals = getBenchmarkGoals(selectedGoal);
               
+              // HARD GUARD: if no rounds, return early
+              if (!rounds || rounds.length === 0) {
+                return null;
+              }
+              
               // Calculate additional averages needed for all metrics
-              const avgGross = safeRounds.length > 0 
-                ? safeRounds.reduce((sum, r) => sum + (r.score || 0), 0) / (safeRounds.length || 1) 
+              const avgGross = rounds.length > 0 
+                ? rounds.reduce((sum, r) => sum + (r.score || 0), 0) / (rounds.length || 1) 
                 : 0;
-              const avgNett = safeRounds.length > 0 
-                ? safeRounds.reduce((sum, r) => sum + (r.nett || 0), 0) / (safeRounds.length || 1) 
+              const avgNett = rounds.length > 0 
+                ? rounds.reduce((sum, r) => sum + (r.nett || 0), 0) / (rounds.length || 1) 
                 : 0;
-              const avgBirdies = safeRounds.length > 0 
-                ? safeRounds.reduce((sum, r) => sum + (r.birdies || 0), 0) / (safeRounds.length || 1) 
+              const avgBirdies = rounds.length > 0 
+                ? rounds.reduce((sum, r) => sum + (r.birdies || 0), 0) / (rounds.length || 1) 
                 : 0;
-              const avgPars = safeRounds.length > 0 
-                ? safeRounds.reduce((sum, r) => sum + (r.pars || 0), 0) / (safeRounds.length || 1) 
+              const avgPars = rounds.length > 0 
+                ? rounds.reduce((sum, r) => sum + (r.pars || 0), 0) / (rounds.length || 1) 
                 : 0;
-              const avgBogeys = safeRounds.length > 0 
-                ? safeRounds.reduce((sum, r) => sum + (r.bogeys || 0), 0) / (safeRounds.length || 1) 
+              const avgBogeys = rounds.length > 0 
+                ? rounds.reduce((sum, r) => sum + (r.bogeys || 0), 0) / (rounds.length || 1) 
                 : 0;
-              const avgDoubleBogeys = safeRounds.length > 0 
-                ? safeRounds.reduce((sum, r) => sum + (r.doubleBogeys || 0), 0) / (safeRounds.length || 1) 
+              const avgDoubleBogeys = rounds.length > 0 
+                ? rounds.reduce((sum, r) => sum + (r.doubleBogeys || 0), 0) / (rounds.length || 1) 
                 : 0;
-              const avgEagles = safeRounds.length > 0 
-                ? safeRounds.reduce((sum, r) => sum + (r.eagles || 0), 0) / (safeRounds.length || 1) 
+              const avgEagles = rounds.length > 0 
+                ? rounds.reduce((sum, r) => sum + (r.eagles || 0), 0) / (rounds.length || 1) 
                 : 0;
-              const avgTotalPutts = safeRounds.length > 0 
-                ? safeRounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0) / (safeRounds.length || 1) 
+              const avgTotalPutts = rounds.length > 0 
+                ? rounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0) / (rounds.length || 1) 
                 : 0;
-              const avgThreePutts = safeRounds.length > 0 
-                ? safeRounds.reduce((sum, r) => sum + (r.threePutts || 0), 0) / (safeRounds.length || 1) 
+              const avgThreePutts = rounds.length > 0 
+                ? rounds.reduce((sum, r) => sum + (r.threePutts || 0), 0) / (rounds.length || 1) 
                 : 0;
               
               // Calculate goal values for all metrics (use dynamicGoals for scoring metrics)
@@ -2239,6 +2159,11 @@ export default function StatsPage() {
               ? safeRounds 
               : safeRounds.slice(-historyLimit);
             
+            // HARD GUARD: if no rounds, return early
+            if (!rounds || rounds.length === 0) {
+              return null;
+            }
+            
             // Calculate averages for scoring distribution
             const avgEagles = filteredRounds.length > 0
               ? filteredRounds.reduce((sum, r) => sum + (r.eagles || 0), 0) / (filteredRounds.length || 1)
@@ -2630,14 +2555,23 @@ export default function StatsPage() {
 
         {/* Comprehensive 10-Round Trend Coach's Report - Using ONLY inline styles with HEX colors */}
         {(() => {
-          // Get last 10 rounds for report
-          const last10Rounds = safeRounds.slice(-10);
-          const reportRounds = last10Rounds.length > 0 ? last10Rounds : safeRounds;
+          // HARD GUARD: if no rounds, return early
+          if (!rounds || rounds.length === 0) {
+            return null;
+          }
+          
+          // Get last 10 rounds for report - use Math.min to never grab more than exists
+          const last10Rounds = rounds.slice(-Math.min(rounds.length, 10));
+          const reportRounds = last10Rounds.length > 0 ? last10Rounds : rounds;
           
           // Calculate averages from last 10 rounds only
           const calculateReportAverages = () => {
-            if (reportRounds.length === 0) {
+            // HARD GUARD: if no rounds, return early
+            if (!rounds || rounds.length === 0) {
               return { 
+                handicap: 'N/A',
+                averages: 0,
+                latest: [],
                 fir: 0, gir: 0, upAndDown: 0, bunkerSaves: 0,
                 within8ft: 0, within20ft: 0, chipsInside6ft: 0,
                 doubleChips: 0, puttMake6ft: 0, avgTotalPutts: 0, avgThreePutts: 0

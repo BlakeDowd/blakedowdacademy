@@ -4,6 +4,7 @@ import "./globals.css";
 import ConditionalNavbar from "@/components/ConditionalNavbar";
 import { StatsProvider } from "@/contexts/StatsContext";
 import { AuthProvider } from "@/contexts/AuthContext";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,12 +31,14 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AuthProvider>
-          <StatsProvider>
-            {children}
-            <ConditionalNavbar />
-          </StatsProvider>
-        </AuthProvider>
+        <ErrorBoundary>
+          <AuthProvider>
+            <StatsProvider>
+              {children}
+              <ConditionalNavbar />
+            </StatsProvider>
+          </AuthProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );
