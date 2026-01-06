@@ -114,10 +114,10 @@ export default function HomeDashboard() {
       try {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
-        // Fetch directly from profiles table, bypassing any cache
+        // Fetch directly from profiles table using the exact query specified
         const { data: profile, error } = await supabase
           .from('profiles')
-          .select('full_name')
+          .select('full_name, profile_icon')
           .eq('id', user.id)
           .single();
 

@@ -125,13 +125,13 @@ export default function ProfilePage() {
         window.dispatchEvent(new CustomEvent('profileUpdated'));
       }
       
-      // Refresh the router to force browser repaint with new data
+      // Refresh the router cache and force navigation
       router.refresh();
       
-      // Navigate to dashboard after a brief delay to show success message
+      // Force a full page reload to bypass all caching
       setTimeout(() => {
-        router.push('/');
-      }, 1500);
+        window.location.href = '/dashboard';
+      }, 500);
       
     } catch (err: any) {
       console.error("Profile save error:", err);
