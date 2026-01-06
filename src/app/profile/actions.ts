@@ -5,26 +5,34 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function updateProfile(userId: string, fullName: string, profileIcon: string) {
   try {
+    if (!userId || !fullName || !profileIcon) {
+      return { success: false, error: "Missing required fields" };
+    }
+
     const supabase = await createClient();
     
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .update({
         full_name: fullName.trim() || null,
         profile_icon: profileIcon,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', userId);
+      .eq('id', userId)
+      .select('full_name, profile_icon')
+      .single();
 
     if (error) {
-      throw new Error(error.message || "Failed to update profile");
+      console.error("Supabase update error:", error);
+      return { success: false, error: error.message || "Failed to update profile" };
     }
 
     // Revalidate all pages to clear cache
     revalidatePath('/', 'layout');
     
-    return { success: true };
+    return { success: true, data };
   } catch (error: any) {
+    console.error("Profile update error:", error);
     return { success: false, error: error.message || "Failed to update profile" };
   }
 }

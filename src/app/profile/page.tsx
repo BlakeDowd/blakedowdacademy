@@ -106,10 +106,16 @@ export default function ProfilePage() {
 
     try {
       // Use server action to update profile and revalidate cache
-      const result = await updateProfile(user.id, fullName.trim(), selectedIcon);
+      // Add timeout to prevent hanging
+      const updatePromise = updateProfile(user.id, fullName.trim(), selectedIcon);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Request timeout")), 10000)
+      );
+      
+      const result = await Promise.race([updatePromise, timeoutPromise]) as { success: boolean; error?: string };
 
-      if (!result.success) {
-        throw new Error(result.error || "Failed to update profile");
+      if (!result || !result.success) {
+        throw new Error(result?.error || "Failed to update profile");
       }
 
       setSuccess(true);
@@ -122,13 +128,16 @@ export default function ProfilePage() {
       // Refresh the router to force browser repaint with new data
       router.refresh();
       
-      // Clear success message after 3 seconds
+      // Navigate to dashboard after a brief delay to show success message
       setTimeout(() => {
-        setSuccess(false);
-      }, 3000);
+        router.push('/');
+      }, 1500);
+      
     } catch (err: any) {
+      console.error("Profile save error:", err);
       setError(err.message || "Failed to save profile");
     } finally {
+      // Always set saving to false, even if there was an error or timeout
       setSaving(false);
     }
   };
