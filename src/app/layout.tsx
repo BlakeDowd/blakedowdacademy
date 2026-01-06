@@ -1,3 +1,6 @@
+// Force dynamic rendering to prevent caching - must be at the very top
+export const dynamic = 'force-dynamic';
+
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -5,10 +8,6 @@ import ConditionalNavbar from "@/components/ConditionalNavbar";
 import { StatsProvider } from "@/contexts/StatsContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
-
-// Force dynamic rendering to prevent caching
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

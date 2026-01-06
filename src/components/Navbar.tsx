@@ -6,12 +6,15 @@ export const revalidate = 0;
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { 
   Home, 
   Target, 
   BookOpen, 
   BarChart3, 
-  Trophy
+  Trophy,
+  LogOut
 } from "lucide-react";
 
 const navItems = [
@@ -24,6 +27,20 @@ const navItems = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    try {
+      setSigningOut(true);
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      // Clear all local site data and redirect to login
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Error signing out:', error);
+      setSigningOut(false);
+    }
+  };
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center">
@@ -46,6 +63,15 @@ export default function Navbar() {
           </Link>
         );
       })}
+      <button
+        onClick={handleSignOut}
+        disabled={signingOut}
+        className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80 disabled:opacity-50"
+        title="Sign Out"
+      >
+        <LogOut className="w-6 h-6 text-white" />
+        <span className="text-white text-xs">Sign Out</span>
+      </button>
       </nav>
     </div>
   );
