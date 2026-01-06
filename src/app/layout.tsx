@@ -17,8 +17,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Golf App",
-  description: "Your personal golf training companion",
+  title: "Blake Dowd Academy",
+  description: "Track your rounds, practice, and progress",
+  applicationName: "Blake Dowd Academy",
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({

@@ -1,0 +1,17 @@
+{
+  "name": "Blake Dowd Academy",
+  "short_name": "Blake Dowd Academy",
+  "description": "Track your rounds, practice, and progress",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#014421",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    }
+  ]
+}
+
