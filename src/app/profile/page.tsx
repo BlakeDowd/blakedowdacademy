@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useStats } from "@/contexts/StatsContext";
 import { createClient } from "@/lib/supabase/client";
+import { updateProfile } from "./actions";
 import Link from "next/link";
 import { 
   Settings, 
@@ -104,39 +105,21 @@ export default function ProfilePage() {
     setSuccess(false);
 
     try {
-      const supabase = createClient();
-      // Only update the specific fields we need
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({
-          full_name: fullName.trim() || null,
-          profile_icon: selectedIcon,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id)
-        .select('full_name, profile_icon')
-        .single();
+      // Use server action to update profile and revalidate cache
+      const result = await updateProfile(user.id, fullName.trim(), selectedIcon);
 
-      if (updateError) {
-        throw new Error(updateError.message || "Failed to update profile");
+      if (!result.success) {
+        throw new Error(result.error || "Failed to update profile");
       }
 
       setSuccess(true);
-      
-      // Reload user profile data from Supabase to update AuthContext
-      // This ensures the UI updates instantly without a full page reload
-      const { data: updatedProfile } = await supabase
-        .from('profiles')
-        .select('full_name, profile_icon')
-        .eq('id', user.id)
-        .single();
       
       // Trigger a custom event to refresh AuthContext
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('profileUpdated'));
       }
       
-      // Refresh the router to update server components
+      // Refresh the router to force browser repaint with new data
       router.refresh();
       
       // Clear success message after 3 seconds

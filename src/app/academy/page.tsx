@@ -858,6 +858,7 @@ function calculateTotalXPByTimeframe(rounds: any[], userProgress: { totalXP: num
 export default function AcademyPage() {
   const { rounds } = useStats();
   const { user } = useAuth();
+  const [profileName, setProfileName] = useState<string | null>(null);
   const [userProgress, setUserProgress] = useState<{ totalXP: number; completedDrills: string[] }>({
     totalXP: 0,
     completedDrills: []
@@ -935,11 +936,52 @@ export default function AcademyPage() {
   const userTier = getTier();
   const userLevel = getLevel(userTier);
 
-  // Get user name from auth context
+  // Fetch profile name directly from Supabase profiles table
+  useEffect(() => {
+    const fetchProfileName = async () => {
+      if (!user?.id) {
+        setProfileName(null);
+        return;
+      }
+
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+
+        if (profile?.full_name) {
+          setProfileName(profile.full_name);
+        }
+      } catch (error) {
+        console.error("Error fetching profile name:", error);
+      }
+    };
+
+    fetchProfileName();
+
+    // Listen for profile updates
+    const handleProfileUpdate = () => {
+      fetchProfileName();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('profileUpdated', handleProfileUpdate);
+      return () => {
+        window.removeEventListener('profileUpdated', handleProfileUpdate);
+      };
+    }
+  }, [user?.id]);
+
+  // Get user name - prioritize direct fetch, then AuthContext, then default
   const getUserName = () => {
-    if (!user) return 'Academy Student';
-    // Use full name if available, otherwise default to "Academy Student"
-    if (user.fullName && user.fullName.trim()) {
+    if (profileName && profileName.trim()) {
+      return profileName.trim();
+    }
+    if (user?.fullName && user.fullName.trim()) {
       return user.fullName.trim();
     }
     return 'Academy Student';
