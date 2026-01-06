@@ -64,10 +64,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // Fetch user profile with full_name and initialHandicap from profiles table
+        // Fetch user profile with full_name, profile_icon, and initialHandicap from profiles table
         const { data: profile } = await supabase
           .from('profiles')
-          .select('full_name, initial_handicap, created_at')
+          .select('full_name, profile_icon, initial_handicap, created_at')
           .eq('id', supabaseUser.id)
           .single();
 
@@ -103,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Fetch user profile
         const { data: profile } = await supabase
           .from('profiles')
-          .select('full_name, initial_handicap, created_at')
+          .select('full_name, profile_icon, initial_handicap, created_at')
           .eq('id', session.user.id)
           .single();
 
@@ -152,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Fetch user profile
       const { data: profile } = await supabase
         .from('profiles')
-        .select('full_name, initial_handicap, created_at')
+        .select('full_name, profile_icon, initial_handicap, created_at')
         .eq('id', data.user.id)
         .single();
 

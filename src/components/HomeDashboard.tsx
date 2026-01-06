@@ -19,7 +19,8 @@ import {
   Clock,
   X,
   BookOpen,
-  Users
+  Users,
+  Settings
 } from "lucide-react";
 
 // Video drills for Daily Focus rotation
@@ -319,17 +320,26 @@ export default function HomeDashboard() {
               </p>
             </div>
           </div>
-          <div 
-            className="rounded-full px-4 py-2 flex items-center gap-2 shadow-md"
-            style={{ 
-              backgroundColor: '#FFA500',
-              boxShadow: '0 4px 12px rgba(255, 165, 0, 0.3)'
-            }}
-          >
-            <Flame className="w-4 h-4 text-white" />
-            <div className="flex flex-col">
-              <span className="text-xs font-medium text-white">Streak</span>
-              <span className="text-white text-sm font-bold">0 days</span>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/profile"
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Profile Settings"
+            >
+              <Settings className="w-5 h-5 text-gray-600" />
+            </Link>
+            <div 
+              className="rounded-full px-4 py-2 flex items-center gap-2 shadow-md"
+              style={{ 
+                backgroundColor: '#FFA500',
+                boxShadow: '0 4px 12px rgba(255, 165, 0, 0.3)'
+              }}
+            >
+              <Flame className="w-4 h-4 text-white" />
+              <div className="flex flex-col">
+                <span className="text-xs font-medium text-white">Streak</span>
+                <span className="text-white text-sm font-bold">0 days</span>
+              </div>
             </div>
           </div>
         </div>
