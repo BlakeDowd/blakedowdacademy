@@ -156,28 +156,52 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    refreshRounds();
+    refreshRounds().catch((error) => {
+      console.error('Error in refreshRounds from useEffect:', error);
+      setLoading(false);
+      setRounds([]);
+    });
 
     // Listen for auth state changes to refresh rounds when user logs in/out
     let subscription: { unsubscribe: () => void } | null = null;
 
     const setupAuthListener = async () => {
-      const { createClient } = await import('@/lib/supabase/client');
-      const supabase = createClient();
+      try {
+        const { createClient } = await import('@/lib/supabase/client');
+        const supabase = createClient();
 
-      const {
-        data: { subscription: sub },
-      } = supabase.auth.onAuthStateChange(() => {
-        refreshRounds();
-      });
+        const {
+          data: { subscription: sub },
+        } = supabase.auth.onAuthStateChange(() => {
+          refreshRounds().catch((error) => {
+            console.error('Error in refreshRounds from auth listener:', error);
+            setLoading(false);
+            setRounds([]);
+          });
+        });
 
-      subscription = sub;
+        subscription = sub;
+      } catch (error) {
+        console.error('Error setting up auth listener:', error);
+        setLoading(false);
+        setRounds([]);
+      }
     };
 
-    setupAuthListener();
+    setupAuthListener().catch((error) => {
+      console.error('Error in setupAuthListener:', error);
+      setLoading(false);
+      setRounds([]);
+    });
 
     // Poll for changes as backup (every 5 seconds)
-    const interval = setInterval(refreshRounds, 5000);
+    const interval = setInterval(() => {
+      refreshRounds().catch((error) => {
+        console.error('Error in refreshRounds from interval:', error);
+        setLoading(false);
+        setRounds([]);
+      });
+    }, 5000);
 
     return () => {
       if (subscription) {

@@ -423,6 +423,7 @@ export default function StatsPage() {
   const calculateAverages = () => {
     if (!safeRounds || safeRounds.length === 0) {
       return { 
+        handicap: 'N/A',
         fir: 0, 
         gir: 0, 
         upAndDown: 0, 
@@ -511,7 +512,14 @@ export default function StatsPage() {
       ? ((totalPuttsUnder6ftAttempts - totalMissed6ft) / totalPuttsUnder6ftAttempts) * 100
       : 0;
 
+    // Get handicap from last round if available
+    const lastRound = safeRounds.length > 0 ? safeRounds[safeRounds.length - 1] : null;
+    const handicap = lastRound?.handicap !== null && lastRound?.handicap !== undefined 
+      ? lastRound.handicap.toFixed(1) 
+      : 'N/A';
+    
     return {
+      handicap: handicap,
       fir: safeRounds.length > 0 ? totalFIR / (safeRounds.length || 1) : 0,
       gir: totalHoles > 0 ? (totalGIR / totalHoles) * 100 : 0,
       upAndDown: totalUpAndDownOpps > 0 ? (totalUpAndDown / totalUpAndDownOpps) * 100 : 0,
@@ -611,7 +619,7 @@ export default function StatsPage() {
 
   // Calculate Driving Distribution (Left/Hit/Right percentages)
   const calculateDrivingDistribution = () => {
-    if (!rounds || rounds.length === 0) {
+    if (!safeRounds || safeRounds.length === 0) {
       return {
         hitPercent: 0,
         leftPercent: 0,
@@ -624,7 +632,7 @@ export default function StatsPage() {
     let totalHit = 0;
     let totalRight = 0;
 
-    rounds.forEach(round => {
+    safeRounds.forEach(round => {
       totalLeft += round.firLeft || 0;
       totalHit += round.firHit || 0;
       totalRight += round.firRight || 0;
@@ -701,7 +709,7 @@ export default function StatsPage() {
 
   // Determine most needed improvement with gap analysis
   const getMostNeededImprovement = () => {
-    if (!rounds || rounds.length === 0) {
+    if (!safeRounds || safeRounds.length === 0) {
       return { 
         category: 'Get Started', 
         message: 'Log your first round to see personalized insights!', 
@@ -713,18 +721,7 @@ export default function StatsPage() {
     }
 
     // PRIORITY CHECK: Missed < 6ft > 2
-    if (!rounds || rounds.length === 0) {
-      return { 
-        category: 'Get Started', 
-        message: 'Log your first round to see personalized insights!', 
-        severity: 0,
-        isPriority: false,
-        libraryCategory: null,
-        recommendedDrillId: null
-      };
-    }
-    
-    const lastRound = rounds[rounds.length - 1];
+    const lastRound = safeRounds[safeRounds.length - 1];
     if (lastRound && lastRound.missed6ftAndIn > 2) {
       return {
         category: '⚠️ Putting Focus',
@@ -844,10 +841,10 @@ export default function StatsPage() {
   // Simplified AreaChart Component
   const renderMasterCorrelationChart = () => {
     // Filter rounds by hole count (binary: 9 or 18 only)
-    const filteredRounds = rounds.filter(r => r.holes === (holeFilter === '9' ? 9 : 18));
+    const filteredRounds = safeRounds.filter(r => r.holes === (holeFilter === '9' ? 9 : 18));
     
     // Check if filtered rounds exist or no rounds at all
-    if (rounds.length === 0 || filteredRounds.length === 0) {
+    if (!safeRounds || safeRounds.length === 0 || filteredRounds.length === 0) {
       return (
         <div className="px-4 mb-6">
           <div className="rounded-2xl p-4" style={{ backgroundColor: '#014421' }}>
@@ -914,7 +911,7 @@ export default function StatsPage() {
             </div>
             <div className="py-20 text-center">
               <p className="text-white/80 text-sm">
-                {rounds.length === 0 ? 'No data available. Log your first round to see trends!' : 'No data for this filter'}
+                {!safeRounds || safeRounds.length === 0 ? 'No data available. Log your first round to see trends!' : 'No data for this filter'}
               </p>
             </div>
           </div>
@@ -923,7 +920,7 @@ export default function StatsPage() {
     }
     
     // Filter by hole filter (9 or 18) first
-    const holeFilteredRounds = rounds.filter(r => {
+    const holeFilteredRounds = safeRounds.filter(r => {
       if (holeFilter === '9') return r.holes === 9;
       return r.holes === 18;
     });
@@ -995,7 +992,7 @@ export default function StatsPage() {
             </div>
             <div className="py-20 text-center">
               <p className="text-white/80 text-sm">
-                {rounds.length === 0 ? 'No data available. Log your first round to see trends!' : 'No data for this filter'}
+                {!safeRounds || safeRounds.length === 0 ? 'No data available. Log your first round to see trends!' : 'No data for this filter'}
               </p>
             </div>
           </div>
@@ -1571,6 +1568,33 @@ export default function StatsPage() {
 
   // Render function wrapped in try-catch to prevent crashes
   const renderContent = () => {
+    // Early return if no rounds and not loading - show empty state message
+    if (!statsLoading && (!safeRounds || safeRounds.length === 0)) {
+      return (
+        <div className="min-h-screen bg-gray-50 pb-24">
+          <div className="max-w-md mx-auto bg-white min-h-screen">
+            <div className="pt-6 pb-4 px-4">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">Game Overview</h1>
+                  <p className="text-gray-600 text-sm mt-1">Track your performance metrics</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-4 py-20 text-center">
+              <p className="text-gray-600 text-lg mb-4">No rounds found. Add your first round below!</p>
+              <Link 
+                href="/add-round"
+                className="inline-block px-6 py-3 bg-[#014421] text-white font-semibold rounded-lg hover:bg-[#01331a] transition-colors"
+              >
+                Add Round
+              </Link>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
     try {
       return (
         <div className="min-h-screen bg-gray-50 pb-24">
@@ -2063,7 +2087,7 @@ export default function StatsPage() {
         </div>
 
         {/* Categorical Grouping - Coaching Insights */}
-        {rounds.length > 0 && (
+        {safeRounds && safeRounds.length > 0 && (
           <>
             {/* Approach Accuracy */}
             <div className="px-4 mb-6">
