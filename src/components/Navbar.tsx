@@ -1,9 +1,6 @@
 "use client";
 
-// Force dynamic rendering to prevent caching
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
+import { useState } from 'react';
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
