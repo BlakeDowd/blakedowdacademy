@@ -937,13 +937,12 @@ export default function AcademyPage() {
 
   // Get user name from auth context
   const getUserName = () => {
-    if (!user?.email) return 'Player';
-    const emailParts = user.email.split('@')[0];
-    const nameParts = emailParts.split('.');
-    if (nameParts.length >= 2) {
-      return nameParts.map((part: string) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+    if (!user) return 'Academy Student';
+    // Use full name if available, otherwise default to "Academy Student"
+    if (user.fullName && user.fullName.trim()) {
+      return user.fullName.trim();
     }
-    return emailParts.charAt(0).toUpperCase() + emailParts.slice(1);
+    return 'Academy Student';
   };
 
   const userName = getUserName();

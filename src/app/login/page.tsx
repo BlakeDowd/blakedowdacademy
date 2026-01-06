@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
   const [initialHandicap, setInitialHandicap] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,6 +25,12 @@ export default function LoginPage() {
     // Basic validation
     if (!email || !password) {
       setError("Please fill in all required fields");
+      setLoading(false);
+      return;
+    }
+
+    if (isSignUp && !fullName) {
+      setError("Please enter your full name");
       setLoading(false);
       return;
     }
@@ -42,7 +49,7 @@ export default function LoginPage() {
           setLoading(false);
           return;
         }
-        await signup(email, password, handicap);
+        await signup(email, password, fullName.trim(), handicap);
         // Navigation handled by AuthContext
       } else {
         await login(email, password);
@@ -143,6 +150,7 @@ export default function LoginPage() {
               onClick={() => {
                 setIsSignUp(false);
                 setError("");
+                setFullName("");
               }}
               className={`flex-1 py-2.5 px-4 rounded-md font-medium text-sm transition-all ${
                 !isSignUp
@@ -207,6 +215,27 @@ export default function LoginPage() {
                 />
               </div>
             </div>
+
+            {/* Full Name Field (Sign Up Only) */}
+            {isSignUp && (
+              <div>
+                <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Full Name
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    id="fullName"
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#014421] focus:border-[#014421] outline-none transition-all"
+                    placeholder="John Doe"
+                    required={isSignUp}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Password Field */}
             <div>

@@ -8,6 +8,7 @@ import type { User as SupabaseUser } from "@supabase/supabase-js";
 interface User {
   id: string;
   email: string;
+  fullName?: string;
   initialHandicap?: number;
   createdAt?: string;
 }
@@ -16,7 +17,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, initialHandicap: number) => Promise<void>;
+  signup: (email: string, password: string, fullName: string, initialHandicap: number) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
 }
@@ -63,16 +64,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // Fetch user profile with initialHandicap from profiles table
+        // Fetch user profile with full_name and initialHandicap from profiles table
         const { data: profile } = await supabase
           .from('profiles')
-          .select('initial_handicap, created_at')
+          .select('full_name, initial_handicap, created_at')
           .eq('id', supabaseUser.id)
           .single();
 
         setUser({
           id: supabaseUser.id,
           email: supabaseUser.email || '',
+          fullName: profile?.full_name,
           initialHandicap: profile?.initial_handicap,
           createdAt: profile?.created_at || supabaseUser.created_at,
         });
@@ -101,13 +103,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Fetch user profile
         const { data: profile } = await supabase
           .from('profiles')
-          .select('initial_handicap, created_at')
+          .select('full_name, initial_handicap, created_at')
           .eq('id', session.user.id)
           .single();
 
         setUser({
           id: session.user.id,
           email: session.user.email || '',
+          fullName: profile?.full_name,
           initialHandicap: profile?.initial_handicap,
           createdAt: profile?.created_at || session.user.created_at,
         });
@@ -149,13 +152,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Fetch user profile
       const { data: profile } = await supabase
         .from('profiles')
-        .select('initial_handicap, created_at')
+        .select('full_name, initial_handicap, created_at')
         .eq('id', data.user.id)
         .single();
 
       setUser({
         id: data.user.id,
         email: data.user.email || '',
+        fullName: profile?.full_name,
         initialHandicap: profile?.initial_handicap,
         createdAt: profile?.created_at || data.user.created_at,
       });
@@ -164,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signup = async (email: string, password: string, initialHandicap: number) => {
+  const signup = async (email: string, password: string, fullName: string, initialHandicap: number) => {
     if (!supabase) {
       throw new Error('Supabase is not configured. Please set environment variables.');
     }
@@ -179,11 +183,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
       if (data.user && supabase) {
-        // Create user profile with initialHandicap
+        // Create user profile with full_name and initialHandicap
         const { error: profileError } = await supabase
           .from('profiles')
           .insert({
             id: data.user.id,
+            full_name: fullName,
             initial_handicap: initialHandicap,
             created_at: new Date().toISOString(),
           });
@@ -196,6 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser({
         id: data.user.id,
         email: data.user.email || '',
+        fullName: fullName,
         initialHandicap,
         createdAt: data.user.created_at,
       });
