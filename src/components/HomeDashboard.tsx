@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
+import Image from "next/image";
 import { 
   Play,
   Flame,
@@ -302,13 +303,15 @@ export default function HomeDashboard() {
         {/* Top Section - Premium Header */}
         <div className="px-5 pt-6 pb-4 flex items-center justify-between mb-4 bg-white">
           <div className="flex items-center gap-3">
-            <div className="w-14 h-14 rounded-full overflow-hidden ring-2 ring-gray-100 shadow-sm">
-              <div 
-                className="w-full h-full flex items-center justify-center"
-                style={{ background: 'linear-gradient(to bottom right, #4ade80, #22c55e, #16a34a)' }}
-              >
-                <span className="text-2xl">👤</span>
-              </div>
+            {/* Logo */}
+            <div className="relative w-32 h-16">
+              <Image
+                src="/logo.png"
+                alt="Blake Dowd Academy Logo"
+                fill
+                className="object-contain"
+                priority
+              />
             </div>
             <div>
               <p className="text-gray-400 text-xs">Welcome back,</p>

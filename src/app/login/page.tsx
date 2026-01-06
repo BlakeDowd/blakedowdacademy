@@ -103,12 +103,12 @@ export default function LoginPage() {
       <div className="relative z-10 w-full max-w-md">
         {/* Logo and Branding */}
         <div className="text-center mb-8">
-          {/* Logo Image */}
+          {/* Logo Image - Large and Centered */}
           <div className="flex justify-center mb-6">
-            <div className="relative w-64 h-32">
+            <div className="relative w-80 h-40">
               <Image
-                src="/Blake-Dowd-Golf-Logo-Transparent (1).png"
-                alt="Blake Dowd Golf Logo"
+                src="/logo.png"
+                alt="Blake Dowd Academy Logo"
                 fill
                 className="object-contain"
                 priority
