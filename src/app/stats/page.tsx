@@ -944,13 +944,12 @@ export default function StatsPage() {
       new Date(a.date).getTime() - new Date(b.date).getTime()
     );
     
-    // Apply history limit to create displayed data - HARD GUARD with Math.min
-    if (!rounds || rounds.length === 0) {
-      return null;
-    }
-    const displayedData = historyLimit === 'all' 
-      ? allRounds 
-      : allRounds.slice(-Math.min(allRounds.length, typeof historyLimit === 'number' ? historyLimit : 10));
+    // Always render chart - use empty data if no rounds
+    const displayedData = (!rounds || rounds.length === 0) 
+      ? []
+      : (historyLimit === 'all' 
+          ? allRounds 
+          : allRounds.slice(-Math.min(allRounds.length, typeof historyLimit === 'number' ? historyLimit : 10)));
     
     // Map displayed data to chart data points
     const chartData = displayedData.map((round, index) => {
@@ -1560,13 +1559,9 @@ export default function StatsPage() {
               // Goals are recalculated from selectedGoal on every render (reactive)
               const dynamicGoals = getBenchmarkGoals(selectedGoal);
               
-              // HARD GUARD: if no rounds, return early
-              if (!rounds || rounds.length === 0) {
-                return null;
-              }
-              
+              // Always render - use 0 values if no rounds
               // Calculate additional averages needed for all metrics
-              const avgGross = rounds.length > 0 
+              const avgGross = (rounds && rounds.length > 0) 
                 ? rounds.reduce((sum, r) => sum + (r.score || 0), 0) / (rounds.length || 1) 
                 : 0;
               const avgNett = rounds.length > 0 
@@ -2159,13 +2154,9 @@ export default function StatsPage() {
               ? safeRounds 
               : safeRounds.slice(-historyLimit);
             
-            // HARD GUARD: if no rounds, return early
-            if (!rounds || rounds.length === 0) {
-              return null;
-            }
-            
+            // Always render - use 0 values if no rounds
             // Calculate averages for scoring distribution
-            const avgEagles = filteredRounds.length > 0
+            const avgEagles = (filteredRounds && filteredRounds.length > 0)
               ? filteredRounds.reduce((sum, r) => sum + (r.eagles || 0), 0) / (filteredRounds.length || 1)
               : 0;
             const avgBirdies = filteredRounds.length > 0
@@ -2555,9 +2546,17 @@ export default function StatsPage() {
 
         {/* Comprehensive 10-Round Trend Coach's Report - Using ONLY inline styles with HEX colors */}
         {(() => {
-          // HARD GUARD: if no rounds, return early
+          // Always render report section - use empty data if no rounds
+          // Get last 10 rounds for report - use Math.min to never grab more than exists
           if (!rounds || rounds.length === 0) {
-            return null;
+            // Return empty report section with message
+            return (
+              <div className="px-4 mb-8">
+                <div className="rounded-2xl p-6 bg-gray-100 border-2 border-gray-300">
+                  <p className="text-center text-gray-600">No rounds available for report. Add rounds to generate a report.</p>
+                </div>
+              </div>
+            );
           }
           
           // Get last 10 rounds for report - use Math.min to never grab more than exists
@@ -3352,6 +3351,16 @@ export default function StatsPage() {
             <span className="font-semibold text-gray-900">Report Saved to Gallery!</span>
           </div>
         )}
+
+        {/* Add Round Button - Always visible at bottom */}
+        <div className="px-4 pb-8 pt-4">
+          <Link 
+            href="/add-round"
+            className="block w-full bg-[#014421] text-white font-semibold rounded-lg py-4 text-center hover:bg-[#01331a] transition-colors"
+          >
+            Add Round
+          </Link>
+        </div>
       </div>
     </div>
       );
@@ -3373,11 +3382,7 @@ export default function StatsPage() {
     }
   };
   
-  // Wrap entire return in empty check - if no rounds, show empty state
-  if (!rounds || rounds.length === 0) {
-    return <EmptyStatsState />;
-  }
-  
+  // Always render the full dashboard - never show empty state
   return renderContent();
 }
 
