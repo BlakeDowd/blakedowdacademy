@@ -56,10 +56,14 @@ export default function ProfilePage() {
 
   useEffect(() => {
     const loadProfile = async () => {
-      if (!user) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
 
       try {
         const supabase = createClient();
+        // Only fetch the specific columns we need: full_name and profile_icon
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('full_name, profile_icon')
@@ -68,6 +72,10 @@ export default function ProfilePage() {
 
         if (profileError) {
           console.error("Error loading profile:", profileError);
+          // Fallback to user context data if available
+          if (user.fullName) {
+            setFullName(user.fullName);
+          }
         } else {
           if (profile?.full_name) {
             setFullName(profile.full_name);
@@ -97,26 +105,44 @@ export default function ProfilePage() {
 
     try {
       const supabase = createClient();
+      // Only update the specific fields we need
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
-          full_name: fullName.trim(),
+          full_name: fullName.trim() || null,
           profile_icon: selectedIcon,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', user.id);
+        .eq('id', user.id)
+        .select('full_name, profile_icon')
+        .single();
 
       if (updateError) {
         throw new Error(updateError.message || "Failed to update profile");
       }
 
       setSuccess(true);
+      
+      // Reload user profile data from Supabase to update AuthContext
+      // This ensures the UI updates instantly without a full page reload
+      const { data: updatedProfile } = await supabase
+        .from('profiles')
+        .select('full_name, profile_icon')
+        .eq('id', user.id)
+        .single();
+      
+      // Trigger a custom event to refresh AuthContext
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('profileUpdated'));
+      }
+      
+      // Refresh the router to update server components
+      router.refresh();
+      
+      // Clear success message after 3 seconds
       setTimeout(() => {
         setSuccess(false);
       }, 3000);
-
-      // Refresh the page to update user context
-      window.location.reload();
     } catch (err: any) {
       setError(err.message || "Failed to save profile");
     } finally {
@@ -267,13 +293,13 @@ export default function ProfilePage() {
           {/* Save Button */}
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || loading}
             className="w-full py-3.5 bg-[#014421] text-white font-semibold rounded-lg hover:bg-[#01331a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {saving ? (
               <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Saving...
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Saving changes...</span>
               </>
             ) : (
               <>

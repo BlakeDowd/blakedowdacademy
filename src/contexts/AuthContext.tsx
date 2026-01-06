@@ -122,8 +122,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
+    // Listen for profile updates
+    const handleProfileUpdate = async () => {
+      if (!supabase) return;
+      
+      try {
+        const { data: { user: supabaseUser } } = await supabase.auth.getUser();
+        if (supabaseUser) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name, profile_icon, initial_handicap, created_at')
+            .eq('id', supabaseUser.id)
+            .single();
+
+          setUser({
+            id: supabaseUser.id,
+            email: supabaseUser.email || '',
+            fullName: profile?.full_name,
+            initialHandicap: profile?.initial_handicap,
+            createdAt: profile?.created_at || supabaseUser.created_at,
+          });
+        }
+      } catch (error) {
+        console.error("Error refreshing profile:", error);
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('profileUpdated', handleProfileUpdate);
+    }
+
     return () => {
       subscription.unsubscribe();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('profileUpdated', handleProfileUpdate);
+      }
     };
   }, [supabase]);
 
