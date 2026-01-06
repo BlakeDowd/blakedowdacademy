@@ -40,198 +40,35 @@ interface StatsContextType {
   rounds: RoundData[];
   loading: boolean;
   refreshRounds: () => void;
-  getStats: () => { handicap: number; totalRounds: number };
+  calculateStats: () => { handicap: string; totalRounds: number };
 }
 
 const StatsContext = createContext<StatsContextType | undefined>(undefined);
 
 export function StatsProvider({ children }: { children: ReactNode }) {
-  // Always initialize rounds as empty array, never null or undefined
+  // Set rounds to empty array
   const [rounds, setRounds] = useState<RoundData[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  // Set loading to false
+  const [loading, setLoading] = useState<boolean>(false);
 
-  const refreshRounds = async () => {
-    if (typeof window === 'undefined') {
-      setLoading(false);
-      setRounds([]);
-      return;
-    }
-    
-    // Safety timeout: Force loading to false after 3 seconds no matter what
-    const timeoutId = setTimeout(() => {
-      console.log('Timeout: Forcing loading to false after 3 seconds');
-      setLoading(false);
-      // Ensure rounds is empty array if still loading
-      setRounds((prevRounds) => prevRounds || []);
-    }, 3000);
-    
-    try {
-      setLoading(true);
-      const { createClient } = await import('@/lib/supabase/client');
-      const supabase = createClient();
-      
-      // Get the current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError || !user) {
-        console.error('Error getting user:', userError);
-        setRounds([]); // Ensure empty array, never null
-        clearTimeout(timeoutId);
-        return;
-      }
-      
-      // Fetch rounds from Supabase for the authenticated user
-      const { data, error } = await supabase
-        .from('rounds')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('date', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching rounds:', error);
-        setRounds([]); // Ensure empty array, never null
-        clearTimeout(timeoutId);
-        return;
-      }
-      
-      // Log what we received from the database
-      console.log('Rounds data from database:', data);
-      
-      // If data is null or empty, set empty array immediately
-      if (!data || data.length === 0) {
-        console.log('No rounds found in database, setting empty array');
-        setRounds([]); // Ensure empty array, never null
-        clearTimeout(timeoutId);
-        return;
-      }
-      
-      // Transform Supabase data to RoundData format
-      const transformedRounds: RoundData[] = data.map((round: any) => ({
-        date: round.date,
-        course: round.course,
-        handicap: round.handicap,
-        holes: round.holes,
-        score: round.score,
-        nett: round.nett,
-        eagles: round.eagles || 0,
-        birdies: round.birdies || 0,
-        pars: round.pars || 0,
-        bogeys: round.bogeys || 0,
-        doubleBogeys: round.double_bogeys || 0,
-        firLeft: round.fir_left || 0,
-        firHit: round.fir_hit || 0,
-        firRight: round.fir_right || 0,
-        totalGir: round.total_gir || 0,
-        totalPenalties: round.total_penalties || 0,
-        teePenalties: round.tee_penalties || 0,
-        approachPenalties: round.approach_penalties || 0,
-        goingForGreen: round.going_for_green || 0,
-        gir8ft: round.gir_8ft || 0,
-        gir20ft: round.gir_20ft || 0,
-        upAndDownConversions: round.up_and_down_conversions || 0,
-        missed: round.missed || 0,
-        bunkerAttempts: round.bunker_attempts || 0,
-        bunkerSaves: round.bunker_saves || 0,
-        chipInside6ft: round.chip_inside_6ft || 0,
-        doubleChips: round.double_chips || 0,
-        totalPutts: round.total_putts || 0,
-        threePutts: round.three_putts || 0,
-        missed6ftAndIn: round.missed_6ft_and_in || 0,
-        puttsUnder6ftAttempts: round.putts_under_6ft_attempts || 0,
-      }));
-
-      setRounds(transformedRounds);
-      console.log('Transformed rounds:', transformedRounds);
-      clearTimeout(timeoutId);
-      
-    } catch (error) {
-      console.error('Error refreshing rounds:', error);
-      setRounds([]); // Ensure empty array, never null
-      clearTimeout(timeoutId);
-    } finally {
-      // Always set loading to false in finally block so spinner doesn't stay on forever
-      setLoading(false);
-      console.log('Loading set to false in finally block');
-    }
+  const refreshRounds = () => {
+    // Simple stub function
+    setRounds([]);
+    setLoading(false);
   };
 
+  // Make calculateStats return only { handicap: 'N/A', totalRounds: 0 }
+  const calculateStats = () => {
+    return { handicap: 'N/A', totalRounds: 0 };
+  };
+
+  // Empty useEffect with [] dependency array
   useEffect(() => {
-    // Force loading to false after 2 seconds no matter what
-    const loadingTimeout = setTimeout(() => {
-      console.log('Forcing loading to false after 2 seconds');
-      setLoading(false);
-    }, 2000);
-
-    refreshRounds()
-      .catch((error) => {
-        console.error('Error in refreshRounds from useEffect:', error);
-        setLoading(false);
-        setRounds([]);
-      })
-      .finally(() => {
-        clearTimeout(loadingTimeout);
-        setLoading(false);
-      });
-
-    // Listen for auth state changes to refresh rounds when user logs in/out
-    let subscription: { unsubscribe: () => void } | null = null;
-
-    const setupAuthListener = async () => {
-      try {
-        const { createClient } = await import('@/lib/supabase/client');
-        const supabase = createClient();
-
-        const {
-          data: { subscription: sub },
-        } = supabase.auth.onAuthStateChange(() => {
-          refreshRounds().catch((error) => {
-            console.error('Error in refreshRounds from auth listener:', error);
-            setRounds([]);
-          });
-        });
-
-        subscription = sub;
-      } catch (error) {
-        console.error('Error setting up auth listener:', error);
-        setRounds([]);
-      }
-    };
-
-    setupAuthListener().catch((error) => {
-      console.error('Error in setupAuthListener:', error);
-      setRounds([]);
-    });
-
-    // Poll for changes as backup (every 5 seconds)
-    const interval = setInterval(() => {
-      refreshRounds().catch((error) => {
-        console.error('Error in refreshRounds from interval:', error);
-        setRounds([]);
-      });
-    }, 5000);
-
-    return () => {
-      clearTimeout(loadingTimeout);
-      if (subscription) {
-        subscription.unsubscribe();
-      }
-      clearInterval(interval);
-    };
+    // Empty - no complex logic
   }, []);
 
-  // Ensure rounds is always an array, never null or undefined
-  const safeRounds = rounds || [];
-  
-  // Simple stats helper - no math, just guard
-  const getStats = () => {
-    if (!rounds || rounds.length === 0) {
-      return { handicap: 0, totalRounds: 0 };
-    }
-    return { handicap: 0, totalRounds: rounds.length };
-  };
-  
   return (
-    <StatsContext.Provider value={{ rounds: safeRounds, loading, refreshRounds, getStats }}>
+    <StatsContext.Provider value={{ rounds, loading, refreshRounds, calculateStats }}>
       {children}
     </StatsContext.Provider>
   );
@@ -244,4 +81,3 @@ export function useStats() {
   }
   return context;
 }
-
