@@ -105,6 +105,33 @@ const getBenchmarkGoals = (handicap: number) => {
   };
 };
 
+// Empty Stats State Component
+const EmptyStatsState = () => {
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24">
+      <div className="max-w-md mx-auto bg-white min-h-screen">
+        <div className="pt-6 pb-4 px-4">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Game Overview</h1>
+              <p className="text-gray-600 text-sm mt-1">Track your performance metrics</p>
+            </div>
+          </div>
+        </div>
+        <div className="px-4 py-20 text-center">
+          <p className="text-gray-600 text-lg mb-4">No rounds found. Add your first round below!</p>
+          <Link 
+            href="/add-round"
+            className="inline-block px-6 py-3 bg-[#014421] text-white font-semibold rounded-lg hover:bg-[#01331a] transition-colors"
+          >
+            Add Round
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function StatsPage() {
   const { rounds, loading: statsLoading } = useStats();
   const { user, loading: authLoading } = useAuth();
@@ -1568,33 +1595,6 @@ export default function StatsPage() {
 
   // Render function wrapped in try-catch to prevent crashes
   const renderContent = () => {
-    // Early return if no rounds and not loading - show empty state message
-    if (!statsLoading && (!safeRounds || safeRounds.length === 0)) {
-      return (
-        <div className="min-h-screen bg-gray-50 pb-24">
-          <div className="max-w-md mx-auto bg-white min-h-screen">
-            <div className="pt-6 pb-4 px-4">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900">Game Overview</h1>
-                  <p className="text-gray-600 text-sm mt-1">Track your performance metrics</p>
-                </div>
-              </div>
-            </div>
-            <div className="px-4 py-20 text-center">
-              <p className="text-gray-600 text-lg mb-4">No rounds found. Add your first round below!</p>
-              <Link 
-                href="/add-round"
-                className="inline-block px-6 py-3 bg-[#014421] text-white font-semibold rounded-lg hover:bg-[#01331a] transition-colors"
-              >
-                Add Round
-              </Link>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    
     try {
       return (
         <div className="min-h-screen bg-gray-50 pb-24">
@@ -3438,6 +3438,11 @@ export default function StatsPage() {
       );
     }
   };
+  
+  // Wrap entire return in empty check - if no rounds, show empty state
+  if (!rounds || rounds.length === 0) {
+    return <EmptyStatsState />;
+  }
   
   return renderContent();
 }

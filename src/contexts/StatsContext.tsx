@@ -76,7 +76,6 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         console.error('Error getting user:', userError);
         setRounds([]); // Ensure empty array, never null
         clearTimeout(timeoutId);
-        setLoading(false);
         return;
       }
       
@@ -91,7 +90,6 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         console.error('Error fetching rounds:', error);
         setRounds([]); // Ensure empty array, never null
         clearTimeout(timeoutId);
-        setLoading(false);
         return;
       }
       
@@ -103,7 +101,6 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         console.log('No rounds found in database, setting empty array');
         setRounds([]); // Ensure empty array, never null
         clearTimeout(timeoutId);
-        setLoading(false);
         return;
       }
       
@@ -145,13 +142,15 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       setRounds(transformedRounds);
       console.log('Transformed rounds:', transformedRounds);
       clearTimeout(timeoutId);
-      setLoading(false);
       
     } catch (error) {
       console.error('Error refreshing rounds:', error);
       setRounds([]); // Ensure empty array, never null
       clearTimeout(timeoutId);
+    } finally {
+      // Always set loading to false in finally block so spinner doesn't stay on forever
       setLoading(false);
+      console.log('Loading set to false in finally block');
     }
   };
 
