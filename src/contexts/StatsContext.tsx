@@ -40,6 +40,7 @@ interface StatsContextType {
   rounds: RoundData[];
   loading: boolean;
   refreshRounds: () => void;
+  getStats: () => { handicap: number; totalRounds: number };
 }
 
 const StatsContext = createContext<StatsContextType | undefined>(undefined);
@@ -221,8 +222,16 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   // Ensure rounds is always an array, never null or undefined
   const safeRounds = rounds || [];
   
+  // Simple stats helper - no math, just guard
+  const getStats = () => {
+    if (!rounds || rounds.length === 0) {
+      return { handicap: 0, totalRounds: 0 };
+    }
+    return { handicap: 0, totalRounds: rounds.length };
+  };
+  
   return (
-    <StatsContext.Provider value={{ rounds: safeRounds, loading, refreshRounds }}>
+    <StatsContext.Provider value={{ rounds: safeRounds, loading, refreshRounds, getStats }}>
       {children}
     </StatsContext.Provider>
   );
