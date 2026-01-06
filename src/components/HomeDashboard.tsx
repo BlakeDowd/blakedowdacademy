@@ -110,15 +110,15 @@ export default function HomeDashboard() {
     }
     return emailParts.charAt(0).toUpperCase() + emailParts.slice(1);
   };
-  const [totalXP, setTotalXP] = useState(1250);
+  const [totalXP, setTotalXP] = useState(0);
   const [dailyVideo, setDailyVideo] = useState(() => getDailyVideo());
   const [refreshKey, setRefreshKey] = useState(0);
   const [showLevelModal, setShowLevelModal] = useState(false);
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [scoreTab, setScoreTab] = useState<'myRounds' | 'community'>('myRounds');
   
-  // Calculate level and progress
-  const currentLevel = Math.floor(totalXP / 100) + 1;
+  // Calculate level and progress - Level 1 starts at 0 XP, Level 2 requires 100 XP
+  const currentLevel = totalXP === 0 ? 1 : Math.floor(totalXP / 100) + 1;
   const xpForCurrentLevel = totalXP % 100;
   const xpNeededForNextLevel = 100;
   const levelProgress = (xpForCurrentLevel / xpNeededForNextLevel) * 100;
@@ -260,7 +260,7 @@ export default function HomeDashboard() {
       const savedProgress = localStorage.getItem('userProgress');
       if (savedProgress) {
         const progress = JSON.parse(savedProgress);
-        setTotalXP(progress.totalXP || 1250);
+        setTotalXP(progress.totalXP || 0);
       }
     };
 
@@ -327,7 +327,7 @@ export default function HomeDashboard() {
             <Flame className="w-4 h-4 text-white" />
             <div className="flex flex-col">
               <span className="text-xs font-medium text-white">Streak</span>
-              <span className="text-white text-sm font-bold">12 days</span>
+              <span className="text-white text-sm font-bold">0 days</span>
             </div>
           </div>
         </div>
@@ -443,7 +443,7 @@ export default function HomeDashboard() {
               className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97]"
             >
               <Flame className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
-              <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>12</p>
+              <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>0</p>
               <p className="text-gray-400 text-xs mt-1">days streak</p>
             </Link>
             
@@ -612,8 +612,7 @@ export default function HomeDashboard() {
           ) : (
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center mb-6">
               <Activity className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p className="text-gray-600 text-sm mb-2">No activity yet</p>
-              <p className="text-gray-400 text-xs mb-4">Log your first practice session to see your activity here</p>
+              <p className="text-gray-600 text-sm mb-2">No activity yet. Start your journey!</p>
               <button
                 onClick={() => router.push('/practice')}
                 className="text-sm font-medium px-4 py-2 rounded-lg transition-colors"

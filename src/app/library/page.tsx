@@ -328,8 +328,8 @@ function LibraryPageContent() {
 
   const isCompleted = (drillId: string) => userProgress.completedDrills.includes(drillId);
 
-  // Calculate level (100 XP per level)
-  const currentLevel = Math.floor(userProgress.totalXP / 100) + 1;
+  // Calculate level - Level 1 starts at 0 XP, Level 2 requires 100 XP
+  const currentLevel = userProgress.totalXP === 0 ? 1 : Math.floor(userProgress.totalXP / 100) + 1;
   const xpForCurrentLevel = userProgress.totalXP % 100;
   const xpNeededForNextLevel = 100;
   const levelProgress = (xpForCurrentLevel / xpNeededForNextLevel) * 100;
