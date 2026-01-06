@@ -27,8 +27,11 @@ export async function updateProfile(userId: string, fullName: string, profileIco
       return { success: false, error: error.message || "Failed to update profile" };
     }
 
-    // Revalidate all pages to clear cache
+    // Immediately revalidate all pages to clear cache after database update
     revalidatePath('/', 'layout');
+    revalidatePath('/stats', 'page');
+    revalidatePath('/academy', 'page');
+    revalidatePath('/profile', 'page');
     
     return { success: true, data };
   } catch (error: any) {

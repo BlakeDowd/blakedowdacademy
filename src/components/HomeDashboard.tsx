@@ -114,25 +114,37 @@ export default function HomeDashboard() {
       try {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
-        const { data: profile } = await supabase
+        // Fetch directly from profiles table, bypassing any cache
+        const { data: profile, error } = await supabase
           .from('profiles')
           .select('full_name')
           .eq('id', user.id)
           .single();
 
+        if (error) {
+          console.error("Error fetching profile name:", error);
+          return;
+        }
+
         if (profile?.full_name) {
           setProfileName(profile.full_name);
+        } else {
+          setProfileName(null);
         }
       } catch (error) {
         console.error("Error fetching profile name:", error);
+        setProfileName(null);
       }
     };
 
     fetchProfileName();
 
-    // Listen for profile updates
+    // Listen for profile updates and refetch immediately
     const handleProfileUpdate = () => {
-      fetchProfileName();
+      // Add a small delay to ensure database update is complete
+      setTimeout(() => {
+        fetchProfileName();
+      }, 100);
     };
 
     if (typeof window !== 'undefined') {
