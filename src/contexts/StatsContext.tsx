@@ -58,9 +58,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   };
 
   // Make calculateStats return only { handicap: 'N/A', totalRounds: 0 }
-  const calculateStats = () => {
-    return { handicap: 'N/A', totalRounds: 0 };
-  };
+  const calculateStats = () => ({ handicap: 'N/A', totalRounds: 0 });
 
   // Empty useEffect with [] dependency array
   useEffect(() => {

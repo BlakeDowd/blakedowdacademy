@@ -3362,7 +3362,7 @@ export default function StatsPage() {
           <div className="text-center">
             <p className="text-gray-600 mb-4">Something went wrong. Please refresh the page.</p>
             <button 
-              onClick={() => window.location.reload()} 
+              onClick={() => {}} 
               className="px-4 py-2 bg-[#014421] text-white rounded-lg"
             >
               Refresh
