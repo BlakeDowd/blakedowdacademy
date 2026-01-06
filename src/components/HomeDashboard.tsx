@@ -1,5 +1,8 @@
 "use client";
 
+// Force no-store cache to bypass all caching
+export const fetchCache = 'force-no-store';
+
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, useEffect } from "react";
@@ -114,10 +117,10 @@ export default function HomeDashboard() {
       try {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
-        // Fetch directly from profiles table - changing columns forces Next.js to bypass cache
-        const { data: profile, error } = await supabase
+        // Force direct database read with minimal select
+        const { data, error } = await supabase
           .from('profiles')
-          .select('full_name, profile_icon, updated_at')
+          .select('full_name')
           .eq('id', user.id)
           .single();
 
@@ -126,8 +129,11 @@ export default function HomeDashboard() {
           return;
         }
 
-        if (profile?.full_name) {
-          setProfileName(profile.full_name);
+        // Log what we actually fetched from the database
+        console.log('Fetched name:', data?.full_name);
+
+        if (data?.full_name) {
+          setProfileName(data.full_name);
         } else {
           setProfileName(null);
         }
