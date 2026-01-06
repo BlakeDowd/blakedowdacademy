@@ -101,6 +101,7 @@ export default function ProfilePage() {
     if (!user) return;
 
     setSaving(true);
+    setLoading(false); // Ensure loading state is reset
     setError("");
     setSuccess(false);
 
@@ -125,20 +126,19 @@ export default function ProfilePage() {
         window.dispatchEvent(new CustomEvent('profileUpdated'));
       }
       
-      // Refresh the router cache and force navigation
+      // Refresh the router cache
       router.refresh();
       
-      // Force a full page reload to bypass all caching
-      setTimeout(() => {
-        window.location.href = '/dashboard';
-      }, 500);
+      // Force a hard redirect to bypass all caching - do this immediately
+      window.location.href = '/dashboard';
       
     } catch (err: any) {
       console.error("Profile save error:", err);
       setError(err.message || "Failed to save profile");
     } finally {
-      // Always set saving to false, even if there was an error or timeout
+      // Always reset loading states, even if there is an error or timeout
       setSaving(false);
+      setLoading(false);
     }
   };
 
