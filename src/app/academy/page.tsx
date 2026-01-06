@@ -37,16 +37,7 @@ interface WeeklyPlan {
   };
 }
 
-// Mock leaderboard data with previous ranks for trends
-const MOCK_LEADERBOARD: LeaderboardEntry[] = [
-  { id: 'alex', name: 'Alex', xp: 12500, handicap: 5.2, tier: 'Platinum', previousRank: 1, avatar: 'A' },
-  { id: 'sarah', name: 'Sarah', xp: 9800, handicap: 7.1, tier: 'Gold', previousRank: 3, avatar: 'S' },
-  { id: 'mike', name: 'Mike', xp: 8700, handicap: 8.3, tier: 'Gold', previousRank: 2, avatar: 'M' },
-  { id: 'jordan', name: 'Jordan', xp: 7200, handicap: 9.5, tier: 'Silver', previousRank: 5, avatar: 'J' },
-  { id: 'taylor', name: 'Taylor', xp: 6500, handicap: 10.2, tier: 'Silver', previousRank: 4, avatar: 'T' },
-  { id: 'casey', name: 'Casey', xp: 5400, handicap: 11.8, tier: 'Bronze', previousRank: 7, avatar: 'C' },
-  { id: 'riley', name: 'Riley', xp: 4800, handicap: 12.5, tier: 'Bronze', previousRank: 6, avatar: 'R' },
-];
+// Leaderboard data is now generated dynamically - no mock data
 
 // Goal handicap
 const GOAL_HANDICAP = 8.7;
@@ -708,26 +699,30 @@ function getMockLeaderboard(
       userValue = 0;
   }
   
-  // Generate mock data that includes the user
-  const mockData = [
-    { id: 'alex', name: 'Alex', avatar: 'A', value: Math.max(userValue + 5, 15) },
-    { id: 'sarah', name: 'Sarah', avatar: 'S', value: Math.max(userValue + 3, 12) },
-    { id: 'mike', name: 'Mike', avatar: 'M', value: Math.max(userValue + 2, 10) },
-    { id: 'jordan', name: 'Jordan', avatar: 'J', value: Math.max(userValue + 1, 8) },
-    { id: 'user', name: 'You', avatar: userName.split(' ').map((n: string) => n[0]).join('') || 'Y', value: userValue },
-    { id: 'taylor', name: 'Taylor', avatar: 'T', value: Math.max(userValue - 1, 6) },
-    { id: 'casey', name: 'Casey', avatar: 'C', value: Math.max(userValue - 2, 4) },
-    { id: 'riley', name: 'Riley', avatar: 'R', value: Math.max(userValue - 3, 3) },
-    { id: 'sam', name: 'Sam', avatar: 'S', value: Math.max(userValue - 4, 2) },
-    { id: 'chris', name: 'Chris', avatar: 'C', value: Math.max(userValue - 5, 1) },
-  ];
+  // If user has no activity, return empty leaderboard
+  if (userValue === 0) {
+    return {
+      top3: [],
+      all: [],
+      userRank: 0,
+      userValue: 0
+    };
+  }
+  
+  // Only include user in leaderboard if they have activity
+  const userEntry = {
+    id: 'user',
+    name: 'You',
+    avatar: userName.split(' ').map((n: string) => n[0]).join('') || 'Y',
+    value: userValue
+  };
   
   // Sort by value descending and get top 3 for podium
-  const sorted = mockData.sort((a, b) => b.value - a.value);
+  const sorted = [userEntry].sort((a, b) => b.value - a.value);
   return {
     top3: sorted.slice(0, 3),
     all: sorted,
-    userRank: sorted.findIndex(entry => entry.id === 'user') + 1,
+    userRank: sorted.length > 0 ? sorted.findIndex(entry => entry.id === 'user') + 1 : 0,
     userValue: userValue
   };
 }
@@ -780,20 +775,27 @@ function getLeaderboardData(
       userValue = 0;
   }
   
-  // Generate mock data with previous ranks for trending
-  const mockData = [
-    { id: 'alex', name: 'Alex', avatar: 'A', value: Math.max(userValue + 5000, 15000), previousRank: 1 },
-    { id: 'sarah', name: 'Sarah', avatar: 'S', value: Math.max(userValue + 3000, 12000), previousRank: 3 },
-    { id: 'mike', name: 'Mike', avatar: 'M', value: Math.max(userValue + 2000, 10000), previousRank: 2 },
-    { id: 'jordan', name: 'Jordan', avatar: 'J', value: Math.max(userValue + 1000, 8000), previousRank: 5 },
-    { id: 'user', name: 'You', avatar: userName.split(' ').map(n => n[0]).join('') || 'Y', value: userValue, previousRank: 6 },
-    { id: 'taylor', name: 'Taylor', avatar: 'T', value: Math.max(userValue - 500, 6000), previousRank: 4 },
-    { id: 'casey', name: 'Casey', avatar: 'C', value: Math.max(userValue - 1000, 5000), previousRank: 7 },
-    { id: 'riley', name: 'Riley', avatar: 'R', value: Math.max(userValue - 1500, 4000), previousRank: 8 },
-  ];
+  // If user has no activity, return empty leaderboard
+  if (userValue === 0) {
+    return {
+      top3: [],
+      all: [],
+      userRank: 0,
+      userValue: 0
+    };
+  }
+  
+  // Only include user in leaderboard if they have activity
+  const userEntry = {
+    id: 'user',
+    name: 'You',
+    avatar: userName.split(' ').map(n => n[0]).join('') || 'Y',
+    value: userValue,
+    previousRank: undefined
+  };
   
   // Sort by value descending
-  const sorted = mockData.sort((a, b) => b.value - a.value);
+  const sorted = [userEntry].sort((a, b) => b.value - a.value);
   
   // Calculate rank changes
   const withRanks = sorted.map((entry, index) => {
@@ -811,7 +813,7 @@ function getLeaderboardData(
   return {
     top3: withRanks.slice(0, 3),
     all: withRanks,
-    userRank: withRanks.findIndex(entry => entry.id === 'user') + 1,
+    userRank: withRanks.length > 0 ? withRanks.findIndex(entry => entry.id === 'user') + 1 : 0,
     userValue: userValue
   };
 }
@@ -1357,64 +1359,76 @@ export default function AcademyPage() {
                 <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full">
                   <h3 className="text-base font-semibold text-gray-900 mb-3 text-center">Library Lessons</h3>
                   
-                  {/* Top 3 Podium */}
-                  <div className="flex items-end justify-center gap-2 mb-4">
-                    {/* 2nd Place */}
-                    {data.top3[1] && (
-                      <div className="flex flex-col items-center">
-                        <CircularAvatar 
-                          initial={data.top3[1].avatar} 
-                          size={40}
-                          bgColor="#C0C0C0"
-                        />
-                        <div className="text-center mt-1">
-                          <div className="text-xs font-bold text-gray-900">#{2}</div>
-                          <div className="text-xs font-semibold text-gray-900">{data.top3[1].name}</div>
-                          <div className="text-xs text-gray-600">{formatMetricValue(data.top3[1].value, 'library')}</div>
+                  {/* Top 3 Podium or Empty State */}
+                  {data.all.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-sm text-gray-500">No rankings yet. Start logging to take the lead!</p>
+                    </div>
+                  ) : (
+                    <div className="flex items-end justify-center gap-2 mb-4">
+                      {/* 2nd Place */}
+                      {data.top3[1] && (
+                        <div className="flex flex-col items-center">
+                          <CircularAvatar 
+                            initial={data.top3[1].avatar} 
+                            size={40}
+                            bgColor="#C0C0C0"
+                          />
+                          <div className="text-center mt-1">
+                            <div className="text-xs font-bold text-gray-900">#{2}</div>
+                            <div className="text-xs font-semibold text-gray-900">{data.top3[1].name}</div>
+                            <div className="text-xs text-gray-600">{formatMetricValue(data.top3[1].value, 'library')}</div>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    
-                    {/* 1st Place - Center, Higher */}
-                    {data.top3[0] && (
-                      <div className="flex flex-col items-center">
-                        <Crown className="w-4 h-4 mb-1" style={{ color: '#FFA500' }} />
-                        <CircularAvatar 
-                          initial={data.top3[0].avatar} 
-                          size={50}
-                          bgColor="#FFA500"
-                        />
-                        <div className="text-center mt-1">
-                          <div className="text-sm font-bold text-gray-900">#{1}</div>
-                          <div className="text-xs font-semibold text-gray-900">{data.top3[0].name}</div>
-                          <div className="text-xs text-gray-600">{formatMetricValue(data.top3[0].value, 'library')}</div>
+                      )}
+                      
+                      {/* 1st Place - Center, Higher */}
+                      {data.top3[0] && (
+                        <div className="flex flex-col items-center">
+                          <Crown className="w-4 h-4 mb-1" style={{ color: '#FFA500' }} />
+                          <CircularAvatar 
+                            initial={data.top3[0].avatar} 
+                            size={50}
+                            bgColor="#FFA500"
+                          />
+                          <div className="text-center mt-1">
+                            <div className="text-sm font-bold text-gray-900">#{1}</div>
+                            <div className="text-xs font-semibold text-gray-900">{data.top3[0].name}</div>
+                            <div className="text-xs text-gray-600">{formatMetricValue(data.top3[0].value, 'library')}</div>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    
-                    {/* 3rd Place */}
-                    {data.top3[2] && (
-                      <div className="flex flex-col items-center">
-                        <CircularAvatar 
-                          initial={data.top3[2].avatar} 
-                          size={40}
-                          bgColor="#CD7F32"
-                        />
-                        <div className="text-center mt-1">
-                          <div className="text-xs font-bold text-gray-900">#{3}</div>
-                          <div className="text-xs font-semibold text-gray-900">{data.top3[2].name}</div>
-                          <div className="text-xs text-gray-600">{formatMetricValue(data.top3[2].value, 'library')}</div>
+                      )}
+                      
+                      {/* 3rd Place */}
+                      {data.top3[2] && (
+                        <div className="flex flex-col items-center">
+                          <CircularAvatar 
+                            initial={data.top3[2].avatar} 
+                            size={40}
+                            bgColor="#CD7F32"
+                          />
+                          <div className="text-center mt-1">
+                            <div className="text-xs font-bold text-gray-900">#{3}</div>
+                            <div className="text-xs font-semibold text-gray-900">{data.top3[2].name}</div>
+                            <div className="text-xs text-gray-600">{formatMetricValue(data.top3[2].value, 'library')}</div>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
 
-                  {/* User Rank */}
-                  <div className="text-center pt-3 border-t border-gray-200">
-                    <p className="text-sm font-semibold text-gray-700">
-                      Your Rank: <span className="text-[#014421]">#{data.userRank}</span> | <span className="text-[#FFA500]">{formatMetricValue(data.userValue, 'library')}</span>
-                    </p>
-                  </div>
+                  {/* User Rank or Empty State */}
+                  {data.all.length === 0 ? (
+                    <div className="text-center pt-3 border-t border-gray-200">
+                      <p className="text-sm text-gray-500">No rankings yet. Start logging to take the lead!</p>
+                    </div>
+                  ) : (
+                    <div className="text-center pt-3 border-t border-gray-200">
+                      <p className="text-sm font-semibold text-gray-700">
+                        Your Rank: <span className="text-[#014421]">{data.userRank === 0 ? 'Unranked' : `#${data.userRank}`}</span> | <span className="text-[#FFA500]">{formatMetricValue(data.userValue, 'library')}</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -1427,45 +1441,57 @@ export default function AcademyPage() {
                   <h3 className="text-base font-semibold text-gray-900 mb-3 text-center">Practice Time</h3>
                   
                   {/* Top 3 Podium */}
-                  <div className="flex items-end justify-center gap-2 mb-4">
-                    {data.top3[1] && (
-                      <div className="flex flex-col items-center">
-                        <CircularAvatar initial={data.top3[1].avatar} size={40} bgColor="#C0C0C0" />
-                        <div className="text-center mt-1">
-                          <div className="text-xs font-bold text-gray-900">#{2}</div>
-                          <div className="text-xs font-semibold text-gray-900">{data.top3[1].name}</div>
-                          <div className="text-xs text-gray-600">{formatMetricValue(data.top3[1].value, 'practice')}</div>
+                  {data.all.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-sm text-gray-500">No rankings yet. Start logging to take the lead!</p>
+                    </div>
+                  ) : (
+                    <div className="flex items-end justify-center gap-2 mb-4">
+                      {data.top3[1] && (
+                        <div className="flex flex-col items-center">
+                          <CircularAvatar initial={data.top3[1].avatar} size={40} bgColor="#C0C0C0" />
+                          <div className="text-center mt-1">
+                            <div className="text-xs font-bold text-gray-900">#{2}</div>
+                            <div className="text-xs font-semibold text-gray-900">{data.top3[1].name}</div>
+                            <div className="text-xs text-gray-600">{formatMetricValue(data.top3[1].value, 'practice')}</div>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {data.top3[0] && (
-                      <div className="flex flex-col items-center">
-                        <Crown className="w-4 h-4 mb-1" style={{ color: '#FFA500' }} />
-                        <CircularAvatar initial={data.top3[0].avatar} size={50} bgColor="#FFA500" />
-                        <div className="text-center mt-1">
-                          <div className="text-sm font-bold text-gray-900">#{1}</div>
-                          <div className="text-xs font-semibold text-gray-900">{data.top3[0].name}</div>
-                          <div className="text-xs text-gray-600">{formatMetricValue(data.top3[0].value, 'practice')}</div>
+                      )}
+                      {data.top3[0] && (
+                        <div className="flex flex-col items-center">
+                          <Crown className="w-4 h-4 mb-1" style={{ color: '#FFA500' }} />
+                          <CircularAvatar initial={data.top3[0].avatar} size={50} bgColor="#FFA500" />
+                          <div className="text-center mt-1">
+                            <div className="text-sm font-bold text-gray-900">#{1}</div>
+                            <div className="text-xs font-semibold text-gray-900">{data.top3[0].name}</div>
+                            <div className="text-xs text-gray-600">{formatMetricValue(data.top3[0].value, 'practice')}</div>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {data.top3[2] && (
-                      <div className="flex flex-col items-center">
-                        <CircularAvatar initial={data.top3[2].avatar} size={40} bgColor="#CD7F32" />
-                        <div className="text-center mt-1">
-                          <div className="text-xs font-bold text-gray-900">#{3}</div>
-                          <div className="text-xs font-semibold text-gray-900">{data.top3[2].name}</div>
-                          <div className="text-xs text-gray-600">{formatMetricValue(data.top3[2].value, 'practice')}</div>
+                      )}
+                      {data.top3[2] && (
+                        <div className="flex flex-col items-center">
+                          <CircularAvatar initial={data.top3[2].avatar} size={40} bgColor="#CD7F32" />
+                          <div className="text-center mt-1">
+                            <div className="text-xs font-bold text-gray-900">#{3}</div>
+                            <div className="text-xs font-semibold text-gray-900">{data.top3[2].name}</div>
+                            <div className="text-xs text-gray-600">{formatMetricValue(data.top3[2].value, 'practice')}</div>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
 
-                  <div className="text-center pt-3 border-t border-gray-200">
-                    <p className="text-sm font-semibold text-gray-700">
-                      Your Rank: <span className="text-[#014421]">#{data.userRank}</span> | <span className="text-[#FFA500]">{formatMetricValue(data.userValue, 'practice')}</span>
-                    </p>
-                  </div>
+                  {data.all.length === 0 ? (
+                    <div className="text-center pt-3 border-t border-gray-200">
+                      <p className="text-sm text-gray-500">No rankings yet. Start logging to take the lead!</p>
+                    </div>
+                  ) : (
+                    <div className="text-center pt-3 border-t border-gray-200">
+                      <p className="text-sm font-semibold text-gray-700">
+                        Your Rank: <span className="text-[#014421]">{data.userRank === 0 ? 'Unranked' : `#${data.userRank}`}</span> | <span className="text-[#FFA500]">{formatMetricValue(data.userValue, 'practice')}</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -1477,45 +1503,57 @@ export default function AcademyPage() {
                 <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full">
                   <h3 className="text-base font-semibold text-gray-900 mb-3 text-center">Rounds</h3>
                   
-                  <div className="flex items-end justify-center gap-2 mb-4">
-                    {data.top3[1] && (
-                      <div className="flex flex-col items-center">
-                        <CircularAvatar initial={data.top3[1].avatar} size={40} bgColor="#C0C0C0" />
-                        <div className="text-center mt-1">
-                          <div className="text-xs font-bold text-gray-900">#{2}</div>
-                          <div className="text-xs font-semibold text-gray-900">{data.top3[1].name}</div>
-                          <div className="text-xs text-gray-600">{formatMetricValue(data.top3[1].value, 'rounds')}</div>
+                  {data.all.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-sm text-gray-500">No rankings yet. Start logging to take the lead!</p>
+                    </div>
+                  ) : (
+                    <div className="flex items-end justify-center gap-2 mb-4">
+                      {data.top3[1] && (
+                        <div className="flex flex-col items-center">
+                          <CircularAvatar initial={data.top3[1].avatar} size={40} bgColor="#C0C0C0" />
+                          <div className="text-center mt-1">
+                            <div className="text-xs font-bold text-gray-900">#{2}</div>
+                            <div className="text-xs font-semibold text-gray-900">{data.top3[1].name}</div>
+                            <div className="text-xs text-gray-600">{formatMetricValue(data.top3[1].value, 'rounds')}</div>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {data.top3[0] && (
-                      <div className="flex flex-col items-center">
-                        <Crown className="w-4 h-4 mb-1" style={{ color: '#FFA500' }} />
-                        <CircularAvatar initial={data.top3[0].avatar} size={50} bgColor="#FFA500" />
-                        <div className="text-center mt-1">
-                          <div className="text-sm font-bold text-gray-900">#{1}</div>
-                          <div className="text-xs font-semibold text-gray-900">{data.top3[0].name}</div>
-                          <div className="text-xs text-gray-600">{formatMetricValue(data.top3[0].value, 'rounds')}</div>
+                      )}
+                      {data.top3[0] && (
+                        <div className="flex flex-col items-center">
+                          <Crown className="w-4 h-4 mb-1" style={{ color: '#FFA500' }} />
+                          <CircularAvatar initial={data.top3[0].avatar} size={50} bgColor="#FFA500" />
+                          <div className="text-center mt-1">
+                            <div className="text-sm font-bold text-gray-900">#{1}</div>
+                            <div className="text-xs font-semibold text-gray-900">{data.top3[0].name}</div>
+                            <div className="text-xs text-gray-600">{formatMetricValue(data.top3[0].value, 'rounds')}</div>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {data.top3[2] && (
-                      <div className="flex flex-col items-center">
-                        <CircularAvatar initial={data.top3[2].avatar} size={40} bgColor="#CD7F32" />
-                        <div className="text-center mt-1">
-                          <div className="text-xs font-bold text-gray-900">#{3}</div>
-                          <div className="text-xs font-semibold text-gray-900">{data.top3[2].name}</div>
-                          <div className="text-xs text-gray-600">{formatMetricValue(data.top3[2].value, 'rounds')}</div>
+                      )}
+                      {data.top3[2] && (
+                        <div className="flex flex-col items-center">
+                          <CircularAvatar initial={data.top3[2].avatar} size={40} bgColor="#CD7F32" />
+                          <div className="text-center mt-1">
+                            <div className="text-xs font-bold text-gray-900">#{3}</div>
+                            <div className="text-xs font-semibold text-gray-900">{data.top3[2].name}</div>
+                            <div className="text-xs text-gray-600">{formatMetricValue(data.top3[2].value, 'rounds')}</div>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
 
-                  <div className="text-center pt-3 border-t border-gray-200">
-                    <p className="text-sm font-semibold text-gray-700">
-                      Your Rank: <span className="text-[#014421]">#{data.userRank}</span> | <span className="text-[#FFA500]">{formatMetricValue(data.userValue, 'rounds')}</span>
-                    </p>
-                  </div>
+                  {data.all.length === 0 ? (
+                    <div className="text-center pt-3 border-t border-gray-200">
+                      <p className="text-sm text-gray-500">No rankings yet. Start logging to take the lead!</p>
+                    </div>
+                  ) : (
+                    <div className="text-center pt-3 border-t border-gray-200">
+                      <p className="text-sm font-semibold text-gray-700">
+                        Your Rank: <span className="text-[#014421]">{data.userRank === 0 ? 'Unranked' : `#${data.userRank}`}</span> | <span className="text-[#FFA500]">{formatMetricValue(data.userValue, 'rounds')}</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -1527,45 +1565,53 @@ export default function AcademyPage() {
                 <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full">
                   <h3 className="text-base font-semibold text-gray-900 mb-3 text-center">Drills</h3>
                   
-                  <div className="flex items-end justify-center gap-2 mb-4">
-                    {data.top3[1] && (
-                      <div className="flex flex-col items-center">
-                        <CircularAvatar initial={data.top3[1].avatar} size={40} bgColor="#C0C0C0" />
-                        <div className="text-center mt-1">
-                          <div className="text-xs font-bold text-gray-900">#{2}</div>
-                          <div className="text-xs font-semibold text-gray-900">{data.top3[1].name}</div>
-                          <div className="text-xs text-gray-600">{formatMetricValue(data.top3[1].value, 'drills')}</div>
-                        </div>
+                  {data.all.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-sm text-gray-500">No rankings yet. Start logging to take the lead!</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-end justify-center gap-2 mb-4">
+                        {data.top3[1] && (
+                          <div className="flex flex-col items-center">
+                            <CircularAvatar initial={data.top3[1].avatar} size={40} bgColor="#C0C0C0" />
+                            <div className="text-center mt-1">
+                              <div className="text-xs font-bold text-gray-900">#{2}</div>
+                              <div className="text-xs font-semibold text-gray-900">{data.top3[1].name}</div>
+                              <div className="text-xs text-gray-600">{formatMetricValue(data.top3[1].value, 'drills')}</div>
+                            </div>
+                          </div>
+                        )}
+                        {data.top3[0] && (
+                          <div className="flex flex-col items-center">
+                            <Crown className="w-4 h-4 mb-1" style={{ color: '#FFA500' }} />
+                            <CircularAvatar initial={data.top3[0].avatar} size={50} bgColor="#FFA500" />
+                            <div className="text-center mt-1">
+                              <div className="text-sm font-bold text-gray-900">#{1}</div>
+                              <div className="text-xs font-semibold text-gray-900">{data.top3[0].name}</div>
+                              <div className="text-xs text-gray-600">{formatMetricValue(data.top3[0].value, 'drills')}</div>
+                            </div>
+                          </div>
+                        )}
+                        {data.top3[2] && (
+                          <div className="flex flex-col items-center">
+                            <CircularAvatar initial={data.top3[2].avatar} size={40} bgColor="#CD7F32" />
+                            <div className="text-center mt-1">
+                              <div className="text-xs font-bold text-gray-900">#{3}</div>
+                              <div className="text-xs font-semibold text-gray-900">{data.top3[2].name}</div>
+                              <div className="text-xs text-gray-600">{formatMetricValue(data.top3[2].value, 'drills')}</div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {data.top3[0] && (
-                      <div className="flex flex-col items-center">
-                        <Crown className="w-4 h-4 mb-1" style={{ color: '#FFA500' }} />
-                        <CircularAvatar initial={data.top3[0].avatar} size={50} bgColor="#FFA500" />
-                        <div className="text-center mt-1">
-                          <div className="text-sm font-bold text-gray-900">#{1}</div>
-                          <div className="text-xs font-semibold text-gray-900">{data.top3[0].name}</div>
-                          <div className="text-xs text-gray-600">{formatMetricValue(data.top3[0].value, 'drills')}</div>
-                        </div>
-                      </div>
-                    )}
-                    {data.top3[2] && (
-                      <div className="flex flex-col items-center">
-                        <CircularAvatar initial={data.top3[2].avatar} size={40} bgColor="#CD7F32" />
-                        <div className="text-center mt-1">
-                          <div className="text-xs font-bold text-gray-900">#{3}</div>
-                          <div className="text-xs font-semibold text-gray-900">{data.top3[2].name}</div>
-                          <div className="text-xs text-gray-600">{formatMetricValue(data.top3[2].value, 'drills')}</div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
 
-                  <div className="text-center pt-3 border-t border-gray-200">
-                    <p className="text-sm font-semibold text-gray-700">
-                      Your Rank: <span className="text-[#014421]">#{data.userRank}</span> | <span className="text-[#FFA500]">{formatMetricValue(data.userValue, 'drills')}</span>
-                    </p>
-                  </div>
+                      <div className="text-center pt-3 border-t border-gray-200">
+                        <p className="text-sm font-semibold text-gray-700">
+                          Your Rank: <span className="text-[#014421]">{data.userRank === 0 ? 'Unranked' : `#${data.userRank}`}</span> | <span className="text-[#FFA500]">{formatMetricValue(data.userValue, 'drills')}</span>
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })()}
@@ -1606,56 +1652,62 @@ export default function AcademyPage() {
         <div className="mb-6 w-full">
           <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 text-center">Top 3 Leaders</h2>
-            <div className="flex items-end justify-center gap-3">
-              {/* 2nd Place */}
-              {top3[1] && (
-                <div className="flex flex-col items-center">
-                  <CircularAvatar 
-                    initial={top3[1].avatar || top3[1].name[0]} 
-                    size={60}
-                    bgColor="#C0C0C0"
-                  />
-                  <div className="text-center mt-2">
-                    <div className="text-sm font-bold text-gray-900">#{2}</div>
-                    <div className="text-sm font-semibold text-gray-900">{top3[1].name}</div>
-                    <div className="text-xs text-gray-600">{formatLeaderboardValue(top3[1].value, leaderboardMetric)}</div>
+            {sortedLeaderboard.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-sm text-gray-500">No rankings yet. Start logging to take the lead!</p>
+              </div>
+            ) : (
+              <div className="flex items-end justify-center gap-3">
+                {/* 2nd Place */}
+                {top3[1] && (
+                  <div className="flex flex-col items-center">
+                    <CircularAvatar 
+                      initial={top3[1].avatar || top3[1].name[0]} 
+                      size={60}
+                      bgColor="#C0C0C0"
+                    />
+                    <div className="text-center mt-2">
+                      <div className="text-sm font-bold text-gray-900">#{2}</div>
+                      <div className="text-sm font-semibold text-gray-900">{top3[1].name}</div>
+                      <div className="text-xs text-gray-600">{formatLeaderboardValue(top3[1].value, leaderboardMetric)}</div>
+                    </div>
                   </div>
-                </div>
-              )}
-              
-              {/* 1st Place - Center, Higher, with Crown */}
-              {top3[0] && (
-                <div className="flex flex-col items-center">
-                  <Crown className="w-6 h-6 mb-1" style={{ color: '#FFA500' }} />
-                  <CircularAvatar 
-                    initial={top3[0].avatar || top3[0].name[0]} 
-                    size={80}
-                    bgColor="#FFA500"
-                  />
-                  <div className="text-center mt-2">
-                    <div className="text-base font-bold text-gray-900">#{1}</div>
-                    <div className="text-base font-semibold text-gray-900">{top3[0].name}</div>
-                    <div className="text-xs text-gray-600">{formatLeaderboardValue(top3[0].value, leaderboardMetric)}</div>
+                )}
+                
+                {/* 1st Place - Center, Higher, with Crown */}
+                {top3[0] && (
+                  <div className="flex flex-col items-center">
+                    <Crown className="w-6 h-6 mb-1" style={{ color: '#FFA500' }} />
+                    <CircularAvatar 
+                      initial={top3[0].avatar || top3[0].name[0]} 
+                      size={80}
+                      bgColor="#FFA500"
+                    />
+                    <div className="text-center mt-2">
+                      <div className="text-base font-bold text-gray-900">#{1}</div>
+                      <div className="text-base font-semibold text-gray-900">{top3[0].name}</div>
+                      <div className="text-xs text-gray-600">{formatLeaderboardValue(top3[0].value, leaderboardMetric)}</div>
+                    </div>
                   </div>
-                </div>
-              )}
-              
-              {/* 3rd Place */}
-              {top3[2] && (
-                <div className="flex flex-col items-center">
-                  <CircularAvatar 
-                    initial={top3[2].avatar || top3[2].name[0]} 
-                    size={60}
-                    bgColor="#CD7F32"
-                  />
-                  <div className="text-center mt-2">
-                    <div className="text-sm font-bold text-gray-900">#{3}</div>
-                    <div className="text-sm font-semibold text-gray-900">{top3[2].name}</div>
-                    <div className="text-xs text-gray-600">{formatLeaderboardValue(top3[2].value, leaderboardMetric)}</div>
+                )}
+                
+                {/* 3rd Place */}
+                {top3[2] && (
+                  <div className="flex flex-col items-center">
+                    <CircularAvatar 
+                      initial={top3[2].avatar || top3[2].name[0]} 
+                      size={60}
+                      bgColor="#CD7F32"
+                    />
+                    <div className="text-center mt-2">
+                      <div className="text-sm font-bold text-gray-900">#{3}</div>
+                      <div className="text-sm font-semibold text-gray-900">{top3[2].name}</div>
+                      <div className="text-xs text-gray-600">{formatLeaderboardValue(top3[2].value, leaderboardMetric)}</div>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1676,46 +1728,50 @@ export default function AcademyPage() {
               </button>
             </div>
             
-            {!showFullLeaderboard ? (
+            {sortedLeaderboard.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <p className="text-sm">No rankings yet. Start logging to take the lead!</p>
+              </div>
+            ) : !showFullLeaderboard ? (
               <div className="space-y-3">
-                {ranks4to7.map((entry) => {
-                  return (
-                    <div
-                      key={entry.id}
-                      className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                        entry.id === 'user' 
-                          ? 'border-[#FFA500]' 
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex-shrink-0 w-10 text-center">
-                        <span className={`text-sm font-bold ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-600'}`}>
-                          #{entry.rank}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className={`font-semibold text-sm ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
-                          {entry.name}
+                  {ranks4to7.map((entry) => {
+                    return (
+                      <div
+                        key={entry.id}
+                        className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                          entry.id === 'user' 
+                            ? 'border-[#FFA500]' 
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="flex-shrink-0 w-10 text-center">
+                          <span className={`text-sm font-bold ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-600'}`}>
+                            #{entry.rank}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className={`font-semibold text-sm ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
+                            {entry.name}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold" style={{ color: '#FFA500' }}>
+                            {formatLeaderboardValue(entry.value, leaderboardMetric)}
+                          </span>
+                          {entry.movedUp && (
+                            <TrendingUp className="w-4 h-4" style={{ color: '#10B981' }} />
+                          )}
+                          {entry.movedDown && (
+                            <TrendingDown className="w-4 h-4" style={{ color: '#EF4444' }} />
+                          )}
+                          {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
+                            <div className="w-4 h-4" />
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold" style={{ color: '#FFA500' }}>
-                          {formatLeaderboardValue(entry.value, leaderboardMetric)}
-                        </span>
-                        {entry.movedUp && (
-                          <TrendingUp className="w-4 h-4" style={{ color: '#10B981' }} />
-                        )}
-                        {entry.movedDown && (
-                          <TrendingDown className="w-4 h-4" style={{ color: '#EF4444' }} />
-                        )}
-                        {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
-                          <div className="w-4 h-4" />
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
             ) : (
               <div>
                 {/* Search Bar */}
