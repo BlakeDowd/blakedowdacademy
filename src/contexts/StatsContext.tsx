@@ -56,6 +56,14 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       return;
     }
     
+    // Safety timeout: Force loading to false after 3 seconds no matter what
+    const timeoutId = setTimeout(() => {
+      console.log('Timeout: Forcing loading to false after 3 seconds');
+      setLoading(false);
+      // Ensure rounds is empty array if still loading
+      setRounds((prevRounds) => prevRounds || []);
+    }, 3000);
+    
     try {
       setLoading(true);
       const { createClient } = await import('@/lib/supabase/client');
@@ -66,78 +74,84 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       
       if (userError || !user) {
         console.error('Error getting user:', userError);
-        setRounds([]);
-        // Don't return here - let finally block set loading to false
-      } else {
-        // Fetch rounds from Supabase for the authenticated user
-        const { data, error } = await supabase
-          .from('rounds')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('date', { ascending: false });
-
-        if (error) {
-          console.error('Error fetching rounds:', error);
-          setRounds([]); // Ensure empty array, never null
-          // Don't return here - let finally block set loading to false
-        } else {
-          // Log what we received from the database
-          console.log('Rounds data from database:', data);
-          
-          // If data is null or empty, set empty array immediately and stop loading
-          if (!data || data.length === 0) {
-            console.log('No rounds found in database, setting empty array');
-            setRounds([]); // Ensure empty array, never null
-            setLoading(false); // Set loading to false immediately for empty array
-            return; // Return early since we have empty data
-          } else {
-            // Transform Supabase data to RoundData format
-            const transformedRounds: RoundData[] = data.map((round: any) => ({
-              date: round.date,
-              course: round.course,
-              handicap: round.handicap,
-              holes: round.holes,
-              score: round.score,
-              nett: round.nett,
-              eagles: round.eagles || 0,
-              birdies: round.birdies || 0,
-              pars: round.pars || 0,
-              bogeys: round.bogeys || 0,
-              doubleBogeys: round.double_bogeys || 0,
-              firLeft: round.fir_left || 0,
-              firHit: round.fir_hit || 0,
-              firRight: round.fir_right || 0,
-              totalGir: round.total_gir || 0,
-              totalPenalties: round.total_penalties || 0,
-              teePenalties: round.tee_penalties || 0,
-              approachPenalties: round.approach_penalties || 0,
-              goingForGreen: round.going_for_green || 0,
-              gir8ft: round.gir_8ft || 0,
-              gir20ft: round.gir_20ft || 0,
-              upAndDownConversions: round.up_and_down_conversions || 0,
-              missed: round.missed || 0,
-              bunkerAttempts: round.bunker_attempts || 0,
-              bunkerSaves: round.bunker_saves || 0,
-              chipInside6ft: round.chip_inside_6ft || 0,
-              doubleChips: round.double_chips || 0,
-              totalPutts: round.total_putts || 0,
-              threePutts: round.three_putts || 0,
-              missed6ftAndIn: round.missed_6ft_and_in || 0,
-              puttsUnder6ftAttempts: round.putts_under_6ft_attempts || 0,
-            }));
-
-            setRounds(transformedRounds);
-            console.log('Transformed rounds:', transformedRounds);
-          }
-        }
+        setRounds([]); // Ensure empty array, never null
+        clearTimeout(timeoutId);
+        setLoading(false);
+        return;
       }
+      
+      // Fetch rounds from Supabase for the authenticated user
+      const { data, error } = await supabase
+        .from('rounds')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching rounds:', error);
+        setRounds([]); // Ensure empty array, never null
+        clearTimeout(timeoutId);
+        setLoading(false);
+        return;
+      }
+      
+      // Log what we received from the database
+      console.log('Rounds data from database:', data);
+      
+      // If data is null or empty, set empty array immediately
+      if (!data || data.length === 0) {
+        console.log('No rounds found in database, setting empty array');
+        setRounds([]); // Ensure empty array, never null
+        clearTimeout(timeoutId);
+        setLoading(false);
+        return;
+      }
+      
+      // Transform Supabase data to RoundData format
+      const transformedRounds: RoundData[] = data.map((round: any) => ({
+        date: round.date,
+        course: round.course,
+        handicap: round.handicap,
+        holes: round.holes,
+        score: round.score,
+        nett: round.nett,
+        eagles: round.eagles || 0,
+        birdies: round.birdies || 0,
+        pars: round.pars || 0,
+        bogeys: round.bogeys || 0,
+        doubleBogeys: round.double_bogeys || 0,
+        firLeft: round.fir_left || 0,
+        firHit: round.fir_hit || 0,
+        firRight: round.fir_right || 0,
+        totalGir: round.total_gir || 0,
+        totalPenalties: round.total_penalties || 0,
+        teePenalties: round.tee_penalties || 0,
+        approachPenalties: round.approach_penalties || 0,
+        goingForGreen: round.going_for_green || 0,
+        gir8ft: round.gir_8ft || 0,
+        gir20ft: round.gir_20ft || 0,
+        upAndDownConversions: round.up_and_down_conversions || 0,
+        missed: round.missed || 0,
+        bunkerAttempts: round.bunker_attempts || 0,
+        bunkerSaves: round.bunker_saves || 0,
+        chipInside6ft: round.chip_inside_6ft || 0,
+        doubleChips: round.double_chips || 0,
+        totalPutts: round.total_putts || 0,
+        threePutts: round.three_putts || 0,
+        missed6ftAndIn: round.missed_6ft_and_in || 0,
+        puttsUnder6ftAttempts: round.putts_under_6ft_attempts || 0,
+      }));
+
+      setRounds(transformedRounds);
+      console.log('Transformed rounds:', transformedRounds);
+      clearTimeout(timeoutId);
+      setLoading(false);
+      
     } catch (error) {
       console.error('Error refreshing rounds:', error);
       setRounds([]); // Ensure empty array, never null
-    } finally {
-      // Always set loading to false, even if database returns empty list
+      clearTimeout(timeoutId);
       setLoading(false);
-      console.log('Loading set to false');
     }
   };
 
