@@ -64,10 +64,10 @@ export default function ProfilePage() {
 
       try {
         const supabase = createClient();
-        // Only fetch the specific columns we need: full_name and profile_icon
+        // Changing columns forces Next.js to bypass cache
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('full_name, profile_icon')
+          .select('full_name, profile_icon, updated_at')
           .eq('id', user.id)
           .single();
 

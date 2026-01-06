@@ -19,7 +19,7 @@ export async function updateProfile(userId: string, fullName: string, profileIco
         updated_at: new Date().toISOString(),
       })
       .eq('id', userId)
-      .select('full_name, profile_icon')
+      .select('full_name, profile_icon, updated_at')
       .single();
 
     if (error) {
@@ -29,6 +29,7 @@ export async function updateProfile(userId: string, fullName: string, profileIco
 
     // Immediately revalidate all pages to clear cache after database update
     revalidatePath('/', 'layout');
+    revalidatePath('/dashboard', 'page');
     revalidatePath('/stats', 'page');
     revalidatePath('/academy', 'page');
     revalidatePath('/profile', 'page');

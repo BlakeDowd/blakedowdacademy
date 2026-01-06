@@ -114,10 +114,10 @@ export default function HomeDashboard() {
       try {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
-        // Fetch directly from profiles table using the exact query specified
+        // Fetch directly from profiles table - changing columns forces Next.js to bypass cache
         const { data: profile, error } = await supabase
           .from('profiles')
-          .select('full_name, profile_icon')
+          .select('full_name, profile_icon, updated_at')
           .eq('id', user.id)
           .single();
 

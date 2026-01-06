@@ -64,10 +64,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // Fetch user profile with full_name, profile_icon, and initialHandicap from profiles table
+        // Fetch user profile - changing columns forces Next.js to bypass cache
         const { data: profile } = await supabase
           .from('profiles')
-          .select('full_name, profile_icon, initial_handicap, created_at')
+          .select('full_name, profile_icon, initial_handicap, created_at, updated_at')
           .eq('id', supabaseUser.id)
           .single();
 
@@ -100,10 +100,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
-        // Fetch user profile
+        // Fetch user profile - changing columns forces Next.js to bypass cache
         const { data: profile } = await supabase
           .from('profiles')
-          .select('full_name, profile_icon, initial_handicap, created_at')
+          .select('full_name, profile_icon, initial_handicap, created_at, updated_at')
           .eq('id', session.user.id)
           .single();
 
@@ -131,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (supabaseUser) {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('full_name, profile_icon, initial_handicap, created_at')
+            .select('full_name, profile_icon, initial_handicap, created_at, updated_at')
             .eq('id', supabaseUser.id)
             .single();
 
@@ -182,10 +182,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     if (data.user) {
-      // Fetch user profile
+      // Fetch user profile - changing columns forces Next.js to bypass cache
       const { data: profile } = await supabase
         .from('profiles')
-        .select('full_name, profile_icon, initial_handicap, created_at')
+        .select('full_name, profile_icon, initial_handicap, created_at, updated_at')
         .eq('id', data.user.id)
         .single();
 
