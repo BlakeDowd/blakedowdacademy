@@ -1,46 +1,39 @@
-"use client";
-
-// Note: dynamic and revalidate exports don't work in client components,
-// but kept here as requested. The cache bypass is handled via Supabase client config.
+// Force dynamic rendering to prevent caching
 export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/AuthContext";
-import { useStats } from "@/contexts/StatsContext";
-import HomeDashboard from "@/components/HomeDashboard";
+import { cookies } from 'next/headers';
+import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
+import HomeDashboard from '@/components/HomeDashboard';
 
-export default function DashboardPage() {
-  const router = useRouter();
-  const { isAuthenticated, loading: authLoading } = useAuth();
-  const { rounds, loading: statsLoading } = useStats();
+export default async function DashboardPage() {
+  // Use cookies() to force Next.js to treat this as dynamic every single time
+  const cookieStore = await cookies();
   
-  // Ensure rounds is always an array, never null or undefined
-  const safeRounds = rounds || [];
+  // Get the user from server-side Supabase
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
   
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, authLoading, router]);
-
-  // Show loading if either auth or stats are loading
-  if (authLoading || statsLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="w-8 h-8 border-4 border-[#014421] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
+  // Redirect to login if not authenticated
+  if (authError || !user) {
+    redirect('/login');
   }
-
-  if (!isAuthenticated) {
-    return null; // Will redirect
+  
+  // Fetch profile directly from database (server-side, no cache)
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('full_name, profile_icon, updated_at')
+    .eq('id', user.id)
+    .single();
+  
+  if (profileError) {
+    console.error('Error fetching profile:', profileError);
   }
-
+  
+  // Log what we fetched from the database
+  console.log('Server fetched profile name:', profile?.full_name);
+  
+  // Render the client component (it will still fetch its own data, but this ensures dynamic rendering)
   return <HomeDashboard />;
 }
-

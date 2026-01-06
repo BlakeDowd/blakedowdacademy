@@ -135,8 +135,8 @@ export default function ProfilePage() {
       setSaving(false);
     } finally {
       // Force browser to physically leave the page and reload dashboard
-      // This kills the spinner and bypasses cache in one move
-      window.location.href = '/dashboard';
+      // Adding timestamp query parameter forces browser to think it's a brand new page
+      window.location.href = '/dashboard?updated=' + Date.now();
     }
   };
 
