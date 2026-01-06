@@ -105,33 +105,6 @@ const getBenchmarkGoals = (handicap: number) => {
   };
 };
 
-// Empty Stats State Component
-const EmptyStatsState = () => {
-  return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="max-w-md mx-auto bg-white min-h-screen">
-        <div className="pt-6 pb-4 px-4">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Game Overview</h1>
-              <p className="text-gray-600 text-sm mt-1">Track your performance metrics</p>
-            </div>
-          </div>
-        </div>
-        <div className="px-4 py-20 text-center">
-          <p className="text-gray-600 text-lg mb-4">No rounds found. Add your first round below!</p>
-          <Link 
-            href="/add-round"
-            className="inline-block px-6 py-3 bg-[#014421] text-white font-semibold rounded-lg hover:bg-[#01331a] transition-colors"
-          >
-            Add Round
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 export default function StatsPage() {
   const { rounds, loading: statsLoading } = useStats();
   const { user, loading: authLoading } = useAuth();
@@ -451,7 +424,7 @@ export default function StatsPage() {
     // Single guard: if no rounds, return early with safe defaults
     if (!rounds || rounds.length === 0) {
       return { 
-        handicap: 'N/A', 
+        handicap: '--', 
         totalRounds: 0, 
         scores: [],
         fir: 0, 
@@ -473,7 +446,7 @@ export default function StatsPage() {
     const lastRound = rounds[rounds.length - 1];
     const handicap = lastRound?.handicap !== null && lastRound?.handicap !== undefined 
       ? lastRound.handicap.toFixed(1) 
-      : 'N/A';
+      : '--';
 
     return {
       handicap: handicap,
@@ -850,7 +823,7 @@ export default function StatsPage() {
             </div>
             <div className="py-20 text-center">
               <p className="text-white/80 text-sm">
-                {!safeRounds || safeRounds.length === 0 ? 'No data available. Log your first round to see trends!' : 'No data for this filter'}
+                {!safeRounds || safeRounds.length === 0 ? '--' : 'No data for this filter'}
               </p>
             </div>
           </div>
@@ -931,7 +904,7 @@ export default function StatsPage() {
             </div>
             <div className="py-20 text-center">
               <p className="text-white/80 text-sm">
-                {!safeRounds || safeRounds.length === 0 ? 'No data available. Log your first round to see trends!' : 'No data for this filter'}
+                {!safeRounds || safeRounds.length === 0 ? '--' : 'No data for this filter'}
               </p>
             </div>
           </div>
@@ -1966,9 +1939,10 @@ export default function StatsPage() {
                 </div>
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                <p>No driving data available yet.</p>
-                <p className="text-sm mt-2">Log a round to see your driving distribution.</p>
+              <div className="text-center py-8">
+                <div className="text-3xl font-bold mb-1" style={{ color: '#FFA500' }}>--</div>
+                <div className="text-sm font-medium text-gray-700 mb-2">Driving Distribution</div>
+                <div className="text-xs text-gray-500">No data available</div>
               </div>
             )}
           </div>
@@ -2553,7 +2527,11 @@ export default function StatsPage() {
             return (
               <div className="px-4 mb-8">
                 <div className="rounded-2xl p-6 bg-gray-100 border-2 border-gray-300">
-                  <p className="text-center text-gray-600">No rounds available for report. Add rounds to generate a report.</p>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold mb-1" style={{ color: '#FFA500' }}>--</div>
+                    <div className="text-sm font-medium text-gray-700 mb-2">Report Data</div>
+                    <div className="text-xs text-gray-500">No rounds available</div>
+                  </div>
                 </div>
               </div>
             );
@@ -2568,7 +2546,7 @@ export default function StatsPage() {
             // HARD GUARD: if no rounds, return early
             if (!rounds || rounds.length === 0) {
               return { 
-                handicap: 'N/A',
+                handicap: '--',
                 averages: 0,
                 latest: [],
                 fir: 0, gir: 0, upAndDown: 0, bunkerSaves: 0,

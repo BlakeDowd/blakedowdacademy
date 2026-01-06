@@ -472,12 +472,12 @@ export default function HomeDashboard() {
                 }}
               >
                 {(() => {
-                  // Safeguard: if no rounds, return 0
-                  if (!safeRounds || safeRounds.length === 0) return 'N/A';
+                  // Safeguard: if no rounds, return --
+                  if (!safeRounds || safeRounds.length === 0) return '--';
                   const lastRound = safeRounds[safeRounds.length - 1];
                   return lastRound?.handicap !== null && lastRound?.handicap !== undefined
                     ? lastRound.handicap.toFixed(1)
-                    : 'N/A';
+                    : '--';
                 })()}
               </p>
               <p className="text-gray-400 text-xs mt-1">Handicap</p>
