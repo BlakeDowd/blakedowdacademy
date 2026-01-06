@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useStats } from "@/contexts/StatsContext";
 import { createClient } from "@/lib/supabase/client";
-import { updateProfile } from "./actions";
 import Link from "next/link";
 import { 
   Settings, 
@@ -105,17 +104,22 @@ export default function ProfilePage() {
     setSuccess(false);
 
     try {
-      // Use server action to update profile and revalidate cache
-      // Add timeout to prevent hanging
-      const updatePromise = updateProfile(user.id, fullName.trim(), selectedIcon);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Request timeout")), 10000)
-      );
+      const supabase = createClient();
       
-      const result = await Promise.race([updatePromise, timeoutPromise]) as { success: boolean; error?: string };
+      // Direct database upsert - wrapped in try/finally
+      const { data, error } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          full_name: fullName.trim() || null,
+          profile_icon: selectedIcon,
+          updated_at: new Date().toISOString(),
+        })
+        .select('full_name, profile_icon')
+        .single();
 
-      if (!result || !result.success) {
-        throw new Error(result?.error || "Failed to update profile");
+      if (error) {
+        throw new Error(error.message || "Failed to update profile");
       }
 
       setSuccess(true);
@@ -125,20 +129,14 @@ export default function ProfilePage() {
         window.dispatchEvent(new CustomEvent('profileUpdated'));
       }
       
-      // Refresh the router cache
-      router.refresh();
-      
-      // Force a hard browser reload to clear all cache
-      window.location.href = '/dashboard';
-      
     } catch (err: any) {
       console.error("Profile save error:", err);
       setError(err.message || "Failed to save profile");
-    } finally {
-      // Always reset loading states, even if there is an error or timeout
-      // Explicitly set loading to false to clear stuck spinners
-      setLoading(false);
       setSaving(false);
+    } finally {
+      // Force browser to physically leave the page and reload dashboard
+      // This kills the spinner and bypasses cache in one move
+      window.location.href = '/dashboard';
     }
   };
 
