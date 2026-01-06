@@ -6,7 +6,6 @@ export const revalidate = 0;
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { 
   Home, 
@@ -30,16 +29,10 @@ export default function Navbar() {
   const [signingOut, setSigningOut] = useState(false);
 
   const handleSignOut = async () => {
-    try {
-      setSigningOut(true);
-      const supabase = createClient();
-      await supabase.auth.signOut();
-      // Clear all local site data and redirect to login
-      window.location.href = '/login';
-    } catch (error) {
-      console.error('Error signing out:', error);
-      setSigningOut(false);
-    }
+    const supabase = createClient();
+    await supabase.auth.signOut(); // Tell the database
+    window.localStorage.clear();   // Wipe the browser's memory
+    window.location.href = '/';    // Force a hard jump to the home page
   };
 
   return (
@@ -65,8 +58,7 @@ export default function Navbar() {
       })}
       <button
         onClick={handleSignOut}
-        disabled={signingOut}
-        className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80 disabled:opacity-50"
+        className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80"
         title="Sign Out"
       >
         <LogOut className="w-6 h-6 text-white" />
