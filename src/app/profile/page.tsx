@@ -101,7 +101,6 @@ export default function ProfilePage() {
     if (!user) return;
 
     setSaving(true);
-    setLoading(false); // Ensure loading state is reset
     setError("");
     setSuccess(false);
 
@@ -129,16 +128,17 @@ export default function ProfilePage() {
       // Refresh the router cache
       router.refresh();
       
-      // Force a hard redirect to bypass all caching - do this immediately
-      window.location.href = '/dashboard';
+      // Force a complete browser-level refresh using assign (nuclear option)
+      window.location.assign('/dashboard');
       
     } catch (err: any) {
       console.error("Profile save error:", err);
       setError(err.message || "Failed to save profile");
     } finally {
       // Always reset loading states, even if there is an error or timeout
-      setSaving(false);
+      // Explicitly set loading to false to clear stuck spinners
       setLoading(false);
+      setSaving(false);
     }
   };
 
