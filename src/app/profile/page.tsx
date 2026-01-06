@@ -128,8 +128,8 @@ export default function ProfilePage() {
       // Refresh the router cache
       router.refresh();
       
-      // Force a complete browser-level refresh using assign (nuclear option)
-      window.location.assign('/dashboard');
+      // Force a hard browser reload to clear all cache
+      window.location.href = '/dashboard';
       
     } catch (err: any) {
       console.error("Profile save error:", err);
