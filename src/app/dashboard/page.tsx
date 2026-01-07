@@ -6,6 +6,7 @@ import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import HomeDashboard from '@/components/HomeDashboard';
+import DashboardLogOutButton from '@/components/DashboardLogOutButton';
 
 export default async function DashboardPage() {
   // Use cookies() to force Next.js to treat this as dynamic every single time
@@ -54,5 +55,12 @@ export default async function DashboardPage() {
   }
   
   // Render the client component (it will still fetch its own data, but this ensures dynamic rendering)
-  return <HomeDashboard />;
+  return (
+    <>
+      <HomeDashboard />
+      <div className="max-w-md mx-auto px-5">
+        <DashboardLogOutButton />
+      </div>
+    </>
+  );
 }
