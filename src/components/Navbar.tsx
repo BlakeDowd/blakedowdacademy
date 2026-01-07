@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -23,13 +23,45 @@ const navItems = [
 
 export default function Navbar() {
   const pathname = usePathname();
-  const [signingOut, setSigningOut] = useState(false);
+  const [profileName, setProfileName] = useState<string | null>(null);
+
+  // Fetch profile name from database on every page load
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+          // Clean fetch: specifically select full_name from profiles table
+          const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', user.id)
+            .single();
+
+          if (error) {
+            console.error('Error fetching profile in Navbar:', error);
+            return;
+          }
+
+          if (profile?.full_name) {
+            setProfileName(profile.full_name);
+            console.log('Navbar fetched name:', profile.full_name);
+          }
+        }
+      } catch (error) {
+        console.error('Error in Navbar profile fetch:', error);
+      }
+    };
+
+    fetchProfile();
+  }, [pathname]); // Re-fetch when pathname changes (every page load)
 
   const handleSignOut = async () => {
     const supabase = createClient();
-    await supabase.auth.signOut(); // Tell the database
-    window.localStorage.clear();   // Wipe the browser's memory
-    window.location.href = '/';    // Force a hard jump to the home page
+    await supabase.auth.signOut();
+    window.location.href = '/auth/login'; // Force a total session wipe
   };
 
   return (
