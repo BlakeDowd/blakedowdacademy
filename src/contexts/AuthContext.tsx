@@ -64,19 +64,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // Fetch user profile - changing columns forces Next.js to bypass cache
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('full_name, profile_icon, initial_handicap, created_at, updated_at')
-          .eq('id', supabaseUser.id)
-          .single();
+        // Fetch user profile with timeout and error handling
+        let profileName = 'New Member'; // Default value
+        let initialHandicap = null;
+        let createdAt = supabaseUser.created_at;
+        
+        try {
+          // Force stop: Set isLoading to false if fetch takes longer than 2 seconds
+          const fetchPromise = supabase
+            .from('profiles')
+            .select('full_name, profile_icon, initial_handicap, created_at, updated_at')
+            .eq('id', supabaseUser.id)
+            .single();
+          
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Profile fetch timeout')), 2000)
+          );
+          
+          const result = await Promise.race([
+            fetchPromise,
+            timeoutPromise
+          ]) as { data: any; error: any };
+          
+          if (result.error) {
+            console.error('Error fetching profile in AuthContext:', result.error);
+            profileName = 'New Member'; // Default value
+          } else {
+            // Default Value: If full_name is missing or null, explicitly set it to 'New Member'
+            profileName = result.data?.full_name || 'New Member';
+            initialHandicap = result.data?.initial_handicap;
+            createdAt = result.data?.created_at || supabaseUser.created_at;
+          }
+        } catch (fetchError: any) {
+          console.error('Profile fetch error or timeout in AuthContext:', fetchError);
+          profileName = 'New Member'; // Default value
+        }
 
         setUser({
           id: supabaseUser.id,
           email: supabaseUser.email || '',
-          fullName: profile?.full_name,
-          initialHandicap: profile?.initial_handicap,
-          createdAt: profile?.created_at || supabaseUser.created_at,
+          fullName: profileName,
+          initialHandicap: initialHandicap,
+          createdAt: createdAt,
         });
         setIsAuthenticated(true);
       } catch (error) {
@@ -84,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setIsAuthenticated(false);
       } finally {
+        // Force stop: Always set loading to false
         setLoading(false);
       }
     };

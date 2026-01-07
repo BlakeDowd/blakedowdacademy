@@ -20,19 +20,38 @@ export default async function DashboardPage() {
     redirect('/login');
   }
   
-  // Fetch profile directly from database (server-side, no cache)
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('full_name, profile_icon, updated_at')
-    .eq('id', user.id)
-    .single();
+  // Fetch profile with timeout and error handling
+  let profileName = 'New Member'; // Default value
   
-  if (profileError) {
-    console.error('Error fetching profile:', profileError);
+  try {
+    // Force stop: Set isLoading to false if fetch takes longer than 2 seconds
+    const fetchPromise = supabase
+      .from('profiles')
+      .select('full_name, profile_icon, updated_at')
+      .eq('id', user.id)
+      .single();
+    
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Profile fetch timeout')), 2000)
+    );
+    
+    const result = await Promise.race([
+      fetchPromise,
+      timeoutPromise
+    ]) as { data: any; error: any };
+    
+    if (result.error) {
+      console.error('Error fetching profile:', result.error);
+      profileName = 'New Member'; // Default value
+    } else {
+      // Default Value: If full_name is missing or null, explicitly set it to 'New Member'
+      profileName = result.data?.full_name || 'New Member';
+      console.log('Server fetched profile name:', profileName);
+    }
+  } catch (error: any) {
+    console.error('Profile fetch error or timeout:', error);
+    profileName = 'New Member'; // Default value
   }
-  
-  // Log what we fetched from the database
-  console.log('Server fetched profile name:', profile?.full_name);
   
   // Render the client component (it will still fetch its own data, but this ensures dynamic rendering)
   return <HomeDashboard />;
