@@ -67,6 +67,17 @@ export default function Navbar() {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center">
       <nav className="w-full max-w-md flex items-center justify-around py-3" style={{ backgroundColor: '#014421' }}>
+        {/* FORCE SIGNOUT button - first item, bright red border for visibility */}
+        <button
+          onClick={handleSignOut}
+          className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80 px-3 py-2 rounded"
+          style={{ border: '5px solid red' }}
+          title="FORCE SIGNOUT"
+        >
+          <LogOut className="w-6 h-6 text-white" />
+          <span className="text-white text-xs font-bold">FORCE SIGNOUT</span>
+        </button>
+        
         {navItems.map((item) => {
         const Icon = item.icon;
         const isActive = pathname === item.href;
@@ -85,14 +96,6 @@ export default function Navbar() {
           </Link>
         );
       })}
-      <button
-        onClick={handleSignOut}
-        className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80"
-        title="Sign Out"
-      >
-        <LogOut className="w-6 h-6 text-white" />
-        <span className="text-white text-xs">Sign Out</span>
-      </button>
       </nav>
     </div>
   );
