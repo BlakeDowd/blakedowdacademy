@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import ConditionalNavbar from "@/components/ConditionalNavbar";
+import SignOutButton from "@/components/SignOutButton";
 import { StatsProvider } from "@/contexts/StatsContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -36,6 +37,8 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        {/* Sign Out button at the very top, outside of any loading wrappers */}
+        <SignOutButton />
         <ErrorBoundary>
           <AuthProvider>
             <StatsProvider>
