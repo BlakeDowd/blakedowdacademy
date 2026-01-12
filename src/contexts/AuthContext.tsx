@@ -242,7 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     if (!supabase) {
-      throw new Error('Supabase is not configured. Please set environment variables.');
+      throw new Error('Failed to initialize Supabase client.');
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -285,7 +285,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (email: string, password: string, fullName: string, initialHandicap: number) => {
     if (!supabase) {
-      throw new Error('Supabase is not configured. Please set environment variables.');
+      throw new Error('Failed to initialize Supabase client.');
     }
 
     const { data, error } = await supabase.auth.signUp({
