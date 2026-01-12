@@ -72,7 +72,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         .from('rounds')
         .select('*')
         .eq('user_id', user.id)
-        .order('date', { ascending: false });
+        .order('created_at', { ascending: false });
       
       // Debug: Log the query filter being used
       console.log('StatsContext: Query filter - user_id =', user.id);
