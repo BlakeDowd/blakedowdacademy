@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { useAuth } from "./AuthContext";
 
 interface RoundData {
   date: string;
@@ -50,26 +51,76 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   const [rounds, setRounds] = useState<RoundData[]>([]);
   // Set loading to true initially
   const [loading, setLoading] = useState<boolean>(true);
+  const { user } = useAuth();
 
-  // Load rounds from localStorage
-  const loadRounds = () => {
-    if (typeof window !== 'undefined') {
-      try {
-        const storedRounds = localStorage.getItem('rounds');
-        if (storedRounds) {
-          const parsedRounds = JSON.parse(storedRounds);
-          setRounds(Array.isArray(parsedRounds) ? parsedRounds : []);
-          console.log('StatsContext: Loaded rounds from localStorage:', parsedRounds.length);
-        } else {
-          setRounds([]);
-          console.log('StatsContext: No rounds found in localStorage');
-        }
-      } catch (error) {
-        console.error('StatsContext: Error loading rounds from localStorage:', error);
-        setRounds([]);
-      }
+  // Load rounds from database
+  const loadRounds = async () => {
+    if (!user?.id) {
+      setRounds([]);
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+
+      const { data, error } = await supabase
+        .from('rounds')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false });
+
+      if (error) {
+        console.error('StatsContext: Error loading rounds from database:', error);
+        setRounds([]);
+        setLoading(false);
+        return;
+      }
+
+      // Transform database columns (snake_case) to camelCase for RoundData interface
+      const transformedRounds: RoundData[] = (data || []).map((round: any) => ({
+        date: round.date,
+        course: round.course,
+        handicap: round.handicap,
+        holes: round.holes,
+        score: round.score,
+        nett: round.nett,
+        eagles: round.eagles,
+        birdies: round.birdies,
+        pars: round.pars,
+        bogeys: round.bogeys,
+        doubleBogeys: round.double_bogeys,
+        firLeft: round.fir_left,
+        firHit: round.fir_hit,
+        firRight: round.fir_right,
+        totalGir: round.total_gir,
+        totalPenalties: round.total_penalties,
+        teePenalties: round.tee_penalties,
+        approachPenalties: round.approach_penalties,
+        goingForGreen: round.going_for_green,
+        gir8ft: round.gir_8ft || 0,
+        gir20ft: round.gir_20ft || 0,
+        upAndDownConversions: round.up_and_down_conversions,
+        missed: round.missed,
+        bunkerAttempts: round.bunker_attempts,
+        bunkerSaves: round.bunker_saves,
+        chipInside6ft: round.chip_inside_6ft,
+        doubleChips: round.double_chips,
+        totalPutts: round.total_putts,
+        threePutts: round.three_putts,
+        missed6ftAndIn: round.missed_6ft_and_in,
+        puttsUnder6ftAttempts: round.putts_under_6ft_attempts,
+      }));
+
+      setRounds(transformedRounds);
+      console.log('StatsContext: Loaded rounds from database:', transformedRounds.length);
+    } catch (error) {
+      console.error('StatsContext: Error loading rounds from database:', error);
+      setRounds([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const refreshRounds = () => {
@@ -81,12 +132,19 @@ export function StatsProvider({ children }: { children: ReactNode }) {
 
   // Load rounds on mount and listen for updates
   useEffect(() => {
-    loadRounds();
+    if (user?.id) {
+      loadRounds();
+    } else {
+      setRounds([]);
+      setLoading(false);
+    }
 
     // Listen for roundsUpdated event
     const handleRoundsUpdate = () => {
-      console.log('StatsContext: Received roundsUpdated event, refreshing...');
-      loadRounds();
+      console.log('StatsContext: Received roundsUpdated event, refreshing from database...');
+      if (user?.id) {
+        loadRounds();
+      }
     };
 
     window.addEventListener('roundsUpdated', handleRoundsUpdate);
@@ -94,7 +152,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     return () => {
       window.removeEventListener('roundsUpdated', handleRoundsUpdate);
     };
-  }, []);
+  }, [user?.id]);
 
   return (
     <StatsContext.Provider value={{ rounds, loading, refreshRounds, calculateStats }}>

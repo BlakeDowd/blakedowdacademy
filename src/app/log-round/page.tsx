@@ -157,7 +157,7 @@ export default function LogRoundPage() {
     }
 
     try {
-      // Save to database
+      // Save to database only - no localStorage
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
@@ -204,20 +204,8 @@ export default function LogRoundPage() {
         return;
       }
 
-      // Also save to localStorage for backward compatibility with StatsContext
-      const existingRounds = typeof window !== 'undefined' 
-        ? JSON.parse(localStorage.getItem('rounds') || '[]')
-        : [];
-
-      const newRound = {
-        ...roundData,
-        date: roundData.date || today,
-      };
-
-      const updatedRounds = [...existingRounds, newRound];
-      
+      // Dispatch event to refresh rounds from database
       if (typeof window !== 'undefined') {
-        localStorage.setItem('rounds', JSON.stringify(updatedRounds));
         window.dispatchEvent(new Event('roundsUpdated'));
       }
 
