@@ -13,6 +13,11 @@ export function createClient() {
 
   console.log('Supabase Client: Using URL:', supabaseUrl.substring(0, 30) + '...');
 
-  return createBrowserClient(supabaseUrl, supabaseAnonKey);
+  return createBrowserClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      detectSessionInUrl: true,
+    },
+  });
 }
 

@@ -257,12 +257,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     if (data.user) {
-      // Fetch user profile
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('initial_handicap, full_name, display_name, name, created_at')
-        .eq('id', data.user.id)
-        .single();
+      // Fetch user profile with try/catch - login should succeed even if profile fetch fails
+      let profile = null;
+      try {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('initial_handicap, full_name, display_name, name, created_at')
+          .eq('id', data.user.id)
+          .single();
+        profile = profileData;
+      } catch (profileError) {
+        console.warn('Login: Profile fetch failed (user can still login):', profileError);
+        // Continue with login even if profile fetch fails
+      }
 
       setUser({
         id: data.user.id,

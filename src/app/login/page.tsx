@@ -18,6 +18,10 @@ export default function LoginPage() {
 
   // Check for existing session on mount - if session exists but spinner is stuck, force redirect
   useEffect(() => {
+    // Debug: Log Supabase URL to verify correct project
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zdhzarkguvvrwzjuiqdc.supabase.co';
+    console.log('Login: NEXT_PUBLIC_SUPABASE_URL:', supabaseUrl);
+    
     const checkSession = async () => {
       try {
         const { createClient } = await import("@/lib/supabase/client");
