@@ -774,6 +774,16 @@ function getLeaderboardData(
   totalXP: number,
   userName: string
 ) {
+  // Debug: Log leaderboard calculation inputs
+  console.log('Leaderboard Data Debug:', {
+    metric,
+    timeFilter,
+    roundsCount: rounds?.length || 0,
+    rounds: rounds,
+    totalXP,
+    userName,
+  });
+  
   let userValue: number;
   
   switch (metric) {
@@ -831,12 +841,17 @@ function getLeaderboardData(
     };
   });
   
-  return {
+  const result = {
     top3: withRanks.slice(0, 3),
     all: withRanks,
     userRank: withRanks.length > 0 ? withRanks.findIndex(entry => entry.id === 'user') + 1 : 0,
     userValue: userValue
   };
+  
+  // Debug: Log final leaderboard result
+  console.log('Leaderboard Result:', result);
+  
+  return result;
 }
 
 // Calculate total XP filtered by timeframe
@@ -879,6 +894,17 @@ function calculateTotalXPByTimeframe(rounds: any[], userProgress: { totalXP: num
 export default function AcademyPage() {
   const { rounds } = useStats();
   const { user, refreshUser } = useAuth();
+  
+  // Debug: Log rounds and user data to verify data flow
+  useEffect(() => {
+    console.log('Academy Page Debug:', {
+      userId: user?.id,
+      userEmail: user?.email,
+      userFullName: user?.fullName,
+      roundsCount: rounds?.length || 0,
+      rounds: rounds,
+    });
+  }, [rounds, user]);
   const [userProgress, setUserProgress] = useState<{ totalXP: number; completedDrills: string[] }>({
     totalXP: 0,
     completedDrills: []
