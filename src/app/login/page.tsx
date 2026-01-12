@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Mail, Lock, User, LogIn, UserPlus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -101,6 +102,17 @@ export default function LoginPage() {
       <div className="relative z-10 w-full max-w-md">
         {/* Logo and Branding */}
         <div className="text-center mb-8">
+          {/* Logo Image */}
+          <div className="flex justify-center mb-4">
+            <Image
+              src="/logo.png"
+              alt="The Academy Logo"
+              width={120}
+              height={120}
+              priority
+              className="object-contain"
+            />
+          </div>
           <div 
             className="text-6xl font-bold mb-4"
             style={{ 
