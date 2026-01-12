@@ -56,14 +56,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const { data: { user: supabaseUser }, error } = await supabase.auth.getUser();
+        // Try getSession() first (more reliable for client-side auth)
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        if (error || !supabaseUser) {
+        let supabaseUser = session?.user || null;
+        let authError = sessionError;
+        
+        // Fallback to getUser() if session is null
+        if (!supabaseUser) {
+          const { data: { user: getUserResult }, error: getUserError } = await supabase.auth.getUser();
+          supabaseUser = getUserResult;
+          authError = getUserError;
+        }
+        
+        if (authError || !supabaseUser) {
+          console.warn('AuthContext: No authenticated user found', { sessionError, authError });
           setUser(null);
           setIsAuthenticated(false);
           setLoading(false);
           return;
         }
+        
+        console.log('AuthContext: User authenticated via', session ? 'getSession()' : 'getUser()', supabaseUser.id);
 
         // Fetch user profile with initialHandicap and full_name from profiles table
         const { data: profile } = await supabase

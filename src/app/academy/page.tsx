@@ -891,13 +891,62 @@ export default function AcademyPage() {
   const { rounds } = useStats();
   const { user, refreshUser } = useAuth();
   const [allRoundsCount, setAllRoundsCount] = useState<number>(0);
+  const [sessionUser, setSessionUser] = useState<any>(null);
+  const [envCheck, setEnvCheck] = useState<{ url: string | undefined; key: string | undefined }>({ url: undefined, key: undefined });
   
-  // Direct query to fetch ALL rounds without any filters for debugging
+  // Check environment variables and session directly
   useEffect(() => {
-    const fetchAllRounds = async () => {
+    const checkAuthAndEnv = async () => {
       try {
+        // Check environment variables
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        
+        setEnvCheck({
+          url: supabaseUrl ? 'Set' : 'Missing',
+          key: supabaseKey ? 'Set' : 'Missing'
+        });
+        
+        console.log('Academy: Environment check:', {
+          url: supabaseUrl ? 'Set' : 'Missing',
+          key: supabaseKey ? 'Set' : 'Missing',
+          urlValue: supabaseUrl?.substring(0, 20) + '...' || 'N/A'
+        });
+        
+        if (!supabaseUrl || !supabaseKey) {
+          console.error('Academy: Missing Supabase environment variables');
+          return;
+        }
+        
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
+        
+        // Try getSession() first (more reliable for client-side)
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error('Academy: Session error:', sessionError);
+        }
+        
+        if (session?.user) {
+          console.log('Academy: Session found via getSession():', session.user.id);
+          setSessionUser(session.user);
+        } else {
+          // Fallback to getUser()
+          const { data: { user: supabaseUser }, error: userError } = await supabase.auth.getUser();
+          
+          if (userError) {
+            console.error('Academy: getUser() error:', userError);
+          }
+          
+          if (supabaseUser) {
+            console.log('Academy: User found via getUser():', supabaseUser.id);
+            setSessionUser(supabaseUser);
+          } else {
+            console.warn('Academy: No authenticated user found');
+            setSessionUser(null);
+          }
+        }
         
         // Fetch ALL rounds with NO filters
         const { data, error } = await supabase
@@ -912,12 +961,12 @@ export default function AcademyPage() {
           setAllRoundsCount(data?.length || 0);
         }
       } catch (error) {
-        console.error('Academy: Error in fetchAllRounds:', error);
+        console.error('Academy: Error in checkAuthAndEnv:', error);
         setAllRoundsCount(0);
       }
     };
     
-    fetchAllRounds();
+    checkAuthAndEnv();
   }, []);
   
   // Debug: Log rounds and user data to verify data flow
@@ -1143,10 +1192,18 @@ export default function AcademyPage() {
     <div className="min-h-screen bg-gray-50 pb-32 w-full overflow-x-hidden">
       <div className="max-w-md mx-auto px-4 w-full overflow-x-hidden min-h-screen pb-32">
         {/* Debug Banner - Temporary */}
-        <div className="mt-4 p-4 bg-red-100 border-2 border-red-500 rounded-lg text-center">
-          <p className="text-lg font-bold text-red-800">Total rounds in DB: {allRoundsCount}</p>
-          <p className="text-sm text-red-700 mt-1">Filtered rounds: {rounds?.length || 0}</p>
-          <p className="text-sm text-red-700">User ID: {user?.id || 'Not logged in'}</p>
+        <div className="mt-4 p-4 bg-red-100 border-2 border-red-500 rounded-lg">
+          <p className="text-lg font-bold text-red-800 text-center">Total rounds in DB: {allRoundsCount}</p>
+          <div className="mt-2 space-y-1 text-sm text-red-700">
+            <p><strong>Filtered rounds:</strong> {rounds?.length || 0}</p>
+            <p><strong>AuthContext User ID:</strong> {user?.id || 'Not logged in'}</p>
+            <p><strong>Session User ID:</strong> {sessionUser?.id || 'No session'}</p>
+            <p><strong>Env URL:</strong> {envCheck.url}</p>
+            <p><strong>Env Key:</strong> {envCheck.key}</p>
+            {sessionUser && (
+              <p><strong>Session Email:</strong> {sessionUser.email || 'N/A'}</p>
+            )}
+          </div>
         </div>
         
         {/* Debug Info - Temporary */}
