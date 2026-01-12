@@ -165,10 +165,10 @@ export default function LogRoundPage() {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
-      // Prepare insert data with essential fields only
-      // Only include columns that exist in the database to avoid PGRST204 errors
+      // Prepare insert data with all required fields
+      // Include approach_penalties and tee_penalties as they now exist in the database
       const insertData: Record<string, any> = {
-        user_id: user.id,
+        user_id: user.id, // Use active session user.id
         date: roundData.date || today,
         course: roundData.course,
         handicap: roundData.handicap,
@@ -185,6 +185,8 @@ export default function LogRoundPage() {
         fir_right: roundData.firRight,
         total_gir: roundData.totalGir, // Essential: greens in regulation
         total_penalties: roundData.totalPenalties,
+        tee_penalties: roundData.teePenalties, // Now included as column exists
+        approach_penalties: roundData.approachPenalties, // Now included as column exists
         total_putts: roundData.totalPutts, // Essential: total putts
         three_putts: roundData.threePutts,
         missed_6ft_and_in: roundData.missed6ftAndIn,
@@ -193,12 +195,6 @@ export default function LogRoundPage() {
 
       // Conditionally add optional columns if they exist in the database schema
       // These may not exist in all database setups
-      if (roundData.teePenalties !== undefined) {
-        insertData.tee_penalties = roundData.teePenalties;
-      }
-      if (roundData.approachPenalties !== undefined) {
-        insertData.approach_penalties = roundData.approachPenalties;
-      }
       if (roundData.goingForGreen !== undefined) {
         insertData.going_for_green = roundData.goingForGreen;
       }
@@ -270,6 +266,8 @@ export default function LogRoundPage() {
       // Dispatch event to refresh rounds from database
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('roundsUpdated'));
+        // Force Academy Leaderboard refresh by dispatching a custom event
+        window.dispatchEvent(new Event('academyLeaderboardRefresh'));
       }
 
       // Navigate to academy page to see the updated leaderboard

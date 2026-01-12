@@ -901,6 +901,28 @@ export default function AcademyPage() {
 
     loadProgress();
 
+    // Listen for rounds updates to refresh leaderboard
+    const handleRoundsUpdate = () => {
+      // Force a re-render by updating a state or triggering a refresh
+      // The rounds from useStats() will automatically update via StatsContext
+      console.log('Academy: Received roundsUpdated event, leaderboard will refresh');
+    };
+
+    // Listen for Academy-specific leaderboard refresh
+    const handleLeaderboardRefresh = () => {
+      console.log('Academy: Received academyLeaderboardRefresh event, forcing update');
+      // Trigger a state update to force re-render with new rounds data
+      setTimeFilter(prev => prev); // This will trigger a re-render
+    };
+
+    window.addEventListener('roundsUpdated', handleRoundsUpdate);
+    window.addEventListener('academyLeaderboardRefresh', handleLeaderboardRefresh);
+
+    return () => {
+      window.removeEventListener('roundsUpdated', handleRoundsUpdate);
+      window.removeEventListener('academyLeaderboardRefresh', handleLeaderboardRefresh);
+    };
+
     // Listen for XP updates
     window.addEventListener('userProgressUpdated', loadProgress);
     window.addEventListener('storage', loadProgress);
