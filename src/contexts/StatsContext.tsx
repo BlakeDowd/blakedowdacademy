@@ -92,7 +92,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       // Transform database columns (snake_case) to camelCase for RoundData interface
       const transformedRounds: RoundData[] = (data || []).map((round: any) => ({
         date: round.date,
-        course: round.course,
+        course: round.course_name || round.course, // Handle both course_name and course for compatibility
         handicap: round.handicap,
         holes: round.holes,
         score: round.score,
