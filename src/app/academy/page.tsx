@@ -890,6 +890,35 @@ function calculateTotalXPByTimeframe(rounds: any[], userProgress: { totalXP: num
 export default function AcademyPage() {
   const { rounds } = useStats();
   const { user, refreshUser } = useAuth();
+  const [allRoundsCount, setAllRoundsCount] = useState<number>(0);
+  
+  // Direct query to fetch ALL rounds without any filters for debugging
+  useEffect(() => {
+    const fetchAllRounds = async () => {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        
+        // Fetch ALL rounds with NO filters
+        const { data, error } = await supabase
+          .from('rounds')
+          .select('*');
+        
+        if (error) {
+          console.error('Academy: Error fetching all rounds:', error);
+          setAllRoundsCount(0);
+        } else {
+          console.log('Academy: Total rounds in database (no filters):', data?.length || 0);
+          setAllRoundsCount(data?.length || 0);
+        }
+      } catch (error) {
+        console.error('Academy: Error in fetchAllRounds:', error);
+        setAllRoundsCount(0);
+      }
+    };
+    
+    fetchAllRounds();
+  }, []);
   
   // Debug: Log rounds and user data to verify data flow
   useEffect(() => {
@@ -898,9 +927,10 @@ export default function AcademyPage() {
       userEmail: user?.email,
       userFullName: user?.fullName,
       roundsCount: rounds?.length || 0,
+      allRoundsInDB: allRoundsCount,
       rounds: rounds,
     });
-  }, [rounds, user]);
+  }, [rounds, user, allRoundsCount]);
   const [userProgress, setUserProgress] = useState<{ totalXP: number; completedDrills: string[] }>({
     totalXP: 0,
     completedDrills: []
@@ -1005,7 +1035,8 @@ export default function AcademyPage() {
 
   // Get user name - force 'Blake Dowd' as fallback
   const getUserName = () => {
-    return user?.fullName || 'Blake Dowd';
+    // Try multiple name fields with fallback to 'Blake Dowd'
+    return user?.fullName || user?.display_name || user?.full_name || 'Blake Dowd';
   };
 
   const userName = getUserName();
@@ -1111,6 +1142,13 @@ export default function AcademyPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-32 w-full overflow-x-hidden">
       <div className="max-w-md mx-auto px-4 w-full overflow-x-hidden min-h-screen pb-32">
+        {/* Debug Banner - Temporary */}
+        <div className="mt-4 p-4 bg-red-100 border-2 border-red-500 rounded-lg text-center">
+          <p className="text-lg font-bold text-red-800">Total rounds in DB: {allRoundsCount}</p>
+          <p className="text-sm text-red-700 mt-1">Filtered rounds: {rounds?.length || 0}</p>
+          <p className="text-sm text-red-700">User ID: {user?.id || 'Not logged in'}</p>
+        </div>
+        
         {/* Debug Info - Temporary */}
         <div className="mt-4 p-3 bg-yellow-100 border border-yellow-400 rounded-lg text-sm">
           <p className="font-semibold text-yellow-800">Debug Info:</p>
