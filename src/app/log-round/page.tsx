@@ -211,7 +211,8 @@ export default function LogRoundPage() {
         putts_under_6ft_attempts: roundData.puttsUnder6ftAttempts,
       };
 
-      console.log('Attempting to save round with user_id:', user.id);
+      console.log('Attempting to save round with user_id:', currentUserId);
+      console.log('Verified user_id before insert:', insertData.user_id);
       console.log('Complete round data being inserted (ALL FIELDS):', {
         user_id: insertData.user_id,
         date: insertData.date,
