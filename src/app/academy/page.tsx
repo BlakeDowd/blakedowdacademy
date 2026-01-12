@@ -947,7 +947,7 @@ export default function AcademyPage() {
   
   // Check environment variables and session directly
   useEffect(() => {
-    let authStateSubscription: { unsubscribe: () => void } | null = null;
+    let authStateSubscription: ReturnType<typeof supabase.auth.onAuthStateChange> | null = null;
     
     const checkAuthAndEnv = async () => {
       try {
@@ -978,7 +978,7 @@ export default function AcademyPage() {
         console.log('Academy: Supabase client created, checking authentication...');
         
         // Set up auth state change listener to catch session immediately
-        authStateSubscription = supabase.auth.onAuthStateChange((event, session) => {
+        const subscription = supabase.auth.onAuthStateChange((event, session) => {
           console.log('Academy: Auth state changed:', event, session?.user?.id || 'no user');
           if (session?.user) {
             console.log('Academy: Session detected via onAuthStateChange:', {
@@ -992,6 +992,8 @@ export default function AcademyPage() {
             setSessionUser(null);
           }
         });
+        
+        authStateSubscription = subscription;
         
         // Try getSession() first (more reliable for client-side)
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
