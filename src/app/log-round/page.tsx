@@ -196,7 +196,8 @@ export default function LogRoundPage() {
         approach_penalties: roundData.approachPenalties,
         // Short Game stats
         up_and_down_conversions: roundData.upAndDownConversions,
-        missed: roundData.missed,
+        conversions: roundData.upAndDownConversions, // Also map to conversions column
+        missed: roundData.missed, // Missed < 6ft maps to missed column
         bunker_attempts: roundData.bunkerAttempts,
         bunker_saves: roundData.bunkerSaves,
         chip_ins: roundData.doubleChips || 0, // Chip ins
@@ -231,6 +232,7 @@ export default function LogRoundPage() {
         approach_penalties: insertData.approach_penalties,
         // Short Game
         up_and_down_conversions: insertData.up_and_down_conversions,
+        conversions: insertData.conversions,
         missed: insertData.missed,
         bunker_attempts: insertData.bunker_attempts,
         bunker_saves: insertData.bunker_saves,
