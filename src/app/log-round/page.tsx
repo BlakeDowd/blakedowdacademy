@@ -166,7 +166,7 @@ export default function LogRoundPage() {
       const supabase = createClient();
 
       // Prepare insert data with all required fields
-      // Include approach_penalties and tee_penalties as they now exist in the database
+      // Include all scoring and penalty columns that exist in the database
       const insertData: Record<string, any> = {
         user_id: user.id, // Use active session user.id
         date: roundData.date || today,
@@ -185,8 +185,10 @@ export default function LogRoundPage() {
         fir_right: roundData.firRight,
         total_gir: roundData.totalGir, // Essential: greens in regulation
         total_penalties: roundData.totalPenalties,
-        tee_penalties: roundData.teePenalties, // Now included as column exists
-        approach_penalties: roundData.approachPenalties, // Now included as column exists
+        tee_penalties: roundData.teePenalties, // Penalty columns
+        approach_penalties: roundData.approachPenalties, // Penalty columns
+        bunker_attempts: roundData.bunkerAttempts, // Bunker stats - required
+        bunker_saves: roundData.bunkerSaves, // Bunker stats - required
         total_putts: roundData.totalPutts, // Essential: total putts
         three_putts: roundData.threePutts,
         missed_6ft_and_in: roundData.missed6ftAndIn,
@@ -210,12 +212,6 @@ export default function LogRoundPage() {
       if (roundData.missed !== undefined) {
         insertData.missed = roundData.missed;
       }
-      if (roundData.bunkerAttempts !== undefined) {
-        insertData.bunker_attempts = roundData.bunkerAttempts;
-      }
-      if (roundData.bunkerSaves !== undefined) {
-        insertData.bunker_saves = roundData.bunkerSaves;
-      }
       if (roundData.chipInside6ft !== undefined) {
         insertData.chip_inside_6ft = roundData.chipInside6ft;
       }
@@ -229,6 +225,15 @@ export default function LogRoundPage() {
         date: insertData.date,
         course: insertData.course,
         score: insertData.score,
+        eagles: insertData.eagles,
+        birdies: insertData.birdies,
+        pars: insertData.pars,
+        bogeys: insertData.bogeys,
+        double_bogeys: insertData.double_bogeys,
+        tee_penalties: insertData.tee_penalties,
+        approach_penalties: insertData.approach_penalties,
+        bunker_attempts: insertData.bunker_attempts,
+        bunker_saves: insertData.bunker_saves,
         fir_hit: insertData.fir_hit,
         total_gir: insertData.total_gir,
         total_putts: insertData.total_putts,
