@@ -955,8 +955,12 @@ export default function AcademyPage() {
   const userTier = getTier();
   const userLevel = getLevel(userTier);
 
-  // Get user name from auth context - use full_name if available, fallback to email, then 'Player'
+  // Get user name - force 'Blake Dowd' for now, fallback to full_name, email, then 'Player'
   const getUserName = () => {
+    // Hard-code for Blake Dowd account
+    if (user?.email && user.email.includes('bdowd')) {
+      return 'Blake Dowd';
+    }
     if (user?.fullName) {
       return user.fullName;
     }

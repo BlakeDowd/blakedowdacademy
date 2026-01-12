@@ -100,8 +100,12 @@ export default function HomeDashboard() {
   // Ensure rounds is always an array, never null or undefined
   const safeRounds = rounds || [];
   
-  // Format user name - prioritize full_name from database, fallback to email, then 'Player'
+  // Format user name - force 'Blake Dowd' for now, fallback to full_name, email, then 'Player'
   const getUserDisplayName = () => {
+    // Hard-code for Blake Dowd account
+    if (user?.email && user.email.includes('bdowd')) {
+      return 'Blake Dowd';
+    }
     if (user?.fullName) {
       return user.fullName;
     }
