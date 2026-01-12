@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, User, LogIn, UserPlus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,6 +15,27 @@ export default function LoginPage() {
   const [initialHandicap, setInitialHandicap] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Check for existing session on mount - if session exists but spinner is stuck, force redirect
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          console.log('Login: Session exists, forcing redirect to /academy');
+          // Force hard redirect to break any spinner loop
+          window.location.href = '/academy';
+        }
+      } catch (err) {
+        console.error('Login: Error checking session:', err);
+      }
+    };
+
+    checkSession();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +56,14 @@ export default function LoginPage() {
     }
 
     try {
+      // Create a timeout promise that rejects after 5 seconds
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(new Error("Login timed out. Please check your connection and try again."));
+        }, 5000);
+      });
+
+      // Race between the login/signup and the timeout
       if (isSignUp) {
         const handicap = parseFloat(initialHandicap);
         if (isNaN(handicap) || handicap < -5 || handicap > 54) {
@@ -42,16 +71,38 @@ export default function LoginPage() {
           setLoading(false);
           return;
         }
-        await signup(email, password, fullName, handicap);
+        await Promise.race([
+          signup(email, password, fullName, handicap),
+          timeoutPromise
+        ]);
         // Navigation handled by AuthContext
       } else {
-        await login(email, password);
+        await Promise.race([
+          login(email, password),
+          timeoutPromise
+        ]);
         // Navigation handled by AuthContext
       }
     } catch (err: any) {
       setError(err.message || "An error occurred. Please try again.");
-    } finally {
       setLoading(false);
+      
+      // If timeout occurred, also check for session and force redirect
+      if (err.message && err.message.includes("timed out")) {
+        setTimeout(async () => {
+          try {
+            const { createClient } = await import("@/lib/supabase/client");
+            const supabase = createClient();
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+              console.log('Login: Session exists after timeout, forcing redirect to /academy');
+              window.location.href = '/academy';
+            }
+          } catch (checkErr) {
+            console.error('Login: Error checking session after timeout:', checkErr);
+          }
+        }, 500);
+      }
     }
   };
 
