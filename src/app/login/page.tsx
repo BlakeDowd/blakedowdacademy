@@ -75,13 +75,15 @@ export default function LoginPage() {
           signup(email, password, fullName, handicap),
           timeoutPromise
         ]);
-        // Navigation handled by AuthContext
+        // Hard redirect to break spinner
+        window.location.assign('/academy');
       } else {
         await Promise.race([
           login(email, password),
           timeoutPromise
         ]);
-        // Navigation handled by AuthContext
+        // Hard redirect to break spinner
+        window.location.assign('/academy');
       }
     } catch (err: any) {
       setError(err.message || "An error occurred. Please try again.");

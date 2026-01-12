@@ -9,6 +9,8 @@ interface User {
   id: string;
   email: string;
   fullName?: string;
+  display_name?: string;
+  name?: string;
   initialHandicap?: number;
   createdAt?: string;
 }
@@ -82,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Fetch user profile with initialHandicap and full_name from profiles table
         const { data: profile } = await supabase
           .from('profiles')
-          .select('initial_handicap, full_name, created_at')
+          .select('initial_handicap, full_name, display_name, name, created_at')
           .eq('id', supabaseUser.id)
           .single();
 
@@ -100,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Refetch profile after update
           const { data: updatedProfile } = await supabase
             .from('profiles')
-            .select('initial_handicap, full_name, created_at')
+            .select('initial_handicap, full_name, display_name, name, created_at')
             .eq('id', supabaseUser.id)
             .single();
           
@@ -108,6 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: supabaseUser.id,
             email: supabaseUser.email || '',
             fullName: updatedProfile?.full_name || 'Blake Dowd',
+            display_name: updatedProfile?.display_name,
+            name: updatedProfile?.name,
             initialHandicap: updatedProfile?.initial_handicap,
             createdAt: updatedProfile?.created_at || supabaseUser.created_at,
           });
@@ -116,6 +120,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: supabaseUser.id,
             email: supabaseUser.email || '',
             fullName: profile?.full_name,
+            display_name: profile?.display_name,
+            name: profile?.name,
             initialHandicap: profile?.initial_handicap,
             createdAt: profile?.created_at || supabaseUser.created_at,
           });
@@ -145,7 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Fetch user profile
         const { data: profile } = await supabase
           .from('profiles')
-          .select('initial_handicap, full_name, created_at')
+          .select('initial_handicap, full_name, display_name, name, created_at')
           .eq('id', session.user.id)
           .single();
 
@@ -163,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Refetch profile after update
           const { data: updatedProfile } = await supabase
             .from('profiles')
-            .select('initial_handicap, full_name, created_at')
+            .select('initial_handicap, full_name, display_name, name, created_at')
             .eq('id', session.user.id)
             .single();
           
@@ -171,6 +177,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: session.user.id,
             email: session.user.email || '',
             fullName: updatedProfile?.full_name || 'Blake Dowd',
+            display_name: updatedProfile?.display_name,
+            name: updatedProfile?.name,
             initialHandicap: updatedProfile?.initial_handicap,
             createdAt: updatedProfile?.created_at || session.user.created_at,
           });
@@ -179,6 +187,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: session.user.id,
             email: session.user.email || '',
             fullName: profile?.full_name,
+            display_name: profile?.display_name,
+            name: profile?.name,
             initialHandicap: profile?.initial_handicap,
             createdAt: profile?.created_at || session.user.created_at,
           });
@@ -206,7 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('initial_handicap, full_name, created_at')
+        .select('initial_handicap, full_name, display_name, name, created_at')
         .eq('id', supabaseUser.id)
         .single();
 
@@ -215,6 +225,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return {
           ...prev,
           fullName: profile?.full_name,
+          display_name: profile?.display_name,
+          name: profile?.name,
           initialHandicap: profile?.initial_handicap,
         };
       });
@@ -248,7 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Fetch user profile
       const { data: profile } = await supabase
         .from('profiles')
-        .select('initial_handicap, full_name, created_at')
+        .select('initial_handicap, full_name, display_name, name, created_at')
         .eq('id', data.user.id)
         .single();
 
@@ -256,11 +268,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: data.user.id,
         email: data.user.email || '',
         fullName: profile?.full_name,
+        display_name: profile?.display_name,
+        name: profile?.name,
         initialHandicap: profile?.initial_handicap,
         createdAt: profile?.created_at || data.user.created_at,
       });
       setIsAuthenticated(true);
-      router.push("/");
+      // Note: Redirect handled by login page using window.location.assign
     }
   };
 
