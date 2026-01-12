@@ -179,7 +179,7 @@ export default function LogRoundPage() {
         birdies: roundData.birdies,
         pars: roundData.pars,
         bogeys: roundData.bogeys,
-        double_bogeys: roundData.doubleBogeys,
+        double_bogeys: roundData.doubleBogeys, // Maps '2+ Bogey' from UI to database column
         fir_left: roundData.firLeft,
         fir_hit: roundData.firHit, // Essential: fairways hit
         fir_right: roundData.firRight,
