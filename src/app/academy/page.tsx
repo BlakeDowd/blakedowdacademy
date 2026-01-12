@@ -678,7 +678,8 @@ function getMockLeaderboard(
   metric: 'library' | 'practice' | 'rounds' | 'drills',
   timeFilter: 'week' | 'month' | 'allTime',
   rounds: any[],
-  userName: string
+  userName: string,
+  user?: { initialHandicap?: number } | null
 ) {
   let userValue: number;
   
@@ -712,13 +713,29 @@ function getMockLeaderboard(
   // Only include user in leaderboard if they have activity
   const userEntry = {
     id: 'user',
-    name: 'You',
+    name: userName, // Use actual full_name instead of 'You'
     avatar: userName.split(' ').map((n: string) => n[0]).join('') || 'Y',
-    value: userValue
+    value: userValue,
+    handicap: user?.initialHandicap // Include handicap for sorting rounds by skill level
   };
   
-  // Sort by value descending and get top 3 for podium
-  const sorted = [userEntry].sort((a, b) => b.value - a.value);
+  // For rounds leaderboard, sort by handicap (lower is better) if metric is 'rounds'
+  // Otherwise sort by value descending
+  let sorted;
+  if (metric === 'rounds' && user?.initialHandicap !== undefined) {
+    // For rounds, we want to show by skill level (handicap)
+    // Lower handicap = better, so we sort by handicap ascending
+    // But since we only have one user, we'll just use the value
+    sorted = [userEntry].sort((a, b) => {
+      // If we had multiple users, we'd sort by handicap here
+      // For now, just sort by value (round count)
+      return b.value - a.value;
+    });
+  } else {
+    // Sort by value descending for other metrics
+    sorted = [userEntry].sort((a, b) => b.value - a.value);
+  }
+  
   return {
     top3: sorted.slice(0, 3),
     all: sorted,
@@ -788,7 +805,7 @@ function getLeaderboardData(
   // Only include user in leaderboard if they have activity
   const userEntry = {
     id: 'user',
-    name: 'You',
+    name: userName, // Use actual full_name instead of 'You'
     avatar: userName.split(' ').map(n => n[0]).join('') || 'Y',
     value: userValue,
     previousRank: undefined
@@ -935,8 +952,13 @@ export default function AcademyPage() {
   const userTier = getTier();
   const userLevel = getLevel(userTier);
 
-  // Get user name from auth context
+  // Get user name from auth context - use full_name if available, otherwise fallback to email
   const getUserName = () => {
+    // Use full_name from signup if available
+    if (user?.fullName) {
+      return user.fullName;
+    }
+    // Fallback to email parsing if full_name not available
     if (!user?.email) return 'Player';
     const emailParts = user.email.split('@')[0];
     const nameParts = emailParts.split('.');
@@ -955,10 +977,10 @@ export default function AcademyPage() {
   const sortedLeaderboard = currentLeaderboard.all;
 
   // Get four-pillar leaderboard data - recalculates when timeFilter changes
-  const libraryLeaderboard = getMockLeaderboard('library', timeFilter, rounds, userName);
-  const practiceLeaderboard = getMockLeaderboard('practice', timeFilter, rounds, userName);
-  const roundsLeaderboard = getMockLeaderboard('rounds', timeFilter, rounds, userName);
-  const drillsLeaderboard = getMockLeaderboard('drills', timeFilter, rounds, userName);
+  const libraryLeaderboard = getMockLeaderboard('library', timeFilter, rounds, userName, user);
+  const practiceLeaderboard = getMockLeaderboard('practice', timeFilter, rounds, userName, user);
+  const roundsLeaderboard = getMockLeaderboard('rounds', timeFilter, rounds, userName, user);
+  const drillsLeaderboard = getMockLeaderboard('drills', timeFilter, rounds, userName, user);
 
   // Filter leaderboard by search
   const getFilteredFullLeaderboard = () => {
