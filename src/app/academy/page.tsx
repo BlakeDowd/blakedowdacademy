@@ -898,8 +898,8 @@ export default function AcademyPage() {
   useEffect(() => {
     const checkAuthAndEnv = async () => {
       try {
-        // Check environment variables
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        // Check environment variables - use correct Supabase URL
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zdhzarkguvvrwzjuiqdc.supabase.co';
         const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
         
         setEnvCheck({
@@ -910,16 +910,19 @@ export default function AcademyPage() {
         console.log('Academy: Environment check:', {
           url: supabaseUrl ? 'Set' : 'Missing',
           key: supabaseKey ? 'Set' : 'Missing',
-          urlValue: supabaseUrl?.substring(0, 20) + '...' || 'N/A'
+          urlValue: supabaseUrl,
+          usingCorrectUrl: supabaseUrl.includes('zdhzarkguvvrwzjuiqdc')
         });
         
-        if (!supabaseUrl || !supabaseKey) {
-          console.error('Academy: Missing Supabase environment variables');
+        if (!supabaseKey) {
+          console.error('Academy: Missing Supabase ANON_KEY environment variable');
           return;
         }
         
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
+        
+        console.log('Academy: Supabase client created, checking authentication...');
         
         // Try getSession() first (more reliable for client-side)
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -929,9 +932,14 @@ export default function AcademyPage() {
         }
         
         if (session?.user) {
-          console.log('Academy: Session found via getSession():', session.user.id);
+          console.log('Academy: Session found via getSession():', {
+            userId: session.user.id,
+            email: session.user.email,
+            expiresAt: session.expires_at
+          });
           setSessionUser(session.user);
         } else {
+          console.log('Academy: No session found, trying getUser()...');
           // Fallback to getUser()
           const { data: { user: supabaseUser }, error: userError } = await supabase.auth.getUser();
           
@@ -940,10 +948,13 @@ export default function AcademyPage() {
           }
           
           if (supabaseUser) {
-            console.log('Academy: User found via getUser():', supabaseUser.id);
+            console.log('Academy: User found via getUser():', {
+              userId: supabaseUser.id,
+              email: supabaseUser.email
+            });
             setSessionUser(supabaseUser);
           } else {
-            console.warn('Academy: No authenticated user found');
+            console.warn('Academy: No authenticated user found - user may need to log in');
             setSessionUser(null);
           }
         }
@@ -1197,12 +1208,11 @@ export default function AcademyPage() {
           <div className="mt-2 space-y-1 text-sm text-red-700">
             <p><strong>Filtered rounds:</strong> {rounds?.length || 0}</p>
             <p><strong>AuthContext User ID:</strong> {user?.id || 'Not logged in'}</p>
-            <p><strong>Session User ID:</strong> {sessionUser?.id || 'No session'}</p>
-            <p><strong>Env URL:</strong> {envCheck.url}</p>
+            <p><strong>Session User ID:</strong> {sessionUser?.id || 'No session - check login'}</p>
+            <p><strong>Session Email:</strong> {sessionUser?.email || user?.email || 'N/A'}</p>
+            <p><strong>Env URL:</strong> {envCheck.url} {process.env.NEXT_PUBLIC_SUPABASE_URL?.includes('zdhzarkguvvrwzjuiqdc') ? '✓' : '⚠'}</p>
             <p><strong>Env Key:</strong> {envCheck.key}</p>
-            {sessionUser && (
-              <p><strong>Session Email:</strong> {sessionUser.email || 'N/A'}</p>
-            )}
+            <p><strong>Supabase URL:</strong> {process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zdhzarkguvvrwzjuiqdc.supabase.co'}</p>
           </div>
         </div>
         
