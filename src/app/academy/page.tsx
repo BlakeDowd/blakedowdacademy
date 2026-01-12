@@ -1,5 +1,9 @@
 "use client";
 
+// Disable caching to ensure fresh data from Supabase
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 import { useEffect, useState } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
