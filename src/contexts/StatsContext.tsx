@@ -65,6 +65,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
+      console.log('StatsContext: Fetching rounds for user_id:', user.id);
+      
       const { data, error } = await supabase
         .from('rounds')
         .select('*')
@@ -73,10 +75,19 @@ export function StatsProvider({ children }: { children: ReactNode }) {
 
       if (error) {
         console.error('StatsContext: Error loading rounds from database:', error);
+        console.error('StatsContext: Error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+        });
         setRounds([]);
         setLoading(false);
         return;
       }
+
+      console.log('StatsContext: Raw data from database:', data);
+      console.log('StatsContext: Number of rounds fetched:', data?.length || 0);
 
       // Transform database columns (snake_case) to camelCase for RoundData interface
       const transformedRounds: RoundData[] = (data || []).map((round: any) => ({
@@ -115,6 +126,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
 
       setRounds(transformedRounds);
       console.log('StatsContext: Loaded rounds from database:', transformedRounds.length);
+      console.log('StatsContext: Transformed rounds data:', transformedRounds);
       setLoading(false);
     } catch (error) {
       console.error('StatsContext: Error loading rounds from database:', error);
