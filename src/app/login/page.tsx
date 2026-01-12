@@ -17,6 +17,38 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showRetry, setShowRetry] = useState(false);
 
+  // Sign Out handler to break redirect loops
+  const handleSignOut = async () => {
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      
+      // Sign out from Supabase
+      await supabase.auth.signOut();
+      
+      // Clear all localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.clear();
+      }
+      
+      // Clear all cookies
+      if (typeof document !== 'undefined') {
+        document.cookie.split(";").forEach((c) => {
+          document.cookie = c
+            .replace(/^ +/, "")
+            .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        });
+      }
+      
+      // Reload the page to reset state
+      window.location.reload();
+    } catch (error) {
+      console.error('Sign Out: Error during sign out:', error);
+      // Still reload even if there's an error
+      window.location.reload();
+    }
+  };
+
   // Check for existing session on mount - if session exists but spinner is stuck, force redirect
   useEffect(() => {
     // Debug: Log Supabase URL to verify correct project
@@ -81,8 +113,8 @@ export default function LoginPage() {
           signup(email, password, fullName, handicap),
           timeoutPromise
         ]);
-        // Wait for session to be saved before redirecting
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Wait 200ms for session to be saved before redirecting
+        await new Promise(resolve => setTimeout(resolve, 200));
         // Verify session exists before redirecting
         try {
           const { createClient } = await import("@/lib/supabase/client");
@@ -94,15 +126,15 @@ export default function LoginPage() {
         } catch (err) {
           console.error('Login: Error verifying session before redirect:', err);
           // Still redirect after delay
-          setTimeout(() => window.location.assign('/academy'), 100);
+          setTimeout(() => window.location.assign('/academy'), 200);
         }
       } else {
         await Promise.race([
           login(email, password),
           timeoutPromise
         ]);
-        // Wait for session to be saved before redirecting
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Wait 200ms for session to be saved before redirecting
+        await new Promise(resolve => setTimeout(resolve, 200));
         // Verify session exists before redirecting
         try {
           const { createClient } = await import("@/lib/supabase/client");
@@ -114,7 +146,7 @@ export default function LoginPage() {
         } catch (err) {
           console.error('Login: Error verifying session before redirect:', err);
           // Still redirect after delay
-          setTimeout(() => window.location.assign('/academy'), 100);
+          setTimeout(() => window.location.assign('/academy'), 200);
         }
       }
     } catch (err: any) {
@@ -445,6 +477,17 @@ export default function LoginPage() {
               </>
             )}
           </p>
+
+          {/* Sign Out Button - Manual override to break redirect loops */}
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="w-full py-2 px-4 text-sm text-red-600 hover:text-red-700 font-medium transition-colors"
+            >
+              Sign Out (Clear Session)
+            </button>
+          </div>
         </div>
       </div>
     </div>

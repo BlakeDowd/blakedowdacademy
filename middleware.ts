@@ -4,6 +4,16 @@ import type { NextRequest } from 'next/server';
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Skip middleware for Next.js static files and internal routes
+  if (
+    pathname.startsWith('/_next/') ||
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/static/') ||
+    pathname.includes('.') // Files with extensions (images, etc.)
+  ) {
+    return NextResponse.next();
+  }
+
   // Public routes that don't require authentication
   const publicRoutes = ['/login', '/signup', '/auth/callback'];
   
