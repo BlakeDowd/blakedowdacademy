@@ -72,12 +72,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq('id', supabaseUser.id)
           .single();
 
-        // One-time fix: Update 'bdowd' to 'Blake Dowd' if needed
-        if (profile?.full_name === 'bdowd' || (supabaseUser.email && supabaseUser.email.includes('bdowd') && !profile?.full_name)) {
-          await supabase
+        // One-time fix: Update 'bdowd' or missing full_name to 'Blake Dowd' if email contains bdowd
+        if ((supabaseUser.email && supabaseUser.email.includes('bdowd')) && (!profile?.full_name || profile?.full_name === 'bdowd')) {
+          const { error: updateError } = await supabase
             .from('profiles')
             .update({ full_name: 'Blake Dowd' })
             .eq('id', supabaseUser.id);
+          
+          if (updateError) {
+            console.error('Error updating full_name:', updateError);
+          }
           
           // Refetch profile after update
           const { data: updatedProfile } = await supabase
@@ -131,12 +135,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq('id', session.user.id)
           .single();
 
-        // One-time fix: Update 'bdowd' to 'Blake Dowd' if needed
-        if (profile?.full_name === 'bdowd' || (session.user.email && session.user.email.includes('bdowd') && !profile?.full_name)) {
-          await supabase
+        // One-time fix: Update 'bdowd' or missing full_name to 'Blake Dowd' if email contains bdowd
+        if ((session.user.email && session.user.email.includes('bdowd')) && (!profile?.full_name || profile?.full_name === 'bdowd')) {
+          const { error: updateError } = await supabase
             .from('profiles')
             .update({ full_name: 'Blake Dowd' })
             .eq('id', session.user.id);
+          
+          if (updateError) {
+            console.error('Error updating full_name:', updateError);
+          }
           
           // Refetch profile after update
           const { data: updatedProfile } = await supabase

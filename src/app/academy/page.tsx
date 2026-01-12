@@ -955,20 +955,15 @@ export default function AcademyPage() {
   const userTier = getTier();
   const userLevel = getLevel(userTier);
 
-  // Get user name from auth context - use full_name if available, otherwise fallback to email
+  // Get user name from auth context - use full_name if available, fallback to email, then 'Player'
   const getUserName = () => {
-    // Use full_name from signup if available
     if (user?.fullName) {
       return user.fullName;
     }
-    // Fallback to email parsing if full_name not available
-    if (!user?.email) return 'Player';
-    const emailParts = user.email.split('@')[0];
-    const nameParts = emailParts.split('.');
-    if (nameParts.length >= 2) {
-      return nameParts.map((part: string) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+    if (user?.email) {
+      return user.email;
     }
-    return emailParts.charAt(0).toUpperCase() + emailParts.slice(1);
+    return 'Player';
   };
 
   const userName = getUserName();
@@ -987,7 +982,7 @@ export default function AcademyPage() {
 
     setIsSavingName(true);
     try {
-      // Update in Supabase
+      // Update in Supabase using full_name (snake_case) to match database schema
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
       
@@ -997,7 +992,7 @@ export default function AcademyPage() {
         .eq('id', user.id);
 
       if (error) {
-        console.error('Error updating name:', error);
+        console.error('Error updating full_name:', error);
         alert('Failed to update name. Please try again.');
         setIsSavingName(false);
         return;
@@ -1107,9 +1102,13 @@ export default function AcademyPage() {
                     <button
                       onClick={handleSaveName}
                       disabled={isSavingName}
-                      className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
+                      className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50 flex items-center justify-center"
                     >
-                      <Check className="w-5 h-5 text-green-600" />
+                      {isSavingName ? (
+                        <div className="w-5 h-5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Check className="w-5 h-5 text-green-600" />
+                      )}
                     </button>
                     <button
                       onClick={handleCancelEdit}

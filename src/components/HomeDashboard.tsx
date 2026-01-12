@@ -100,18 +100,15 @@ export default function HomeDashboard() {
   // Ensure rounds is always an array, never null or undefined
   const safeRounds = rounds || [];
   
-  // Format user name - prioritize full_name from database
+  // Format user name - prioritize full_name from database, fallback to email, then 'Player'
   const getUserDisplayName = () => {
     if (user?.fullName) {
       return user.fullName;
     }
-    if (!user?.email) return 'Player';
-    const emailParts = user.email.split('@')[0];
-    const nameParts = emailParts.split('.');
-    if (nameParts.length >= 2) {
-      return nameParts.map((part: string) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+    if (user?.email) {
+      return user.email;
     }
-    return emailParts.charAt(0).toUpperCase() + emailParts.slice(1);
+    return 'Player';
   };
   const [totalXP, setTotalXP] = useState(0);
   const [dailyVideo, setDailyVideo] = useState(() => getDailyVideo());
