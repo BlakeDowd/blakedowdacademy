@@ -890,34 +890,11 @@ function calculateTotalXPByTimeframe(rounds: any[], userProgress: { totalXP: num
 
 export default function AcademyPage() {
   console.log('Academy: Component rendering...');
+  
+  // ALL HOOKS MUST BE AT THE TOP - NO EXCEPTIONS (Rules of Hooks)
   const { rounds } = useStats();
   const { user, refreshUser, isAuthenticated, loading } = useAuth();
   const router = useRouter();
-  
-  console.log('Academy: Auth state - loading:', loading, 'isAuthenticated:', isAuthenticated, 'user:', user?.id);
-  
-  // Show loading spinner while auth is loading
-  if (loading) {
-    console.log('Academy: Showing loading spinner');
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-[#014421] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-700 font-medium">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-  
-  console.log('Academy: Fetching data...');
-  
-  // Automatic redirect if not authenticated (only after loading is complete)
-  useEffect(() => {
-    if (!loading && !isAuthenticated && user === null) {
-      console.log('Academy: No authentication detected, redirecting to login...');
-      router.push('/login');
-    }
-  }, [isAuthenticated, user, router, loading]);
   
   const [userProgress, setUserProgress] = useState<{ totalXP: number; completedDrills: string[] }>({
     totalXP: 0,
@@ -931,6 +908,31 @@ export default function AcademyPage() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
+  
+  // Automatic redirect if not authenticated (only after loading is complete)
+  useEffect(() => {
+    if (!loading && !isAuthenticated && user === null) {
+      console.log('Academy: No authentication detected, redirecting to login...');
+      router.push('/login');
+    }
+  }, [isAuthenticated, user, router, loading]);
+  
+  console.log('Academy: Auth state - loading:', loading, 'isAuthenticated:', isAuthenticated, 'user:', user?.id);
+  
+  // Show loading spinner while auth is loading (after all hooks)
+  if (loading) {
+    console.log('Academy: Showing loading spinner');
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-[#014421] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-700 font-medium">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  console.log('Academy: Fetching data...');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
