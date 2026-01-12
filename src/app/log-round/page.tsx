@@ -170,7 +170,7 @@ export default function LogRoundPage() {
       const insertData: Record<string, any> = {
         user_id: user.id, // Use active session user.id
         date: roundData.date || today,
-        course: roundData.course,
+        course_name: roundData.course, // Database expects course_name, not course
         handicap: roundData.handicap,
         holes: roundData.holes,
         score: roundData.score,
@@ -213,7 +213,7 @@ export default function LogRoundPage() {
       console.log('Complete round data being inserted (ALL FIELDS):', {
         user_id: insertData.user_id,
         date: insertData.date,
-        course: insertData.course,
+        course_name: insertData.course_name,
         score: insertData.score,
         // Scoring
         eagles: insertData.eagles,
