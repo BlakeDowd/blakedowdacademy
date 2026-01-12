@@ -1035,8 +1035,8 @@ export default function AcademyPage() {
 
   // Get user name - force 'Blake Dowd' as fallback
   const getUserName = () => {
-    // Try multiple name fields with fallback to 'Blake Dowd'
-    return user?.fullName || user?.display_name || user?.full_name || 'Blake Dowd';
+    // Try fullName with fallback to 'Blake Dowd'
+    return user?.fullName || 'Blake Dowd';
   };
 
   const userName = getUserName();
