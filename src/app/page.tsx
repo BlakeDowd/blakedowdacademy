@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useStats } from "@/contexts/StatsContext";
@@ -10,9 +10,20 @@ export default function Home() {
   const router = useRouter();
   const { isAuthenticated, loading: authLoading } = useAuth();
   const { rounds, loading: statsLoading } = useStats();
+  const [forceLoaded, setForceLoaded] = useState(false); // Emergency timeout bypass
   
   // Ensure rounds is always an array, never null or undefined
   const safeRounds = rounds || [];
+  
+  // Emergency Timeout: Force setForceLoaded(true) after 3 seconds if data hasn't arrived
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setForceLoaded(true);
+      console.log('Emergency timeout: Forcing Home component to render after 3 seconds');
+    }, 3000);
+
+    return () => clearTimeout(timeout);
+  }, []);
   
   // Log rounds data for debugging
   useEffect(() => {
@@ -26,8 +37,8 @@ export default function Home() {
     }
   }, [isAuthenticated, authLoading, router]);
 
-  // Show loading if either auth or stats are loading
-  if (authLoading || statsLoading) {
+  // Show loading if either auth or stats are loading (with emergency timeout bypass)
+  if ((authLoading || statsLoading) && !forceLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -38,11 +49,8 @@ export default function Home() {
     );
   }
 
-  if (!isAuthenticated) {
-    return null; // Will redirect
-  }
-
-  // ALWAYS render HomeDashboard - no conditional checks for rounds.length
-  // Dashboard will show 0s or 'No data' messages if database is empty
+  // After forceLoaded timeout, always render the dashboard
+  // The useEffect above will handle redirecting to /login if not authenticated
+  // This prevents the blank page issue
   return <HomeDashboard />;
 }

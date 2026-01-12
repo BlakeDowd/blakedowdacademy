@@ -48,21 +48,52 @@ const StatsContext = createContext<StatsContextType | undefined>(undefined);
 export function StatsProvider({ children }: { children: ReactNode }) {
   // Set rounds to empty array
   const [rounds, setRounds] = useState<RoundData[]>([]);
-  // Set loading to false
-  const [loading, setLoading] = useState<boolean>(false);
+  // Set loading to true initially
+  const [loading, setLoading] = useState<boolean>(true);
+
+  // Load rounds from localStorage
+  const loadRounds = () => {
+    if (typeof window !== 'undefined') {
+      try {
+        const storedRounds = localStorage.getItem('rounds');
+        if (storedRounds) {
+          const parsedRounds = JSON.parse(storedRounds);
+          setRounds(Array.isArray(parsedRounds) ? parsedRounds : []);
+          console.log('StatsContext: Loaded rounds from localStorage:', parsedRounds.length);
+        } else {
+          setRounds([]);
+          console.log('StatsContext: No rounds found in localStorage');
+        }
+      } catch (error) {
+        console.error('StatsContext: Error loading rounds from localStorage:', error);
+        setRounds([]);
+      }
+    }
+    setLoading(false);
+  };
 
   const refreshRounds = () => {
-    // Simple stub function
-    setRounds([]);
-    setLoading(false);
+    loadRounds();
   };
 
   // Make calculateStats return only { handicap: 'N/A', totalRounds: 0 }
   const calculateStats = () => ({ handicap: 'N/A', totalRounds: 0 });
 
-  // Empty useEffect with [] dependency array
+  // Load rounds on mount and listen for updates
   useEffect(() => {
-    // Empty - no complex logic
+    loadRounds();
+
+    // Listen for roundsUpdated event
+    const handleRoundsUpdate = () => {
+      console.log('StatsContext: Received roundsUpdated event, refreshing...');
+      loadRounds();
+    };
+
+    window.addEventListener('roundsUpdated', handleRoundsUpdate);
+
+    return () => {
+      window.removeEventListener('roundsUpdated', handleRoundsUpdate);
+    };
   }, []);
 
   return (

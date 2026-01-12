@@ -124,9 +124,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [supabase]);
 
-  // Redirect to login if not authenticated (except on login page)
+  // Redirect to login if not authenticated (except on login page and auth callback)
   useEffect(() => {
-    if (!loading && !isAuthenticated && pathname !== "/login") {
+    if (!loading && !isAuthenticated && pathname !== "/login" && !pathname.startsWith("/auth/callback")) {
       router.push("/login");
     }
   }, [isAuthenticated, loading, pathname, router]);
@@ -200,7 +200,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         createdAt: data.user.created_at,
       });
       setIsAuthenticated(true);
-      router.push("/");
+      // Redirect to Stats page after signup
+      router.push("/stats");
     }
   };
 
