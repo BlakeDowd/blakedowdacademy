@@ -55,83 +55,90 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      try {
-        // Try getSession() first (more reliable for client-side auth)
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        let supabaseUser = session?.user || null;
-        let authError = sessionError;
-        
-        // Fallback to getUser() if session is null
-        if (!supabaseUser) {
-          const { data: { user: getUserResult }, error: getUserError } = await supabase.auth.getUser();
-          supabaseUser = getUserResult;
-          authError = getUserError;
-        }
-        
-        if (authError || !supabaseUser) {
-          console.warn('AuthContext: No authenticated user found', { sessionError, authError });
-          setUser(null);
-          setIsAuthenticated(false);
-          setLoading(false);
-          return;
-        }
-        
-        console.log('AuthContext: User authenticated via', session ? 'getSession()' : 'getUser()', supabaseUser.id);
-
-        // Fetch user profile with initialHandicap and full_name from profiles table
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('initial_handicap, full_name, display_name, name, created_at')
-          .eq('id', supabaseUser.id)
-          .single();
-
-        // One-time fix: Update 'bdowd' or missing full_name to 'Blake Dowd' if email contains bdowd
-        if ((supabaseUser.email && supabaseUser.email.includes('bdowd')) && (!profile?.full_name || profile?.full_name === 'bdowd')) {
-          const { error: updateError } = await supabase
-            .from('profiles')
-            .update({ full_name: 'Blake Dowd' })
-            .eq('id', supabaseUser.id);
+      console.log('AuthContext: Checking authentication status...');
+      
+      // Wrap in setTimeout to prevent deadlocks (Supabase recommendation)
+      setTimeout(async () => {
+        try {
+          // Try getSession() first (more reliable for client-side auth)
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
           
-          if (updateError) {
-            console.error('Error updating full_name:', updateError);
+          let supabaseUser = session?.user || null;
+          let authError = sessionError;
+          
+          // Fallback to getUser() if session is null
+          if (!supabaseUser) {
+            const { data: { user: getUserResult }, error: getUserError } = await supabase.auth.getUser();
+            supabaseUser = getUserResult;
+            authError = getUserError;
           }
           
-          // Refetch profile after update
-          const { data: updatedProfile } = await supabase
+          if (authError || !supabaseUser) {
+            console.warn('AuthContext: No authenticated user found', { sessionError, authError });
+            setUser(null);
+            setIsAuthenticated(false);
+            setLoading(false);
+            return;
+          }
+          
+          console.log('AuthContext: User authenticated via', session ? 'getSession()' : 'getUser()', supabaseUser.id);
+          console.log('AuthContext: Fetching user profile...');
+
+          // Fetch user profile with initialHandicap and full_name from profiles table
+          const { data: profile } = await supabase
             .from('profiles')
             .select('initial_handicap, full_name, display_name, name, created_at')
             .eq('id', supabaseUser.id)
             .single();
-          
-          setUser({
-            id: supabaseUser.id,
-            email: supabaseUser.email || '',
-            fullName: updatedProfile?.full_name || 'Blake Dowd',
-            display_name: updatedProfile?.display_name,
-            name: updatedProfile?.name,
-            initialHandicap: updatedProfile?.initial_handicap,
-            createdAt: updatedProfile?.created_at || supabaseUser.created_at,
-          });
-        } else {
-          setUser({
-            id: supabaseUser.id,
-            email: supabaseUser.email || '',
-            fullName: profile?.full_name,
-            display_name: profile?.display_name,
-            name: profile?.name,
-            initialHandicap: profile?.initial_handicap,
-            createdAt: profile?.created_at || supabaseUser.created_at,
-          });
+
+          // One-time fix: Update 'bdowd' or missing full_name to 'Blake Dowd' if email contains bdowd
+          if ((supabaseUser.email && supabaseUser.email.includes('bdowd')) && (!profile?.full_name || profile?.full_name === 'bdowd')) {
+            const { error: updateError } = await supabase
+              .from('profiles')
+              .update({ full_name: 'Blake Dowd' })
+              .eq('id', supabaseUser.id);
+            
+            if (updateError) {
+              console.error('Error updating full_name:', updateError);
+            }
+            
+            // Refetch profile after update
+            const { data: updatedProfile } = await supabase
+              .from('profiles')
+              .select('initial_handicap, full_name, display_name, name, created_at')
+              .eq('id', supabaseUser.id)
+              .single();
+            
+            setUser({
+              id: supabaseUser.id,
+              email: supabaseUser.email || '',
+              fullName: updatedProfile?.full_name || 'Blake Dowd',
+              display_name: updatedProfile?.display_name,
+              name: updatedProfile?.name,
+              initialHandicap: updatedProfile?.initial_handicap,
+              createdAt: updatedProfile?.created_at || supabaseUser.created_at,
+            });
+          } else {
+            setUser({
+              id: supabaseUser.id,
+              email: supabaseUser.email || '',
+              fullName: profile?.full_name,
+              display_name: profile?.display_name,
+              name: profile?.name,
+              initialHandicap: profile?.initial_handicap,
+              createdAt: profile?.created_at || supabaseUser.created_at,
+            });
+          }
+          setIsAuthenticated(true);
+          console.log('AuthContext: Initial check complete, user loaded');
+        } catch (error) {
+          console.error("AuthContext: Error checking auth:", error);
+          setUser(null);
+          setIsAuthenticated(false);
+        } finally {
+          setLoading(false);
         }
-        setIsAuthenticated(true);
-      } catch (error) {
-        console.error("Error checking auth:", error);
-        setUser(null);
-        setIsAuthenticated(false);
-      } finally {
-        setLoading(false);
-      }
+      }, 0);
     };
 
     checkUser();
@@ -145,58 +152,77 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        // Fetch user profile
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('initial_handicap, full_name, display_name, name, created_at')
-          .eq('id', session.user.id)
-          .single();
+      console.log('AuthContext: onAuthStateChange event:', event, 'has session:', !!session?.user);
+      
+      // Wrap profile fetching in setTimeout to prevent deadlocks (Supabase recommendation)
+      setTimeout(async () => {
+        if (session?.user) {
+          console.log('AuthContext: Fetching user profile for:', session.user.id);
+          
+          try {
+            // Fetch user profile
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('initial_handicap, full_name, display_name, name, created_at')
+              .eq('id', session.user.id)
+              .single();
 
-        // One-time fix: Update 'bdowd' or missing full_name to 'Blake Dowd' if email contains bdowd
-        if ((session.user.email && session.user.email.includes('bdowd')) && (!profile?.full_name || profile?.full_name === 'bdowd')) {
-          const { error: updateError } = await supabase
-            .from('profiles')
-            .update({ full_name: 'Blake Dowd' })
-            .eq('id', session.user.id);
-          
-          if (updateError) {
-            console.error('Error updating full_name:', updateError);
+            // One-time fix: Update 'bdowd' or missing full_name to 'Blake Dowd' if email contains bdowd
+            if ((session.user.email && session.user.email.includes('bdowd')) && (!profile?.full_name || profile?.full_name === 'bdowd')) {
+              const { error: updateError } = await supabase
+                .from('profiles')
+                .update({ full_name: 'Blake Dowd' })
+                .eq('id', session.user.id);
+              
+              if (updateError) {
+                console.error('Error updating full_name:', updateError);
+              }
+              
+              // Refetch profile after update
+              const { data: updatedProfile } = await supabase
+                .from('profiles')
+                .select('initial_handicap, full_name, display_name, name, created_at')
+                .eq('id', session.user.id)
+                .single();
+              
+              setUser({
+                id: session.user.id,
+                email: session.user.email || '',
+                fullName: updatedProfile?.full_name || 'Blake Dowd',
+                display_name: updatedProfile?.display_name,
+                name: updatedProfile?.name,
+                initialHandicap: updatedProfile?.initial_handicap,
+                createdAt: updatedProfile?.created_at || session.user.created_at,
+              });
+            } else {
+              setUser({
+                id: session.user.id,
+                email: session.user.email || '',
+                fullName: profile?.full_name,
+                display_name: profile?.display_name,
+                name: profile?.name,
+                initialHandicap: profile?.initial_handicap,
+                createdAt: profile?.created_at || session.user.created_at,
+              });
+            }
+            setIsAuthenticated(true);
+            console.log('AuthContext: User authenticated and profile loaded');
+          } catch (error) {
+            console.error('AuthContext: Error fetching profile:', error);
+            // Set user with minimal data if profile fetch fails
+            setUser({
+              id: session.user.id,
+              email: session.user.email || '',
+            });
+            setIsAuthenticated(true);
           }
-          
-          // Refetch profile after update
-          const { data: updatedProfile } = await supabase
-            .from('profiles')
-            .select('initial_handicap, full_name, display_name, name, created_at')
-            .eq('id', session.user.id)
-            .single();
-          
-          setUser({
-            id: session.user.id,
-            email: session.user.email || '',
-            fullName: updatedProfile?.full_name || 'Blake Dowd',
-            display_name: updatedProfile?.display_name,
-            name: updatedProfile?.name,
-            initialHandicap: updatedProfile?.initial_handicap,
-            createdAt: updatedProfile?.created_at || session.user.created_at,
-          });
         } else {
-          setUser({
-            id: session.user.id,
-            email: session.user.email || '',
-            fullName: profile?.full_name,
-            display_name: profile?.display_name,
-            name: profile?.name,
-            initialHandicap: profile?.initial_handicap,
-            createdAt: profile?.created_at || session.user.created_at,
-          });
+          console.log('AuthContext: No session, clearing user');
+          setUser(null);
+          setIsAuthenticated(false);
         }
-        setIsAuthenticated(true);
-      } else {
-        setUser(null);
-        setIsAuthenticated(false);
-      }
-      setLoading(false);
+        setLoading(false);
+      }, 0);
     });
 
     return () => {
