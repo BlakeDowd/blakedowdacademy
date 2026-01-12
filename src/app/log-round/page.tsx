@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 import { ArrowLeft, Save, Plus, Minus, RotateCcw } from "lucide-react";
 
 interface RoundData {
@@ -47,6 +48,7 @@ interface RoundData {
 
 export default function LogRoundPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const today = new Date().toISOString().split('T')[0];
   
   const [roundData, setRoundData] = useState<RoundData>({
@@ -142,36 +144,89 @@ export default function LogRoundPage() {
     }));
   };
 
-  const handleSaveRound = () => {
+  const handleSaveRound = async () => {
     // Validate required fields
     if (!roundData.course || roundData.score === null || roundData.totalPutts === 0) {
       alert('Please fill in all required fields (Course, Score, Total Putts)');
       return;
     }
 
-    // Get existing rounds from localStorage
-    const existingRounds = typeof window !== 'undefined' 
-      ? JSON.parse(localStorage.getItem('rounds') || '[]')
-      : [];
-
-    // Create new round entry
-    const newRound = {
-      ...roundData,
-      date: roundData.date || today,
-    };
-
-    // Add to rounds array
-    const updatedRounds = [...existingRounds, newRound];
-    
-    // Save to localStorage
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('rounds', JSON.stringify(updatedRounds));
-      // Dispatch custom event to trigger immediate stats refresh
-      window.dispatchEvent(new Event('roundsUpdated'));
+    if (!user?.id) {
+      alert('User not authenticated');
+      return;
     }
 
-    // Navigate to stats page
-    router.push('/stats');
+    try {
+      // Save to database
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from('rounds')
+        .insert({
+          user_id: user.id,
+          date: roundData.date || today,
+          course: roundData.course,
+          handicap: roundData.handicap,
+          holes: roundData.holes,
+          score: roundData.score,
+          nett: roundData.nett,
+          eagles: roundData.eagles,
+          birdies: roundData.birdies,
+          pars: roundData.pars,
+          bogeys: roundData.bogeys,
+          double_bogeys: roundData.doubleBogeys,
+          fir_left: roundData.firLeft,
+          fir_hit: roundData.firHit,
+          fir_right: roundData.firRight,
+          total_gir: roundData.totalGir,
+          total_penalties: roundData.totalPenalties,
+          tee_penalties: roundData.teePenalties,
+          approach_penalties: roundData.approachPenalties,
+          going_for_green: roundData.goingForGreen,
+          gir_8ft: roundData.gir8ft,
+          gir_20ft: roundData.gir20ft,
+          up_and_down_conversions: roundData.upAndDownConversions,
+          missed: roundData.missed,
+          bunker_attempts: roundData.bunkerAttempts,
+          bunker_saves: roundData.bunkerSaves,
+          chip_inside_6ft: roundData.chipInside6ft,
+          double_chips: roundData.doubleChips,
+          total_putts: roundData.totalPutts,
+          three_putts: roundData.threePutts,
+          missed_6ft_and_in: roundData.missed6ftAndIn,
+          putts_under_6ft_attempts: roundData.puttsUnder6ftAttempts,
+        });
+
+      if (error) {
+        console.error('Error saving round:', error);
+        alert('Failed to save round. Please try again.');
+        return;
+      }
+
+      // Also save to localStorage for backward compatibility with StatsContext
+      const existingRounds = typeof window !== 'undefined' 
+        ? JSON.parse(localStorage.getItem('rounds') || '[]')
+        : [];
+
+      const newRound = {
+        ...roundData,
+        date: roundData.date || today,
+      };
+
+      const updatedRounds = [...existingRounds, newRound];
+      
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('rounds', JSON.stringify(updatedRounds));
+        window.dispatchEvent(new Event('roundsUpdated'));
+      }
+
+      // Navigate to stats page
+      router.push('/stats');
+    } catch (error) {
+      console.error('Error saving round:', error);
+      alert('Failed to save round. Please try again.');
+    }
   };
 
   const isRequiredFilled = roundData.course && roundData.score !== null && roundData.totalPutts > 0;

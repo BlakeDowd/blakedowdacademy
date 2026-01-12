@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useStats } from "@/contexts/StatsContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ExternalLink, Download } from "lucide-react";
 import { DRILLS as LIBRARY_DRILLS, type Drill as LibraryDrill } from "@/data/drills";
 
@@ -97,6 +98,7 @@ const ALL_FACILITIES: FacilityType[] = ['home', 'range-mat', 'range-grass', 'bun
 
 export default function PracticePage() {
   const { rounds } = useStats();
+  const { user } = useAuth();
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({});
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [drills, setDrills] = useState<Drill[]>([]);
