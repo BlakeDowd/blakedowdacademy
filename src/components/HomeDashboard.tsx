@@ -100,8 +100,11 @@ export default function HomeDashboard() {
   // Ensure rounds is always an array, never null or undefined
   const safeRounds = rounds || [];
   
-  // Format user name from email
+  // Format user name - prioritize full_name from database
   const getUserDisplayName = () => {
+    if (user?.fullName) {
+      return user.fullName;
+    }
     if (!user?.email) return 'Player';
     const emailParts = user.email.split('@')[0];
     const nameParts = emailParts.split('.');

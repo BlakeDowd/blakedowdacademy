@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Mail, Lock, User, LogIn, UserPlus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -101,21 +102,16 @@ export default function LoginPage() {
       <div className="relative z-10 w-full max-w-md">
         {/* Logo and Branding */}
         <div className="text-center mb-8">
-          {/* Logo Image - Placeholder */}
+          {/* Logo Image */}
           <div className="flex justify-center mb-4">
-            <div
-              className="flex items-center justify-center font-bold text-2xl tracking-wider"
-              style={{
-                width: '120px',
-                height: '120px',
-                color: '#FF9800',
-                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                borderRadius: '12px',
-                border: '2px solid rgba(255, 152, 0, 0.3)',
-              }}
-            >
-              GOLF APP
-            </div>
+            <Image
+              src="/logo.png"
+              alt="The Academy Logo"
+              width={180}
+              height={60}
+              priority
+              className="object-contain"
+            />
           </div>
           <div 
             className="text-6xl font-bold mb-4"
