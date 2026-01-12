@@ -20,6 +20,7 @@ interface AuthContextType {
   signup: (email: string, password: string, fullName: string, initialHandicap: number) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -127,6 +128,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [supabase]);
 
+  // Function to refresh user data from database
+  const refreshUser = async () => {
+    if (!supabase) return;
+    
+    try {
+      const { data: { user: supabaseUser } } = await supabase.auth.getUser();
+      if (!supabaseUser) return;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('initial_handicap, full_name, created_at')
+        .eq('id', supabaseUser.id)
+        .single();
+
+      setUser((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          fullName: profile?.full_name,
+          initialHandicap: profile?.initial_handicap,
+        };
+      });
+    } catch (error) {
+      console.error('Error refreshing user:', error);
+    }
+  };
+
   // Redirect to login if not authenticated (except on login page and auth callback)
   useEffect(() => {
     if (!loading && !isAuthenticated && pathname !== "/login" && !pathname.startsWith("/auth/callback")) {
@@ -229,6 +257,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signup,
         logout,
         loading,
+        refreshUser,
       }}
     >
       {children}

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { Trophy, Award, Medal, Crown, TrendingUp, TrendingDown, Search, X, Lock, Target, BookOpen, Clock, Zap, Star, Flame } from "lucide-react";
+import { Trophy, Award, Medal, Crown, TrendingUp, TrendingDown, Search, X, Lock, Target, BookOpen, Clock, Zap, Star, Flame, Pencil, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface LeaderboardEntry {
@@ -874,7 +874,7 @@ function calculateTotalXPByTimeframe(rounds: any[], userProgress: { totalXP: num
 
 export default function AcademyPage() {
   const { rounds } = useStats();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [userProgress, setUserProgress] = useState<{ totalXP: number; completedDrills: string[] }>({
     totalXP: 0,
     completedDrills: []
@@ -884,6 +884,9 @@ export default function AcademyPage() {
   const [leaderboardSearch, setLeaderboardSearch] = useState('');
   const [selectedTrophy, setSelectedTrophy] = useState<TrophyData | null>(null);
   const [leaderboardMetric, setLeaderboardMetric] = useState<'xp' | 'library' | 'practice' | 'rounds' | 'drills'>('xp');
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -969,6 +972,55 @@ export default function AcademyPage() {
   };
 
   const userName = getUserName();
+  
+  // Handle name editing
+  const handleEditName = () => {
+    setEditedName(userName);
+    setIsEditingName(true);
+  };
+
+  const handleSaveName = async () => {
+    if (!user?.id || !editedName.trim()) {
+      setIsEditingName(false);
+      return;
+    }
+
+    setIsSavingName(true);
+    try {
+      // Update in Supabase
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      
+      const { error } = await supabase
+        .from('profiles')
+        .update({ full_name: editedName.trim() })
+        .eq('id', user.id);
+
+      if (error) {
+        console.error('Error updating name:', error);
+        alert('Failed to update name. Please try again.');
+        setIsSavingName(false);
+        return;
+      }
+
+      // Refresh user context to sync across app
+      if (refreshUser) {
+        await refreshUser();
+      }
+      
+      setIsEditingName(false);
+    } catch (error) {
+      console.error('Error saving name:', error);
+      alert('Failed to update name. Please try again.');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingName(false);
+    setEditedName('');
+  };
 
   // Get current leaderboard data - recalculates when timeFilter or leaderboardMetric changes
   const currentLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName);
@@ -1034,7 +1086,52 @@ export default function AcademyPage() {
             {/* Identity Text - Centered */}
             <div className="text-center">
               <p className="text-lg text-gray-600 mb-1">Welcome back,</p>
-              <h1 className="text-2xl font-bold text-gray-900">{userName}</h1>
+              <div className="flex items-center justify-center gap-2">
+                {isEditingName ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={editedName}
+                      onChange={(e) => setEditedName(e.target.value)}
+                      className="text-2xl font-bold text-gray-900 border-2 border-[#014421] rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-[#014421]"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleSaveName();
+                        } else if (e.key === 'Escape') {
+                          handleCancelEdit();
+                        }
+                      }}
+                      disabled={isSavingName}
+                    />
+                    <button
+                      onClick={handleSaveName}
+                      disabled={isSavingName}
+                      className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
+                    >
+                      <Check className="w-5 h-5 text-green-600" />
+                    </button>
+                    <button
+                      onClick={handleCancelEdit}
+                      disabled={isSavingName}
+                      className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
+                    >
+                      <X className="w-5 h-5 text-gray-600" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-2xl font-bold text-gray-900">{userName}</h1>
+                    <button
+                      onClick={handleEditName}
+                      className="p-1 rounded hover:bg-gray-100 transition-colors"
+                      title="Edit name"
+                    >
+                      <Pencil className="w-4 h-4 text-gray-600" />
+                    </button>
+                  </div>
+                )}
+              </div>
               <p className="text-sm font-semibold mt-1" style={{ color: '#16a34a' }}>{userLevel}</p>
             </div>
           </div>
