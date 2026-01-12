@@ -917,23 +917,7 @@ export default function AcademyPage() {
     }
   }, [isAuthenticated, user, router, loading]);
   
-  console.log('Academy: Auth state - loading:', loading, 'isAuthenticated:', isAuthenticated, 'user:', user?.id);
-  
-  // Show loading spinner while auth is loading (after all hooks)
-  if (loading) {
-    console.log('Academy: Showing loading spinner');
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-[#014421] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-700 font-medium">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-  
-  console.log('Academy: Fetching data...');
-
+  // Load user progress and set up event listeners
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -963,21 +947,33 @@ export default function AcademyPage() {
 
     window.addEventListener('roundsUpdated', handleRoundsUpdate);
     window.addEventListener('academyLeaderboardRefresh', handleLeaderboardRefresh);
-
-    return () => {
-      window.removeEventListener('roundsUpdated', handleRoundsUpdate);
-      window.removeEventListener('academyLeaderboardRefresh', handleLeaderboardRefresh);
-    };
-
-    // Listen for XP updates
     window.addEventListener('userProgressUpdated', loadProgress);
     window.addEventListener('storage', loadProgress);
 
     return () => {
+      window.removeEventListener('roundsUpdated', handleRoundsUpdate);
+      window.removeEventListener('academyLeaderboardRefresh', handleLeaderboardRefresh);
       window.removeEventListener('userProgressUpdated', loadProgress);
       window.removeEventListener('storage', loadProgress);
     };
   }, []);
+  
+  console.log('Academy: Auth state - loading:', loading, 'isAuthenticated:', isAuthenticated, 'user:', user?.id);
+  
+  // Show loading spinner while auth is loading (after all hooks)
+  if (loading) {
+    console.log('Academy: Showing loading spinner');
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-[#014421] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-700 font-medium">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  console.log('Academy: Fetching data...');
 
   // Calculate total XP (rounds + drills) - filtered by timeframe
   const totalXP = calculateTotalXPByTimeframe(rounds, userProgress, timeFilter);
