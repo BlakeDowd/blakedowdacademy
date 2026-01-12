@@ -978,7 +978,7 @@ export default function AcademyPage() {
         console.log('Academy: Supabase client created, checking authentication...');
         
         // Set up auth state change listener to catch session immediately
-        const subscription = supabase.auth.onAuthStateChange((event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
           console.log('Academy: Auth state changed:', event, session?.user?.id || 'no user');
           if (session?.user) {
             console.log('Academy: Session detected via onAuthStateChange:', {
