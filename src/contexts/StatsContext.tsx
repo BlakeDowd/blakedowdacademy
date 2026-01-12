@@ -115,10 +115,10 @@ export function StatsProvider({ children }: { children: ReactNode }) {
 
       setRounds(transformedRounds);
       console.log('StatsContext: Loaded rounds from database:', transformedRounds.length);
+      setLoading(false);
     } catch (error) {
       console.error('StatsContext: Error loading rounds from database:', error);
       setRounds([]);
-    } finally {
       setLoading(false);
     }
   };

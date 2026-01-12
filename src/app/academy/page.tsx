@@ -955,19 +955,9 @@ export default function AcademyPage() {
   const userTier = getTier();
   const userLevel = getLevel(userTier);
 
-  // Get user name - force 'Blake Dowd' for now, fallback to full_name, email, then 'Player'
+  // Get user name - force 'Blake Dowd' as fallback
   const getUserName = () => {
-    // Hard-code for Blake Dowd account
-    if (user?.email && user.email.includes('bdowd')) {
-      return 'Blake Dowd';
-    }
-    if (user?.fullName) {
-      return user.fullName;
-    }
-    if (user?.email) {
-      return user.email;
-    }
-    return 'Player';
+    return user?.fullName || 'Blake Dowd';
   };
 
   const userName = getUserName();

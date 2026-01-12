@@ -100,19 +100,9 @@ export default function HomeDashboard() {
   // Ensure rounds is always an array, never null or undefined
   const safeRounds = rounds || [];
   
-  // Format user name - force 'Blake Dowd' for now, fallback to full_name, email, then 'Player'
+  // Format user name - force 'Blake Dowd' as fallback
   const getUserDisplayName = () => {
-    // Hard-code for Blake Dowd account
-    if (user?.email && user.email.includes('bdowd')) {
-      return 'Blake Dowd';
-    }
-    if (user?.fullName) {
-      return user.fullName;
-    }
-    if (user?.email) {
-      return user.email;
-    }
-    return 'Player';
+    return user?.fullName || 'Blake Dowd';
   };
   const [totalXP, setTotalXP] = useState(0);
   const [dailyVideo, setDailyVideo] = useState(() => getDailyVideo());

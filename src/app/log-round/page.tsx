@@ -50,6 +50,7 @@ export default function LogRoundPage() {
   const router = useRouter();
   const { user } = useAuth();
   const today = new Date().toISOString().split('T')[0];
+  const [isSaving, setIsSaving] = useState(false);
   
   const [roundData, setRoundData] = useState<RoundData>({
     date: today,
@@ -152,68 +153,132 @@ export default function LogRoundPage() {
     }
 
     if (!user?.id) {
-      alert('User not authenticated');
+      console.error('User not authenticated - user.id is missing:', user);
+      alert('User not authenticated. Please log in and try again.');
       return;
     }
+
+    setIsSaving(true);
 
     try {
       // Save to database only - no localStorage
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
-      const { error } = await supabase
+      // Prepare insert data with essential fields only
+      // Only include columns that exist in the database to avoid PGRST204 errors
+      const insertData: Record<string, any> = {
+        user_id: user.id,
+        date: roundData.date || today,
+        course: roundData.course,
+        handicap: roundData.handicap,
+        holes: roundData.holes,
+        score: roundData.score,
+        nett: roundData.nett,
+        eagles: roundData.eagles,
+        birdies: roundData.birdies,
+        pars: roundData.pars,
+        bogeys: roundData.bogeys,
+        double_bogeys: roundData.doubleBogeys,
+        fir_left: roundData.firLeft,
+        fir_hit: roundData.firHit, // Essential: fairways hit
+        fir_right: roundData.firRight,
+        total_gir: roundData.totalGir, // Essential: greens in regulation
+        total_penalties: roundData.totalPenalties,
+        total_putts: roundData.totalPutts, // Essential: total putts
+        three_putts: roundData.threePutts,
+        missed_6ft_and_in: roundData.missed6ftAndIn,
+        putts_under_6ft_attempts: roundData.puttsUnder6ftAttempts,
+      };
+
+      // Conditionally add optional columns if they exist in the database schema
+      // These may not exist in all database setups
+      if (roundData.teePenalties !== undefined) {
+        insertData.tee_penalties = roundData.teePenalties;
+      }
+      if (roundData.approachPenalties !== undefined) {
+        insertData.approach_penalties = roundData.approachPenalties;
+      }
+      if (roundData.goingForGreen !== undefined) {
+        insertData.going_for_green = roundData.goingForGreen;
+      }
+      if (roundData.gir8ft !== undefined) {
+        insertData.gir_8ft = roundData.gir8ft;
+      }
+      if (roundData.gir20ft !== undefined) {
+        insertData.gir_20ft = roundData.gir20ft;
+      }
+      if (roundData.upAndDownConversions !== undefined) {
+        insertData.up_and_down_conversions = roundData.upAndDownConversions;
+      }
+      if (roundData.missed !== undefined) {
+        insertData.missed = roundData.missed;
+      }
+      if (roundData.bunkerAttempts !== undefined) {
+        insertData.bunker_attempts = roundData.bunkerAttempts;
+      }
+      if (roundData.bunkerSaves !== undefined) {
+        insertData.bunker_saves = roundData.bunkerSaves;
+      }
+      if (roundData.chipInside6ft !== undefined) {
+        insertData.chip_inside_6ft = roundData.chipInside6ft;
+      }
+      if (roundData.doubleChips !== undefined) {
+        insertData.double_chips = roundData.doubleChips;
+      }
+
+      console.log('Attempting to save round with user_id:', user.id);
+      console.log('Round data being inserted:', {
+        user_id: insertData.user_id,
+        date: insertData.date,
+        course: insertData.course,
+        score: insertData.score,
+        fir_hit: insertData.fir_hit,
+        total_gir: insertData.total_gir,
+        total_putts: insertData.total_putts,
+      });
+
+      const { data, error } = await supabase
         .from('rounds')
-        .insert({
-          user_id: user.id,
-          date: roundData.date || today,
-          course: roundData.course,
-          handicap: roundData.handicap,
-          holes: roundData.holes,
-          score: roundData.score,
-          nett: roundData.nett,
-          eagles: roundData.eagles,
-          birdies: roundData.birdies,
-          pars: roundData.pars,
-          bogeys: roundData.bogeys,
-          double_bogeys: roundData.doubleBogeys,
-          fir_left: roundData.firLeft,
-          fir_hit: roundData.firHit,
-          fir_right: roundData.firRight,
-          total_gir: roundData.totalGir,
-          total_penalties: roundData.totalPenalties,
-          tee_penalties: roundData.teePenalties,
-          approach_penalties: roundData.approachPenalties,
-          going_for_green: roundData.goingForGreen,
-          gir_8ft: roundData.gir8ft,
-          gir_20ft: roundData.gir20ft,
-          up_and_down_conversions: roundData.upAndDownConversions,
-          missed: roundData.missed,
-          bunker_attempts: roundData.bunkerAttempts,
-          bunker_saves: roundData.bunkerSaves,
-          chip_inside_6ft: roundData.chipInside6ft,
-          double_chips: roundData.doubleChips,
-          total_putts: roundData.totalPutts,
-          three_putts: roundData.threePutts,
-          missed_6ft_and_in: roundData.missed6ftAndIn,
-          putts_under_6ft_attempts: roundData.puttsUnder6ftAttempts,
-        });
+        .insert(insertData)
+        .select();
 
       if (error) {
-        console.error('Error saving round:', error);
-        alert('Failed to save round. Please try again.');
+        console.error('Database error saving round:', error);
+        console.error('Error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+        });
+        
+        // Check for missing column errors (PGRST204)
+        if (error.code === 'PGRST204' || error.message?.includes('column') || error.message?.includes('does not exist')) {
+          console.warn('WARNING: Database column mismatch detected. The database schema may be missing some columns.');
+          console.warn('Insert data attempted:', Object.keys(insertData));
+          console.warn('This is a schema mismatch issue. Some columns may need to be added to the database.');
+        }
+        
+        alert(`Failed to save round: ${error.message || 'Unknown error'}. Please check the console for details.`);
+        setIsSaving(false);
         return;
       }
+
+      console.log('Round saved successfully!', data);
+      console.log('Round saved successfully');
 
       // Dispatch event to refresh rounds from database
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('roundsUpdated'));
       }
 
-      // Navigate to stats page
-      router.push('/stats');
+      // Navigate to academy page to see the updated leaderboard
+      router.push('/academy');
     } catch (error) {
-      console.error('Error saving round:', error);
-      alert('Failed to save round. Please try again.');
+      console.error('Unexpected error saving round:', error);
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      alert(`Failed to save round: ${error instanceof Error ? error.message : 'Unknown error'}. Please check the console for details.`);
+      setIsSaving(false);
     }
   };
 
@@ -1461,12 +1526,21 @@ export default function LogRoundPage() {
           {/* Save Button */}
           <button
             onClick={handleSaveRound}
-            disabled={!isRequiredFilled}
+            disabled={!isRequiredFilled || isSaving}
             className="w-full py-4 rounded-xl text-lg font-semibold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg mb-6"
             style={{ backgroundColor: '#FFA500' }}
           >
-            <Save className="w-5 h-5" />
-            Save Round
+            {isSaving ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="w-5 h-5" />
+                Save Round
+              </>
+            )}
           </button>
         </div>
       </div>
