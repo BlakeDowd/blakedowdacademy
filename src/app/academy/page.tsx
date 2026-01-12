@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Trophy, Award, Medal, Crown, TrendingUp, TrendingDown, Search, X, Lock, Target, BookOpen, Clock, Zap, Star, Flame, Pencil, Check } from "lucide-react";
@@ -889,10 +890,60 @@ function calculateTotalXPByTimeframe(rounds: any[], userProgress: { totalXP: num
 
 export default function AcademyPage() {
   const { rounds } = useStats();
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, isAuthenticated } = useAuth();
+  const router = useRouter();
   const [allRoundsCount, setAllRoundsCount] = useState<number>(0);
   const [sessionUser, setSessionUser] = useState<any>(null);
   const [envCheck, setEnvCheck] = useState<{ url: string | undefined; key: string | undefined }>({ url: undefined, key: undefined });
+  const [isResetting, setIsResetting] = useState(false);
+  
+  // Force reset session function
+  const handleForceReset = async () => {
+    setIsResetting(true);
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      
+      // Sign out from Supabase
+      console.log('Force Reset: Signing out from Supabase...');
+      await supabase.auth.signOut();
+      
+      // Clear all localStorage
+      console.log('Force Reset: Clearing localStorage...');
+      if (typeof window !== 'undefined') {
+        localStorage.clear();
+      }
+      
+      // Clear all cookies
+      console.log('Force Reset: Clearing cookies...');
+      if (typeof document !== 'undefined') {
+        document.cookie.split(";").forEach((c) => {
+          document.cookie = c
+            .replace(/^ +/, "")
+            .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        });
+      }
+      
+      // Wait a moment for cleanup
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Force redirect to login
+      console.log('Force Reset: Redirecting to login...');
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Force Reset: Error during reset:', error);
+      // Still redirect even if there's an error
+      window.location.href = '/login';
+    }
+  };
+  
+  // Automatic redirect if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated && user === null) {
+      console.log('Academy: No authentication detected, redirecting to login...');
+      router.push('/login');
+    }
+  }, [isAuthenticated, user, router]);
   
   // Check environment variables and session directly
   useEffect(() => {
@@ -1259,6 +1310,23 @@ export default function AcademyPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-32 w-full overflow-x-hidden">
       <div className="max-w-md mx-auto px-4 w-full overflow-x-hidden min-h-screen pb-32">
+        {/* Force Reset Session Button - Temporary */}
+        <div className="sticky top-0 z-50 pt-2 pb-2">
+          <button
+            onClick={handleForceReset}
+            disabled={isResetting}
+            className="w-full py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isResetting ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>RESETTING SESSION...</span>
+              </>
+            ) : (
+              <span>FORCE RESET SESSION</span>
+            )}
+          </button>
+        </div>
         {/* Debug Banner - Temporary */}
         <div className="mt-4 p-4 bg-red-100 border-2 border-red-500 rounded-lg">
           <p className="text-lg font-bold text-red-800 text-center">Total rounds in DB: {allRoundsCount}</p>
