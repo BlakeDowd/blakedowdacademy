@@ -94,6 +94,10 @@ export default function LoginPage() {
     } catch (err: any) {
       setLoading(false);
       
+      // Show error in alert for visibility on phone
+      const errorMessage = err.message || "An error occurred. Please try again.";
+      alert(`Login Error: ${errorMessage}`);
+      
       // If timeout occurred, show retry button
       if (err.message && err.message.includes("timed out")) {
         setShowRetry(true);
@@ -111,10 +115,11 @@ export default function LoginPage() {
             }
           } catch (checkErr) {
             console.error('Login: Error checking session after timeout:', checkErr);
+            alert(`Session Check Error: ${checkErr instanceof Error ? checkErr.message : String(checkErr)}`);
           }
         }, 500);
       } else {
-        setError(err.message || "An error occurred. Please try again.");
+        setError(errorMessage);
       }
     }
   };
