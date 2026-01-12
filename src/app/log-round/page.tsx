@@ -195,9 +195,10 @@ export default function LogRoundPage() {
         tee_penalties: roundData.teePenalties,
         approach_penalties: roundData.approachPenalties,
         // Short Game stats
-        up_and_down_conversions: roundData.upAndDownConversions,
+        up_and_down_conversions: roundData.upAndDownConversions, // Conversions under Up & Down
         conversions: roundData.upAndDownConversions, // Also map to conversions column
-        missed: roundData.missed, // Missed < 6ft maps to missed column
+        up_and_down_missed: roundData.missed, // Missed under Up & Down maps to up_and_down_missed
+        missed: roundData.missed, // Also keep missed for backward compatibility
         bunker_attempts: roundData.bunkerAttempts,
         bunker_saves: roundData.bunkerSaves,
         chip_ins: roundData.doubleChips || 0, // Chip ins
@@ -233,6 +234,7 @@ export default function LogRoundPage() {
         // Short Game
         up_and_down_conversions: insertData.up_and_down_conversions,
         conversions: insertData.conversions,
+        up_and_down_missed: insertData.up_and_down_missed,
         missed: insertData.missed,
         bunker_attempts: insertData.bunker_attempts,
         bunker_saves: insertData.bunker_saves,
