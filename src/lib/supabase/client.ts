@@ -3,16 +3,7 @@ import { createBrowserClient } from '@supabase/ssr'
 export function createClient() {
   // Hardcoded credentials to bypass Vercel environment variable delays
   const supabaseUrl = 'https://zdhzarkguvvrwzjuiqdc.supabase.co';
-  
-  // Hardcoded ANON_KEY - replace [PASTE YOUR eyJ... KEY HERE] with your actual key
-  // const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY; // Commented out
-  const supabaseAnonKey = '[PASTE YOUR eyJ... KEY HERE]';
-
-  if (!supabaseAnonKey || supabaseAnonKey === '[PASTE YOUR eyJ... KEY HERE]') {
-    throw new Error(
-      'Missing Supabase ANON_KEY. Please hardcode it above (replace [PASTE YOUR eyJ... KEY HERE]).'
-    );
-  }
+  const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkaHphcmtndXZ2cnd6anVpcWRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc1OTQ1MjMsImV4cCI6MjA4MzE3MDUyM30.Kd96aQdJA7qjqR-lOFEJ4esQDkfLn0wfF1VS_jbqI3w';
 
   console.log('Supabase Client: Using hardcoded URL:', supabaseUrl);
 
