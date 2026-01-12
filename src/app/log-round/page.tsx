@@ -165,8 +165,8 @@ export default function LogRoundPage() {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
-      // Prepare insert data with all required fields
-      // Include all scoring and penalty columns that exist in the database
+      // Prepare insert data with ALL fields - every UI input mapped to database
+      // Complete mapping of all stats including Proximity, Short Game, and 3-Putt
       const insertData: Record<string, any> = {
         user_id: user.id, // Use active session user.id
         date: roundData.date || today,
@@ -175,69 +175,72 @@ export default function LogRoundPage() {
         holes: roundData.holes,
         score: roundData.score,
         nett: roundData.nett,
+        // Scoring stats
         eagles: roundData.eagles,
         birdies: roundData.birdies,
         pars: roundData.pars,
         bogeys: roundData.bogeys,
         double_bogeys: roundData.doubleBogeys, // Maps '2+ Bogey' from UI to database column
+        // Tee & Approach stats
         fir_left: roundData.firLeft,
-        fir_hit: roundData.firHit, // Essential: fairways hit
+        fir_hit: roundData.firHit,
         fir_right: roundData.firRight,
-        total_gir: roundData.totalGir, // Essential: greens in regulation
+        total_gir: roundData.totalGir,
+        going_for_green: roundData.goingForGreen,
+        // Proximity stats (GIR Proximity)
+        gir_8ft: roundData.gir8ft, // Proximity: Inside 8ft
+        gir_20ft: roundData.gir20ft, // Proximity: Inside 20ft
+        // Penalty stats
         total_penalties: roundData.totalPenalties,
-        tee_penalties: roundData.teePenalties, // Penalty columns
-        approach_penalties: roundData.approachPenalties, // Penalty columns
-        bunker_attempts: roundData.bunkerAttempts, // Bunker stats - required
-        bunker_saves: roundData.bunkerSaves, // Bunker stats - required
-        chip_ins: roundData.doubleChips || 0, // Chip ins - short game stats (assuming doubleChips represents chip ins for now)
-        inside_6ft: roundData.chipInside6ft, // Inside 6ft - short game stats
-        total_putts: roundData.totalPutts, // Essential: total putts
-        three_putts: roundData.threePutts,
+        tee_penalties: roundData.teePenalties,
+        approach_penalties: roundData.approachPenalties,
+        // Short Game stats
+        up_and_down_conversions: roundData.upAndDownConversions,
+        missed: roundData.missed,
+        bunker_attempts: roundData.bunkerAttempts,
+        bunker_saves: roundData.bunkerSaves,
+        chip_ins: roundData.doubleChips || 0, // Chip ins
+        inside_6ft: roundData.chipInside6ft, // Inside 6ft
+        double_chips: roundData.doubleChips,
+        // Putting stats
+        total_putts: roundData.totalPutts,
+        three_putts: roundData.threePutts, // 3-Putt stat
         missed_6ft_and_in: roundData.missed6ftAndIn,
         putts_under_6ft_attempts: roundData.puttsUnder6ftAttempts,
       };
 
-      // Conditionally add optional columns if they exist in the database schema
-      // These may not exist in all database setups
-      if (roundData.goingForGreen !== undefined) {
-        insertData.going_for_green = roundData.goingForGreen;
-      }
-      if (roundData.gir8ft !== undefined) {
-        insertData.gir_8ft = roundData.gir8ft;
-      }
-      if (roundData.gir20ft !== undefined) {
-        insertData.gir_20ft = roundData.gir20ft;
-      }
-      if (roundData.upAndDownConversions !== undefined) {
-        insertData.up_and_down_conversions = roundData.upAndDownConversions;
-      }
-      if (roundData.missed !== undefined) {
-        insertData.missed = roundData.missed;
-      }
-      if (roundData.doubleChips !== undefined) {
-        insertData.double_chips = roundData.doubleChips;
-      }
-
       console.log('Attempting to save round with user_id:', user.id);
-      console.log('Round data being inserted:', {
+      console.log('Complete round data being inserted (ALL FIELDS):', {
         user_id: insertData.user_id,
         date: insertData.date,
         course: insertData.course,
         score: insertData.score,
+        // Scoring
         eagles: insertData.eagles,
         birdies: insertData.birdies,
         pars: insertData.pars,
         bogeys: insertData.bogeys,
         double_bogeys: insertData.double_bogeys,
+        // Approach & Proximity
+        total_gir: insertData.total_gir,
+        gir_8ft: insertData.gir_8ft,
+        gir_20ft: insertData.gir_20ft,
+        going_for_green: insertData.going_for_green,
+        // Penalties
         tee_penalties: insertData.tee_penalties,
         approach_penalties: insertData.approach_penalties,
+        // Short Game
+        up_and_down_conversions: insertData.up_and_down_conversions,
+        missed: insertData.missed,
         bunker_attempts: insertData.bunker_attempts,
         bunker_saves: insertData.bunker_saves,
         chip_ins: insertData.chip_ins,
         inside_6ft: insertData.inside_6ft,
-        fir_hit: insertData.fir_hit,
-        total_gir: insertData.total_gir,
+        // Putting (including 3-Putt)
         total_putts: insertData.total_putts,
+        three_putts: insertData.three_putts,
+        missed_6ft_and_in: insertData.missed_6ft_and_in,
+        putts_under_6ft_attempts: insertData.putts_under_6ft_attempts,
       });
 
       const { data, error } = await supabase
