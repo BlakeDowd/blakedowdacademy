@@ -896,6 +896,8 @@ export default function AcademyPage() {
   
   // Check environment variables and session directly
   useEffect(() => {
+    let authStateSubscription: { unsubscribe: () => void } | null = null;
+    
     const checkAuthAndEnv = async () => {
       try {
         // Check environment variables - use correct Supabase URL
@@ -923,6 +925,22 @@ export default function AcademyPage() {
         const supabase = createClient();
         
         console.log('Academy: Supabase client created, checking authentication...');
+        
+        // Set up auth state change listener to catch session immediately
+        authStateSubscription = supabase.auth.onAuthStateChange((event, session) => {
+          console.log('Academy: Auth state changed:', event, session?.user?.id || 'no user');
+          if (session?.user) {
+            console.log('Academy: Session detected via onAuthStateChange:', {
+              userId: session.user.id,
+              email: session.user.email,
+              event: event
+            });
+            setSessionUser(session.user);
+          } else {
+            console.log('Academy: Session cleared via onAuthStateChange:', event);
+            setSessionUser(null);
+          }
+        });
         
         // Try getSession() first (more reliable for client-side)
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -959,17 +977,49 @@ export default function AcademyPage() {
           }
         }
         
-        // Fetch ALL rounds with NO filters
+        // Fetch ALL rounds with NO filters (authenticated query)
         const { data, error } = await supabase
           .from('rounds')
           .select('*');
         
         if (error) {
-          console.error('Academy: Error fetching all rounds:', error);
-          setAllRoundsCount(0);
+          console.error('Academy: Error fetching all rounds (authenticated):', error);
         } else {
-          console.log('Academy: Total rounds in database (no filters):', data?.length || 0);
-          setAllRoundsCount(data?.length || 0);
+          console.log('Academy: Total rounds in database (authenticated query):', data?.length || 0);
+        }
+        
+        // DEBUG: Bypass authentication - try to fetch count without auth
+        // This will help verify if data exists even without proper authentication
+        try {
+          // Use a simple count query that might work without full auth
+          const { count, error: countError } = await supabase
+            .from('rounds')
+            .select('*', { count: 'exact', head: true });
+          
+          if (countError) {
+            console.warn('Academy: Count query error (expected if RLS blocks):', countError.message);
+          } else {
+            console.log('Academy: Round count (bypass query):', count);
+            // Update count if we got a result
+            if (count !== null && count !== undefined) {
+              setAllRoundsCount(count);
+            } else if (data) {
+              setAllRoundsCount(data.length);
+            }
+          }
+        } catch (bypassError) {
+          console.warn('Academy: Bypass query failed (expected):', bypassError);
+          // Fall back to authenticated query result
+          if (data) {
+            setAllRoundsCount(data.length);
+          } else {
+            setAllRoundsCount(0);
+          }
+        }
+        
+        // If authenticated query worked, use that count
+        if (data && !error) {
+          setAllRoundsCount(data.length);
         }
       } catch (error) {
         console.error('Academy: Error in checkAuthAndEnv:', error);
@@ -978,6 +1028,13 @@ export default function AcademyPage() {
     };
     
     checkAuthAndEnv();
+    
+    // Cleanup: unsubscribe from auth state changes on unmount
+    return () => {
+      if (authStateSubscription) {
+        authStateSubscription.unsubscribe();
+      }
+    };
   }, []);
   
   // Debug: Log rounds and user data to verify data flow
