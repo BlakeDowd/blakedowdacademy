@@ -32,9 +32,11 @@ interface RoundData {
   bunkerAttempts: number;
   bunkerSaves: number;
   chipInside6ft: number;
+  doubleChips: number;
   totalPutts: number;
   threePutts: number;
   missed6ftAndIn: number;
+  puttsUnder6ftAttempts: number;
 }
 
 interface RoundWithBadge extends RoundData {
