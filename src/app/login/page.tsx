@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [initialHandicap, setInitialHandicap] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showRetry, setShowRetry] = useState(false);
 
   // Check for existing session on mount - if session exists but spinner is stuck, force redirect
   useEffect(() => {
@@ -60,11 +61,12 @@ export default function LoginPage() {
     }
 
     try {
-      // Create a timeout promise that rejects after 5 seconds
+      setShowRetry(false);
+      // Create a timeout promise that rejects after 3 seconds
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
           reject(new Error("Login timed out. Please check your connection and try again."));
-        }, 5000);
+        }, 3000);
       });
 
       // Race between the login/signup and the timeout
@@ -90,11 +92,14 @@ export default function LoginPage() {
         window.location.assign('/academy');
       }
     } catch (err: any) {
-      setError(err.message || "An error occurred. Please try again.");
       setLoading(false);
       
-      // If timeout occurred, also check for session and force redirect
+      // If timeout occurred, show retry button
       if (err.message && err.message.includes("timed out")) {
+        setShowRetry(true);
+        setError("Login timed out. Please check your connection.");
+        
+        // Also check for session and force redirect if session exists
         setTimeout(async () => {
           try {
             const { createClient } = await import("@/lib/supabase/client");
@@ -108,6 +113,8 @@ export default function LoginPage() {
             console.error('Login: Error checking session after timeout:', checkErr);
           }
         }, 500);
+      } else {
+        setError(err.message || "An error occurred. Please try again.");
       }
     }
   };
@@ -228,6 +235,15 @@ export default function LoginPage() {
               }}
             >
               <p className="text-sm" style={{ color: '#dc2626' }}>{error}</p>
+              {showRetry && (
+                <button
+                  onClick={() => window.location.reload()}
+                  className="mt-3 w-full py-2 px-4 rounded-lg font-medium text-white transition-all hover:shadow-md"
+                  style={{ backgroundColor: '#014421' }}
+                >
+                  Click here to retry
+                </button>
+              )}
             </div>
           )}
 
