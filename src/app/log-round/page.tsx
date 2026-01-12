@@ -189,6 +189,8 @@ export default function LogRoundPage() {
         approach_penalties: roundData.approachPenalties, // Penalty columns
         bunker_attempts: roundData.bunkerAttempts, // Bunker stats - required
         bunker_saves: roundData.bunkerSaves, // Bunker stats - required
+        chip_ins: roundData.doubleChips || 0, // Chip ins - short game stats (assuming doubleChips represents chip ins for now)
+        inside_6ft: roundData.chipInside6ft, // Inside 6ft - short game stats
         total_putts: roundData.totalPutts, // Essential: total putts
         three_putts: roundData.threePutts,
         missed_6ft_and_in: roundData.missed6ftAndIn,
@@ -212,9 +214,6 @@ export default function LogRoundPage() {
       if (roundData.missed !== undefined) {
         insertData.missed = roundData.missed;
       }
-      if (roundData.chipInside6ft !== undefined) {
-        insertData.chip_inside_6ft = roundData.chipInside6ft;
-      }
       if (roundData.doubleChips !== undefined) {
         insertData.double_chips = roundData.doubleChips;
       }
@@ -234,6 +233,8 @@ export default function LogRoundPage() {
         approach_penalties: insertData.approach_penalties,
         bunker_attempts: insertData.bunker_attempts,
         bunker_saves: insertData.bunker_saves,
+        chip_ins: insertData.chip_ins,
+        inside_6ft: insertData.inside_6ft,
         fir_hit: insertData.fir_hit,
         total_gir: insertData.total_gir,
         total_putts: insertData.total_putts,
