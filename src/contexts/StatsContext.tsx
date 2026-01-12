@@ -66,12 +66,16 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       const supabase = createClient();
 
       console.log('StatsContext: Fetching rounds for user_id:', user.id);
+      console.log('StatsContext: User object:', { id: user.id, email: user.email, fullName: user.fullName });
       
       const { data, error } = await supabase
         .from('rounds')
         .select('*')
         .eq('user_id', user.id)
         .order('date', { ascending: false });
+      
+      // Debug: Log the query filter being used
+      console.log('StatsContext: Query filter - user_id =', user.id);
 
       if (error) {
         console.error('StatsContext: Error loading rounds from database:', error);
@@ -88,6 +92,22 @@ export function StatsProvider({ children }: { children: ReactNode }) {
 
       console.log('StatsContext: Raw data from database:', data);
       console.log('StatsContext: Number of rounds fetched:', data?.length || 0);
+      
+      // Debug: Check user_id in fetched rounds
+      if (data && data.length > 0) {
+        console.log('StatsContext: Sample round user_ids:', data.slice(0, 3).map((r: any) => ({
+          round_id: r.id,
+          user_id: r.user_id,
+          matches_current_user: r.user_id === user.id,
+          date: r.date
+        })));
+      } else {
+        console.warn('StatsContext: No rounds found for user_id:', user.id);
+        console.warn('StatsContext: This could mean:');
+        console.warn('  1. No rounds exist in database for this user_id');
+        console.warn('  2. RLS policies are blocking access');
+        console.warn('  3. user_id mismatch between rounds table and auth.users');
+      }
 
       // Transform database columns (snake_case) to camelCase for RoundData interface
       const transformedRounds: RoundData[] = (data || []).map((round: any) => ({

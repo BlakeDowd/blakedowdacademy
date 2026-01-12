@@ -1111,6 +1111,17 @@ export default function AcademyPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-32 w-full overflow-x-hidden">
       <div className="max-w-md mx-auto px-4 w-full overflow-x-hidden min-h-screen pb-32">
+        {/* Debug Info - Temporary */}
+        <div className="mt-4 p-3 bg-yellow-100 border border-yellow-400 rounded-lg text-sm">
+          <p className="font-semibold text-yellow-800">Debug Info:</p>
+          <p className="text-yellow-700">Rounds found: {rounds?.length || 0}</p>
+          <p className="text-yellow-700">User ID: {user?.id || 'Not logged in'}</p>
+          <p className="text-yellow-700">User Email: {user?.email || 'N/A'}</p>
+          {rounds && rounds.length > 0 && (
+            <p className="text-yellow-700">First round date: {rounds[0]?.date || 'N/A'}</p>
+          )}
+        </div>
+        
         {/* Modern Profile Header - Centered */}
         <div className="pt-6 pb-4 bg-white">
           <div className="flex flex-col items-center gap-3">
