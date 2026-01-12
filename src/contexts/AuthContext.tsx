@@ -34,11 +34,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   
-  // Only create Supabase client if env vars are available
+  // Create Supabase client (credentials are hardcoded in client.ts)
   let supabase: ReturnType<typeof createClient> | null = null;
-  if (typeof window !== 'undefined' && 
-      process.env.NEXT_PUBLIC_SUPABASE_URL && 
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  if (typeof window !== 'undefined') {
     try {
       supabase = createClient();
     } catch (error) {

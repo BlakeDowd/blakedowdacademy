@@ -131,10 +131,7 @@ export default function LoginPage() {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
       
-      // Check if environment variables are set
-      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-        throw new Error("Supabase is not configured. Please check your environment variables.");
-      }
+      // Credentials are hardcoded in client.ts, no need to check env vars
       
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
