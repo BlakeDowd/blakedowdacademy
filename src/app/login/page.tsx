@@ -81,15 +81,41 @@ export default function LoginPage() {
           signup(email, password, fullName, handicap),
           timeoutPromise
         ]);
-        // Hard redirect to break spinner
-        window.location.assign('/academy');
+        // Wait for session to be saved before redirecting
+        await new Promise(resolve => setTimeout(resolve, 100));
+        // Verify session exists before redirecting
+        try {
+          const { createClient } = await import("@/lib/supabase/client");
+          const supabase = createClient();
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            window.location.assign('/academy');
+          }
+        } catch (err) {
+          console.error('Login: Error verifying session before redirect:', err);
+          // Still redirect after delay
+          setTimeout(() => window.location.assign('/academy'), 100);
+        }
       } else {
         await Promise.race([
           login(email, password),
           timeoutPromise
         ]);
-        // Hard redirect to break spinner
-        window.location.assign('/academy');
+        // Wait for session to be saved before redirecting
+        await new Promise(resolve => setTimeout(resolve, 100));
+        // Verify session exists before redirecting
+        try {
+          const { createClient } = await import("@/lib/supabase/client");
+          const supabase = createClient();
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            window.location.assign('/academy');
+          }
+        } catch (err) {
+          console.error('Login: Error verifying session before redirect:', err);
+          // Still redirect after delay
+          setTimeout(() => window.location.assign('/academy'), 100);
+        }
       }
     } catch (err: any) {
       setLoading(false);

@@ -9,6 +9,7 @@ export function middleware(request: NextRequest) {
   
   // Explicitly allow public routes (no redirect)
   // This ensures users can access login/signup pages without authentication
+  // Important: Don't redirect if already on /login to prevent infinite loops
   if (publicRoutes.includes(pathname) || pathname.startsWith('/auth/callback')) {
     return NextResponse.next();
   }

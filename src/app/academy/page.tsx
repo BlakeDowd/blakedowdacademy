@@ -890,16 +890,28 @@ function calculateTotalXPByTimeframe(rounds: any[], userProgress: { totalXP: num
 
 export default function AcademyPage() {
   const { rounds } = useStats();
-  const { user, refreshUser, isAuthenticated } = useAuth();
+  const { user, refreshUser, isAuthenticated, loading } = useAuth();
   const router = useRouter();
   
-  // Automatic redirect if not authenticated
+  // Show loading spinner while auth is loading
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-[#014421] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-700 font-medium">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Automatic redirect if not authenticated (only after loading is complete)
   useEffect(() => {
-    if (!isAuthenticated && user === null) {
+    if (!loading && !isAuthenticated && user === null) {
       console.log('Academy: No authentication detected, redirecting to login...');
       router.push('/login');
     }
-  }, [isAuthenticated, user, router]);
+  }, [isAuthenticated, user, router, loading]);
   
   const [userProgress, setUserProgress] = useState<{ totalXP: number; completedDrills: string[] }>({
     totalXP: 0,
