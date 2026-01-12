@@ -947,7 +947,7 @@ export default function AcademyPage() {
   
   // Check environment variables and session directly
   useEffect(() => {
-    let authStateSubscription: ReturnType<typeof supabase.auth.onAuthStateChange> | null = null;
+    let authStateSubscription: { unsubscribe: () => void } | null = null;
     
     const checkAuthAndEnv = async () => {
       try {
