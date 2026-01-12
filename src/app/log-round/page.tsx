@@ -158,6 +158,16 @@ export default function LogRoundPage() {
       return;
     }
 
+    // Explicitly validate and set user_id before saving
+    const currentUserId = user.id;
+    if (!currentUserId) {
+      console.error('User ID is missing or invalid:', { user, userId: currentUserId });
+      alert('User ID is missing. Please log out and log back in, then try again.');
+      setIsSaving(false);
+      return;
+    }
+
+    console.log('Saving round with explicit user_id:', currentUserId);
     setIsSaving(true);
 
     try {
@@ -168,7 +178,7 @@ export default function LogRoundPage() {
       // Prepare insert data with ALL fields - every UI input mapped to database
       // Complete mapping of all stats including Proximity, Short Game, and 3-Putt
       const insertData: Record<string, any> = {
-        user_id: user.id, // Use active session user.id
+        user_id: currentUserId, // Explicitly set to logged-in user's ID
         date: roundData.date || today,
         course_name: roundData.course, // Database expects course_name, not course
         handicap: roundData.handicap,
