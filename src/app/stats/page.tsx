@@ -82,7 +82,15 @@ export default function StatsPage() {
   }, [refreshRounds]);
   
   // State hooks - MUST be before any conditional returns
-  const [selectedGoal, setSelectedGoal] = useState<number>(8.7);
+  // Use user's initialHandicap if available, otherwise default to 8.7
+  const [selectedGoal, setSelectedGoal] = useState<number>(user?.initialHandicap ?? 8.7);
+  
+  // Update selectedGoal when user's initialHandicap changes
+  useEffect(() => {
+    if (user?.initialHandicap !== undefined) {
+      setSelectedGoal(user.initialHandicap);
+    }
+  }, [user?.initialHandicap]);
   const [selectedMetric, setSelectedMetric] = useState<'nettScore' | 'gross' | 'birdies' | 'pars' | 'bogeys' | 'totalPutts' | 'doubleBogeys' | 'eagles' | 'threePutts' | 'fairwaysHit' | 'gir' | 'gir8ft' | 'gir20ft' | 'upAndDown' | 'bunkerSaves' | 'chipInside6ft' | 'doubleChips' | 'totalPenalties'>('nettScore');
   const [activeHistory, setActiveHistory] = useState<'LAST 5' | 'LAST 10' | 'LAST 20' | 'ALL'>('LAST 10');
   const [holeFilter, setHoleFilter] = useState<'9' | '18'>('18');

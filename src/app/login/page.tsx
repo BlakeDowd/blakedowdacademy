@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
   const [initialHandicap, setInitialHandicap] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -27,8 +28,8 @@ export default function LoginPage() {
       return;
     }
 
-    if (isSignUp && !initialHandicap) {
-      setError("Please enter your initial handicap");
+    if (isSignUp && (!fullName || !initialHandicap)) {
+      setError("Please fill in all required fields");
       setLoading(false);
       return;
     }
@@ -36,12 +37,12 @@ export default function LoginPage() {
     try {
       if (isSignUp) {
         const handicap = parseFloat(initialHandicap);
-        if (isNaN(handicap) || handicap < 0 || handicap > 36) {
-          setError("Please enter a valid handicap (0-36)");
+        if (isNaN(handicap) || handicap < -5 || handicap > 54) {
+          setError("Please enter a valid handicap (-5 to 54)");
           setLoading(false);
           return;
         }
-        await signup(email, password, handicap);
+        await signup(email, password, fullName, handicap);
         // Navigation handled by AuthContext
       } else {
         await login(email, password);
@@ -210,11 +211,32 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {/* Full Name Field (Sign Up Only) */}
+            {isSignUp && (
+              <div>
+                <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Full Name
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    id="fullName"
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#014421] focus:border-[#014421] outline-none transition-all"
+                    placeholder="John Doe"
+                    required={isSignUp}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Initial Handicap Field (Sign Up Only) */}
             {isSignUp && (
               <div>
                 <label htmlFor="handicap" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Initial Handicap
+                  Current Handicap
                 </label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -227,12 +249,12 @@ export default function LoginPage() {
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#014421] focus:border-[#014421] outline-none transition-all"
                     placeholder="e.g., 12.0"
                     required={isSignUp}
-                    min="0"
-                    max="36"
+                    min="-5"
+                    max="54"
                   />
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  Enter your current golf handicap
+                  Enter your current golf handicap (-5 to +5 Pro, 0 to 54)
                 </p>
               </div>
             )}
