@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ExternalLink, Download, X } from "lucide-react";
+import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ExternalLink, Download, X, RefreshCw } from "lucide-react";
 import { DRILLS as LIBRARY_DRILLS, type Drill as LibraryDrill } from "@/data/drills";
 
 type FacilityType = 'home' | 'range-mat' | 'range-grass' | 'bunker' | 'chipping-green' | 'putting-green';
@@ -109,6 +109,8 @@ export default function PracticePage() {
   const [durationModal, setDurationModal] = useState<{ open: boolean; facility: FacilityType | null }>({ open: false, facility: null });
   const [totalPracticeMinutes, setTotalPracticeMinutes] = useState<number>(0);
   const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(true); // Weekly schedule expanded state
+  const [swappingDrill, setSwappingDrill] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track which drill is being swapped
+  const [swapSuccess, setSwapSuccess] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track successful swap for feedback
   
   // Base XP per facility type (for freestyle practice)
   const facilityBaseXP: Record<FacilityType, number> = {
@@ -805,6 +807,120 @@ export default function PracticePage() {
     return day.drills.every(drill => drill.completed);
   };
 
+  // Swap a drill with a random drill from the same category
+  const swapDrill = async (dayIndex: number, drillIndex: number) => {
+    const day = weeklyPlan[dayIndex];
+    if (!day || !day.drills[drillIndex]) return;
+
+    const currentDrill = day.drills[drillIndex];
+    const currentCategory = currentDrill.category;
+
+    // Set loading state
+    setSwappingDrill({ dayIndex, drillIndex });
+
+    // Find drills from the same category
+    const categoryDrills = drills.filter(drill => {
+      // Match category (case-insensitive, partial match)
+      const drillCategory = drill.category.toLowerCase();
+      const targetCategory = currentCategory.toLowerCase();
+      
+      return drillCategory.includes(targetCategory) || 
+             targetCategory.includes(drillCategory) ||
+             // Also check category mapping for pillar compatibility
+             Object.entries(categoryMapping).some(([key, categories]) => 
+               categories.some(cat => 
+                 cat.toLowerCase().includes(drillCategory) || 
+                 drillCategory.includes(cat.toLowerCase())
+               ) && categories.some(cat =>
+                 cat.toLowerCase().includes(targetCategory) ||
+                 targetCategory.includes(cat.toLowerCase())
+               )
+             );
+    });
+
+    // Filter out the current drill to avoid swapping with itself
+    const availableDrills = categoryDrills.filter(d => d.id !== currentDrill.id);
+
+    if (availableDrills.length === 0) {
+      // If no other drills in category, try to find any drill with similar estimated time
+      const similarTimeDrills = drills.filter(d => 
+        d.id !== currentDrill.id &&
+        Math.abs(d.estimatedMinutes - currentDrill.estimatedMinutes) <= 15
+      );
+      
+      if (similarTimeDrills.length > 0) {
+        const randomDrill = similarTimeDrills[Math.floor(Math.random() * similarTimeDrills.length)];
+        replaceDrill(dayIndex, drillIndex, randomDrill);
+      } else {
+        // No suitable replacement found
+        alert('No suitable replacement drill found.');
+        setSwappingDrill(null);
+      }
+      return;
+    }
+
+    // Select a random drill from the same category
+    const randomDrill = availableDrills[Math.floor(Math.random() * availableDrills.length)];
+    
+    // Small delay to show loading state
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    replaceDrill(dayIndex, drillIndex, randomDrill);
+    
+    // Show success feedback
+    setSwapSuccess({ dayIndex, drillIndex });
+    setTimeout(() => {
+      setSwapSuccess(null);
+    }, 2000);
+  };
+
+  // Replace a drill in the plan
+  const replaceDrill = (dayIndex: number, drillIndex: number, newDrill: Drill) => {
+    const day = weeklyPlan[dayIndex];
+    if (!day || !day.drills[drillIndex]) return;
+
+    const currentDrill = day.drills[drillIndex];
+    
+    // Apply XP tiering based on pillar
+    const pillar = Object.keys(pillarXPTiering).find(p => 
+      newDrill.category.toLowerCase().includes(p.toLowerCase()) ||
+      p.toLowerCase().includes(newDrill.category.toLowerCase())
+    );
+    const xpValue = pillar ? pillarXPTiering[pillar] : newDrill.xpValue;
+
+    const updatedPlan = { ...weeklyPlan };
+    updatedPlan[dayIndex] = {
+      ...day,
+      drills: day.drills.map((d, idx) => 
+        idx === drillIndex
+          ? {
+              ...newDrill,
+              id: `swapped-${dayIndex}-${drillIndex}-${Date.now()}-${newDrill.id}`,
+              category: newDrill.category,
+              estimatedMinutes: newDrill.estimatedMinutes,
+              xpValue: xpValue,
+              completed: false, // Reset completion status
+              xpEarned: 0,
+              facility: currentDrill.facility, // Preserve facility assignment
+              isRound: currentDrill.isRound, // Preserve round flag
+              contentType: newDrill.contentType,
+              source: newDrill.source,
+              description: newDrill.description,
+            }
+          : d
+      ),
+    };
+
+    // Save to localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('weeklyPracticePlans', JSON.stringify(updatedPlan));
+    }
+
+    setWeeklyPlan(updatedPlan);
+    setGeneratedPlan(updatedPlan);
+    setSwappingDrill(null);
+  };
+
   const getDaySummary = (day: DayPlan) => {
     if (!day.selected || day.drills.length === 0) return null;
     
@@ -830,120 +946,6 @@ export default function PracticePage() {
               Total Time This Week: {Math.floor(totalPracticeMinutes / 60)}h {totalPracticeMinutes % 60}m
             </div>
           )}
-        </div>
-
-        {/* Weekly Training Schedule - Horizontal 7-Day Row */}
-        <div className="mb-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-            {/* Header with Collapse Toggle */}
-            <div 
-              className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-              onClick={() => setScheduleExpanded(!scheduleExpanded)}
-            >
-              <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5" style={{ color: '#014421' }} />
-                <h2 className="text-lg font-semibold text-gray-900">Weekly Training Schedule</h2>
-              </div>
-              {scheduleExpanded ? (
-                <ChevronUp className="w-5 h-5 text-gray-500" />
-              ) : (
-                <ChevronDown className="w-5 h-5 text-gray-500" />
-              )}
-            </div>
-
-            {/* Schedule Content - Collapsible */}
-            {scheduleExpanded && (
-              <div className="px-4 pb-4">
-                {/* Horizontal 7-Day Calendar Row */}
-                <div className="grid grid-cols-7 gap-2">
-                  {DAY_NAMES.map((dayName, dayIndex) => {
-                    const day = weeklyPlan[dayIndex];
-                    const dayDrills = day?.drills || [];
-                    const completedCount = dayDrills.filter(d => d.completed).length;
-                    const totalCount = dayDrills.length;
-                    
-                    // Get current week's Monday
-                    const today = new Date();
-                    const currentDay = today.getDay();
-                    const monday = new Date(today);
-                    monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-                    const dayDate = new Date(monday);
-                    dayDate.setDate(monday.getDate() + dayIndex);
-                    const isToday = dayDate.toDateString() === today.toDateString();
-                    
-                    return (
-                      <div key={dayIndex} className="flex flex-col">
-                        {/* Day Header */}
-                        <div className={`text-center mb-2 ${isToday ? 'font-bold' : 'font-medium'}`}>
-                          <div className={`text-xs ${isToday ? 'text-[#014421]' : 'text-gray-600'}`}>
-                            {dayName.substring(0, 3)}
-                          </div>
-                          <div className={`text-xs ${isToday ? 'text-[#FFA500]' : 'text-gray-500'}`}>
-                            {dayDate.getDate()}
-                          </div>
-                        </div>
-                        
-                        {/* Drill Blocks */}
-                        <div className="space-y-1 min-h-[60px]">
-                          {dayDrills.length === 0 ? (
-                            <div className="text-center py-2">
-                              <span className="text-xs text-gray-400">—</span>
-                            </div>
-                          ) : (
-                            dayDrills.slice(0, 3).map((drill, drillIdx) => {
-                              const isCompleted = drill.completed || false;
-                              return (
-                                <button
-                                  key={`${dayIndex}-${drill.id}-${drillIdx}`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    // Find the drill index in the actual day plan
-                                    const actualDrillIndex = day.drills.findIndex(d => d.id === drill.id);
-                                    if (actualDrillIndex !== -1) {
-                                      markDrillComplete(dayIndex, actualDrillIndex);
-                                    }
-                                  }}
-                                  className={`w-full p-1.5 rounded text-left transition-all hover:scale-105 ${
-                                    isCompleted
-                                      ? 'bg-green-500 text-white border-2 border-green-600'
-                                      : 'bg-[#FFA500] text-[#014421] border-2 border-[#FFA500] hover:bg-[#FFA500]/90'
-                                  }`}
-                                  title={drill.title}
-                                >
-                                  <div className="text-[10px] font-semibold truncate">
-                                    {drill.title.length > 15 ? drill.title.substring(0, 15) + '...' : drill.title}
-                                  </div>
-                                  {isCompleted && (
-                                    <Check className="w-3 h-3 mt-0.5" />
-                                  )}
-                                </button>
-                              );
-                            })
-                          )}
-                          {dayDrills.length > 3 && (
-                            <div className="text-center">
-                              <span className="text-[10px] text-gray-500">+{dayDrills.length - 3} more</span>
-                            </div>
-                          )}
-                        </div>
-                        
-                        {/* Completion Indicator */}
-                        {totalCount > 0 && (
-                          <div className="mt-1 text-center">
-                            <span className={`text-[10px] font-semibold ${
-                              completedCount === totalCount ? 'text-green-600' : 'text-gray-600'
-                            }`}>
-                              {completedCount}/{totalCount}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Weekly Calendar - Fully Responsive Grid */}
@@ -1520,6 +1522,151 @@ export default function PracticePage() {
             </div>
           </div>
         )}
+
+        {/* Weekly Training Schedule - Horizontal 7-Day Row (Moved to Bottom) */}
+        <div className="mb-6">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            {/* Header with Collapse Toggle */}
+            <div 
+              className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+              onClick={() => setScheduleExpanded(!scheduleExpanded)}
+            >
+              <div className="flex items-center gap-2">
+                <Calendar className="w-5 h-5" style={{ color: '#014421' }} />
+                <h2 className="text-lg font-semibold text-gray-900">Weekly Training Schedule</h2>
+              </div>
+              {scheduleExpanded ? (
+                <ChevronUp className="w-5 h-5 text-gray-500" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-500" />
+              )}
+            </div>
+
+            {/* Schedule Content - Collapsible */}
+            {scheduleExpanded && (
+              <div className="px-4 pb-4">
+                {/* Horizontal 7-Day Calendar Row */}
+                <div className="grid grid-cols-7 gap-2">
+                  {DAY_NAMES.map((dayName, dayIndex) => {
+                    const day = weeklyPlan[dayIndex];
+                    const dayDrills = day?.drills || [];
+                    const completedCount = dayDrills.filter(d => d.completed).length;
+                    const totalCount = dayDrills.length;
+                    
+                    // Get current week's Monday
+                    const today = new Date();
+                    const currentDay = today.getDay();
+                    const monday = new Date(today);
+                    monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+                    const dayDate = new Date(monday);
+                    dayDate.setDate(monday.getDate() + dayIndex);
+                    const isToday = dayDate.toDateString() === today.toDateString();
+                    
+                    return (
+                      <div key={dayIndex} className="flex flex-col">
+                        {/* Day Header */}
+                        <div className={`text-center mb-2 ${isToday ? 'font-bold' : 'font-medium'}`}>
+                          <div className={`text-xs ${isToday ? 'text-[#014421]' : 'text-gray-600'}`}>
+                            {dayName.substring(0, 3)}
+                          </div>
+                          <div className={`text-xs ${isToday ? 'text-[#FFA500]' : 'text-gray-500'}`}>
+                            {dayDate.getDate()}
+                          </div>
+                        </div>
+                        
+                        {/* Drill Blocks */}
+                        <div className="space-y-1 min-h-[60px]">
+                          {dayDrills.length === 0 ? (
+                            <div className="text-center py-2">
+                              <span className="text-xs text-gray-400">—</span>
+                            </div>
+                          ) : (
+                            dayDrills.slice(0, 3).map((drill, drillIdx) => {
+                              const isCompleted = drill.completed || false;
+                              const actualDrillIndex = day.drills.findIndex(d => d.id === drill.id);
+                              const isSwapping = swappingDrill?.dayIndex === dayIndex && swappingDrill?.drillIndex === actualDrillIndex;
+                              const justSwapped = swapSuccess?.dayIndex === dayIndex && swapSuccess?.drillIndex === actualDrillIndex;
+                              
+                              return (
+                                <div key={`${dayIndex}-${drill.id}-${drillIdx}`} className="relative group">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (actualDrillIndex !== -1) {
+                                        markDrillComplete(dayIndex, actualDrillIndex);
+                                      }
+                                    }}
+                                    className={`w-full p-1.5 rounded text-left transition-all hover:scale-105 relative ${
+                                      isCompleted
+                                        ? 'bg-green-500 text-white border-2 border-green-600'
+                                        : 'bg-[#FFA500] text-[#014421] border-2 border-[#FFA500] hover:bg-[#FFA500]/90'
+                                    } ${justSwapped ? 'ring-2 ring-green-400 ring-offset-1' : ''}`}
+                                    title={drill.title}
+                                  >
+                                    <div className="text-[10px] font-semibold truncate pr-4">
+                                      {drill.title.length > 15 ? drill.title.substring(0, 15) + '...' : drill.title}
+                                    </div>
+                                    {isCompleted && (
+                                      <Check className="w-3 h-3 mt-0.5" />
+                                    )}
+                                    {justSwapped && (
+                                      <div className="absolute top-0 right-0 bg-green-400 text-white text-[8px] px-1 rounded animate-pulse">
+                                        Swapped!
+                                      </div>
+                                    )}
+                                    {isSwapping && (
+                                      <div className="absolute inset-0 flex items-center justify-center bg-white/80 rounded">
+                                        <RefreshCw className="w-3 h-3 animate-spin text-[#014421]" />
+                                      </div>
+                                    )}
+                                  </button>
+                                  {/* Swap Button */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (actualDrillIndex !== -1) {
+                                        swapDrill(dayIndex, actualDrillIndex);
+                                      }
+                                    }}
+                                    disabled={isSwapping || drill.isRound}
+                                    className={`absolute top-0 right-0 p-0.5 rounded-bl rounded-tr transition-all ${
+                                      drill.isRound
+                                        ? 'opacity-30 cursor-not-allowed'
+                                        : 'opacity-0 group-hover:opacity-100 hover:bg-gray-200/80'
+                                    } ${isSwapping ? 'opacity-100' : ''}`}
+                                    title="Swap Drill"
+                                  >
+                                    <RefreshCw className={`w-2.5 h-2.5 ${isSwapping ? 'animate-spin text-[#014421]' : 'text-gray-600'}`} />
+                                  </button>
+                                </div>
+                              );
+                            })
+                          )}
+                          {dayDrills.length > 3 && (
+                            <div className="text-center">
+                              <span className="text-[10px] text-gray-500">+{dayDrills.length - 3} more</span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Completion Indicator */}
+                        {totalCount > 0 && (
+                          <div className="mt-1 text-center">
+                            <span className={`text-[10px] font-semibold ${
+                              completedCount === totalCount ? 'text-green-600' : 'text-gray-600'
+                            }`}>
+                              {completedCount}/{totalCount}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
