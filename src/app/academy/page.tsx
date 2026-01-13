@@ -1906,7 +1906,7 @@ export default function AcademyPage() {
                 {/* 1st Place - Center, Higher, with Crown */}
                 {top3[0] && (
                   <div className="flex flex-col items-center">
-                    <Crown className="w-6 h-6 mb-1" style={{ color: '#FFA500' }} />
+                    <Crown className="w-6 h-6 mb-1 animate-pulse" style={{ color: '#FFA500' }} />
                     <CircularAvatar 
                       initial={top3[0].avatar || top3[0].name[0]} 
                       size={80}

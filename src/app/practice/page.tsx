@@ -1545,8 +1545,8 @@ export default function PracticePage() {
             {/* Schedule Content - Collapsible */}
             {scheduleExpanded && (
               <div className="px-4 pb-4">
-                {/* Horizontal 7-Day Calendar Row */}
-                <div className="grid grid-cols-7 gap-2">
+                {/* Horizontal 7-Day Calendar Row - Responsive */}
+                <div className="grid grid-cols-7 gap-1 sm:gap-2 overflow-x-auto">
                   {DAY_NAMES.map((dayName, dayIndex) => {
                     const day = weeklyPlan[dayIndex];
                     const dayDrills = day?.drills || [];
@@ -1563,19 +1563,19 @@ export default function PracticePage() {
                     const isToday = dayDate.toDateString() === today.toDateString();
                     
                     return (
-                      <div key={dayIndex} className="flex flex-col">
+                      <div key={dayIndex} className="flex flex-col min-w-[60px]">
                         {/* Day Header */}
-                        <div className={`text-center mb-2 ${isToday ? 'font-bold' : 'font-medium'}`}>
-                          <div className={`text-xs ${isToday ? 'text-[#014421]' : 'text-gray-600'}`}>
+                        <div className={`text-center mb-1 sm:mb-2 ${isToday ? 'font-bold' : 'font-medium'}`}>
+                          <div className={`text-[10px] sm:text-xs ${isToday ? 'text-[#014421]' : 'text-gray-600'}`}>
                             {dayName.substring(0, 3)}
                           </div>
-                          <div className={`text-xs ${isToday ? 'text-[#FFA500]' : 'text-gray-500'}`}>
+                          <div className={`text-[10px] sm:text-xs ${isToday ? 'text-[#FFA500]' : 'text-gray-500'}`}>
                             {dayDate.getDate()}
                           </div>
                         </div>
                         
                         {/* Drill Blocks */}
-                        <div className="space-y-1 min-h-[60px]">
+                        <div className="space-y-0.5 sm:space-y-1 min-h-[50px] sm:min-h-[60px]">
                           {dayDrills.length === 0 ? (
                             <div className="text-center py-2">
                               <span className="text-xs text-gray-400">—</span>

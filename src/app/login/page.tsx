@@ -190,7 +190,7 @@ export default function LoginPage() {
         style={{ background: 'linear-gradient(to bottom right, rgba(20, 83, 45, 0.2), rgba(22, 101, 52, 0.2))' }}
       />
       
-      <div className="relative z-10 w-full max-w-md">
+      <div className="relative z-10 w-full max-w-md px-4">
         {/* Logo and Branding */}
         <div className="text-center mb-8">
           {/* Logo Image */}
