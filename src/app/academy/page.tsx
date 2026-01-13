@@ -748,7 +748,7 @@ function getMockLeaderboard(
 }
 
 // Format leaderboard value for display (used in main XP leaderboard)
-function formatLeaderboardValue(value: number, metric: 'xp' | 'library' | 'practice' | 'rounds' | 'drills') {
+function formatLeaderboardValue(value: number, metric: 'xp' | 'library' | 'practice' | 'rounds' | 'drills' | 'lowRound' | 'birdies') {
   switch (metric) {
     case 'xp':
       return `${value.toLocaleString()} XP`;
@@ -760,6 +760,10 @@ function formatLeaderboardValue(value: number, metric: 'xp' | 'library' | 'pract
       return `${value} Round${value !== 1 ? 's' : ''}`;
     case 'drills':
       return `${value} Drill${value !== 1 ? 's' : ''}`;
+    case 'lowRound':
+      return `${value}`;
+    case 'birdies':
+      return `${value} Birdie${value !== 1 ? 's' : ''}`;
     default:
       return `${value}`;
   }
@@ -767,7 +771,7 @@ function formatLeaderboardValue(value: number, metric: 'xp' | 'library' | 'pract
 
 // Get leaderboard data for selected metric (main XP leaderboard)
 function getLeaderboardData(
-  metric: 'xp' | 'library' | 'practice' | 'rounds' | 'drills',
+  metric: 'xp' | 'library' | 'practice' | 'rounds' | 'drills' | 'lowRound' | 'birdies',
   timeFilter: 'week' | 'month' | 'allTime',
   rounds: any[],
   totalXP: number,
@@ -782,6 +786,23 @@ function getLeaderboardData(
     totalXP,
     userName,
   });
+  
+  // Calculate low round and birdie count from rounds data
+  const filteredRounds = rounds.filter(round => {
+    if (timeFilter === 'allTime') return true;
+    const roundDate = new Date(round.date);
+    const { startDate } = getTimeframeDates(timeFilter);
+    return roundDate >= startDate;
+  });
+  
+  // Calculate min score (low round) - only valid scores
+  const validScores = filteredRounds
+    .map(r => r.score)
+    .filter(score => score !== null && score !== undefined && score > 0);
+  const lowRound = validScores.length > 0 ? Math.min(...validScores) : null;
+  
+  // Calculate total birdies
+  const birdieCount = filteredRounds.reduce((sum, round) => sum + (round.birdies || 0), 0);
   
   let userValue: number;
   
@@ -801,50 +822,51 @@ function getLeaderboardData(
     case 'drills':
       userValue = calculateUserDrills(timeFilter);
       break;
+    case 'lowRound':
+      userValue = lowRound !== null ? lowRound : 0; // Use 0 if no low round (will be filtered out)
+      break;
+    case 'birdies':
+      userValue = birdieCount;
+      break;
     default:
       userValue = 0;
   }
   
   // If user has no activity, return empty leaderboard
-  if (userValue === 0) {
+  // For lowRound, also check if lowRound is null
+  if ((userValue === 0 && metric !== 'lowRound' && metric !== 'birdies') || (metric === 'lowRound' && lowRound === null)) {
     return {
       top3: [],
       all: [],
       userRank: 0,
-      userValue: 0
+      userValue: metric === 'lowRound' ? 0 : userValue
     };
   }
-  
-  // Calculate low round and birdie count from rounds data
-  const filteredRounds = rounds.filter(round => {
-    if (timeFilter === 'allTime') return true;
-    const roundDate = new Date(round.date);
-    const { startDate } = getTimeframeDates(timeFilter);
-    return roundDate >= startDate;
-  });
-  
-  // Calculate min score (low round) - only valid scores
-  const validScores = filteredRounds
-    .map(r => r.score)
-    .filter(score => score !== null && score !== undefined && score > 0);
-  const lowRound = validScores.length > 0 ? Math.min(...validScores) : null;
-  
-  // Calculate total birdies
-  const birdieCount = filteredRounds.reduce((sum, round) => sum + (round.birdies || 0), 0);
   
   // Only include user in leaderboard if they have activity
   const userEntry = {
     id: 'user',
     name: userName, // Use actual full_name instead of 'You'
     avatar: userName.split(' ').map(n => n[0]).join('') || 'Y',
-    value: userValue,
+    value: metric === 'lowRound' ? (lowRound !== null ? lowRound : 0) : userValue,
     previousRank: undefined,
     lowRound: lowRound,
     birdieCount: birdieCount
   };
   
-  // Sort by value descending
-  const sorted = [userEntry].sort((a, b) => b.value - a.value);
+  // Sort by value - descending for most metrics, ascending for lowRound (lower score is better)
+  const sorted = [userEntry].sort((a, b) => {
+    if (metric === 'lowRound') {
+      // For low round, lower is better, so sort ascending
+      // Handle null values (999 is placeholder for sorting, but shouldn't appear)
+      const aScore = a.lowRound !== null && a.lowRound !== undefined ? a.lowRound : 999;
+      const bScore = b.lowRound !== null && b.lowRound !== undefined ? b.lowRound : 999;
+      return aScore - bScore;
+    } else {
+      // For all other metrics, higher is better, so sort descending
+      return b.value - a.value;
+    }
+  });
   
   // Calculate rank changes
   const withRanks = sorted.map((entry, index) => {
@@ -925,7 +947,7 @@ export default function AcademyPage() {
   const [showFullLeaderboard, setShowFullLeaderboard] = useState(false);
   const [leaderboardSearch, setLeaderboardSearch] = useState('');
   const [selectedTrophy, setSelectedTrophy] = useState<TrophyData | null>(null);
-  const [leaderboardMetric, setLeaderboardMetric] = useState<'xp' | 'library' | 'practice' | 'rounds' | 'drills'>('xp');
+  const [leaderboardMetric, setLeaderboardMetric] = useState<'xp' | 'library' | 'practice' | 'rounds' | 'drills' | 'lowRound' | 'birdies'>('xp');
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
@@ -1825,13 +1847,15 @@ export default function AcademyPage() {
         {/* Metric Selection - Wrapping Pills */}
         <div className="mb-4 w-full">
           <div className="flex items-center gap-2 flex-wrap pb-2">
-            {(['xp', 'library', 'practice', 'rounds', 'drills'] as const).map((metric) => {
+            {(['xp', 'library', 'practice', 'rounds', 'drills', 'lowRound', 'birdies'] as const).map((metric) => {
               const labels = {
                 xp: 'XP',
                 library: 'Library',
                 practice: 'Practice',
                 rounds: 'Rounds',
-                drills: 'Drills'
+                drills: 'Drills',
+                lowRound: 'Low Round',
+                birdies: 'Birdies'
               };
               
               return (
@@ -1961,33 +1985,19 @@ export default function AcademyPage() {
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-3 text-xs">
-                          <div className="text-right min-w-[60px]">
-                            <span className="text-gray-500">Low:</span>
-                            <span className="ml-1 font-semibold text-gray-700">
-                              {entry.lowRound !== null && entry.lowRound !== undefined ? entry.lowRound : '—'}
-                            </span>
-                          </div>
-                          <div className="text-right min-w-[60px]">
-                            <span className="text-gray-500">Birdies:</span>
-                            <span className="ml-1 font-semibold text-gray-700">
-                              {entry.birdieCount || 0}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold" style={{ color: '#FFA500' }}>
-                              {formatLeaderboardValue(entry.value, leaderboardMetric)}
-                            </span>
-                            {entry.movedUp && (
-                              <TrendingUp className="w-4 h-4" style={{ color: '#10B981' }} />
-                            )}
-                            {entry.movedDown && (
-                              <TrendingDown className="w-4 h-4" style={{ color: '#EF4444' }} />
-                            )}
-                            {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
-                              <div className="w-4 h-4" />
-                            )}
-                          </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold" style={{ color: '#FFA500' }}>
+                            {formatLeaderboardValue(entry.value, leaderboardMetric)}
+                          </span>
+                          {entry.movedUp && (
+                            <TrendingUp className="w-4 h-4" style={{ color: '#10B981' }} />
+                          )}
+                          {entry.movedDown && (
+                            <TrendingDown className="w-4 h-4" style={{ color: '#EF4444' }} />
+                          )}
+                          {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
+                            <div className="w-4 h-4" />
+                          )}
                         </div>
                       </div>
                     );
@@ -2050,33 +2060,19 @@ export default function AcademyPage() {
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-3 text-xs">
-                            <div className="text-right min-w-[60px]">
-                              <span className="text-gray-500">Low:</span>
-                              <span className="ml-1 font-semibold text-gray-700">
-                                {entry.lowRound !== null && entry.lowRound !== undefined ? entry.lowRound : '—'}
-                              </span>
-                            </div>
-                            <div className="text-right min-w-[60px]">
-                              <span className="text-gray-500">Birdies:</span>
-                              <span className="ml-1 font-semibold text-gray-700">
-                                {entry.birdieCount || 0}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold" style={{ color: '#FFA500' }}>
-                                {formatLeaderboardValue(entry.value, leaderboardMetric)}
-                              </span>
-                              {entry.movedUp && (
-                                <TrendingUp className="w-4 h-4" style={{ color: '#10B981' }} />
-                              )}
-                              {entry.movedDown && (
-                                <TrendingDown className="w-4 h-4" style={{ color: '#EF4444' }} />
-                              )}
-                              {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
-                                <div className="w-4 h-4" />
-                              )}
-                            </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold" style={{ color: '#FFA500' }}>
+                              {formatLeaderboardValue(entry.value, leaderboardMetric)}
+                            </span>
+                            {entry.movedUp && (
+                              <TrendingUp className="w-4 h-4" style={{ color: '#10B981' }} />
+                            )}
+                            {entry.movedDown && (
+                              <TrendingDown className="w-4 h-4" style={{ color: '#EF4444' }} />
+                            )}
+                            {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
+                              <div className="w-4 h-4" />
+                            )}
                           </div>
                         </div>
                       );
