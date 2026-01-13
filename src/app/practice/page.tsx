@@ -152,7 +152,7 @@ export default function PracticePage() {
     
     try {
       // Update in Supabase using full_name (snake_case) to match database schema
-      // Standardized: ONLY use full_name column, never display_name or name
+      // Force: ONLY use full_name column
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
       

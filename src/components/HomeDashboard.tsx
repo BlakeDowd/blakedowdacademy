@@ -194,9 +194,8 @@ export default function HomeDashboard() {
       
       const newName = editedName.trim();
       
-      // Bulletproof Save: Update ONLY full_name and profile_icon in profiles table
-      // Force: ONLY use full_name column, never display_name or name
-      // This specifically updates the full_name column in Supabase
+      // Force Table Sync: Explicitly target the full_name column in the profiles table
+      // The Save Command: Use exact logic as specified
       const { error: profileError } = await supabase
         .from('profiles')
         .update({ 
@@ -205,27 +204,9 @@ export default function HomeDashboard() {
         })
         .eq('id', user.id);
 
-      if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('No rows'))) {
-        // Create profile if it doesn't exist
-        const { error: createError } = await supabase
-          .from('profiles')
-          .insert({
-            id: user.id,
-            full_name: newName,
-            profile_icon: selectedIcon || null,
-            created_at: new Date().toISOString(),
-          });
-        
-        if (createError) {
-          console.error('Error creating profile:', createError);
-          alert('Failed to create profile. Please try again.');
-          setIsSavingName(false);
-          setIsSavingIcon(false);
-          return;
-        }
-      } else if (profileError) {
-        console.error('Error updating profile:', profileError);
-        alert('Failed to save profile. Please try again.');
+      if (profileError) {
+        console.error('Error updating full_name:', profileError);
+        alert(`Failed to save profile: ${profileError.message || 'Unknown error'}`);
         setIsSavingName(false);
         setIsSavingIcon(false);
         return;
@@ -234,13 +215,13 @@ export default function HomeDashboard() {
       // Close modal immediately
       setShowProfileModal(false);
       
-      // Refresh user context to sync across app - this fetches the updated full_name
+      // Leaderboard Refresh: Fetch updated full_name and clear cache
       if (refreshUser) {
         await refreshUser();
       }
       
-      // Force UI Update: Use router.refresh() so name and icon update everywhere instantly
-      // This ensures the Dashboard and Academy leaderboard show the new name immediately
+      // Force UI Update: Use router.refresh() so name updates everywhere instantly
+      // This ensures the Dashboard and Academy leaderboard show the new name immediately (not cached)
       router.refresh();
     } catch (error) {
       console.error('Error saving profile:', error);

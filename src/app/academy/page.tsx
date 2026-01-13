@@ -1122,7 +1122,8 @@ export default function AcademyPage() {
   const userName = getUserName();
   
 
-  // Get current leaderboard data - recalculates when timeFilter or leaderboardMetric changes
+  // Leaderboard Refresh: Fetch from full_name, recalculates when timeFilter or leaderboardMetric changes
+  // This ensures the leaderboard shows the updated full_name immediately (not cached)
   const currentLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user);
   const top3 = currentLeaderboard.top3;
   const ranks4to7 = currentLeaderboard.all.slice(3, 7);

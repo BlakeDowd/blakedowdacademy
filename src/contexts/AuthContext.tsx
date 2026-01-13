@@ -84,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log('AuthContext: Fetching user profile...');
 
           // Fetch user profile with initialHandicap, full_name, and profile_icon from profiles table
-          // Standardized to use full_name only (not display_name or name)
+          // Force: ONLY use full_name column
           let { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('initial_handicap, full_name, profile_icon, created_at')
@@ -426,7 +426,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (data.user && supabase) {
         // Create user profile with fullName, initialHandicap, and profile_icon
-        // Standardized: ONLY use full_name column, never display_name or name
+        // Force: ONLY use full_name column
         const { error: profileError } = await supabase
           .from('profiles')
           .insert({
