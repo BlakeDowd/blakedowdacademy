@@ -18,7 +18,9 @@ import {
   Clock,
   X,
   BookOpen,
-  Users
+  Users,
+  Pencil,
+  Check
 } from "lucide-react";
 
 // Video drills for Daily Focus rotation
@@ -95,14 +97,14 @@ interface CommunityRound {
 export default function HomeDashboard() {
   const router = useRouter();
   const { rounds } = useStats();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   
   // Ensure rounds is always an array, never null or undefined
   const safeRounds = rounds || [];
   
   // Format user name - fetch from profiles.full_name, fallback to email or 'User'
   const getUserDisplayName = () => {
-    // Try fullName from profiles table first
+    // Try fullName from profiles table first (standardized to use full_name only)
     if (user?.fullName) {
       return user.fullName;
     }
@@ -113,6 +115,86 @@ export default function HomeDashboard() {
     // Final fallback
     return 'User';
   };
+  
+  // Name editing state
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
+  
+  const userName = getUserDisplayName();
+  
+  // Handle name editing
+  const handleEditName = () => {
+    setEditedName(userName);
+    setIsEditingName(true);
+  };
+  
+  const handleSaveName = async () => {
+    if (!user?.id || !editedName.trim()) {
+      setIsEditingName(false);
+      return;
+    }
+
+    const newName = editedName.trim();
+    setIsSavingName(true);
+    
+    try {
+      // Update in Supabase using full_name (snake_case) to match database schema
+      // Standardized: ONLY use full_name column, never display_name or name
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      
+      // Update the specific user's profile using their auth.uid() as the id
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ full_name: newName })
+        .eq('id', user.id)
+        .select();
+
+      if (error && (error.code === 'PGRST116' || error.message?.includes('No rows'))) {
+        // Create profile if it doesn't exist
+        const { error: createError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            full_name: newName,
+            created_at: new Date().toISOString(),
+          })
+          .select();
+        
+        if (createError) {
+          console.error('Error creating profile:', createError);
+          alert('Failed to create profile. Please try again.');
+          setIsSavingName(false);
+          return;
+        }
+      } else if (error) {
+        console.error('Error updating full_name:', error);
+        alert(`Failed to update name: ${error.message || 'Unknown error'}`);
+        setIsSavingName(false);
+        return;
+      }
+
+      // Refresh user context to sync across app
+      if (refreshUser) {
+        await refreshUser();
+      }
+      
+      setIsEditingName(false);
+      router.refresh();
+    } catch (error) {
+      console.error('Error saving name:', error);
+      alert('Failed to update name. Please try again.');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+  
+  const handleCancelEdit = () => {
+    setIsEditingName(false);
+    setEditedName('');
+  };
+  
   const [totalXP, setTotalXP] = useState(0);
   const [dailyVideo, setDailyVideo] = useState(() => getDailyVideo());
   const [refreshKey, setRefreshKey] = useState(0);
@@ -313,11 +395,58 @@ export default function HomeDashboard() {
                 <span className="text-2xl">👤</span>
               </div>
             </div>
-            <div>
+            <div className="flex-1">
               <p className="text-gray-400 text-xs">Welcome back,</p>
-              <p className="text-gray-900 font-bold text-xl">
-                {getUserDisplayName()}
-              </p>
+              {isEditingName ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="text"
+                    value={editedName}
+                    onChange={(e) => setEditedName(e.target.value)}
+                    className="text-gray-900 font-bold text-xl border-2 border-[#014421] rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#014421] flex-1"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveName();
+                      } else if (e.key === 'Escape') {
+                        handleCancelEdit();
+                      }
+                    }}
+                    disabled={isSavingName}
+                  />
+                  <button
+                    onClick={handleSaveName}
+                    disabled={isSavingName}
+                    className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
+                  >
+                    {isSavingName ? (
+                      <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4 text-green-600" />
+                    )}
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    disabled={isSavingName}
+                    className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
+                  >
+                    <X className="w-4 h-4 text-gray-600" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-gray-900 font-bold text-xl">
+                    {userName}
+                  </p>
+                  <button
+                    onClick={handleEditName}
+                    className="p-1 rounded hover:bg-gray-100 transition-colors"
+                    title="Edit name"
+                  >
+                    <Pencil className="w-4 h-4 text-gray-600" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
           <div 
