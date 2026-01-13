@@ -123,8 +123,7 @@ export default function HomeDashboard() {
     return 'User';
   };
   
-  // Name and icon editing state
-  const [isEditingName, setIsEditingName] = useState(false);
+  // Profile modal state
   const [editedName, setEditedName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
   const [selectedIcon, setSelectedIcon] = useState<string | null>(user?.profileIcon || null);
@@ -147,78 +146,7 @@ export default function HomeDashboard() {
     }
   }, [user?.profileIcon]);
   
-  // Handle name editing
-  const handleEditName = () => {
-    setEditedName(userName);
-    setIsEditingName(true);
-  };
-  
-  // Fix save function: ONLY update full_name in profiles table
-  const handleSaveName = async () => {
-    if (!user?.id || !editedName.trim()) {
-      setIsEditingName(false);
-      return;
-    }
-
-    const newName = editedName.trim();
-    setIsSavingName(true);
-    
-    try {
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-      
-      // Standardized: ONLY use full_name column, never display_name or name
-      // Update ONLY public.profiles table
-      const { data, error: profileError } = await supabase
-        .from('profiles')
-        .update({ full_name: newName })
-        .eq('id', user.id)
-        .select();
-
-      if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('No rows'))) {
-        // Create profile if it doesn't exist
-        const { error: createError } = await supabase
-          .from('profiles')
-          .insert({
-            id: user.id,
-            full_name: newName,
-            created_at: new Date().toISOString(),
-          })
-          .select();
-        
-        if (createError) {
-          console.error('Error creating profile:', createError);
-          alert('Failed to create profile. Please try again.');
-          setIsSavingName(false);
-          return;
-        }
-      } else if (profileError) {
-        console.error('Error updating full_name in profiles:', profileError);
-        alert(`Failed to update name: ${profileError.message || 'Unknown error'}`);
-        setIsSavingName(false);
-        return;
-      }
-
-      // Refresh user context to sync across app
-      if (refreshUser) {
-        await refreshUser();
-      }
-      
-      setIsEditingName(false);
-      
-      // Use router.refresh() for automatic update without full page reload
-      router.refresh();
-    } catch (error) {
-      console.error('Error saving name:', error);
-      alert('Failed to update name. Please try again.');
-      setIsSavingName(false);
-    }
-  };
-  
-  const handleCancelEdit = () => {
-    setIsEditingName(false);
-    setEditedName('');
-  };
+  // Removed inline name editing - all editing happens in modal
 
   // Handle icon selection with instant UI feedback
   const handleIconSelect = async (iconId: string) => {
@@ -582,61 +510,14 @@ export default function HomeDashboard() {
             </button>
             <div className="flex-1">
               <p className="text-gray-400 text-xs">Welcome back,</p>
-              {isEditingName ? (
-                <div className="flex items-center gap-2 mt-1">
-                  <input
-                    type="text"
-                    value={editedName}
-                    onChange={(e) => setEditedName(e.target.value)}
-                    className="text-gray-900 font-bold text-xl border-2 border-[#014421] rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#014421] flex-1"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        handleSaveName();
-                      } else if (e.key === 'Escape') {
-                        handleCancelEdit();
-                      }
-                    }}
-                    disabled={isSavingName}
-                  />
-                  <button
-                    onClick={handleSaveName}
-                    disabled={isSavingName}
-                    className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
-                  >
-                    {isSavingName ? (
-                      <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <Check className="w-4 h-4 text-green-600" />
-                    )}
-                  </button>
-                  <button
-                    onClick={handleCancelEdit}
-                    disabled={isSavingName}
-                    className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
-                  >
-                    <X className="w-4 h-4 text-gray-600" />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 mt-1">
-                  <p className="text-gray-900 font-bold text-xl">
-                    {userName}
-                  </p>
-                  <button
-                    onClick={handleEditName}
-                    className="p-1 rounded hover:bg-gray-100 transition-colors"
-                    title="Edit name"
-                  >
-                    <Pencil className="w-4 h-4 text-gray-600" />
-                  </button>
-                </div>
-              )}
+              <p className="text-gray-900 font-bold text-xl mt-1">
+                {userName}
+              </p>
             </div>
           </div>
         </div>
         
-        {/* Stats Cards Section - Streak and Trophy Case */}
+        {/* Stats Cards Section - Streak */}
         <div className="px-5 mb-4">
           <div 
             className="rounded-full px-4 py-2 flex items-center gap-2 shadow-md"
@@ -649,17 +530,6 @@ export default function HomeDashboard() {
             <div className="flex flex-col">
               <span className="text-xs font-medium text-white">Streak</span>
               <span className="text-white text-sm font-bold">0 days</span>
-            </div>
-          </div>
-        </div>
-        
-        {/* Trophy Case Section */}
-        <div className="px-5 mb-4">
-          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Trophy Case</h2>
-            <div className="text-center py-8">
-              <Trophy className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p className="text-sm text-gray-500">No trophies yet. Keep practicing!</p>
             </div>
           </div>
         </div>
@@ -959,6 +829,17 @@ export default function HomeDashboard() {
           )}
         </div>
 
+        {/* Trophy Case Section - Moved to Bottom */}
+        <div className="px-5 mb-6">
+          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Trophy Case</h2>
+            <div className="text-center py-8">
+              <Trophy className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+              <p className="text-sm text-gray-500">No trophies yet. Keep practicing!</p>
+            </div>
+          </div>
+        </div>
+
         {/* Recent Scores */}
         <div className="px-5 mb-6">
           <div className="flex items-center justify-between mb-3">
@@ -1081,6 +962,17 @@ export default function HomeDashboard() {
               ))}
             </div>
           )}
+        </div>
+
+        {/* Trophy Case Section - Moved to Bottom */}
+        <div className="px-5 mb-6">
+          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Trophy Case</h2>
+            <div className="text-center py-8">
+              <Trophy className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+              <p className="text-sm text-gray-500">No trophies yet. Keep practicing!</p>
+            </div>
+          </div>
         </div>
 
       </div>
