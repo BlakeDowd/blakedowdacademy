@@ -990,9 +990,6 @@ export default function AcademyPage() {
   const [leaderboardSearch, setLeaderboardSearch] = useState('');
   const [selectedTrophy, setSelectedTrophy] = useState<TrophyData | null>(null);
   const [leaderboardMetric, setLeaderboardMetric] = useState<'xp' | 'library' | 'practice' | 'rounds' | 'drills' | 'lowGross' | 'lowNett' | 'birdies' | 'eagles'>('xp');
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [editedName, setEditedName] = useState('');
-  const [isSavingName, setIsSavingName] = useState(false);
   
   // Automatic redirect if not authenticated (only after loading is complete)
   useEffect(() => {
@@ -1126,96 +1123,6 @@ export default function AcademyPage() {
 
   const userName = getUserName();
   
-  // Handle name editing
-  const handleEditName = () => {
-    setEditedName(userName);
-    setIsEditingName(true);
-  };
-
-  const handleSaveName = async () => {
-    if (!user?.id || !editedName.trim()) {
-      setIsEditingName(false);
-      return;
-    }
-
-    const newName = editedName.trim();
-    setIsSavingName(true);
-    
-    // Optimistic UI: Update local state immediately for instant visual feedback
-    // The name will appear on screen immediately after database update succeeds
-    // Note: We refresh the user context after the database update completes
-    
-    try {
-      // Update in Supabase using full_name (snake_case) to match database schema
-      // RLS Check: Ensure Row Level Security allows updates where auth.uid() = id
-      // If this fails, check Supabase RLS policies for the profiles table
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-      
-      // Update the specific user's profile using their auth.uid() as the id
-      // .eq('id', user.id) ensures we target the correct row matching auth.uid()
-      const { data, error } = await supabase
-        .from('profiles')
-        .update({ full_name: newName })
-        .eq('id', user.id)
-        .select(); // Select to verify the update worked
-
-      // If update fails because profile doesn't exist, create it (id matches auth.uid())
-      if (error && (error.code === 'PGRST116' || error.message?.includes('No rows'))) {
-        console.log('Profile not found, creating new profile with id:', user.id);
-        const { error: createError } = await supabase
-          .from('profiles')
-          .insert({
-            id: user.id, // This matches auth.uid() - ensures profile belongs to the right student
-            full_name: newName,
-            created_at: new Date().toISOString(),
-          })
-          .select();
-        
-        if (createError) {
-          console.error('Error creating profile:', createError);
-          console.error('RLS Check: If this persists, verify Supabase RLS policies allow INSERT for authenticated users');
-          alert('Failed to create profile. Please try again.');
-          setIsSavingName(false);
-          return;
-        } else {
-          console.log('Profile created successfully with id:', user.id);
-        }
-      } else if (error) {
-        console.error('Error updating full_name:', error);
-        console.error('RLS Check: If this persists, verify Supabase RLS policies allow UPDATE where auth.uid() = id');
-        console.error('User ID:', user.id);
-        console.error('Attempted name:', newName);
-        alert(`Failed to update name: ${error.message || 'Unknown error'}. Please check RLS policies.`);
-        setIsSavingName(false);
-        return;
-      } else {
-        console.log('Profile updated successfully:', data);
-      }
-
-      // Optimistic UI: Refresh user context to sync across app
-      // This updates user.fullName immediately so the UI reflects the change
-      await refreshUser();
-      
-      // Close edit mode immediately for instant visual feedback
-      setIsEditingName(false);
-      
-      // Use router.refresh() to force a full page refresh which ensures all data is fresh
-      // This will recalculate userName from user.fullName and update the leaderboard
-      // The 'Welcome back' text will immediately show the new name from full_name column
-      router.refresh();
-    } catch (error) {
-      console.error('Error saving name:', error);
-      alert('Failed to update name. Please try again.');
-    } finally {
-      setIsSavingName(false);
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditingName(false);
-    setEditedName('');
-  };
 
   // Get current leaderboard data - recalculates when timeFilter or leaderboardMetric changes
   const currentLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user);
@@ -1273,9 +1180,13 @@ export default function AcademyPage() {
           fontSize: size * 0.4,
         }}
       >
-        {isIconId && selectedIcon ? (
-          <div className="w-full h-full flex items-center justify-center p-2" style={{ color: '#014421' }}>
-            {selectedIcon.svg}
+        {isIconId ? (
+          <div className="w-full h-full flex items-center justify-center p-2 text-2xl">
+            {(() => {
+              const { GOLF_ICONS } = require('@/components/IconPicker');
+              const icon = GOLF_ICONS.find((i: any) => i.id === iconId);
+              return icon ? icon.emoji : initial;
+            })()}
           </div>
         ) : (
           <span className="text-white font-bold">{initial}</span>
@@ -1300,56 +1211,7 @@ export default function AcademyPage() {
             {/* Identity Text - Centered */}
             <div className="text-center">
               <p className="text-lg text-gray-600 mb-1">Welcome back,</p>
-              <div className="flex items-center justify-center gap-2">
-                {isEditingName ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={editedName}
-                      onChange={(e) => setEditedName(e.target.value)}
-                      className="text-2xl font-bold text-gray-900 border-2 border-[#014421] rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-[#014421]"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleSaveName();
-                        } else if (e.key === 'Escape') {
-                          handleCancelEdit();
-                        }
-                      }}
-                      disabled={isSavingName}
-                    />
-                    <button
-                      onClick={handleSaveName}
-                      disabled={isSavingName}
-                      className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50 flex items-center justify-center"
-                    >
-                      {isSavingName ? (
-                        <div className="w-5 h-5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <Check className="w-5 h-5 text-green-600" />
-                      )}
-                    </button>
-                    <button
-                      onClick={handleCancelEdit}
-                      disabled={isSavingName}
-                      className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
-                    >
-                      <X className="w-5 h-5 text-gray-600" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-2xl font-bold text-gray-900">{userName}</h1>
-                    <button
-                      onClick={handleEditName}
-                      className="p-1 rounded hover:bg-gray-100 transition-colors"
-                      title="Edit name"
-                    >
-                      <Pencil className="w-4 h-4 text-gray-600" />
-                    </button>
-                  </div>
-                )}
-              </div>
+              <h1 className="text-2xl font-bold text-gray-900">{userName}</h1>
               <p className="text-sm font-semibold mt-1" style={{ color: '#16a34a' }}>{userLevel}</p>
             </div>
           </div>

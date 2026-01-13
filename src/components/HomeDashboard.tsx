@@ -22,6 +22,7 @@ import {
   Pencil,
   Check
 } from "lucide-react";
+import IconPicker, { GOLF_ICONS } from "@/components/IconPicker";
 
 // Video drills for Daily Focus rotation
 const VIDEO_DRILLS = [
@@ -103,7 +104,13 @@ export default function HomeDashboard() {
   const safeRounds = rounds || [];
   
   // Format user name - fetch from profiles.full_name, fallback to email or 'User'
+  // INSTANT UI FEEDBACK: Use local state for optimistic updates
+  const [optimisticName, setOptimisticName] = useState<string | null>(null);
   const getUserDisplayName = () => {
+    // Use optimistic name if available (instant UI feedback)
+    if (optimisticName) {
+      return optimisticName;
+    }
     // Try fullName from profiles table first (standardized to use full_name only)
     if (user?.fullName) {
       return user.fullName;
@@ -116,12 +123,21 @@ export default function HomeDashboard() {
     return 'User';
   };
   
-  // Name editing state
+  // Name and icon editing state
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
+  const [selectedIcon, setSelectedIcon] = useState<string | null>(user?.profileIcon || null);
+  const [isSavingIcon, setIsSavingIcon] = useState(false);
   
   const userName = getUserDisplayName();
+  
+  // Update selectedIcon when user.profileIcon changes
+  useEffect(() => {
+    if (user?.profileIcon) {
+      setSelectedIcon(user.profileIcon);
+    }
+  }, [user?.profileIcon]);
   
   // Handle name editing
   const handleEditName = () => {
@@ -129,6 +145,7 @@ export default function HomeDashboard() {
     setIsEditingName(true);
   };
   
+  // Instant UI feedback: Update local state immediately
   const handleSaveName = async () => {
     if (!user?.id || !editedName.trim()) {
       setIsEditingName(false);
@@ -137,6 +154,10 @@ export default function HomeDashboard() {
 
     const newName = editedName.trim();
     setIsSavingName(true);
+    
+    // INSTANT UI FEEDBACK: Update local state immediately (optimistic update)
+    setOptimisticName(newName);
+    setIsEditingName(false); // Close edit mode immediately
     
     try {
       // Update in Supabase using full_name (snake_case) to match database schema
@@ -175,15 +196,19 @@ export default function HomeDashboard() {
         return;
       }
 
-      // Refresh user context to sync across app
+      // Refresh user context to sync across app (this will update the actual user state)
       if (refreshUser) {
         await refreshUser();
       }
       
-      setIsEditingName(false);
-      router.refresh();
+      // Clear optimistic name since we now have the real data
+      setOptimisticName(null);
     } catch (error) {
       console.error('Error saving name:', error);
+      // Revert optimistic update on error
+      setOptimisticName(null);
+      setIsEditingName(true); // Reopen edit mode
+      setEditedName(newName); // Keep the edited name
       alert('Failed to update name. Please try again.');
     } finally {
       setIsSavingName(false);
@@ -193,6 +218,44 @@ export default function HomeDashboard() {
   const handleCancelEdit = () => {
     setIsEditingName(false);
     setEditedName('');
+  };
+
+  // Handle icon selection with instant UI feedback
+  const handleIconSelect = async (iconId: string) => {
+    if (!user?.id) return;
+    
+    setSelectedIcon(iconId);
+    setIsSavingIcon(true);
+    
+    // INSTANT UI FEEDBACK: Update immediately (optimistic update)
+    // The icon will appear selected right away
+    
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      
+      const { error } = await supabase
+        .from('profiles')
+        .update({ profile_icon: iconId })
+        .eq('id', user.id);
+
+      if (error) {
+        console.error('Error updating profile_icon:', error);
+        // Revert on error
+        setSelectedIcon(user?.profileIcon || null);
+        alert('Failed to update icon. Please try again.');
+      } else {
+        // Refresh user context to sync
+        if (refreshUser) {
+          await refreshUser();
+        }
+      }
+    } catch (error) {
+      console.error('Error saving icon:', error);
+      setSelectedIcon(user?.profileIcon || null);
+    } finally {
+      setIsSavingIcon(false);
+    }
   };
   
   const [totalXP, setTotalXP] = useState(0);
@@ -384,26 +447,34 @@ export default function HomeDashboard() {
     return (
       <div className="min-h-screen bg-gray-50 pb-20">
       <div className="max-w-md mx-auto bg-white min-h-screen">
-        {/* Top Section - Premium Header */}
-        <div className="px-5 pt-6 pb-4 flex items-center justify-between mb-4 bg-white">
-          <div className="flex items-center gap-3">
-            <div className="w-14 h-14 rounded-full overflow-hidden ring-2 ring-gray-100 shadow-sm">
-              <div 
-                className="w-full h-full flex items-center justify-center"
-                style={{ background: 'linear-gradient(to bottom right, #4ade80, #22c55e, #16a34a)' }}
-              >
-                <span className="text-2xl">👤</span>
+        {/* Top Section - Premium Header with Name/Icon Editing */}
+        <div className="px-5 pt-6 pb-4 mb-4 bg-white">
+          <div className="flex flex-col items-center gap-4">
+            {/* Profile Icon Display/Edit */}
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-gray-100 shadow-sm flex items-center justify-center text-4xl bg-white">
+                {selectedIcon ? (
+                  GOLF_ICONS.find(icon => icon.id === selectedIcon)?.emoji || '👤'
+                ) : (
+                  '👤'
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">Choose Icon:</span>
+                <IconPicker selectedIcon={selectedIcon} onSelectIcon={handleIconSelect} />
               </div>
             </div>
-            <div className="flex-1">
+            
+            {/* Name Display/Edit */}
+            <div className="flex flex-col items-center gap-2 w-full">
               <p className="text-gray-400 text-xs">Welcome back,</p>
               {isEditingName ? (
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 w-full max-w-xs">
                   <input
                     type="text"
                     value={editedName}
                     onChange={(e) => setEditedName(e.target.value)}
-                    className="text-gray-900 font-bold text-xl border-2 border-[#014421] rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#014421] flex-1"
+                    className="flex-1 text-xl font-bold text-gray-900 border-2 border-[#014421] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#014421]"
                     autoFocus
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
@@ -417,27 +488,26 @@ export default function HomeDashboard() {
                   <button
                     onClick={handleSaveName}
                     disabled={isSavingName}
-                    className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
+                    className="p-2 rounded hover:bg-green-100 transition-colors disabled:opacity-50"
+                    style={{ color: '#014421' }}
                   >
                     {isSavingName ? (
-                      <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                      <div className="w-5 h-5 border-2 border-[#014421] border-t-transparent rounded-full animate-spin" />
                     ) : (
-                      <Check className="w-4 h-4 text-green-600" />
+                      <Check className="w-5 h-5" />
                     )}
                   </button>
                   <button
                     onClick={handleCancelEdit}
                     disabled={isSavingName}
-                    className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
+                    className="p-2 rounded hover:bg-red-100 transition-colors disabled:opacity-50"
                   >
-                    <X className="w-4 h-4 text-gray-600" />
+                    <X className="w-5 h-5 text-gray-600" />
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 mt-1">
-                  <p className="text-gray-900 font-bold text-xl">
-                    {userName}
-                  </p>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl font-bold text-gray-900">{userName}</h1>
                   <button
                     onClick={handleEditName}
                     className="p-1 rounded hover:bg-gray-100 transition-colors"
@@ -449,6 +519,10 @@ export default function HomeDashboard() {
               )}
             </div>
           </div>
+        </div>
+        
+        {/* Stats Cards Section */}
+        <div className="px-5 mb-4">
           <div 
             className="rounded-full px-4 py-2 flex items-center gap-2 shadow-md"
             style={{ 
