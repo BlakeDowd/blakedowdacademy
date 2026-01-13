@@ -270,7 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: supabaseUser.email?.split('@')[0] || 'User',
             created_at: new Date().toISOString(),
           })
-          .select('initial_handicap, full_name, display_name, name, created_at')
+          .select('initial_handicap, full_name, created_at')
           .single();
         
         if (createError) {
@@ -289,7 +289,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: supabaseUser.email?.split('@')[0] || 'User',
             created_at: new Date().toISOString(),
           })
-          .select('initial_handicap, full_name, display_name, name, created_at')
+          .select('initial_handicap, full_name, created_at')
           .single();
         
         if (!createError && newProfile) {
@@ -354,7 +354,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               full_name: data.user.email?.split('@')[0] || 'User',
               created_at: new Date().toISOString(),
             })
-            .select('initial_handicap, full_name, display_name, name, created_at')
+            .select('initial_handicap, full_name, created_at')
             .single();
           
           if (createError) {
@@ -373,7 +373,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               full_name: data.user.email?.split('@')[0] || 'User',
               created_at: new Date().toISOString(),
             })
-            .select('initial_handicap, full_name, display_name, name, created_at')
+            .select('initial_handicap, full_name, created_at')
             .single();
           
           if (!createError && newProfile) {
