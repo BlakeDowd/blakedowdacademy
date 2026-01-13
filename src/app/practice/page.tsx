@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ExternalLink, Download, X, RefreshCw } from "lucide-react";
+import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ExternalLink, Download, X, RefreshCw, Pencil } from "lucide-react";
 import { DRILLS as LIBRARY_DRILLS, type Drill as LibraryDrill } from "@/data/drills";
 
 type FacilityType = 'home' | 'range-mat' | 'range-grass' | 'bunker' | 'chipping-green' | 'putting-green';
@@ -98,7 +98,7 @@ const ALL_FACILITIES: FacilityType[] = ['home', 'range-mat', 'range-grass', 'bun
 
 export default function PracticePage() {
   const { rounds } = useStats();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({});
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [drills, setDrills] = useState<Drill[]>([]);
@@ -112,6 +112,99 @@ export default function PracticePage() {
   const [swappingDrill, setSwappingDrill] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track which drill is being swapped
   const [swapSuccess, setSwapSuccess] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track successful swap for feedback
   const [expandedScheduleDrill, setExpandedScheduleDrill] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track expanded drill in schedule
+  
+  // Name editing state
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
+  
+  // Get user name - fetch from profiles.full_name, fallback to email or 'User'
+  const getUserName = () => {
+    // Try fullName from profiles table first (standardized to use full_name only)
+    if (user?.fullName) {
+      return user.fullName;
+    }
+    // Fallback to full email if available
+    if (user?.email) {
+      return user.email;
+    }
+    // Final fallback
+    return 'User';
+  };
+  
+  const userName = getUserName();
+  
+  // Handle name editing
+  const handleEditName = () => {
+    setEditedName(userName);
+    setIsEditingName(true);
+  };
+  
+  const handleSaveName = async () => {
+    if (!user?.id || !editedName.trim()) {
+      setIsEditingName(false);
+      return;
+    }
+
+    const newName = editedName.trim();
+    setIsSavingName(true);
+    
+    try {
+      // Update in Supabase using full_name (snake_case) to match database schema
+      // Standardized: ONLY use full_name column, never display_name or name
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      
+      // Update the specific user's profile using their auth.uid() as the id
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ full_name: newName })
+        .eq('id', user.id)
+        .select();
+
+      if (error && (error.code === 'PGRST116' || error.message?.includes('No rows'))) {
+        // Create profile if it doesn't exist
+        const { error: createError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            full_name: newName,
+            created_at: new Date().toISOString(),
+          })
+          .select();
+        
+        if (createError) {
+          console.error('Error creating profile:', createError);
+          alert('Failed to create profile. Please try again.');
+          setIsSavingName(false);
+          return;
+        }
+      } else if (error) {
+        console.error('Error updating full_name:', error);
+        alert(`Failed to update name: ${error.message || 'Unknown error'}`);
+        setIsSavingName(false);
+        return;
+      }
+
+      // Refresh user context to sync across app
+      if (refreshUser) {
+        await refreshUser();
+      }
+      
+      setIsEditingName(false);
+      window.location.reload(); // Force refresh to update name everywhere
+    } catch (error) {
+      console.error('Error saving name:', error);
+      alert('Failed to update name. Please try again.');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+  
+  const handleCancelEdit = () => {
+    setIsEditingName(false);
+    setEditedName('');
+  };
   
   // Base XP per facility type (for freestyle practice)
   const facilityBaseXP: Record<FacilityType, number> = {
@@ -938,9 +1031,59 @@ export default function PracticePage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-md mx-auto bg-white min-h-screen px-4">
-        {/* Header */}
+        {/* Header with Name Editing */}
         <div className="pt-6 pb-4">
-          <h1 className="text-2xl font-bold text-gray-900">Weekly Planner</h1>
+          <div className="flex items-center justify-between mb-3">
+            <h1 className="text-2xl font-bold text-gray-900">Weekly Planner</h1>
+            {isEditingName ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={editedName}
+                  onChange={(e) => setEditedName(e.target.value)}
+                  className="text-sm border-2 border-[#014421] rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#014421] w-32"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSaveName();
+                    } else if (e.key === 'Escape') {
+                      handleCancelEdit();
+                    }
+                  }}
+                  disabled={isSavingName}
+                />
+                <button
+                  onClick={handleSaveName}
+                  disabled={isSavingName}
+                  className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
+                >
+                  {isSavingName ? (
+                    <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4 text-green-600" />
+                  )}
+                </button>
+                <button
+                  onClick={handleCancelEdit}
+                  disabled={isSavingName}
+                  className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
+                >
+                  <X className="w-4 h-4 text-gray-600" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700">{userName}</span>
+                <button
+                  onClick={handleEditName}
+                  className="p-1 rounded hover:bg-gray-100 transition-colors"
+                  title="Edit name"
+                >
+                  <Pencil className="w-3 h-3 text-gray-600" />
+                </button>
+              </div>
+            )}
+          </div>
           <p className="text-gray-600 text-sm mt-1">Plan your practice for the week</p>
           {totalPracticeMinutes > 0 && (
             <div className="mt-2 text-sm font-medium" style={{ color: '#014421' }}>
