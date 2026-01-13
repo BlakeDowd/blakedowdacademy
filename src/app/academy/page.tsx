@@ -1102,15 +1102,21 @@ export default function AcademyPage() {
   const userTier = getTier();
   const userLevel = getLevel(userTier);
 
-  // Get user name - fetch from profiles.full_name, fallback to email username or 'User'
+  // Get user name - fetch from profiles.full_name, fallback to email or 'User'
+  // If full_name is an email (contains @), display it as-is
   const getUserName = () => {
-    // Try fullName from profiles table first
+    // Try fullName from profiles table first (fetched from profiles.full_name via user.fullName)
     if (user?.fullName) {
+      // If full_name looks like an email, show it as-is
+      if (user.fullName.includes('@')) {
+        return user.fullName;
+      }
+      // Otherwise, return the full_name value
       return user.fullName;
     }
-    // Fallback to email username if available
+    // Fallback to full email if available
     if (user?.email) {
-      return user.email.split('@')[0];
+      return user.email;
     }
     // Final fallback
     return 'User';
