@@ -1145,6 +1145,9 @@ export default function AcademyPage() {
         await refreshUser();
       }
       
+      // Use router.refresh() for instant update across the page
+      router.refresh();
+      
       setIsEditingName(false);
     } catch (error) {
       console.error('Error saving name:', error);
