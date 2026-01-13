@@ -1565,12 +1565,12 @@ export default function PracticePage() {
                     
                     return (
                       <div key={dayIndex} className="flex flex-col min-w-[100px] sm:min-w-[112px]" style={{ transform: 'scale(1.35)' }}>
-                        {/* Day Header - Larger font for better readability */}
+                        {/* Day Header - Larger font for better readability on mobile */}
                         <div className={`text-center mb-1.5 sm:mb-2 ${isToday ? 'font-bold' : 'font-medium'}`}>
-                          <div className={`text-sm sm:text-base ${isToday ? 'text-[#014421]' : 'text-gray-600'}`}>
+                          <div className={`text-base sm:text-lg ${isToday ? 'text-[#014421]' : 'text-gray-600'}`}>
                             {dayName.substring(0, 3)}
                           </div>
-                          <div className={`text-sm sm:text-base ${isToday ? 'text-[#FFA500]' : 'text-gray-500'}`}>
+                          <div className={`text-base sm:text-lg ${isToday ? 'text-[#FFA500]' : 'text-gray-500'}`}>
                             {dayDate.getDate()}
                           </div>
                         </div>
@@ -1579,7 +1579,7 @@ export default function PracticePage() {
                         <div className="space-y-1.5 sm:space-y-2 min-h-[72px] sm:min-h-[86px]">
                           {dayDrills.length === 0 ? (
                             <div className="text-center py-2">
-                              <span className="text-sm sm:text-base text-gray-400">—</span>
+                              <span className="text-base sm:text-lg text-gray-400">—</span>
                             </div>
                           ) : (
                             dayDrills.slice(0, 3).map((drill, drillIdx) => {
@@ -1610,7 +1610,7 @@ export default function PracticePage() {
                                     } ${justSwapped ? 'ring-2 ring-green-400 ring-offset-1' : ''} ${isExpanded ? 'ring-2 ring-[#014421]' : ''}`}
                                     title={drill.title}
                                   >
-                                    <div className="text-base sm:text-lg font-semibold truncate pr-6">
+                                    <div className="text-lg sm:text-xl font-semibold truncate pr-6">
                                       {drill.title.length > 12 ? drill.title.substring(0, 12) + '...' : drill.title}
                                     </div>
                                     {isCompleted && (

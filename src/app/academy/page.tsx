@@ -1140,8 +1140,8 @@ export default function AcademyPage() {
     setIsSavingName(true);
     
     // Optimistic UI: Update local state immediately for instant visual feedback
-    // This makes the name change appear on screen without waiting for the database
-    // Note: The actual database update happens below, but we'll refresh after it succeeds
+    // The name will appear on screen immediately after database update succeeds
+    // Note: We refresh the user context after the database update completes
     
     try {
       // Update in Supabase using full_name (snake_case) to match database schema
@@ -1191,8 +1191,8 @@ export default function AcademyPage() {
         console.log('Profile updated successfully:', data);
       }
 
-      // Refresh user context to sync across app - this updates user.fullName
-      // This provides optimistic UI update - the name appears immediately
+      // Optimistic UI: Refresh user context to sync across app
+      // This updates user.fullName immediately so the UI reflects the change
       await refreshUser();
       
       // Close edit mode immediately for instant visual feedback
@@ -1200,7 +1200,7 @@ export default function AcademyPage() {
       
       // Use router.refresh() to force a full page refresh which ensures all data is fresh
       // This will recalculate userName from user.fullName and update the leaderboard
-      // The 'Welcome back' text will immediately show the new name
+      // The 'Welcome back' text will immediately show the new name from full_name column
       router.refresh();
     } catch (error) {
       console.error('Error saving name:', error);
