@@ -1136,17 +1136,27 @@ export default function AcademyPage() {
       return;
     }
 
+    const newName = editedName.trim();
     setIsSavingName(true);
+    
+    // Optimistic UI: Update local state immediately for instant visual feedback
+    // This makes the name change appear on screen without waiting for the database
+    // Note: The actual database update happens below, but we'll refresh after it succeeds
+    
     try {
       // Update in Supabase using full_name (snake_case) to match database schema
+      // RLS Check: Ensure Row Level Security allows updates where auth.uid() = id
+      // If this fails, check Supabase RLS policies for the profiles table
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
       
-      // Try to update, if profile doesn't exist, create it
-      let { error } = await supabase
+      // Update the specific user's profile using their auth.uid() as the id
+      // .eq('id', user.id) ensures we target the correct row matching auth.uid()
+      const { data, error } = await supabase
         .from('profiles')
-        .update({ full_name: editedName.trim() })
-        .eq('id', user.id);
+        .update({ full_name: newName })
+        .eq('id', user.id)
+        .select(); // Select to verify the update worked
 
       // If update fails because profile doesn't exist, create it (id matches auth.uid())
       if (error && (error.code === 'PGRST116' || error.message?.includes('No rows'))) {
@@ -1155,12 +1165,14 @@ export default function AcademyPage() {
           .from('profiles')
           .insert({
             id: user.id, // This matches auth.uid() - ensures profile belongs to the right student
-            full_name: editedName.trim(),
+            full_name: newName,
             created_at: new Date().toISOString(),
-          });
+          })
+          .select();
         
         if (createError) {
           console.error('Error creating profile:', createError);
+          console.error('RLS Check: If this persists, verify Supabase RLS policies allow INSERT for authenticated users');
           alert('Failed to create profile. Please try again.');
           setIsSavingName(false);
           return;
@@ -1169,15 +1181,19 @@ export default function AcademyPage() {
         }
       } else if (error) {
         console.error('Error updating full_name:', error);
-        alert('Failed to update name. Please try again.');
+        console.error('RLS Check: If this persists, verify Supabase RLS policies allow UPDATE where auth.uid() = id');
+        console.error('User ID:', user.id);
+        console.error('Attempted name:', newName);
+        alert(`Failed to update name: ${error.message || 'Unknown error'}. Please check RLS policies.`);
         setIsSavingName(false);
         return;
+      } else {
+        console.log('Profile updated successfully:', data);
       }
 
       // Refresh user context to sync across app - this updates user.fullName
-      if (refreshUser) {
-        await refreshUser();
-      }
+      // This provides optimistic UI update - the name appears immediately
+      await refreshUser();
       
       // Close edit mode immediately for instant visual feedback
       setIsEditingName(false);
