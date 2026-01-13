@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { Trophy, Award, Medal, Crown, TrendingUp, TrendingDown, Search, X, Lock, Target, BookOpen, Clock, Zap, Star, Flame, Pencil, Check } from "lucide-react";
+import { Trophy, Award, Medal, Crown, TrendingUp, TrendingDown, Search, X, Lock, Target, BookOpen, Clock, Zap, Star, Flame, Pencil, Check, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { GOLF_ICONS } from "@/components/IconPicker";
 
@@ -1959,13 +1959,13 @@ export default function AcademyPage() {
               </button>
             </div>
             
-            {/* Time Filter Buttons - Centered */}
-            <div className="flex items-center justify-center gap-2 mb-4">
+            {/* Time Filter Buttons - Perfectly Centered */}
+            <div className="flex items-center justify-center gap-2 mb-4 w-full">
               {(['week', 'month', 'year', 'allTime'] as const).map((filter) => {
                 const labels = {
-                  week: 'Week',
-                  month: 'Month',
-                  year: 'Year',
+                  week: 'Today',
+                  month: 'This Week',
+                  year: 'This Month',
                   allTime: 'All-Time'
                 };
                 
@@ -2009,12 +2009,19 @@ export default function AcademyPage() {
                         </div>
                         <div className="grid grid-cols-[auto_1fr_100px] items-center gap-3 flex-1 min-w-0">
                           <div className="flex-shrink-0">
-                            <CircularAvatar 
-                              initial={entry.name[0]}
-                              iconId={entry.avatar && GOLF_ICONS.some((icon: any) => icon.id === entry.avatar) ? entry.avatar : undefined}
-                              size={32}
-                              bgColor={entry.id === 'user' ? '#FFA500' : '#014421'}
-                            />
+                            {/* Empty States: Show User icon if name is still an email */}
+                            {entry.name.includes('@') ? (
+                              <div className="rounded-full flex items-center justify-center" style={{ width: 32, height: 32, backgroundColor: entry.id === 'user' ? '#FFA500' : '#014421' }}>
+                                <User className="w-4 h-4 text-white" />
+                              </div>
+                            ) : (
+                              <CircularAvatar 
+                                initial={entry.name[0]}
+                                iconId={entry.avatar && GOLF_ICONS.some((icon: any) => icon.id === entry.avatar) ? entry.avatar : undefined}
+                                size={32}
+                                bgColor={entry.id === 'user' ? '#FFA500' : '#014421'}
+                              />
+                            )}
                           </div>
                           <div className="min-w-0">
                             <div className={`font-semibold text-sm flex items-center gap-1 ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
@@ -2089,12 +2096,19 @@ export default function AcademyPage() {
                         >
                           <div className="flex-shrink-0">
                             {isTop3 && entry.rank === 1 && <Crown className="w-5 h-5 mx-auto mb-1" style={{ color: '#FFA500' }} />}
-                            <CircularAvatar 
-                              initial={entry.name[0]}
-                              iconId={entry.avatar && GOLF_ICONS.some((icon: any) => icon.id === entry.avatar) ? entry.avatar : undefined}
-                              size={40}
-                              bgColor={entry.id === 'user' ? '#FFA500' : entry.rank === 1 ? '#FFA500' : entry.rank === 2 ? '#C0C0C0' : entry.rank === 3 ? '#CD7F32' : '#014421'}
-                            />
+                            {/* Empty States: Show User icon if name is still an email */}
+                            {entry.name.includes('@') ? (
+                              <div className="rounded-full flex items-center justify-center" style={{ width: 40, height: 40, backgroundColor: entry.id === 'user' ? '#FFA500' : entry.rank === 1 ? '#FFA500' : entry.rank === 2 ? '#C0C0C0' : entry.rank === 3 ? '#CD7F32' : '#014421' }}>
+                                <User className="w-5 h-5 text-white" />
+                              </div>
+                            ) : (
+                              <CircularAvatar 
+                                initial={entry.name[0]}
+                                iconId={entry.avatar && GOLF_ICONS.some((icon: any) => icon.id === entry.avatar) ? entry.avatar : undefined}
+                                size={40}
+                                bgColor={entry.id === 'user' ? '#FFA500' : entry.rank === 1 ? '#FFA500' : entry.rank === 2 ? '#C0C0C0' : entry.rank === 3 ? '#CD7F32' : '#014421'}
+                              />
+                            )}
                           </div>
                           <div className="flex-shrink-0 w-10 text-center">
                             <span className={`text-sm font-bold ${entry.id === 'user' || isTop3 ? 'text-[#014421]' : 'text-gray-600'}`}>

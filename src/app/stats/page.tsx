@@ -599,6 +599,12 @@ export default function StatsPage() {
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Game Overview</h1>
               <p className="text-gray-600 text-sm mt-1">Track your performance metrics</p>
+              {/* Handicap Display: Show initial_handicap from database */}
+              {user?.initialHandicap !== undefined && (
+                <p className="text-sm font-semibold mt-1" style={{ color: '#014421' }}>
+                  Handicap: {(user.initialHandicap >= 0 ? user.initialHandicap.toFixed(1) : `+${Math.abs(user.initialHandicap).toFixed(1)}`)} {user.initialHandicap <= 0 ? 'Pro' : 'HCP'}
+                </p>
+              )}
             </div>
             {/* Generate Report Button */}
             <button
