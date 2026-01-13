@@ -1545,12 +1545,19 @@ export default function AcademyPage() {
                       {/* 2nd Place */}
                       {data.top3[1] && (
                         <div className="flex flex-col items-center">
-                          <CircularAvatar
-                            initial={data.top3[1].name[0]}
-                            iconId={data.top3[1].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[1].avatar) ? data.top3[1].avatar : undefined}
-                            size={40}
-                            bgColor="#C0C0C0"
-                          />
+                          {/* Empty States: Show User icon if name is still an email */}
+                          {data.top3[1].name.includes('@') ? (
+                            <div className="rounded-full flex items-center justify-center" style={{ width: 40, height: 40, backgroundColor: '#C0C0C0' }}>
+                              <User className="w-5 h-5 text-white" />
+                            </div>
+                          ) : (
+                            <CircularAvatar
+                              initial={data.top3[1].name[0]}
+                              iconId={data.top3[1].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[1].avatar) ? data.top3[1].avatar : undefined}
+                              size={40}
+                              bgColor="#C0C0C0"
+                            />
+                          )}
                           <div className="text-center mt-1">
                             <div className="text-xs font-bold text-gray-900">#{2}</div>
                             <div className="text-xs font-semibold text-gray-900">{data.top3[1].name}</div>
@@ -1563,12 +1570,19 @@ export default function AcademyPage() {
                       {data.top3[0] && (
                         <div className="flex flex-col items-center">
                           <Crown className="w-4 h-4 mb-1" style={{ color: '#FFA500' }} />
-                          <CircularAvatar
-                            initial={data.top3[0].name[0]}
-                            iconId={data.top3[0].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[0].avatar) ? data.top3[0].avatar : undefined}
-                            size={50}
-                            bgColor="#FFA500"
-                          />
+                          {/* Empty States: Show User icon if name is still an email */}
+                          {data.top3[0].name.includes('@') ? (
+                            <div className="rounded-full flex items-center justify-center" style={{ width: 50, height: 50, backgroundColor: '#FFA500' }}>
+                              <User className="w-6 h-6 text-white" />
+                            </div>
+                          ) : (
+                            <CircularAvatar
+                              initial={data.top3[0].name[0]}
+                              iconId={data.top3[0].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[0].avatar) ? data.top3[0].avatar : undefined}
+                              size={50}
+                              bgColor="#FFA500"
+                            />
+                          )}
                           <div className="text-center mt-1">
                             <div className="text-sm font-bold text-gray-900">#{1}</div>
                             <div className="text-xs font-semibold text-gray-900">{data.top3[0].name}</div>
@@ -1580,12 +1594,19 @@ export default function AcademyPage() {
                       {/* 3rd Place */}
                       {data.top3[2] && (
                         <div className="flex flex-col items-center">
-                          <CircularAvatar
-                            initial={data.top3[2].name[0]}
-                            iconId={data.top3[2].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[2].avatar) ? data.top3[2].avatar : undefined}
-                            size={40}
-                            bgColor="#CD7F32"
-                          />
+                          {/* Empty States: Show User icon if name is still an email */}
+                          {data.top3[2].name.includes('@') ? (
+                            <div className="rounded-full flex items-center justify-center" style={{ width: 40, height: 40, backgroundColor: '#CD7F32' }}>
+                              <User className="w-5 h-5 text-white" />
+                            </div>
+                          ) : (
+                            <CircularAvatar
+                              initial={data.top3[2].name[0]}
+                              iconId={data.top3[2].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[2].avatar) ? data.top3[2].avatar : undefined}
+                              size={40}
+                              bgColor="#CD7F32"
+                            />
+                          )}
                           <div className="text-center mt-1">
                             <div className="text-xs font-bold text-gray-900">#{3}</div>
                             <div className="text-xs font-semibold text-gray-900">{data.top3[2].name}</div>
@@ -1889,12 +1910,19 @@ export default function AcademyPage() {
                 {/* 2nd Place */}
                 {top3[1] && (
                   <div className="flex flex-col items-center">
-                    <CircularAvatar 
-                      initial={top3[1].name[0]}
-                      iconId={top3[1].avatar && GOLF_ICONS.some((icon: any) => icon.id === top3[1].avatar) ? top3[1].avatar : undefined}
-                      size={60}
-                      bgColor="#C0C0C0"
-                    />
+                    {/* Empty States: Show User icon if name is still an email */}
+                    {top3[1].name.includes('@') ? (
+                      <div className="rounded-full flex items-center justify-center" style={{ width: 60, height: 60, backgroundColor: '#C0C0C0' }}>
+                        <User className="w-7 h-7 text-white" />
+                      </div>
+                    ) : (
+                      <CircularAvatar 
+                        initial={top3[1].name[0]}
+                        iconId={top3[1].avatar && GOLF_ICONS.some((icon: any) => icon.id === top3[1].avatar) ? top3[1].avatar : undefined}
+                        size={60}
+                        bgColor="#C0C0C0"
+                      />
+                    )}
                     <div className="text-center mt-2">
                       <div className="text-sm font-bold text-gray-900">#{2}</div>
                       <div className="text-sm font-semibold text-gray-900">{top3[1].name}</div>
@@ -1907,12 +1935,19 @@ export default function AcademyPage() {
                 {top3[0] && (
                   <div className="flex flex-col items-center">
                     <Crown className="w-6 h-6 mb-1 animate-pulse" style={{ color: '#FFA500' }} />
-                    <CircularAvatar 
-                      initial={top3[0].name[0]}
-                      iconId={top3[0].avatar && GOLF_ICONS.some((icon: any) => icon.id === top3[0].avatar) ? top3[0].avatar : undefined}
-                      size={80}
-                      bgColor="#FFA500"
-                    />
+                    {/* Empty States: Show User icon if name is still an email */}
+                    {top3[0].name.includes('@') ? (
+                      <div className="rounded-full flex items-center justify-center" style={{ width: 80, height: 80, backgroundColor: '#FFA500' }}>
+                        <User className="w-10 h-10 text-white" />
+                      </div>
+                    ) : (
+                      <CircularAvatar 
+                        initial={top3[0].name[0]}
+                        iconId={top3[0].avatar && GOLF_ICONS.some((icon: any) => icon.id === top3[0].avatar) ? top3[0].avatar : undefined}
+                        size={80}
+                        bgColor="#FFA500"
+                      />
+                    )}
                     <div className="text-center mt-2">
                       <div className="text-base font-bold text-gray-900">#{1}</div>
                       <div className="text-base font-semibold text-gray-900">{top3[0].name}</div>
@@ -1924,12 +1959,19 @@ export default function AcademyPage() {
                 {/* 3rd Place */}
                 {top3[2] && (
                   <div className="flex flex-col items-center">
-                    <CircularAvatar 
-                      initial={top3[2].name[0]}
-                      iconId={top3[2].avatar && GOLF_ICONS.some((icon: any) => icon.id === top3[2].avatar) ? top3[2].avatar : undefined}
-                      size={60}
-                      bgColor="#CD7F32"
-                    />
+                    {/* Empty States: Show User icon if name is still an email */}
+                    {top3[2].name.includes('@') ? (
+                      <div className="rounded-full flex items-center justify-center" style={{ width: 60, height: 60, backgroundColor: '#CD7F32' }}>
+                        <User className="w-7 h-7 text-white" />
+                      </div>
+                    ) : (
+                      <CircularAvatar 
+                        initial={top3[2].name[0]}
+                        iconId={top3[2].avatar && GOLF_ICONS.some((icon: any) => icon.id === top3[2].avatar) ? top3[2].avatar : undefined}
+                        size={60}
+                        bgColor="#CD7F32"
+                      />
+                    )}
                     <div className="text-center mt-2">
                       <div className="text-sm font-bold text-gray-900">#{3}</div>
                       <div className="text-sm font-semibold text-gray-900">{top3[2].name}</div>
