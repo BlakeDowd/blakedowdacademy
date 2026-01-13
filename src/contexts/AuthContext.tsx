@@ -85,11 +85,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log('AuthContext: Fetching user profile...');
 
           // Fetch user profile with initialHandicap and full_name from profiles table
-          const { data: profile } = await supabase
+          let { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('initial_handicap, full_name, display_name, name, created_at')
             .eq('id', supabaseUser.id)
             .single();
+
+          // Auto-create profile if it doesn't exist
+          if (profileError && profileError.code === 'PGRST116') {
+            console.log('AuthContext: Profile not found, creating new profile...');
+            const { data: newProfile, error: createError } = await supabase
+              .from('profiles')
+              .insert({
+                id: supabaseUser.id,
+                full_name: supabaseUser.email?.split('@')[0] || 'User',
+                created_at: new Date().toISOString(),
+              })
+              .select('initial_handicap, full_name, display_name, name, created_at')
+              .single();
+            
+            if (createError) {
+              console.error('AuthContext: Error creating profile:', createError);
+            } else {
+              profile = newProfile;
+              console.log('AuthContext: Profile created successfully');
+            }
+          }
 
           // One-time fix: Update 'bdowd' or missing full_name to 'Blake Dowd' if email contains bdowd
           if ((supabaseUser.email && supabaseUser.email.includes('bdowd')) && (!profile?.full_name || profile?.full_name === 'bdowd')) {
@@ -161,11 +182,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           
           try {
             // Fetch user profile
-            const { data: profile } = await supabase
+            let { data: profile, error: profileError } = await supabase
               .from('profiles')
               .select('initial_handicap, full_name, display_name, name, created_at')
               .eq('id', session.user.id)
               .single();
+
+            // Auto-create profile if it doesn't exist
+            if (profileError && profileError.code === 'PGRST116') {
+              console.log('AuthContext: Profile not found, creating new profile...');
+              const { data: newProfile, error: createError } = await supabase
+                .from('profiles')
+                .insert({
+                  id: session.user.id,
+                  full_name: session.user.email?.split('@')[0] || 'User',
+                  created_at: new Date().toISOString(),
+                })
+                .select('initial_handicap, full_name, display_name, name, created_at')
+                .single();
+              
+              if (createError) {
+                console.error('AuthContext: Error creating profile:', createError);
+              } else {
+                profile = newProfile;
+                console.log('AuthContext: Profile created successfully');
+              }
+            }
 
             // One-time fix: Update 'bdowd' or missing full_name to 'Blake Dowd' if email contains bdowd
             if ((session.user.email && session.user.email.includes('bdowd')) && (!profile?.full_name || profile?.full_name === 'bdowd')) {
@@ -238,11 +280,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: { user: supabaseUser } } = await supabase.auth.getUser();
       if (!supabaseUser) return;
 
-      const { data: profile } = await supabase
+      let { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('initial_handicap, full_name, display_name, name, created_at')
         .eq('id', supabaseUser.id)
         .single();
+
+      // Auto-create profile if it doesn't exist
+      if (profileError && profileError.code === 'PGRST116') {
+        console.log('refreshUser: Profile not found, creating new profile...');
+        const { data: newProfile, error: createError } = await supabase
+          .from('profiles')
+          .insert({
+            id: supabaseUser.id,
+            full_name: supabaseUser.email?.split('@')[0] || 'User',
+            created_at: new Date().toISOString(),
+          })
+          .select('initial_handicap, full_name, display_name, name, created_at')
+          .single();
+        
+        if (createError) {
+          console.error('refreshUser: Error creating profile:', createError);
+        } else {
+          profile = newProfile;
+          console.log('refreshUser: Profile created successfully');
+        }
+      }
 
       setUser((prev) => {
         if (!prev) return prev;
@@ -284,12 +347,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Fetch user profile with try/catch - login should succeed even if profile fetch fails
       let profile = null;
       try {
-        const { data: profileData } = await supabase
+        const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('initial_handicap, full_name, display_name, name, created_at')
           .eq('id', data.user.id)
           .single();
-        profile = profileData;
+        
+        // Auto-create profile if it doesn't exist
+        if (profileError && profileError.code === 'PGRST116') {
+          console.log('Login: Profile not found, creating new profile...');
+          const { data: newProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert({
+              id: data.user.id,
+              full_name: data.user.email?.split('@')[0] || 'User',
+              created_at: new Date().toISOString(),
+            })
+            .select('initial_handicap, full_name, display_name, name, created_at')
+            .single();
+          
+          if (createError) {
+            console.error('Login: Error creating profile:', createError);
+          } else {
+            profile = newProfile;
+            console.log('Login: Profile created successfully');
+          }
+        } else {
+          profile = profileData;
+        }
       } catch (profileError) {
         console.warn('Login: Profile fetch failed (user can still login):', profileError);
         // Continue with login even if profile fetch fails

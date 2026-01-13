@@ -1128,12 +1128,30 @@ export default function AcademyPage() {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
       
-      const { error } = await supabase
+      // Try to update, if profile doesn't exist, create it
+      let { error } = await supabase
         .from('profiles')
         .update({ full_name: editedName.trim() })
         .eq('id', user.id);
 
-      if (error) {
+      // If update fails because profile doesn't exist, create it
+      if (error && error.code === 'PGRST116') {
+        console.log('Profile not found, creating new profile...');
+        const { error: createError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            full_name: editedName.trim(),
+            created_at: new Date().toISOString(),
+          });
+        
+        if (createError) {
+          console.error('Error creating profile:', createError);
+          alert('Failed to create profile. Please try again.');
+          setIsSavingName(false);
+          return;
+        }
+      } else if (error) {
         console.error('Error updating full_name:', error);
         alert('Failed to update name. Please try again.');
         setIsSavingName(false);

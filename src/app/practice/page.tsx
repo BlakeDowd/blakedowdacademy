@@ -1564,7 +1564,7 @@ export default function PracticePage() {
                     const isToday = dayDate.toDateString() === today.toDateString();
                     
                     return (
-                      <div key={dayIndex} className="flex flex-col min-w-[72px] sm:min-w-[80px]" style={{ transform: 'scale(1.15)' }}>
+                      <div key={dayIndex} className="flex flex-col min-w-[86px] sm:min-w-[96px]" style={{ transform: 'scale(1.2)' }}>
                         {/* Day Header */}
                         <div className={`text-center mb-1.5 sm:mb-2 ${isToday ? 'font-bold' : 'font-medium'}`}>
                           <div className={`text-xs sm:text-sm ${isToday ? 'text-[#014421]' : 'text-gray-600'}`}>
@@ -1576,7 +1576,7 @@ export default function PracticePage() {
                         </div>
                         
                         {/* Drill Blocks */}
-                        <div className="space-y-1 sm:space-y-1.5 min-h-[60px] sm:min-h-[72px]">
+                        <div className="space-y-1.5 sm:space-y-2 min-h-[72px] sm:min-h-[86px]">
                           {dayDrills.length === 0 ? (
                             <div className="text-center py-2">
                               <span className="text-xs sm:text-sm text-gray-400">—</span>
@@ -1603,14 +1603,14 @@ export default function PracticePage() {
                                         }
                                       }
                                     }}
-                                    className={`w-full p-2 sm:p-2.5 rounded text-left transition-all hover:scale-105 relative ${
+                                    className={`w-full p-2.5 sm:p-3 rounded text-left transition-all hover:scale-105 relative ${
                                       isCompleted
                                         ? 'bg-green-500 text-white border-2 border-green-600'
                                         : 'bg-[#FFA500] text-[#014421] border-2 border-[#FFA500] hover:bg-[#FFA500]/90'
                                     } ${justSwapped ? 'ring-2 ring-green-400 ring-offset-1' : ''} ${isExpanded ? 'ring-2 ring-[#014421]' : ''}`}
                                     title={drill.title}
                                   >
-                                    <div className="text-xs sm:text-sm font-semibold truncate pr-5">
+                                    <div className="text-sm sm:text-base font-semibold truncate pr-6">
                                       {drill.title.length > 12 ? drill.title.substring(0, 12) + '...' : drill.title}
                                     </div>
                                     {isCompleted && (
@@ -1633,21 +1633,21 @@ export default function PracticePage() {
                                   
                                   {/* Expanded Drill View */}
                                   {isExpanded && (
-                                    <div className="absolute z-10 mt-1 w-full bg-white border-2 border-[#014421] rounded-lg shadow-lg p-2.5 sm:p-3">
-                                      <div className="space-y-2">
-                                        <div className="font-semibold text-xs sm:text-sm text-gray-900">{drill.title}</div>
+                                    <div className="absolute z-10 mt-1 w-full bg-white border-2 border-[#014421] rounded-lg shadow-lg p-3 sm:p-4">
+                                      <div className="space-y-2.5">
+                                        <div className="font-semibold text-sm sm:text-base text-gray-900">{drill.title}</div>
                                         {drill.description && (
-                                          <div className="text-[10px] sm:text-xs text-gray-600 max-h-24 overflow-y-auto">
+                                          <div className="text-xs sm:text-sm text-gray-600 max-h-32 overflow-y-auto">
                                             {drill.description}
                                           </div>
                                         )}
-                                        <div className="flex items-center justify-between text-[10px] sm:text-xs text-gray-500">
+                                        <div className="flex items-center justify-between text-xs sm:text-sm text-gray-500">
                                           <span>{drill.estimatedMinutes} min</span>
                                           {drill.facility && (
                                             <span>@ {facilityInfo[drill.facility].label}</span>
                                           )}
                                         </div>
-                                        {/* Complete Drill Button */}
+                                        {/* Mark as Done Button */}
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
@@ -1657,7 +1657,7 @@ export default function PracticePage() {
                                             }
                                           }}
                                           disabled={isCompleted}
-                                          className={`w-full py-1.5 sm:py-2 px-3 rounded-lg font-semibold text-xs sm:text-sm transition-all ${
+                                          className={`w-full py-2 sm:py-2.5 px-4 rounded-lg font-semibold text-sm sm:text-base transition-all ${
                                             isCompleted
                                               ? 'bg-green-500 text-white cursor-not-allowed'
                                               : 'bg-[#014421] text-white hover:bg-[#014421]/90'
@@ -1665,11 +1665,11 @@ export default function PracticePage() {
                                         >
                                           {isCompleted ? (
                                             <span className="flex items-center justify-center gap-1.5">
-                                              <CheckCircle2 className="w-3.5 h-3.5" />
+                                              <CheckCircle2 className="w-4 h-4" />
                                               Completed
                                             </span>
                                           ) : (
-                                            'Complete Drill'
+                                            'Mark as Done'
                                           )}
                                         </button>
                                       </div>
