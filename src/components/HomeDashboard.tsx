@@ -129,18 +129,16 @@ export default function HomeDashboard() {
   const [isSavingName, setIsSavingName] = useState(false);
   const [selectedIcon, setSelectedIcon] = useState<string | null>(user?.profileIcon || null);
   const [isSavingIcon, setIsSavingIcon] = useState(false);
-  const [showProfileSetup, setShowProfileSetup] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   
   const userName = getUserDisplayName();
   
-  // Check if full_name is an email (contains '@') - show setup modal if so
+  // Initialize editedName when modal opens
   useEffect(() => {
-    if (user?.fullName && user.fullName.includes('@')) {
-      setShowProfileSetup(true);
-      // Initialize editedName with current email (user can change it)
-      setEditedName(user.fullName);
+    if (showProfileModal) {
+      setEditedName(userName);
     }
-  }, [user?.fullName]);
+  }, [showProfileModal, userName]);
   
   // Update selectedIcon when user.profileIcon changes
   useEffect(() => {
@@ -155,7 +153,7 @@ export default function HomeDashboard() {
     setIsEditingName(true);
   };
   
-  // Fix save function: Use supabase.auth.updateUser AND update profiles table
+  // Fix save function: ONLY update full_name in profiles table
   const handleSaveName = async () => {
     if (!user?.id || !editedName.trim()) {
       setIsEditingName(false);
@@ -169,19 +167,8 @@ export default function HomeDashboard() {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
       
-      // Update BOTH auth.user metadata AND public.profiles table
       // Standardized: ONLY use full_name column, never display_name or name
-      
-      // 1. Update auth.user metadata
-      const { error: authError } = await supabase.auth.updateUser({
-        data: { full_name: newName }
-      });
-      
-      if (authError) {
-        console.error('Error updating auth user metadata:', authError);
-      }
-      
-      // 2. Update public.profiles table
+      // Update ONLY public.profiles table
       const { data, error: profileError } = await supabase
         .from('profiles')
         .update({ full_name: newName })
@@ -217,8 +204,10 @@ export default function HomeDashboard() {
         await refreshUser();
       }
       
-      // Force refresh to clear old email-only data
-      window.location.reload();
+      setIsEditingName(false);
+      
+      // Use router.refresh() for automatic update without full page reload
+      router.refresh();
     } catch (error) {
       console.error('Error saving name:', error);
       alert('Failed to update name. Please try again.');
@@ -266,10 +255,10 @@ export default function HomeDashboard() {
     }
   };
   
-  // Handle profile setup completion (from modal)
-  const handleProfileSetupComplete = async () => {
-    if (!user?.id || !editedName.trim() || !selectedIcon) {
-      alert('Please enter your name and select an icon.');
+  // Handle profile modal save (name and icon)
+  const handleProfileModalSave = async () => {
+    if (!user?.id || !editedName.trim()) {
+      alert('Please enter your name.');
       return;
     }
     
@@ -282,32 +271,47 @@ export default function HomeDashboard() {
       
       const newName = editedName.trim();
       
-      // Update BOTH auth.user metadata AND public.profiles table
-      await supabase.auth.updateUser({
-        data: { full_name: newName }
-      });
-      
+      // Update ONLY public.profiles table - ONLY use full_name column
       const { error: profileError } = await supabase
         .from('profiles')
         .update({ 
           full_name: newName,
-          profile_icon: selectedIcon
+          profile_icon: selectedIcon || null
         })
         .eq('id', user.id);
 
-      if (profileError) {
+      if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('No rows'))) {
+        // Create profile if it doesn't exist
+        const { error: createError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            full_name: newName,
+            profile_icon: selectedIcon || null,
+            created_at: new Date().toISOString(),
+          })
+          .select();
+        
+        if (createError) {
+          console.error('Error creating profile:', createError);
+          alert('Failed to create profile. Please try again.');
+          return;
+        }
+      } else if (profileError) {
         console.error('Error updating profile:', profileError);
         alert('Failed to save profile. Please try again.');
         return;
       }
 
-      // Refresh and reload
+      // Refresh user context
       if (refreshUser) {
         await refreshUser();
       }
       
-      setShowProfileSetup(false);
-      window.location.reload();
+      setShowProfileModal(false);
+      
+      // Use router.refresh() for automatic update
+      router.refresh();
     } catch (error) {
       console.error('Error saving profile:', error);
       alert('Failed to save profile. Please try again.');
@@ -506,14 +510,19 @@ export default function HomeDashboard() {
     return (
       <div className="min-h-screen bg-gray-50 pb-20">
       <div className="max-w-md mx-auto bg-white min-h-screen">
-        {/* Profile Setup Modal - Only shows if full_name is an email */}
-        {showProfileSetup && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">Complete Your Profile</h2>
-              <p className="text-sm text-gray-600 mb-6">
-                Let's set up your profile with your name and a fun icon!
-              </p>
+        {/* Profile Modal - Opens when avatar is clicked */}
+        {showProfileModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowProfileModal(false)}>
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-900">Edit Profile</h2>
+                <button
+                  onClick={() => setShowProfileModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
               
               {/* Name Input */}
               <div className="mb-6">
@@ -541,11 +550,17 @@ export default function HomeDashboard() {
               {/* Action Buttons */}
               <div className="flex gap-3">
                 <button
-                  onClick={handleProfileSetupComplete}
-                  disabled={isSavingName || !editedName.trim() || !selectedIcon}
+                  onClick={() => setShowProfileModal(false)}
+                  className="px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleProfileModalSave}
+                  disabled={isSavingName || !editedName.trim()}
                   className="flex-1 px-4 py-3 bg-[#014421] text-white rounded-lg font-semibold hover:bg-[#013320] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isSavingName ? 'Saving...' : 'Save Profile'}
+                  {isSavingName ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </div>
@@ -555,13 +570,16 @@ export default function HomeDashboard() {
         {/* Top Section - Premium Header */}
         <div className="px-5 pt-6 pb-4 flex items-center justify-between mb-4 bg-white">
           <div className="flex items-center gap-3">
-            <div className="w-14 h-14 rounded-full overflow-hidden ring-2 ring-gray-100 shadow-sm flex items-center justify-center text-3xl bg-white">
+            <button
+              onClick={() => setShowProfileModal(true)}
+              className="w-14 h-14 rounded-full overflow-hidden ring-2 ring-gray-100 shadow-sm flex items-center justify-center text-3xl bg-white cursor-pointer hover:ring-[#014421] transition-all"
+            >
               {selectedIcon ? (
                 GOLF_ICONS.find(icon => icon.id === selectedIcon)?.emoji || '👤'
               ) : (
                 '👤'
               )}
-            </div>
+            </button>
             <div className="flex-1">
               <p className="text-gray-400 text-xs">Welcome back,</p>
               {isEditingName ? (
