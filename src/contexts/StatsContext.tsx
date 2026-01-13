@@ -55,11 +55,14 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
 
   // Load rounds from database
+  // Check Dashboard Fetch: Don't require user.id - fetch ALL rounds even if user is not logged in
+  // Profile Mapping: Rounds with user_id that doesn't exist in profiles will still show (with 'Unknown User')
   const loadRounds = async () => {
+    // Verify App State: Don't block fetching if user.id is missing - fetch all rounds anyway
+    // This ensures rounds show up even if user state is temporarily unavailable
     if (!user?.id) {
-      setRounds([]);
-      setLoading(false);
-      return;
+      console.warn('StatsContext: No user.id, but attempting to fetch rounds anyway (for leaderboard)');
+      // Don't return early - continue to fetch all rounds
     }
 
     try {
@@ -67,7 +70,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       const supabase = createClient();
 
       console.log('StatsContext: Fetching ALL rounds for leaderboard (not filtering by user_id)');
-      console.log('StatsContext: User object:', { id: user.id, email: user.email, fullName: user.fullName });
+      console.log('StatsContext: User object:', user ? { id: user.id, email: user.email, fullName: user.fullName } : 'No user (fetching all rounds anyway)');
       
       // Profile Join: Fetch all rounds and join with profiles table to get full_name
       // Verify Join: Using left join (profiles without !inner) so rounds without profiles are NOT discarded
@@ -179,6 +182,27 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       setRounds(transformedRounds);
       console.log('StatsContext: Loaded rounds from database:', transformedRounds.length);
       console.log('StatsContext: Transformed rounds data:', transformedRounds);
+      
+      // Verify App State: Alert if rounds.length === 0 so we know if data is actually arriving from Supabase
+      if (transformedRounds.length === 0) {
+        console.warn('⚠️ StatsContext: transformedRounds.length === 0 - No rounds data from Supabase');
+        console.warn('⚠️ This could mean:');
+        console.warn('  1. No rounds exist in database');
+        console.warn('  2. RLS policies are blocking access');
+        console.warn('  3. Query is failing silently');
+        // Alert user to check console for details
+        if (typeof window !== 'undefined' && !sessionStorage.getItem('statsContextRoundsAlertShown')) {
+          alert('⚠️ No rounds found in StatsContext!\n\nCheck browser console for details.\n\nThis alert will only show once per session.');
+          sessionStorage.setItem('statsContextRoundsAlertShown', 'true');
+        }
+      } else {
+        console.log('✅ StatsContext: Rounds data loaded successfully:', transformedRounds.length, 'rounds');
+        // Clear alert flag if rounds are found
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('statsContextRoundsAlertShown');
+        }
+      }
+      
       setLoading(false);
     } catch (error) {
       console.error('StatsContext: Error loading rounds from database:', error);

@@ -101,7 +101,30 @@ export default function HomeDashboard() {
   const { user, refreshUser } = useAuth();
   
   // Ensure rounds is always an array, never null or undefined
+  // Check Dashboard Fetch: Ensure we aren't accidentally filtering for a specific ID
   const safeRounds = rounds || [];
+  
+  // Verify App State: Alert if rounds.length === 0 so we know if data is actually arriving from Supabase
+  useEffect(() => {
+    if (safeRounds.length === 0 && user?.id) {
+      console.warn('⚠️ HomeDashboard: rounds.length === 0 - No rounds data from Supabase');
+      console.warn('⚠️ This could mean:');
+      console.warn('  1. No rounds exist in database');
+      console.warn('  2. RLS policies are blocking access');
+      console.warn('  3. Query is failing silently');
+      // Alert user to check console for details
+      if (typeof window !== 'undefined' && !sessionStorage.getItem('roundsAlertShown')) {
+        alert('⚠️ No rounds found!\n\nCheck browser console for details.\n\nThis alert will only show once per session.');
+        sessionStorage.setItem('roundsAlertShown', 'true');
+      }
+    } else if (safeRounds.length > 0) {
+      console.log('✅ HomeDashboard: Rounds data loaded successfully:', safeRounds.length, 'rounds');
+      // Clear alert flag if rounds are found
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('roundsAlertShown');
+      }
+    }
+  }, [safeRounds.length, user?.id]);
   
   // Clean Display: Ensure Home page pulls from profiles.full_name (blake Dowd)
   // Verify Data Source: Force it to display profile?.full_name || user.email
@@ -380,7 +403,13 @@ export default function HomeDashboard() {
   // Check if round is personal best
   const isPersonalBest = (round: { score?: number | null }): boolean => {
     if (!safeRounds || safeRounds.length === 0) return false;
-    const userRounds = safeRounds.filter((r: { score?: number | null }) => r.score !== null && r.score !== undefined);
+    // Check Dashboard Fetch: Filter by score only, NOT by user_id - show all rounds from all users
+    // Profile Mapping: Rounds with user_id that doesn't exist in profiles will still show (with 'Unknown User')
+    const userRounds = safeRounds.filter((r: { score?: number | null; user_id?: string }) => {
+      // Filter by score only - don't filter by user_id
+      // This ensures rounds from all users (including those with missing profiles) are shown
+      return r.score !== null && r.score !== undefined;
+    });
     if (userRounds.length === 0) return false;
     // Bulletproof: Ensure we have valid scores before using Math.min
     const scores = userRounds.map((r: { score?: number | null }) => r.score || 999).filter(s => s !== null && s !== undefined);
