@@ -2119,7 +2119,8 @@ export default function AcademyPage() {
                           <div className="flex-1 min-w-0">
                             <div className={`font-semibold text-sm flex items-center gap-1 ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
                               {entry.name}
-                              {(leaderboardMetric === 'lowGross' || leaderboardMetric === 'lowNett') && entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound && (
+                              {((leaderboardMetric === 'lowGross' && entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound) ||
+                                (leaderboardMetric === 'lowNett' && entry.lowNett !== null && entry.lowNett !== undefined && entry.lowNett === globalLowRound)) && (
                                 <Trophy className="w-3 h-3" style={{ color: '#FFA500' }} />
                               )}
                             </div>
