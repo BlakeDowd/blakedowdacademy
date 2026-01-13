@@ -793,12 +793,13 @@ function getLeaderboardData(
     userName,
   });
   
-  // Filter rounds by timeframe first
+  // Filter rounds by timeframe first - use created_at if available, otherwise fall back to date
   const filteredRounds = rounds.filter(round => {
     if (timeFilter === 'allTime') return true;
-    const roundDate = new Date(round.date);
     const { startDate } = getTimeframeDates(timeFilter);
-    return roundDate >= startDate;
+    // Use created_at for filtering (more accurate for when round was logged)
+    const roundTimestamp = round.created_at ? new Date(round.created_at) : new Date(round.date);
+    return roundTimestamp >= startDate;
   });
   
   // For Low Gross and Low Nett: Filter to only 18-hole rounds
@@ -1994,6 +1995,32 @@ export default function AcademyPage() {
               </button>
             </div>
             
+            {/* Time Filter Buttons */}
+            <div className="flex items-center gap-2 mb-4">
+              {(['week', 'month', 'allTime'] as const).map((filter) => {
+                const labels = {
+                  week: 'Week',
+                  month: 'Month',
+                  allTime: 'All-Time'
+                };
+                
+                return (
+                  <button
+                    key={filter}
+                    onClick={() => setTimeFilter(filter)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                      timeFilter === filter
+                        ? 'text-white'
+                        : 'text-gray-600 bg-gray-100'
+                    }`}
+                    style={timeFilter === filter ? { backgroundColor: '#014421' } : {}}
+                  >
+                    {labels[filter]}
+                  </button>
+                );
+              })}
+            </div>
+            
             {sortedLeaderboard.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <p className="text-sm">No rankings yet. Start logging to take the lead!</p>
@@ -2004,52 +2031,27 @@ export default function AcademyPage() {
                     return (
                       <div
                         key={entry.id}
-                        className={`flex items-center gap-2 p-3 rounded-lg border transition-colors ${
+                        className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 p-3 rounded-lg border transition-colors ${
                           entry.id === 'user' 
                             ? 'border-[#FFA500]' 
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
-                        <div className="flex-shrink-0 w-10 text-center">
+                        <div className="w-10 text-center">
                           <span className={`text-sm font-bold ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-600'}`}>
                             #{entry.rank}
                           </span>
                         </div>
-                        <div className="flex-1 min-w-0">
+                        <div className="min-w-0">
                           <div className={`font-semibold text-sm flex items-center gap-1 ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
                             {entry.name}
-                            {(leaderboardMetric === 'lowGross' || leaderboardMetric === 'lowNett') && entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound && (
+                            {((leaderboardMetric === 'lowGross' && entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound) ||
+                              (leaderboardMetric === 'lowNett' && entry.lowNett !== null && entry.lowNett !== undefined && entry.lowNett === globalLowRound)) && (
                               <Trophy className="w-3 h-3" style={{ color: '#FFA500' }} />
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-3 text-xs">
-                          {entry.lowRound !== null && entry.lowRound !== undefined && (
-                            <div className="text-right min-w-[50px]">
-                              <span className="text-gray-500 block">Gross</span>
-                              <span className="font-semibold text-gray-700">{entry.lowRound}</span>
-                            </div>
-                          )}
-                          {entry.lowNett !== null && entry.lowNett !== undefined && (
-                            <div className="text-right min-w-[50px]">
-                              <span className="text-gray-500 block">Nett</span>
-                              <span className="font-semibold text-gray-700">{entry.lowNett}</span>
-                            </div>
-                          )}
-                          {entry.birdieCount !== undefined && entry.birdieCount > 0 && (
-                            <div className="text-right min-w-[50px]">
-                              <span className="text-gray-500 block">Birdies</span>
-                              <span className="font-semibold text-gray-700">{entry.birdieCount}</span>
-                            </div>
-                          )}
-                          {entry.eagleCount !== undefined && entry.eagleCount > 0 && (
-                            <div className="text-right min-w-[50px]">
-                              <span className="text-gray-500 block">Eagles</span>
-                              <span className="font-semibold text-gray-700">{entry.eagleCount}</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center gap-2">
                           <span className="text-sm font-bold whitespace-nowrap" style={{ color: '#FFA500' }}>
                             {formatLeaderboardValue(entry.value, leaderboardMetric)}
                           </span>
@@ -2102,7 +2104,7 @@ export default function AcademyPage() {
                       return (
                         <div
                           key={entry.id}
-                          className={`flex items-center gap-2 p-3 rounded-lg border transition-colors ${
+                          className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 p-3 rounded-lg border transition-colors ${
                             entry.id === 'user' 
                               ? 'border-[#FFA500]' 
                               : isTop3
@@ -2110,13 +2112,13 @@ export default function AcademyPage() {
                               : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
-                          <div className="flex-shrink-0 w-12 text-center">
+                          <div className="w-12 text-center">
                             {isTop3 && entry.rank === 1 && <Crown className="w-5 h-5 mx-auto mb-1" style={{ color: '#FFA500' }} />}
                             <span className={`text-sm font-bold ${entry.id === 'user' || isTop3 ? 'text-[#014421]' : 'text-gray-600'}`}>
                               #{entry.rank}
                             </span>
                           </div>
-                          <div className="flex-1 min-w-0">
+                          <div className="min-w-0">
                             <div className={`font-semibold text-sm flex items-center gap-1 ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
                               {entry.name}
                               {((leaderboardMetric === 'lowGross' && entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound) ||
@@ -2125,33 +2127,7 @@ export default function AcademyPage() {
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-3 text-xs">
-                            {entry.lowRound !== null && entry.lowRound !== undefined && (
-                              <div className="text-right min-w-[50px]">
-                                <span className="text-gray-500 block">Gross</span>
-                                <span className="font-semibold text-gray-700">{entry.lowRound}</span>
-                              </div>
-                            )}
-                            {entry.lowNett !== null && entry.lowNett !== undefined && (
-                              <div className="text-right min-w-[50px]">
-                                <span className="text-gray-500 block">Nett</span>
-                                <span className="font-semibold text-gray-700">{entry.lowNett}</span>
-                              </div>
-                            )}
-                            {entry.birdieCount !== undefined && entry.birdieCount > 0 && (
-                              <div className="text-right min-w-[50px]">
-                                <span className="text-gray-500 block">Birdies</span>
-                                <span className="font-semibold text-gray-700">{entry.birdieCount}</span>
-                              </div>
-                            )}
-                            {entry.eagleCount !== undefined && entry.eagleCount > 0 && (
-                              <div className="text-right min-w-[50px]">
-                                <span className="text-gray-500 block">Eagles</span>
-                                <span className="font-semibold text-gray-700">{entry.eagleCount}</span>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="flex items-center gap-2">
                             <span className="text-sm font-bold whitespace-nowrap" style={{ color: '#FFA500' }}>
                               {formatLeaderboardValue(entry.value, leaderboardMetric)}
                             </span>
