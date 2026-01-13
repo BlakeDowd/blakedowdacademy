@@ -91,13 +91,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .eq('id', supabaseUser.id)
             .single();
 
-          // Auto-create profile if it doesn't exist
-          if (profileError && profileError.code === 'PGRST116') {
-            console.log('AuthContext: Profile not found, creating new profile...');
+          // Auto-create profile if it doesn't exist (id matches auth.uid())
+          if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('No rows'))) {
+            console.log('AuthContext: Profile not found, creating new profile with id:', supabaseUser.id);
             const { data: newProfile, error: createError } = await supabase
               .from('profiles')
               .insert({
-                id: supabaseUser.id,
+                id: supabaseUser.id, // This matches auth.uid() - ensures profile belongs to the right student
                 full_name: supabaseUser.email?.split('@')[0] || 'User',
                 created_at: new Date().toISOString(),
               })
@@ -108,7 +108,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               console.error('AuthContext: Error creating profile:', createError);
             } else {
               profile = newProfile;
-              console.log('AuthContext: Profile created successfully');
+              console.log('AuthContext: Profile created successfully with id:', newProfile?.id);
+            }
+          } else if (!profile && !profileError) {
+            // Fallback: if profile is null but no error, try to create it
+            console.log('AuthContext: Profile is null, creating new profile with id:', supabaseUser.id);
+            const { data: newProfile, error: createError } = await supabase
+              .from('profiles')
+              .insert({
+                id: supabaseUser.id,
+                full_name: supabaseUser.email?.split('@')[0] || 'User',
+                created_at: new Date().toISOString(),
+              })
+              .select('initial_handicap, full_name, display_name, name, created_at')
+              .single();
+            
+            if (!createError && newProfile) {
+              profile = newProfile;
+              console.log('AuthContext: Profile created successfully (fallback)');
             }
           }
 
@@ -188,13 +205,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               .eq('id', session.user.id)
               .single();
 
-            // Auto-create profile if it doesn't exist
-            if (profileError && profileError.code === 'PGRST116') {
-              console.log('AuthContext: Profile not found, creating new profile...');
+            // Auto-create profile if it doesn't exist (id matches auth.uid())
+            if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('No rows'))) {
+              console.log('AuthContext: Profile not found, creating new profile with id:', session.user.id);
               const { data: newProfile, error: createError } = await supabase
                 .from('profiles')
                 .insert({
-                  id: session.user.id,
+                  id: session.user.id, // This matches auth.uid() - ensures profile belongs to the right student
                   full_name: session.user.email?.split('@')[0] || 'User',
                   created_at: new Date().toISOString(),
                 })
@@ -205,7 +222,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 console.error('AuthContext: Error creating profile:', createError);
               } else {
                 profile = newProfile;
-                console.log('AuthContext: Profile created successfully');
+                console.log('AuthContext: Profile created successfully with id:', newProfile?.id);
+              }
+            } else if (!profile && !profileError) {
+              // Fallback: if profile is null but no error, try to create it
+              console.log('AuthContext: Profile is null, creating new profile with id:', session.user.id);
+              const { data: newProfile, error: createError } = await supabase
+                .from('profiles')
+                .insert({
+                  id: session.user.id,
+                  full_name: session.user.email?.split('@')[0] || 'User',
+                  created_at: new Date().toISOString(),
+                })
+                .select('initial_handicap, full_name, display_name, name, created_at')
+                .single();
+              
+              if (!createError && newProfile) {
+                profile = newProfile;
+                console.log('AuthContext: Profile created successfully (fallback)');
               }
             }
 
@@ -286,13 +320,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('id', supabaseUser.id)
         .single();
 
-      // Auto-create profile if it doesn't exist
-      if (profileError && profileError.code === 'PGRST116') {
-        console.log('refreshUser: Profile not found, creating new profile...');
+      // Auto-create profile if it doesn't exist (id matches auth.uid())
+      if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('No rows'))) {
+        console.log('refreshUser: Profile not found, creating new profile with id:', supabaseUser.id);
         const { data: newProfile, error: createError } = await supabase
           .from('profiles')
           .insert({
-            id: supabaseUser.id,
+            id: supabaseUser.id, // This matches auth.uid() - ensures profile belongs to the right student
             full_name: supabaseUser.email?.split('@')[0] || 'User',
             created_at: new Date().toISOString(),
           })
@@ -303,7 +337,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error('refreshUser: Error creating profile:', createError);
         } else {
           profile = newProfile;
-          console.log('refreshUser: Profile created successfully');
+          console.log('refreshUser: Profile created successfully with id:', newProfile?.id);
+        }
+      } else if (!profile && !profileError) {
+        // Fallback: if profile is null but no error, try to create it
+        console.log('refreshUser: Profile is null, creating new profile with id:', supabaseUser.id);
+        const { data: newProfile, error: createError } = await supabase
+          .from('profiles')
+          .insert({
+            id: supabaseUser.id,
+            full_name: supabaseUser.email?.split('@')[0] || 'User',
+            created_at: new Date().toISOString(),
+          })
+          .select('initial_handicap, full_name, display_name, name, created_at')
+          .single();
+        
+        if (!createError && newProfile) {
+          profile = newProfile;
+          console.log('refreshUser: Profile created successfully (fallback)');
         }
       }
 
@@ -353,13 +404,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq('id', data.user.id)
           .single();
         
-        // Auto-create profile if it doesn't exist
-        if (profileError && profileError.code === 'PGRST116') {
-          console.log('Login: Profile not found, creating new profile...');
+        // Auto-create profile if it doesn't exist (id matches auth.uid())
+        if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('No rows'))) {
+          console.log('Login: Profile not found, creating new profile with id:', data.user.id);
           const { data: newProfile, error: createError } = await supabase
             .from('profiles')
             .insert({
-              id: data.user.id,
+              id: data.user.id, // This matches auth.uid() - ensures profile belongs to the right student
               full_name: data.user.email?.split('@')[0] || 'User',
               created_at: new Date().toISOString(),
             })
@@ -370,7 +421,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.error('Login: Error creating profile:', createError);
           } else {
             profile = newProfile;
-            console.log('Login: Profile created successfully');
+            console.log('Login: Profile created successfully with id:', newProfile?.id);
+          }
+        } else if (!profileData && !profileError) {
+          // Fallback: if profile is null but no error, try to create it
+          console.log('Login: Profile is null, creating new profile with id:', data.user.id);
+          const { data: newProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert({
+              id: data.user.id,
+              full_name: data.user.email?.split('@')[0] || 'User',
+              created_at: new Date().toISOString(),
+            })
+            .select('initial_handicap, full_name, display_name, name, created_at')
+            .single();
+          
+          if (!createError && newProfile) {
+            profile = newProfile;
+            console.log('Login: Profile created successfully (fallback)');
           }
         } else {
           profile = profileData;

@@ -1134,13 +1134,13 @@ export default function AcademyPage() {
         .update({ full_name: editedName.trim() })
         .eq('id', user.id);
 
-      // If update fails because profile doesn't exist, create it
-      if (error && error.code === 'PGRST116') {
-        console.log('Profile not found, creating new profile...');
+      // If update fails because profile doesn't exist, create it (id matches auth.uid())
+      if (error && (error.code === 'PGRST116' || error.message?.includes('No rows'))) {
+        console.log('Profile not found, creating new profile with id:', user.id);
         const { error: createError } = await supabase
           .from('profiles')
           .insert({
-            id: user.id,
+            id: user.id, // This matches auth.uid() - ensures profile belongs to the right student
             full_name: editedName.trim(),
             created_at: new Date().toISOString(),
           });
@@ -1150,6 +1150,8 @@ export default function AcademyPage() {
           alert('Failed to create profile. Please try again.');
           setIsSavingName(false);
           return;
+        } else {
+          console.log('Profile created successfully with id:', user.id);
         }
       } else if (error) {
         console.error('Error updating full_name:', error);
