@@ -1179,11 +1179,12 @@ export default function AcademyPage() {
         await refreshUser();
       }
       
-      // Close edit mode immediately
+      // Close edit mode immediately for instant visual feedback
       setIsEditingName(false);
       
       // Use router.refresh() to force a full page refresh which ensures all data is fresh
       // This will recalculate userName from user.fullName and update the leaderboard
+      // The 'Welcome back' text will immediately show the new name
       router.refresh();
     } catch (error) {
       console.error('Error saving name:', error);
