@@ -829,17 +829,6 @@ export default function HomeDashboard() {
           )}
         </div>
 
-        {/* Trophy Case Section - Moved to Bottom */}
-        <div className="px-5 mb-6">
-          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Trophy Case</h2>
-            <div className="text-center py-8">
-              <Trophy className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p className="text-sm text-gray-500">No trophies yet. Keep practicing!</p>
-            </div>
-          </div>
-        </div>
-
         {/* Recent Scores */}
         <div className="px-5 mb-6">
           <div className="flex items-center justify-between mb-3">
