@@ -15,8 +15,10 @@ interface LeaderboardEntry {
   tier: 'Bronze' | 'Silver' | 'Gold' | 'Platinum';
   previousRank?: number; // For trend arrows
   avatar?: string; // Avatar initial or emoji
-  lowRound?: number | null; // Lowest score
+  lowRound?: number | null; // Lowest gross score (18-hole)
+  lowNett?: number | null; // Lowest nett score (18-hole)
   birdieCount?: number; // Total birdies
+  eagleCount?: number; // Total eagles
 }
 
 interface WeeklyPlan {
@@ -748,7 +750,7 @@ function getMockLeaderboard(
 }
 
 // Format leaderboard value for display (used in main XP leaderboard)
-function formatLeaderboardValue(value: number, metric: 'xp' | 'library' | 'practice' | 'rounds' | 'drills' | 'lowGross' | 'birdies') {
+function formatLeaderboardValue(value: number, metric: 'xp' | 'library' | 'practice' | 'rounds' | 'drills' | 'lowGross' | 'lowNett' | 'birdies' | 'eagles') {
   switch (metric) {
     case 'xp':
       return `${value.toLocaleString()} XP`;
@@ -761,9 +763,13 @@ function formatLeaderboardValue(value: number, metric: 'xp' | 'library' | 'pract
     case 'drills':
       return `${value} Drill${value !== 1 ? 's' : ''}`;
     case 'lowGross':
-      return `${value} Stroke${value !== 1 ? 's' : ''}`;
+      return `${value} Gross`;
+    case 'lowNett':
+      return `${value} Nett`;
     case 'birdies':
       return `${value} Birdie${value !== 1 ? 's' : ''}`;
+    case 'eagles':
+      return `${value} Eagle${value !== 1 ? 's' : ''}`;
     default:
       return `${value}`;
   }
@@ -771,7 +777,7 @@ function formatLeaderboardValue(value: number, metric: 'xp' | 'library' | 'pract
 
 // Get leaderboard data for selected metric (main XP leaderboard)
 function getLeaderboardData(
-  metric: 'xp' | 'library' | 'practice' | 'rounds' | 'drills' | 'lowGross' | 'birdies',
+  metric: 'xp' | 'library' | 'practice' | 'rounds' | 'drills' | 'lowGross' | 'lowNett' | 'birdies' | 'eagles',
   timeFilter: 'week' | 'month' | 'allTime',
   rounds: any[],
   totalXP: number,
@@ -795,15 +801,29 @@ function getLeaderboardData(
     return roundDate >= startDate;
   });
   
-  // For Low Gross: Filter to only 18-hole rounds and get minimum raw score
+  // For Low Gross and Low Nett: Filter to only 18-hole rounds
   const eighteenHoleRounds = filteredRounds.filter(round => round.holes === 18);
   const valid18HoleScores = eighteenHoleRounds
     .map(r => r.score)
     .filter(score => score !== null && score !== undefined && score > 0);
   const lowGross = valid18HoleScores.length > 0 ? Math.min(...valid18HoleScores) : null;
   
+  // Calculate Low Nett: Score minus Handicap (only for 18-hole rounds with valid score and handicap)
+  const validNettRounds = eighteenHoleRounds.filter(round => 
+    round.score !== null && 
+    round.score !== undefined && 
+    round.score > 0 && 
+    round.handicap !== null && 
+    round.handicap !== undefined
+  );
+  const nettScores = validNettRounds.map(round => round.score! - round.handicap!);
+  const lowNett = nettScores.length > 0 ? Math.min(...nettScores) : null;
+  
   // For Birdies: Sum all birdies from all rounds (not just 18-hole)
   const birdieCount = filteredRounds.reduce((sum, round) => sum + (round.birdies || 0), 0);
+  
+  // For Eagles: Sum all eagles from all rounds (not just 18-hole)
+  const eagleCount = filteredRounds.reduce((sum, round) => sum + (round.eagles || 0), 0);
   
   let userValue: number;
   
@@ -826,21 +846,29 @@ function getLeaderboardData(
     case 'lowGross':
       userValue = lowGross !== null ? lowGross : 0; // Use 0 if no low gross (will be filtered out)
       break;
+    case 'lowNett':
+      userValue = lowNett !== null ? lowNett : 0; // Use 0 if no low nett (will be filtered out)
+      break;
     case 'birdies':
       userValue = birdieCount;
+      break;
+    case 'eagles':
+      userValue = eagleCount;
       break;
     default:
       userValue = 0;
   }
   
   // If user has no activity, return empty leaderboard
-  // For lowGross, also check if lowGross is null
-  if ((userValue === 0 && metric !== 'lowGross' && metric !== 'birdies') || (metric === 'lowGross' && lowGross === null)) {
+  // For lowGross and lowNett, also check if they are null
+  if ((userValue === 0 && metric !== 'lowGross' && metric !== 'lowNett' && metric !== 'birdies' && metric !== 'eagles') || 
+      (metric === 'lowGross' && lowGross === null) || 
+      (metric === 'lowNett' && lowNett === null)) {
     return {
       top3: [],
       all: [],
       userRank: 0,
-      userValue: metric === 'lowGross' ? 0 : userValue
+      userValue: (metric === 'lowGross' || metric === 'lowNett') ? 0 : userValue
     };
   }
   
@@ -849,19 +877,26 @@ function getLeaderboardData(
     id: 'user',
     name: userName, // Use actual full_name instead of 'You'
     avatar: userName.split(' ').map(n => n[0]).join('') || 'Y',
-    value: metric === 'lowGross' ? (lowGross !== null ? lowGross : 0) : userValue,
+    value: metric === 'lowGross' ? (lowGross !== null ? lowGross : 0) : 
+           metric === 'lowNett' ? (lowNett !== null ? lowNett : 0) : userValue,
     previousRank: undefined,
     lowRound: lowGross, // Keep for trophy icon logic
-    birdieCount: birdieCount
+    lowNett: lowNett,
+    birdieCount: birdieCount,
+    eagleCount: eagleCount
   };
   
-  // Sort by value - descending for most metrics, ascending for lowGross (lower score is better)
+  // Sort by value - descending for most metrics, ascending for lowGross and lowNett (lower score is better)
   const sorted = [userEntry].sort((a, b) => {
-    if (metric === 'lowGross') {
-      // For low gross, lower is better, so sort ascending
+    if (metric === 'lowGross' || metric === 'lowNett') {
+      // For low gross/nett, lower is better, so sort ascending
       // Handle null values (999 is placeholder for sorting, but shouldn't appear)
-      const aScore = a.lowRound !== null && a.lowRound !== undefined ? a.lowRound : 999;
-      const bScore = b.lowRound !== null && b.lowRound !== undefined ? b.lowRound : 999;
+      const aScore = metric === 'lowGross' 
+        ? (a.lowRound !== null && a.lowRound !== undefined ? a.lowRound : 999)
+        : (a.lowNett !== null && a.lowNett !== undefined ? a.lowNett : 999);
+      const bScore = metric === 'lowGross'
+        ? (b.lowRound !== null && b.lowRound !== undefined ? b.lowRound : 999)
+        : (b.lowNett !== null && b.lowNett !== undefined ? b.lowNett : 999);
       return aScore - bScore;
     } else {
       // For all other metrics, higher is better, so sort descending
@@ -948,7 +983,7 @@ export default function AcademyPage() {
   const [showFullLeaderboard, setShowFullLeaderboard] = useState(false);
   const [leaderboardSearch, setLeaderboardSearch] = useState('');
   const [selectedTrophy, setSelectedTrophy] = useState<TrophyData | null>(null);
-  const [leaderboardMetric, setLeaderboardMetric] = useState<'xp' | 'library' | 'practice' | 'rounds' | 'drills' | 'lowGross' | 'birdies'>('xp');
+  const [leaderboardMetric, setLeaderboardMetric] = useState<'xp' | 'library' | 'practice' | 'rounds' | 'drills' | 'lowGross' | 'lowNett' | 'birdies' | 'eagles'>('xp');
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
@@ -1126,9 +1161,9 @@ export default function AcademyPage() {
   const ranks4to7 = currentLeaderboard.all.slice(3, 7);
   const sortedLeaderboard = currentLeaderboard.all;
   
-  // Find the lowest round across all entries for trophy icon (only relevant for lowGross metric)
+  // Find the lowest round across all entries for trophy icon (only relevant for lowGross and lowNett metrics)
   const allLowRounds: number[] = sortedLeaderboard
-    .map(entry => entry.lowRound)
+    .map(entry => leaderboardMetric === 'lowNett' ? entry.lowNett : entry.lowRound)
     .filter((score): score is number => score !== null && score !== undefined && score > 0) as number[];
   const globalLowRound = allLowRounds.length > 0 ? Math.min(...allLowRounds) : null;
 
@@ -1848,7 +1883,7 @@ export default function AcademyPage() {
         {/* Metric Selection - Wrapping Pills */}
         <div className="mb-4 w-full">
           <div className="flex items-center gap-2 flex-wrap pb-2">
-            {(['xp', 'library', 'practice', 'rounds', 'drills', 'lowGross', 'birdies'] as const).map((metric) => {
+            {(['xp', 'library', 'practice', 'rounds', 'drills', 'lowGross', 'lowNett', 'birdies', 'eagles'] as const).map((metric) => {
               const labels = {
                 xp: 'XP',
                 library: 'Library',
@@ -1856,7 +1891,9 @@ export default function AcademyPage() {
                 rounds: 'Rounds',
                 drills: 'Drills',
                 lowGross: 'Low Gross',
-                birdies: 'Birdies'
+                lowNett: 'Low Nett',
+                birdies: 'Birdies',
+                eagles: 'Eagles'
               };
               
               return (
@@ -1967,7 +2004,7 @@ export default function AcademyPage() {
                     return (
                       <div
                         key={entry.id}
-                        className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                        className={`flex items-center gap-2 p-3 rounded-lg border transition-colors ${
                           entry.id === 'user' 
                             ? 'border-[#FFA500]' 
                             : 'border-gray-200 hover:border-gray-300'
@@ -1981,13 +2018,39 @@ export default function AcademyPage() {
                         <div className="flex-1 min-w-0">
                           <div className={`font-semibold text-sm flex items-center gap-1 ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
                             {entry.name}
-                            {leaderboardMetric === 'lowGross' && entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound && (
+                            {(leaderboardMetric === 'lowGross' || leaderboardMetric === 'lowNett') && entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound && (
                               <Trophy className="w-3 h-3" style={{ color: '#FFA500' }} />
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold" style={{ color: '#FFA500' }}>
+                        <div className="flex items-center gap-3 text-xs">
+                          {entry.lowRound !== null && entry.lowRound !== undefined && (
+                            <div className="text-right min-w-[50px]">
+                              <span className="text-gray-500 block">Gross</span>
+                              <span className="font-semibold text-gray-700">{entry.lowRound}</span>
+                            </div>
+                          )}
+                          {entry.lowNett !== null && entry.lowNett !== undefined && (
+                            <div className="text-right min-w-[50px]">
+                              <span className="text-gray-500 block">Nett</span>
+                              <span className="font-semibold text-gray-700">{entry.lowNett}</span>
+                            </div>
+                          )}
+                          {entry.birdieCount !== undefined && entry.birdieCount > 0 && (
+                            <div className="text-right min-w-[50px]">
+                              <span className="text-gray-500 block">Birdies</span>
+                              <span className="font-semibold text-gray-700">{entry.birdieCount}</span>
+                            </div>
+                          )}
+                          {entry.eagleCount !== undefined && entry.eagleCount > 0 && (
+                            <div className="text-right min-w-[50px]">
+                              <span className="text-gray-500 block">Eagles</span>
+                              <span className="font-semibold text-gray-700">{entry.eagleCount}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-sm font-bold whitespace-nowrap" style={{ color: '#FFA500' }}>
                             {formatLeaderboardValue(entry.value, leaderboardMetric)}
                           </span>
                           {entry.movedUp && (
@@ -2039,7 +2102,7 @@ export default function AcademyPage() {
                       return (
                         <div
                           key={entry.id}
-                          className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                          className={`flex items-center gap-2 p-3 rounded-lg border transition-colors ${
                             entry.id === 'user' 
                               ? 'border-[#FFA500]' 
                               : isTop3
@@ -2056,13 +2119,39 @@ export default function AcademyPage() {
                           <div className="flex-1 min-w-0">
                             <div className={`font-semibold text-sm flex items-center gap-1 ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
                               {entry.name}
-                              {leaderboardMetric === 'lowGross' && entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound && (
+                              {(leaderboardMetric === 'lowGross' || leaderboardMetric === 'lowNett') && entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound && (
                                 <Trophy className="w-3 h-3" style={{ color: '#FFA500' }} />
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold" style={{ color: '#FFA500' }}>
+                          <div className="flex items-center gap-3 text-xs">
+                            {entry.lowRound !== null && entry.lowRound !== undefined && (
+                              <div className="text-right min-w-[50px]">
+                                <span className="text-gray-500 block">Gross</span>
+                                <span className="font-semibold text-gray-700">{entry.lowRound}</span>
+                              </div>
+                            )}
+                            {entry.lowNett !== null && entry.lowNett !== undefined && (
+                              <div className="text-right min-w-[50px]">
+                                <span className="text-gray-500 block">Nett</span>
+                                <span className="font-semibold text-gray-700">{entry.lowNett}</span>
+                              </div>
+                            )}
+                            {entry.birdieCount !== undefined && entry.birdieCount > 0 && (
+                              <div className="text-right min-w-[50px]">
+                                <span className="text-gray-500 block">Birdies</span>
+                                <span className="font-semibold text-gray-700">{entry.birdieCount}</span>
+                              </div>
+                            )}
+                            {entry.eagleCount !== undefined && entry.eagleCount > 0 && (
+                              <div className="text-right min-w-[50px]">
+                                <span className="text-gray-500 block">Eagles</span>
+                                <span className="font-semibold text-gray-700">{entry.eagleCount}</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-sm font-bold whitespace-nowrap" style={{ color: '#FFA500' }}>
                               {formatLeaderboardValue(entry.value, leaderboardMetric)}
                             </span>
                             {entry.movedUp && (
