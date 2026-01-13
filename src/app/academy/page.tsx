@@ -1102,10 +1102,18 @@ export default function AcademyPage() {
   const userTier = getTier();
   const userLevel = getLevel(userTier);
 
-  // Get user name - force 'Blake Dowd' as fallback
+  // Get user name - fetch from profiles.full_name, fallback to email username or 'User'
   const getUserName = () => {
-    // Try fullName with fallback to 'Blake Dowd'
-    return user?.fullName || 'Blake Dowd';
+    // Try fullName from profiles table first
+    if (user?.fullName) {
+      return user.fullName;
+    }
+    // Fallback to email username if available
+    if (user?.email) {
+      return user.email.split('@')[0];
+    }
+    // Final fallback
+    return 'User';
   };
 
   const userName = getUserName();

@@ -129,44 +129,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           }
 
-          // One-time fix: Update 'bdowd' or missing full_name to 'Blake Dowd' if email contains bdowd
-          if ((supabaseUser.email && supabaseUser.email.includes('bdowd')) && (!profile?.full_name || profile?.full_name === 'bdowd')) {
-            const { error: updateError } = await supabase
-              .from('profiles')
-              .update({ full_name: 'Blake Dowd' })
-              .eq('id', supabaseUser.id);
-            
-            if (updateError) {
-              console.error('Error updating full_name:', updateError);
-            }
-            
-            // Refetch profile after update
-            const { data: updatedProfile } = await supabase
-              .from('profiles')
-              .select('initial_handicap, full_name, display_name, name, created_at')
-              .eq('id', supabaseUser.id)
-              .single();
-            
-            setUser({
-              id: supabaseUser.id,
-              email: supabaseUser.email || '',
-              fullName: updatedProfile?.full_name || 'Blake Dowd',
-              display_name: updatedProfile?.display_name,
-              name: updatedProfile?.name,
-              initialHandicap: updatedProfile?.initial_handicap,
-              createdAt: updatedProfile?.created_at || supabaseUser.created_at,
-            });
-          } else {
-            setUser({
-              id: supabaseUser.id,
-              email: supabaseUser.email || '',
-              fullName: profile?.full_name,
-              display_name: profile?.display_name,
-              name: profile?.name,
-              initialHandicap: profile?.initial_handicap,
-              createdAt: profile?.created_at || supabaseUser.created_at,
-            });
-          }
+          // Set user with profile data from profiles table
+          setUser({
+            id: supabaseUser.id,
+            email: supabaseUser.email || '',
+            fullName: profile?.full_name, // Fetch from profiles.full_name
+            display_name: profile?.display_name,
+            name: profile?.name,
+            initialHandicap: profile?.initial_handicap,
+            createdAt: profile?.created_at || supabaseUser.created_at,
+          });
           setIsAuthenticated(true);
           console.log('AuthContext: Initial check complete, user loaded');
         } catch (error) {
@@ -243,44 +215,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               }
             }
 
-            // One-time fix: Update 'bdowd' or missing full_name to 'Blake Dowd' if email contains bdowd
-            if ((session.user.email && session.user.email.includes('bdowd')) && (!profile?.full_name || profile?.full_name === 'bdowd')) {
-              const { error: updateError } = await supabase
-                .from('profiles')
-                .update({ full_name: 'Blake Dowd' })
-                .eq('id', session.user.id);
-              
-              if (updateError) {
-                console.error('Error updating full_name:', updateError);
-              }
-              
-              // Refetch profile after update
-              const { data: updatedProfile } = await supabase
-                .from('profiles')
-                .select('initial_handicap, full_name, display_name, name, created_at')
-                .eq('id', session.user.id)
-                .single();
-              
-              setUser({
-                id: session.user.id,
-                email: session.user.email || '',
-                fullName: updatedProfile?.full_name || 'Blake Dowd',
-                display_name: updatedProfile?.display_name,
-                name: updatedProfile?.name,
-                initialHandicap: updatedProfile?.initial_handicap,
-                createdAt: updatedProfile?.created_at || session.user.created_at,
-              });
-            } else {
-              setUser({
-                id: session.user.id,
-                email: session.user.email || '',
-                fullName: profile?.full_name,
-                display_name: profile?.display_name,
-                name: profile?.name,
-                initialHandicap: profile?.initial_handicap,
-                createdAt: profile?.created_at || session.user.created_at,
-              });
-            }
+            // Set user with profile data from profiles table
+            setUser({
+              id: session.user.id,
+              email: session.user.email || '',
+              fullName: profile?.full_name, // Fetch from profiles.full_name
+              display_name: profile?.display_name,
+              name: profile?.name,
+              initialHandicap: profile?.initial_handicap,
+              createdAt: profile?.created_at || session.user.created_at,
+            });
             setIsAuthenticated(true);
             console.log('AuthContext: User authenticated and profile loaded');
           } catch (error) {
