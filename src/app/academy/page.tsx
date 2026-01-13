@@ -1281,44 +1281,6 @@ export default function AcademyPage() {
           </div>
         </div>
 
-        {/* Global Timeframe Toggle */}
-        <div className="mb-6 mt-4">
-          <div className="flex items-center justify-center gap-2 bg-white rounded-2xl p-4 border border-gray-200 shadow-sm">
-            <button
-              onClick={() => setTimeFilter('week')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                timeFilter === 'week'
-                  ? 'text-white'
-                  : 'text-gray-600 bg-gray-100'
-              }`}
-              style={timeFilter === 'week' ? { backgroundColor: '#014421' } : {}}
-            >
-              Week
-            </button>
-            <button
-              onClick={() => setTimeFilter('month')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                timeFilter === 'month'
-                  ? 'text-white'
-                  : 'text-gray-600 bg-gray-100'
-              }`}
-              style={timeFilter === 'month' ? { backgroundColor: '#014421' } : {}}
-            >
-              Month
-            </button>
-            <button
-              onClick={() => setTimeFilter('allTime')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                timeFilter === 'allTime'
-                  ? 'text-white'
-                  : 'text-gray-600 bg-gray-100'
-              }`}
-              style={timeFilter === 'allTime' ? { backgroundColor: '#014421' } : {}}
-            >
-              All-Time
-            </button>
-          </div>
-        </div>
 
         {/* Trophy Case - Achievement Gallery */}
         <div className="mb-6 w-full">
@@ -2031,39 +1993,41 @@ export default function AcademyPage() {
                     return (
                       <div
                         key={entry.id}
-                        className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 p-3 rounded-lg border transition-colors ${
+                        className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
                           entry.id === 'user' 
                             ? 'border-[#FFA500]' 
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
-                        <div className="w-10 text-center">
+                        <div className="flex-shrink-0 w-10 text-center">
                           <span className={`text-sm font-bold ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-600'}`}>
                             #{entry.rank}
                           </span>
                         </div>
-                        <div className="min-w-0">
-                          <div className={`font-semibold text-sm flex items-center gap-1 ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
-                            {entry.name}
-                            {((leaderboardMetric === 'lowGross' && entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound) ||
-                              (leaderboardMetric === 'lowNett' && entry.lowNett !== null && entry.lowNett !== undefined && entry.lowNett === globalLowRound)) && (
-                              <Trophy className="w-3 h-3" style={{ color: '#FFA500' }} />
+                        <div className="grid grid-cols-[1fr_100px] items-center gap-3 flex-1 min-w-0">
+                          <div className="min-w-0">
+                            <div className={`font-semibold text-sm flex items-center gap-1 ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
+                              {entry.name}
+                              {((leaderboardMetric === 'lowGross' && entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound) ||
+                                (leaderboardMetric === 'lowNett' && entry.lowNett !== null && entry.lowNett !== undefined && entry.lowNett === globalLowRound)) && (
+                                <Trophy className="w-3 h-3" style={{ color: '#FFA500' }} />
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-end gap-2">
+                            <span className="text-sm font-bold whitespace-nowrap" style={{ color: '#FFA500' }}>
+                              {formatLeaderboardValue(entry.value, leaderboardMetric)}
+                            </span>
+                            {entry.movedUp && (
+                              <TrendingUp className="w-4 h-4 flex-shrink-0" style={{ color: '#10B981' }} />
+                            )}
+                            {entry.movedDown && (
+                              <TrendingDown className="w-4 h-4 flex-shrink-0" style={{ color: '#EF4444' }} />
+                            )}
+                            {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
+                              <div className="w-4 h-4" />
                             )}
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold whitespace-nowrap" style={{ color: '#FFA500' }}>
-                            {formatLeaderboardValue(entry.value, leaderboardMetric)}
-                          </span>
-                          {entry.movedUp && (
-                            <TrendingUp className="w-4 h-4" style={{ color: '#10B981' }} />
-                          )}
-                          {entry.movedDown && (
-                            <TrendingDown className="w-4 h-4" style={{ color: '#EF4444' }} />
-                          )}
-                          {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
-                            <div className="w-4 h-4" />
-                          )}
                         </div>
                       </div>
                     );
@@ -2104,7 +2068,7 @@ export default function AcademyPage() {
                       return (
                         <div
                           key={entry.id}
-                          className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 p-3 rounded-lg border transition-colors ${
+                          className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
                             entry.id === 'user' 
                               ? 'border-[#FFA500]' 
                               : isTop3
@@ -2112,34 +2076,36 @@ export default function AcademyPage() {
                               : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
-                          <div className="w-12 text-center">
+                          <div className="flex-shrink-0 w-12 text-center">
                             {isTop3 && entry.rank === 1 && <Crown className="w-5 h-5 mx-auto mb-1" style={{ color: '#FFA500' }} />}
                             <span className={`text-sm font-bold ${entry.id === 'user' || isTop3 ? 'text-[#014421]' : 'text-gray-600'}`}>
                               #{entry.rank}
                             </span>
                           </div>
-                          <div className="min-w-0">
-                            <div className={`font-semibold text-sm flex items-center gap-1 ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
-                              {entry.name}
-                              {((leaderboardMetric === 'lowGross' && entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound) ||
-                                (leaderboardMetric === 'lowNett' && entry.lowNett !== null && entry.lowNett !== undefined && entry.lowNett === globalLowRound)) && (
-                                <Trophy className="w-3 h-3" style={{ color: '#FFA500' }} />
+                          <div className="grid grid-cols-[1fr_100px] items-center gap-3 flex-1 min-w-0">
+                            <div className="min-w-0">
+                              <div className={`font-semibold text-sm flex items-center gap-1 ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
+                                {entry.name}
+                                {((leaderboardMetric === 'lowGross' && entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound) ||
+                                  (leaderboardMetric === 'lowNett' && entry.lowNett !== null && entry.lowNett !== undefined && entry.lowNett === globalLowRound)) && (
+                                  <Trophy className="w-3 h-3" style={{ color: '#FFA500' }} />
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="text-sm font-bold whitespace-nowrap" style={{ color: '#FFA500' }}>
+                                {formatLeaderboardValue(entry.value, leaderboardMetric)}
+                              </span>
+                              {entry.movedUp && (
+                                <TrendingUp className="w-4 h-4 flex-shrink-0" style={{ color: '#10B981' }} />
+                              )}
+                              {entry.movedDown && (
+                                <TrendingDown className="w-4 h-4 flex-shrink-0" style={{ color: '#EF4444' }} />
+                              )}
+                              {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
+                                <div className="w-4 h-4" />
                               )}
                             </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold whitespace-nowrap" style={{ color: '#FFA500' }}>
-                              {formatLeaderboardValue(entry.value, leaderboardMetric)}
-                            </span>
-                            {entry.movedUp && (
-                              <TrendingUp className="w-4 h-4" style={{ color: '#10B981' }} />
-                            )}
-                            {entry.movedDown && (
-                              <TrendingDown className="w-4 h-4" style={{ color: '#EF4444' }} />
-                            )}
-                            {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
-                              <div className="w-4 h-4" />
-                            )}
                           </div>
                         </div>
                       );
