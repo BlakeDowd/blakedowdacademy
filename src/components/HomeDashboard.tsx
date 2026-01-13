@@ -183,7 +183,7 @@ export default function HomeDashboard() {
     }
   };
   
-  // Handle profile modal save (name and icon)
+  // Bulletproof Save: Update full_name and profile_icon in profiles table
   const handleProfileModalSave = async () => {
     if (!user?.id || !editedName.trim()) {
       alert('Please enter your name.');
@@ -199,7 +199,8 @@ export default function HomeDashboard() {
       
       const newName = editedName.trim();
       
-      // Update ONLY public.profiles table - ONLY use full_name column
+      // Bulletproof Save: Update ONLY full_name and profile_icon in profiles table
+      // Standardized: ONLY use full_name column, never display_name or name
       const { error: profileError } = await supabase
         .from('profiles')
         .update({ 
@@ -217,28 +218,31 @@ export default function HomeDashboard() {
             full_name: newName,
             profile_icon: selectedIcon || null,
             created_at: new Date().toISOString(),
-          })
-          .select();
+          });
         
         if (createError) {
           console.error('Error creating profile:', createError);
           alert('Failed to create profile. Please try again.');
+          setIsSavingName(false);
+          setIsSavingIcon(false);
           return;
         }
       } else if (profileError) {
         console.error('Error updating profile:', profileError);
         alert('Failed to save profile. Please try again.');
+        setIsSavingName(false);
+        setIsSavingIcon(false);
         return;
       }
 
-      // Refresh user context
+      // Refresh user context to sync across app
       if (refreshUser) {
         await refreshUser();
       }
       
       setShowProfileModal(false);
       
-      // Use router.refresh() for automatic update
+      // Force UI Update: Use router.refresh() so name and icon update everywhere instantly
       router.refresh();
     } catch (error) {
       console.error('Error saving profile:', error);
