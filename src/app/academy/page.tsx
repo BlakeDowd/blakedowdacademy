@@ -6,6 +6,7 @@ import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Trophy, Award, Medal, Crown, TrendingUp, TrendingDown, Search, X, Lock, Target, BookOpen, Clock, Zap, Star, Flame, Pencil, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { GOLF_ICONS } from "@/components/IconPicker";
 
 interface LeaderboardEntry {
   id: string;
@@ -687,7 +688,7 @@ function getMockLeaderboard(
   timeFilter: 'week' | 'month' | 'year' | 'allTime',
   rounds: any[],
   userName: string,
-  user?: { initialHandicap?: number } | null
+  user?: { initialHandicap?: number; profileIcon?: string } | null
 ) {
   let userValue: number;
   
@@ -722,7 +723,7 @@ function getMockLeaderboard(
   const userEntry = {
     id: 'user',
     name: userName, // Use actual full_name instead of 'You'
-    avatar: userName.split(' ').map((n: string) => n[0]).join('') || 'Y',
+    avatar: user?.profileIcon || userName.split(' ').map((n: string) => n[0]).join('') || 'Y', // Use profile_icon if available, else initials
     value: userValue,
     handicap: user?.initialHandicap // Include handicap for sorting rounds by skill level
   };
@@ -784,7 +785,8 @@ function getLeaderboardData(
   timeFilter: 'week' | 'month' | 'year' | 'allTime',
   rounds: any[],
   totalXP: number,
-  userName: string
+  userName: string,
+  user?: { profileIcon?: string } | null
 ) {
   // Debug: Log leaderboard calculation inputs
   console.log('Leaderboard Data Debug:', {
@@ -880,7 +882,7 @@ function getLeaderboardData(
   const userEntry = {
     id: 'user',
     name: userName, // Use actual full_name instead of 'You'
-    avatar: userName.split(' ').map(n => n[0]).join('') || 'Y',
+    avatar: user?.profileIcon || userName.split(' ').map(n => n[0]).join('') || 'Y', // Use profile_icon if available, else initials
     value: metric === 'lowGross' ? (lowGross !== null ? lowGross : 0) : 
            metric === 'lowNett' ? (lowNett !== null ? lowNett : 0) : userValue,
     previousRank: undefined,
@@ -1216,7 +1218,7 @@ export default function AcademyPage() {
   };
 
   // Get current leaderboard data - recalculates when timeFilter or leaderboardMetric changes
-  const currentLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName);
+  const currentLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user);
   const top3 = currentLeaderboard.top3;
   const ranks4to7 = currentLeaderboard.all.slice(3, 7);
   const sortedLeaderboard = currentLeaderboard.all;
@@ -1245,19 +1247,25 @@ export default function AcademyPage() {
   const filteredFullLeaderboard = getFilteredFullLeaderboard();
 
 
-  // Circular avatar component
+  // Circular avatar component - displays profile icon or initials
   const CircularAvatar = ({ 
     initial, 
+    iconId,
     size = 60, 
     bgColor = '#FFA500' 
   }: { 
-    initial: string; 
+    initial: string;
+    iconId?: string;
     size?: number; 
     bgColor?: string;
   }) => {
+    // Check if avatar is an icon ID (golf icon) or initials
+    const selectedIcon = iconId ? GOLF_ICONS.find((icon: any) => icon.id === iconId) : null;
+    const isIconId = iconId && GOLF_ICONS.some((icon: any) => icon.id === iconId);
+    
     return (
       <div
-        className="rounded-full flex items-center justify-center text-white font-bold"
+        className="rounded-full flex items-center justify-center overflow-hidden"
         style={{
           width: size,
           height: size,
@@ -1265,7 +1273,13 @@ export default function AcademyPage() {
           fontSize: size * 0.4,
         }}
       >
-        {initial}
+        {isIconId && selectedIcon ? (
+          <div className="w-full h-full flex items-center justify-center p-2" style={{ color: '#014421' }}>
+            {selectedIcon.svg}
+          </div>
+        ) : (
+          <span className="text-white font-bold">{initial}</span>
+        )}
       </div>
     );
   };
@@ -1278,7 +1292,8 @@ export default function AcademyPage() {
           <div className="flex flex-col items-center gap-3">
             {/* Large Circular Avatar */}
             <CircularAvatar 
-              initial={userName.split(' ').map((n: string) => n[0]).join('') || 'J'} 
+              initial={userName.split(' ').map((n: string) => n[0]).join('') || 'J'}
+              iconId={user?.profileIcon}
               size={64}
               bgColor="#FFA500"
             />
@@ -1653,8 +1668,9 @@ export default function AcademyPage() {
                       {/* 2nd Place */}
                       {data.top3[1] && (
                         <div className="flex flex-col items-center">
-                          <CircularAvatar 
-                            initial={data.top3[1].avatar} 
+                          <CircularAvatar
+                            initial={data.top3[1].name[0]}
+                            iconId={data.top3[1].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[1].avatar) ? data.top3[1].avatar : undefined}
                             size={40}
                             bgColor="#C0C0C0"
                           />
@@ -1670,8 +1686,9 @@ export default function AcademyPage() {
                       {data.top3[0] && (
                         <div className="flex flex-col items-center">
                           <Crown className="w-4 h-4 mb-1" style={{ color: '#FFA500' }} />
-                          <CircularAvatar 
-                            initial={data.top3[0].avatar} 
+                          <CircularAvatar
+                            initial={data.top3[0].name[0]}
+                            iconId={data.top3[0].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[0].avatar) ? data.top3[0].avatar : undefined}
                             size={50}
                             bgColor="#FFA500"
                           />
@@ -1686,8 +1703,9 @@ export default function AcademyPage() {
                       {/* 3rd Place */}
                       {data.top3[2] && (
                         <div className="flex flex-col items-center">
-                          <CircularAvatar 
-                            initial={data.top3[2].avatar} 
+                          <CircularAvatar
+                            initial={data.top3[2].name[0]}
+                            iconId={data.top3[2].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[2].avatar) ? data.top3[2].avatar : undefined}
                             size={40}
                             bgColor="#CD7F32"
                           />
@@ -1733,7 +1751,12 @@ export default function AcademyPage() {
                     <div className="flex items-end justify-center gap-2 mb-4">
                       {data.top3[1] && (
                         <div className="flex flex-col items-center">
-                          <CircularAvatar initial={data.top3[1].avatar} size={40} bgColor="#C0C0C0" />
+                          <CircularAvatar 
+                            initial={data.top3[1].name[0]}
+                            iconId={data.top3[1].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[1].avatar) ? data.top3[1].avatar : undefined}
+                            size={40} 
+                            bgColor="#C0C0C0" 
+                          />
                           <div className="text-center mt-1">
                             <div className="text-xs font-bold text-gray-900">#{2}</div>
                             <div className="text-xs font-semibold text-gray-900">{data.top3[1].name}</div>
@@ -1744,7 +1767,12 @@ export default function AcademyPage() {
                       {data.top3[0] && (
                         <div className="flex flex-col items-center">
                           <Crown className="w-4 h-4 mb-1" style={{ color: '#FFA500' }} />
-                          <CircularAvatar initial={data.top3[0].avatar} size={50} bgColor="#FFA500" />
+                          <CircularAvatar 
+                            initial={data.top3[0].name[0]}
+                            iconId={data.top3[0].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[0].avatar) ? data.top3[0].avatar : undefined}
+                            size={50} 
+                            bgColor="#FFA500" 
+                          />
                           <div className="text-center mt-1">
                             <div className="text-sm font-bold text-gray-900">#{1}</div>
                             <div className="text-xs font-semibold text-gray-900">{data.top3[0].name}</div>
@@ -1754,7 +1782,12 @@ export default function AcademyPage() {
                       )}
                       {data.top3[2] && (
                         <div className="flex flex-col items-center">
-                          <CircularAvatar initial={data.top3[2].avatar} size={40} bgColor="#CD7F32" />
+                          <CircularAvatar 
+                            initial={data.top3[2].name[0]}
+                            iconId={data.top3[2].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[2].avatar) ? data.top3[2].avatar : undefined}
+                            size={40} 
+                            bgColor="#CD7F32" 
+                          />
                           <div className="text-center mt-1">
                             <div className="text-xs font-bold text-gray-900">#{3}</div>
                             <div className="text-xs font-semibold text-gray-900">{data.top3[2].name}</div>
@@ -1795,7 +1828,12 @@ export default function AcademyPage() {
                     <div className="flex items-end justify-center gap-2 mb-4">
                       {data.top3[1] && (
                         <div className="flex flex-col items-center">
-                          <CircularAvatar initial={data.top3[1].avatar} size={40} bgColor="#C0C0C0" />
+                          <CircularAvatar 
+                            initial={data.top3[1].name[0]}
+                            iconId={data.top3[1].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[1].avatar) ? data.top3[1].avatar : undefined}
+                            size={40} 
+                            bgColor="#C0C0C0" 
+                          />
                           <div className="text-center mt-1">
                             <div className="text-xs font-bold text-gray-900">#{2}</div>
                             <div className="text-xs font-semibold text-gray-900">{data.top3[1].name}</div>
@@ -1806,7 +1844,12 @@ export default function AcademyPage() {
                       {data.top3[0] && (
                         <div className="flex flex-col items-center">
                           <Crown className="w-4 h-4 mb-1" style={{ color: '#FFA500' }} />
-                          <CircularAvatar initial={data.top3[0].avatar} size={50} bgColor="#FFA500" />
+                          <CircularAvatar 
+                            initial={data.top3[0].name[0]}
+                            iconId={data.top3[0].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[0].avatar) ? data.top3[0].avatar : undefined}
+                            size={50} 
+                            bgColor="#FFA500" 
+                          />
                           <div className="text-center mt-1">
                             <div className="text-sm font-bold text-gray-900">#{1}</div>
                             <div className="text-xs font-semibold text-gray-900">{data.top3[0].name}</div>
@@ -1816,7 +1859,12 @@ export default function AcademyPage() {
                       )}
                       {data.top3[2] && (
                         <div className="flex flex-col items-center">
-                          <CircularAvatar initial={data.top3[2].avatar} size={40} bgColor="#CD7F32" />
+                          <CircularAvatar 
+                            initial={data.top3[2].name[0]}
+                            iconId={data.top3[2].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[2].avatar) ? data.top3[2].avatar : undefined}
+                            size={40} 
+                            bgColor="#CD7F32" 
+                          />
                           <div className="text-center mt-1">
                             <div className="text-xs font-bold text-gray-900">#{3}</div>
                             <div className="text-xs font-semibold text-gray-900">{data.top3[2].name}</div>
@@ -1858,7 +1906,12 @@ export default function AcademyPage() {
                       <div className="flex items-end justify-center gap-2 mb-4">
                         {data.top3[1] && (
                           <div className="flex flex-col items-center">
-                            <CircularAvatar initial={data.top3[1].avatar} size={40} bgColor="#C0C0C0" />
+                            <CircularAvatar 
+                            initial={data.top3[1].name[0]}
+                            iconId={data.top3[1].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[1].avatar) ? data.top3[1].avatar : undefined}
+                            size={40} 
+                            bgColor="#C0C0C0" 
+                          />
                             <div className="text-center mt-1">
                               <div className="text-xs font-bold text-gray-900">#{2}</div>
                               <div className="text-xs font-semibold text-gray-900">{data.top3[1].name}</div>
@@ -1869,7 +1922,12 @@ export default function AcademyPage() {
                         {data.top3[0] && (
                           <div className="flex flex-col items-center">
                             <Crown className="w-4 h-4 mb-1" style={{ color: '#FFA500' }} />
-                            <CircularAvatar initial={data.top3[0].avatar} size={50} bgColor="#FFA500" />
+                            <CircularAvatar 
+                            initial={data.top3[0].name[0]}
+                            iconId={data.top3[0].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[0].avatar) ? data.top3[0].avatar : undefined}
+                            size={50} 
+                            bgColor="#FFA500" 
+                          />
                             <div className="text-center mt-1">
                               <div className="text-sm font-bold text-gray-900">#{1}</div>
                               <div className="text-xs font-semibold text-gray-900">{data.top3[0].name}</div>
@@ -1879,7 +1937,12 @@ export default function AcademyPage() {
                         )}
                         {data.top3[2] && (
                           <div className="flex flex-col items-center">
-                            <CircularAvatar initial={data.top3[2].avatar} size={40} bgColor="#CD7F32" />
+                            <CircularAvatar 
+                            initial={data.top3[2].name[0]}
+                            iconId={data.top3[2].avatar && GOLF_ICONS.some((icon: any) => icon.id === data.top3[2].avatar) ? data.top3[2].avatar : undefined}
+                            size={40} 
+                            bgColor="#CD7F32" 
+                          />
                             <div className="text-center mt-1">
                               <div className="text-xs font-bold text-gray-900">#{3}</div>
                               <div className="text-xs font-semibold text-gray-900">{data.top3[2].name}</div>
@@ -1950,7 +2013,8 @@ export default function AcademyPage() {
                 {top3[1] && (
                   <div className="flex flex-col items-center">
                     <CircularAvatar 
-                      initial={top3[1].avatar || top3[1].name[0]} 
+                      initial={top3[1].name[0]}
+                      iconId={top3[1].avatar && GOLF_ICONS.some((icon: any) => icon.id === top3[1].avatar) ? top3[1].avatar : undefined}
                       size={60}
                       bgColor="#C0C0C0"
                     />
@@ -1967,7 +2031,8 @@ export default function AcademyPage() {
                   <div className="flex flex-col items-center">
                     <Crown className="w-6 h-6 mb-1 animate-pulse" style={{ color: '#FFA500' }} />
                     <CircularAvatar 
-                      initial={top3[0].avatar || top3[0].name[0]} 
+                      initial={top3[0].name[0]}
+                      iconId={top3[0].avatar && GOLF_ICONS.some((icon: any) => icon.id === top3[0].avatar) ? top3[0].avatar : undefined}
                       size={80}
                       bgColor="#FFA500"
                     />
@@ -1983,7 +2048,8 @@ export default function AcademyPage() {
                 {top3[2] && (
                   <div className="flex flex-col items-center">
                     <CircularAvatar 
-                      initial={top3[2].avatar || top3[2].name[0]} 
+                      initial={top3[2].name[0]}
+                      iconId={top3[2].avatar && GOLF_ICONS.some((icon: any) => icon.id === top3[2].avatar) ? top3[2].avatar : undefined}
                       size={60}
                       bgColor="#CD7F32"
                     />
@@ -2064,7 +2130,15 @@ export default function AcademyPage() {
                             #{entry.rank}
                           </span>
                         </div>
-                        <div className="grid grid-cols-[1fr_100px] items-center gap-3 flex-1 min-w-0">
+                        <div className="grid grid-cols-[auto_1fr_100px] items-center gap-3 flex-1 min-w-0">
+                          <div className="flex-shrink-0">
+                            <CircularAvatar 
+                              initial={entry.name[0]}
+                              iconId={entry.avatar && GOLF_ICONS.some((icon: any) => icon.id === entry.avatar) ? entry.avatar : undefined}
+                              size={32}
+                              bgColor={entry.id === 'user' ? '#FFA500' : '#014421'}
+                            />
+                          </div>
                           <div className="min-w-0">
                             <div className={`font-semibold text-sm flex items-center gap-1 ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
                               {entry.name}
@@ -2136,8 +2210,16 @@ export default function AcademyPage() {
                               : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
-                          <div className="flex-shrink-0 w-12 text-center">
+                          <div className="flex-shrink-0">
                             {isTop3 && entry.rank === 1 && <Crown className="w-5 h-5 mx-auto mb-1" style={{ color: '#FFA500' }} />}
+                            <CircularAvatar 
+                              initial={entry.name[0]}
+                              iconId={entry.avatar && GOLF_ICONS.some((icon: any) => icon.id === entry.avatar) ? entry.avatar : undefined}
+                              size={40}
+                              bgColor={entry.id === 'user' ? '#FFA500' : entry.rank === 1 ? '#FFA500' : entry.rank === 2 ? '#C0C0C0' : entry.rank === 3 ? '#CD7F32' : '#014421'}
+                            />
+                          </div>
+                          <div className="flex-shrink-0 w-10 text-center">
                             <span className={`text-sm font-bold ${entry.id === 'user' || isTop3 ? 'text-[#014421]' : 'text-gray-600'}`}>
                               #{entry.rank}
                             </span>

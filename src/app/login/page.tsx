@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, User, LogIn, UserPlus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import IconPicker from "@/components/IconPicker";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,6 +14,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [initialHandicap, setInitialHandicap] = useState("");
+  const [selectedIcon, setSelectedIcon] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showRetry, setShowRetry] = useState(false);
@@ -54,8 +56,8 @@ export default function LoginPage() {
       return;
     }
 
-    if (isSignUp && (!fullName || !initialHandicap)) {
-      setError("Please fill in all required fields");
+    if (isSignUp && (!fullName || !initialHandicap || !selectedIcon)) {
+      setError("Please fill in all required fields and select an icon");
       setLoading(false);
       return;
     }
@@ -78,7 +80,7 @@ export default function LoginPage() {
           return;
         }
         await Promise.race([
-          signup(email, password, fullName, handicap),
+          signup(email, password, fullName, handicap, selectedIcon || undefined),
           timeoutPromise
         ]);
         // Wait 200ms for session to be saved before redirecting
@@ -361,6 +363,13 @@ export default function LoginPage() {
                 <p className="text-xs text-gray-500 mt-1">
                   Enter your current golf handicap (-5 to +5 Pro, 0 to 54)
                 </p>
+              </div>
+            )}
+
+            {/* Icon Picker (Sign Up Only) */}
+            {isSignUp && (
+              <div>
+                <IconPicker selectedIcon={selectedIcon} onSelectIcon={setSelectedIcon} />
               </div>
             )}
 

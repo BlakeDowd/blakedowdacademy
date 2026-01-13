@@ -9,6 +9,7 @@ interface User {
   id: string;
   email: string;
   fullName?: string; // Standardized: Only use full_name from profiles table
+  profileIcon?: string; // Golf icon selected by student
   initialHandicap?: number;
   createdAt?: string;
 }
@@ -17,7 +18,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, fullName: string, initialHandicap: number) => Promise<void>;
+  signup: (email: string, password: string, fullName: string, initialHandicap: number, profileIcon?: string) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
   refreshUser: () => Promise<void>;
@@ -82,11 +83,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log('AuthContext: User authenticated via', session ? 'getSession()' : 'getUser()', supabaseUser.id);
           console.log('AuthContext: Fetching user profile...');
 
-          // Fetch user profile with initialHandicap and full_name from profiles table
-          // Standardized to use full_name only (not display_name)
+          // Fetch user profile with initialHandicap, full_name, and profile_icon from profiles table
+          // Standardized to use full_name only (not display_name or name)
           let { data: profile, error: profileError } = await supabase
             .from('profiles')
-            .select('initial_handicap, full_name, created_at')
+            .select('initial_handicap, full_name, profile_icon, created_at')
             .eq('id', supabaseUser.id)
             .single();
 
@@ -100,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 full_name: supabaseUser.email?.split('@')[0] || 'User',
                 created_at: new Date().toISOString(),
               })
-              .select('initial_handicap, full_name, created_at')
+              .select('initial_handicap, full_name, profile_icon, created_at')
               .single();
             
             if (createError) {
@@ -119,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 full_name: supabaseUser.email?.split('@')[0] || 'User',
                 created_at: new Date().toISOString(),
               })
-              .select('initial_handicap, full_name, created_at')
+              .select('initial_handicap, full_name, profile_icon, created_at')
               .single();
             
             if (!createError && newProfile) {
@@ -133,6 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: supabaseUser.id,
               email: supabaseUser.email || '',
               fullName: profile?.full_name, // Standardized: Only use full_name from profiles table
+              profileIcon: profile?.profile_icon, // Golf icon selected by student
               initialHandicap: profile?.initial_handicap,
               createdAt: profile?.created_at || supabaseUser.created_at,
             });
@@ -170,7 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Fetch user profile - standardized to use full_name only
             let { data: profile, error: profileError } = await supabase
               .from('profiles')
-              .select('initial_handicap, full_name, created_at')
+              .select('initial_handicap, full_name, profile_icon, created_at')
               .eq('id', session.user.id)
               .single();
 
@@ -184,7 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   full_name: session.user.email?.split('@')[0] || 'User',
                   created_at: new Date().toISOString(),
                 })
-                .select('initial_handicap, full_name, created_at')
+                .select('initial_handicap, full_name, profile_icon, created_at')
                 .single();
               
               if (createError) {
@@ -203,7 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   full_name: session.user.email?.split('@')[0] || 'User',
                   created_at: new Date().toISOString(),
                 })
-                .select('initial_handicap, full_name, created_at')
+                .select('initial_handicap, full_name, profile_icon, created_at')
                 .single();
               
               if (!createError && newProfile) {
@@ -217,6 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: session.user.id,
               email: session.user.email || '',
               fullName: profile?.full_name, // Standardized: Only use full_name from profiles table
+              profileIcon: profile?.profile_icon, // Golf icon selected by student
               initialHandicap: profile?.initial_handicap,
               createdAt: profile?.created_at || session.user.created_at,
             });
@@ -254,9 +257,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!supabaseUser) return;
 
       // Standardized to use full_name only (not display_name)
+      // Also fetch profile_icon for leaderboard display
       let { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('initial_handicap, full_name, created_at')
+        .select('initial_handicap, full_name, profile_icon, created_at')
         .eq('id', supabaseUser.id)
         .single();
 
@@ -270,7 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: supabaseUser.email?.split('@')[0] || 'User',
             created_at: new Date().toISOString(),
           })
-          .select('initial_handicap, full_name, created_at')
+          .select('initial_handicap, full_name, profile_icon, created_at')
           .single();
         
         if (createError) {
@@ -289,7 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: supabaseUser.email?.split('@')[0] || 'User',
             created_at: new Date().toISOString(),
           })
-          .select('initial_handicap, full_name, created_at')
+          .select('initial_handicap, full_name, profile_icon, created_at')
           .single();
         
         if (!createError && newProfile) {
@@ -304,6 +308,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return {
           ...prev,
           fullName: profile?.full_name, // Standardized: Only use full_name
+          profileIcon: profile?.profile_icon, // Golf icon selected by student
           initialHandicap: profile?.initial_handicap,
         };
       });
@@ -338,9 +343,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let profile = null;
       try {
         // Standardized to use full_name only (not display_name)
+        // Also fetch profile_icon for leaderboard display
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('initial_handicap, full_name, created_at')
+          .select('initial_handicap, full_name, profile_icon, created_at')
           .eq('id', data.user.id)
           .single();
         
@@ -354,7 +360,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               full_name: data.user.email?.split('@')[0] || 'User',
               created_at: new Date().toISOString(),
             })
-            .select('initial_handicap, full_name, created_at')
+            .select('initial_handicap, full_name, profile_icon, created_at')
             .single();
           
           if (createError) {
@@ -373,7 +379,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               full_name: data.user.email?.split('@')[0] || 'User',
               created_at: new Date().toISOString(),
             })
-            .select('initial_handicap, full_name, created_at')
+            .select('initial_handicap, full_name, profile_icon, created_at')
             .single();
           
           if (!createError && newProfile) {
@@ -393,6 +399,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: data.user.id,
         email: data.user.email || '',
         fullName: profile?.full_name, // Standardized: Only use full_name
+        profileIcon: profile?.profile_icon, // Golf icon selected by student
         initialHandicap: profile?.initial_handicap,
         createdAt: profile?.created_at || data.user.created_at,
       });
@@ -401,7 +408,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signup = async (email: string, password: string, fullName: string, initialHandicap: number) => {
+  const signup = async (email: string, password: string, fullName: string, initialHandicap: number, profileIcon?: string) => {
     if (!supabase) {
       throw new Error('Failed to initialize Supabase client.');
     }
@@ -416,12 +423,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
       if (data.user && supabase) {
-        // Create user profile with fullName and initialHandicap
+        // Create user profile with fullName, initialHandicap, and profile_icon
+        // Standardized: ONLY use full_name column, never display_name or name
         const { error: profileError } = await supabase
           .from('profiles')
           .insert({
             id: data.user.id,
-            full_name: fullName,
+            full_name: fullName, // Standardized: Only use full_name
+            profile_icon: profileIcon || null, // Golf icon selected by student
             initial_handicap: initialHandicap,
             created_at: new Date().toISOString(),
           });
@@ -435,6 +444,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: data.user.id,
         email: data.user.email || '',
         fullName,
+        profileIcon: profileIcon || undefined,
         initialHandicap,
         createdAt: data.user.created_at,
       });
