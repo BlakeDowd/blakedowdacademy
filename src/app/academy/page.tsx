@@ -789,6 +789,7 @@ function getLeaderboardData(
   user?: { profileIcon?: string } | null
 ) {
   // Debug: Log leaderboard calculation inputs
+  // Debug Logs: Keep console.log to see if Stuart's round is in the raw data
   console.log('Leaderboard Data Debug:', {
     metric,
     timeFilter,
@@ -797,6 +798,15 @@ function getLeaderboardData(
     totalXP,
     userName,
   });
+  // Debug: Log all rounds with user info to verify Stuart's rounds are included
+  if (rounds && rounds.length > 0) {
+    console.log('Leaderboard: All rounds with user info:', rounds.map((r: any) => ({
+      user_id: r.user_id,
+      full_name: r.full_name || 'No name',
+      date: r.date,
+      score: r.score
+    })));
+  }
   
   // Filter rounds by timeframe first - use created_at if available, otherwise fall back to date
   const filteredRounds = rounds.filter(round => {
@@ -930,7 +940,7 @@ function getLeaderboardData(
     userValue: userValue
   };
   
-  // Debug: Log final leaderboard result
+  // Debug Logs: Keep console.log('Leaderboard Result:', data) so I can see if Stuart's round is in the raw data but just not rendering
   console.log('Leaderboard Result:', result);
   
   return result;

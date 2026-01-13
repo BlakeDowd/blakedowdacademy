@@ -66,17 +66,24 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
-      console.log('StatsContext: Fetching rounds for user_id:', user.id);
+      console.log('StatsContext: Fetching ALL rounds for leaderboard (not filtering by user_id)');
       console.log('StatsContext: User object:', { id: user.id, email: user.email, fullName: user.fullName });
       
+      // Profile Join: Fetch all rounds and join with profiles table to get full_name
+      // Search Academy Page: Removed .eq('user_id', user.id) so leaderboard shows all users' rounds
       const { data, error } = await supabase
         .from('rounds')
-        .select('*')
-        .eq('user_id', user.id)
+        .select(`
+          *,
+          profiles (
+            full_name,
+            profile_icon
+          )
+        `)
         .order('created_at', { ascending: false });
       
-      // Debug: Log the query filter being used
-      console.log('StatsContext: Query filter - user_id =', user.id);
+      // Debug: Log the query - now fetching ALL rounds
+      console.log('StatsContext: Query - fetching ALL rounds (no user_id filter)');
 
       if (error) {
         console.error('StatsContext: Error loading rounds from database:', error);
@@ -94,24 +101,29 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       console.log('StatsContext: Raw data from database:', data);
       console.log('StatsContext: Number of rounds fetched:', data?.length || 0);
       
-      // Debug: Check user_id in fetched rounds
+      // Debug: Check user_id and full_name in fetched rounds
       if (data && data.length > 0) {
-        console.log('StatsContext: Sample round user_ids:', data.slice(0, 3).map((r: any) => ({
+        console.log('StatsContext: Sample rounds with profiles:', data.slice(0, 5).map((r: any) => ({
           round_id: r.id,
           user_id: r.user_id,
-          matches_current_user: r.user_id === user.id,
-          date: r.date
+          full_name: r.profiles?.full_name || 'No profile found',
+          profile_icon: r.profiles?.profile_icon || null,
+          date: r.date,
+          score: r.score
         })));
+        // Debug Logs: Keep console.log to see if Stuart's round is in the raw data
+        console.log('StatsContext: All rounds user_ids:', data.map((r: any) => r.user_id));
+        console.log('StatsContext: All rounds full_names:', data.map((r: any) => r.profiles?.full_name || 'No name'));
       } else {
-        console.warn('StatsContext: No rounds found for user_id:', user.id);
+        console.warn('StatsContext: No rounds found in database');
         console.warn('StatsContext: This could mean:');
-        console.warn('  1. No rounds exist in database for this user_id');
+        console.warn('  1. No rounds exist in database');
         console.warn('  2. RLS policies are blocking access');
-        console.warn('  3. user_id mismatch between rounds table and auth.users');
       }
 
       // Transform database columns (snake_case) to camelCase for RoundData interface
-      const transformedRounds: RoundData[] = (data || []).map((round: any) => ({
+      // Profile Join: Include user_id and profile data (full_name, profile_icon) from joined profiles table
+      const transformedRounds: (RoundData & { user_id?: string; full_name?: string; profile_icon?: string })[] = (data || []).map((round: any) => ({
         date: round.date,
         created_at: round.created_at, // Include created_at for time filtering
         course: round.course_name || round.course, // Handle both course_name and course for compatibility
@@ -144,6 +156,10 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         threePutts: round.three_putts,
         missed6ftAndIn: round.missed_6ft_and_in,
         puttsUnder6ftAttempts: round.putts_under_6ft_attempts,
+        // Profile Join: Include user_id and profile data for leaderboard
+        user_id: round.user_id,
+        full_name: round.profiles?.full_name || null, // Get full_name from joined profiles table
+        profile_icon: round.profiles?.profile_icon || null, // Get profile_icon from joined profiles table
       }));
 
       setRounds(transformedRounds);
