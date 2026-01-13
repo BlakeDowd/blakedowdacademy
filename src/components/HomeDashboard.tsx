@@ -103,18 +103,21 @@ export default function HomeDashboard() {
   // Ensure rounds is always an array, never null or undefined
   const safeRounds = rounds || [];
   
-  // Force full_name: Fetch from profiles.full_name ONLY
+  // Verify Data Source: Force it to display profile?.full_name || user.email
   // No fallbacks to 'User' - if full_name is an email, show email; if it's a name, show name
   const getUserDisplayName = () => {
     // Force: ONLY use full_name from profiles table
     if (user?.fullName) {
+      console.log('Dashboard: Displaying full_name from profile:', user.fullName);
       return user.fullName; // Show whatever is in full_name (email or name)
     }
     // If no full_name exists, show email as fallback
     if (user?.email) {
+      console.log('Dashboard: No full_name found, using email fallback:', user.email);
       return user.email;
     }
     // Final fallback only if nothing exists
+    console.log('Dashboard: No full_name or email found');
     return '';
   };
   
@@ -194,6 +197,10 @@ export default function HomeDashboard() {
       
       const newName = editedName.trim();
       
+      // Add ID Logging: Check if the ID matches the database
+      console.log('Current User ID:', user.id);
+      console.log('Attempting to update full_name to:', newName);
+      
       // Force Table Sync: Explicitly target the full_name column in the profiles table
       // The Save Command: Use exact logic as specified
       const { error: profileError } = await supabase
@@ -204,13 +211,19 @@ export default function HomeDashboard() {
         })
         .eq('id', user.id);
 
+      // Capture RLS Errors: Alert the specific Supabase error
       if (profileError) {
         console.error('Error updating full_name:', profileError);
-        alert(`Failed to save profile: ${profileError.message || 'Unknown error'}`);
+        console.error('Error code:', profileError.code);
+        console.error('Error message:', profileError.message);
+        console.error('Error details:', profileError.details);
+        alert(`Supabase Error: ${profileError.message || 'Unknown error'}\nCode: ${profileError.code || 'N/A'}`);
         setIsSavingName(false);
         setIsSavingIcon(false);
         return;
       }
+      
+      console.log('Profile update successful!');
 
       // Close modal immediately
       setShowProfileModal(false);

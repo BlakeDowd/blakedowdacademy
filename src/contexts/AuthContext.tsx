@@ -85,11 +85,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           // Fetch user profile with initialHandicap, full_name, and profile_icon from profiles table
           // Force: ONLY use full_name column
+          // Check Academy Fetch: Log exactly what full_name strings are being returned from the database
+          console.log('AuthContext: Fetching profile for user ID:', supabaseUser.id);
           let { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('initial_handicap, full_name, profile_icon, created_at')
             .eq('id', supabaseUser.id)
             .single();
+          
+          if (profile) {
+            console.log('AuthContext: Profile found - full_name:', profile.full_name);
+            console.log('AuthContext: Profile found - profile_icon:', profile.profile_icon);
+          } else {
+            console.log('AuthContext: No profile found for user ID:', supabaseUser.id);
+          }
+          
+          if (profileError) {
+            console.error('AuthContext: Profile fetch error:', profileError);
+            console.error('AuthContext: Error code:', profileError.code);
+            console.error('AuthContext: Error message:', profileError.message);
+          }
 
           // Auto-create profile if it doesn't exist (id matches auth.uid())
           if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('No rows'))) {
@@ -129,8 +144,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           }
 
+          // Verify Data Source: Force it to display profile?.full_name || user.email
           // Force full_name: Set user with profile data from profiles table
           // ONLY use full_name column, no fallbacks to email or other columns
+            console.log('AuthContext: Setting user with full_name:', profile?.full_name);
             setUser({
               id: supabaseUser.id,
               email: supabaseUser.email || '',
@@ -259,11 +276,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Standardized to use full_name only (not display_name)
       // Also fetch profile_icon for leaderboard display
+      // Check Academy Fetch: Log exactly what full_name strings are being returned from the database
+      console.log('refreshUser: Fetching profile for user ID:', supabaseUser.id);
       let { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('initial_handicap, full_name, profile_icon, created_at')
         .eq('id', supabaseUser.id)
         .single();
+      
+      if (profile) {
+        console.log('refreshUser: Profile found - full_name:', profile.full_name);
+        console.log('refreshUser: Profile found - profile_icon:', profile.profile_icon);
+      } else {
+        console.log('refreshUser: No profile found for user ID:', supabaseUser.id);
+      }
+      
+      if (profileError) {
+        console.error('refreshUser: Profile fetch error:', profileError);
+        console.error('refreshUser: Error code:', profileError.code);
+        console.error('refreshUser: Error message:', profileError.message);
+      }
 
       // Auto-create profile if it doesn't exist (id matches auth.uid())
       if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('No rows'))) {
@@ -303,8 +335,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Verify Data Source: Force it to display profile?.full_name || user.email
       // Force full_name: ONLY use full_name from profiles table, no fallbacks
       // This ensures the updated name from the save function is immediately reflected
+      console.log('refreshUser: Updating user with full_name:', profile?.full_name);
       setUser((prev) => {
         if (!prev) return prev;
         return {
