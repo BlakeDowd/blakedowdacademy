@@ -799,13 +799,21 @@ function getLeaderboardData(
     userName,
   });
   // Debug: Log all rounds with user info to verify Stuart's rounds are included
+  // Check for Null Profiles: Verify rounds without profiles are included as 'Unknown User'
   if (rounds && rounds.length > 0) {
     console.log('Leaderboard: All rounds with user info:', rounds.map((r: any) => ({
       user_id: r.user_id,
-      full_name: r.full_name || 'No name',
+      full_name: r.full_name || 'Unknown User',
       date: r.date,
       score: r.score
     })));
+    // Check for Null Profiles: Count rounds with 'Unknown User'
+    const unknownUserRounds = rounds.filter((r: any) => !r.full_name || r.full_name === 'Unknown User');
+    if (unknownUserRounds.length > 0) {
+      console.log('Leaderboard: Rounds with "Unknown User" (missing profiles):', unknownUserRounds.length);
+    }
+  } else {
+    console.warn('⚠️ Leaderboard: No rounds found! Check if rounds are being fetched from database.');
   }
   
   // Filter rounds by timeframe first - use created_at if available, otherwise fall back to date
@@ -940,8 +948,16 @@ function getLeaderboardData(
     userValue: userValue
   };
   
+  // Debug Check: Look at the Leaderboard Result: log. If it's an empty array [], the issue is definitely the SQL Policy above.
   // Debug Logs: Keep console.log('Leaderboard Result:', data) so I can see if Stuart's round is in the raw data but just not rendering
   console.log('Leaderboard Result:', result);
+  console.log('Leaderboard Result - top3 count:', result.top3?.length || 0);
+  console.log('Leaderboard Result - all count:', result.all?.length || 0);
+  // Debug Check: If result is empty array, it's the SQL Policy
+  if (!result || result.all?.length === 0) {
+    console.warn('⚠️ Leaderboard Result is EMPTY ARRAY [] - This indicates SQL Policy issue!');
+    console.warn('⚠️ Check RLS policies on rounds table - they may be blocking access to all rounds');
+  }
   
   return result;
 }

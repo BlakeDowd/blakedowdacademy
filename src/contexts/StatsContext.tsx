@@ -70,20 +70,22 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       console.log('StatsContext: User object:', { id: user.id, email: user.email, fullName: user.fullName });
       
       // Profile Join: Fetch all rounds and join with profiles table to get full_name
+      // Verify Join: Using left join (profiles without !inner) so rounds without profiles are NOT discarded
+      // Check for Null Profiles: Rounds missing profiles will show as 'Unknown User' instead of disappearing
       // Search Academy Page: Removed .eq('user_id', user.id) so leaderboard shows all users' rounds
       const { data, error } = await supabase
         .from('rounds')
         .select(`
           *,
-          profiles (
+          profiles!left (
             full_name,
             profile_icon
           )
         `)
         .order('created_at', { ascending: false });
       
-      // Debug: Log the query - now fetching ALL rounds
-      console.log('StatsContext: Query - fetching ALL rounds (no user_id filter)');
+      // Debug: Log the query - now fetching ALL rounds with left join
+      console.log('StatsContext: Query - fetching ALL rounds (no user_id filter, left join with profiles)');
 
       if (error) {
         console.error('StatsContext: Error loading rounds from database:', error);
@@ -114,6 +116,16 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         // Debug Logs: Keep console.log to see if Stuart's round is in the raw data
         console.log('StatsContext: All rounds user_ids:', data.map((r: any) => r.user_id));
         console.log('StatsContext: All rounds full_names:', data.map((r: any) => r.profiles?.full_name || 'No name'));
+        // Check for Null Profiles: Log rounds with missing profiles
+        const roundsWithoutProfiles = data.filter((r: any) => !r.profiles || !r.profiles.full_name);
+        if (roundsWithoutProfiles.length > 0) {
+          console.log('StatsContext: Rounds without profiles (will show as "Unknown User"):', roundsWithoutProfiles.length);
+          console.log('StatsContext: Sample rounds without profiles:', roundsWithoutProfiles.slice(0, 3).map((r: any) => ({
+            round_id: r.id,
+            user_id: r.user_id,
+            date: r.date
+          })));
+        }
       } else {
         console.warn('StatsContext: No rounds found in database');
         console.warn('StatsContext: This could mean:');
@@ -157,8 +169,9 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         missed6ftAndIn: round.missed_6ft_and_in,
         puttsUnder6ftAttempts: round.putts_under_6ft_attempts,
         // Profile Join: Include user_id and profile data for leaderboard
+        // Check for Null Profiles: If profile is missing, show 'Unknown User' instead of discarding the round
         user_id: round.user_id,
-        full_name: round.profiles?.full_name || null, // Get full_name from joined profiles table
+        full_name: round.profiles?.full_name || 'Unknown User', // Check for Null Profiles: Show 'Unknown User' if profile missing
         profile_icon: round.profiles?.profile_icon || null, // Get profile_icon from joined profiles table
       }));
 
