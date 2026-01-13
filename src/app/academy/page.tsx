@@ -1103,21 +1103,14 @@ export default function AcademyPage() {
 
   // Get user name - fetch from profiles.full_name, fallback to email or 'User'
   // If full_name is an email (contains @), display it as-is
+  // Force full_name: Fetch from profiles.full_name ONLY for Academy leaderboard
   const getUserName = () => {
-    // Try fullName from profiles table first (fetched from profiles.full_name via user.fullName)
+    // Force: ONLY use full_name from profiles table
+    // This ensures real names (like 'Stuart Tibben') show up instead of emails
     if (user?.fullName) {
-      // If full_name looks like an email, show it as-is
-      if (user.fullName.includes('@')) {
-        return user.fullName;
-      }
-      // Otherwise, return the full_name value
       return user.fullName;
     }
-    // Fallback to full email if available
-    if (user?.email) {
-      return user.email;
-    }
-    // Final fallback
+    // If no full_name exists yet, show placeholder
     return 'User';
   };
 

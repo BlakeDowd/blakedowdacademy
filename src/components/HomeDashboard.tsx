@@ -103,23 +103,19 @@ export default function HomeDashboard() {
   // Ensure rounds is always an array, never null or undefined
   const safeRounds = rounds || [];
   
-  // Format user name - fetch from profiles.full_name, fallback to email or 'User'
-  // INSTANT UI FEEDBACK: Use local state for optimistic updates
-  const [optimisticName, setOptimisticName] = useState<string | null>(null);
+  // Force full_name: Fetch from profiles.full_name ONLY, no fallbacks to email
   const getUserDisplayName = () => {
-    // Use optimistic name if available (instant UI feedback)
-    if (optimisticName) {
-      return optimisticName;
-    }
-    // Try fullName from profiles table first (standardized to use full_name only)
-    if (user?.fullName) {
+    // Force: ONLY use full_name from profiles table
+    // If full_name exists and is not an email, use it
+    if (user?.fullName && !user.fullName.includes('@')) {
       return user.fullName;
     }
-    // Fallback to full email if available
-    if (user?.email) {
-      return user.email;
+    // If full_name is an email or doesn't exist, show placeholder
+    if (user?.fullName && user.fullName.includes('@')) {
+      // Still an email - show it but indicate it needs to be changed
+      return user.fullName;
     }
-    // Final fallback
+    // No full_name set yet
     return 'User';
   };
   
@@ -235,14 +231,16 @@ export default function HomeDashboard() {
         return;
       }
 
-      // Refresh user context to sync across app
+      // Close modal immediately
+      setShowProfileModal(false);
+      
+      // Refresh user context to sync across app - this fetches the updated full_name
       if (refreshUser) {
         await refreshUser();
       }
       
-      setShowProfileModal(false);
-      
       // Force UI Update: Use router.refresh() so name and icon update everywhere instantly
+      // This ensures the Dashboard and Academy leaderboard show the new name immediately
       router.refresh();
     } catch (error) {
       console.error('Error saving profile:', error);

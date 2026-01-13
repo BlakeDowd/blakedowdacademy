@@ -129,12 +129,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           }
 
-          // Set user with profile data from profiles table
+          // Force full_name: Set user with profile data from profiles table
+          // ONLY use full_name column, no fallbacks to email or other columns
             setUser({
               id: supabaseUser.id,
               email: supabaseUser.email || '',
-              fullName: profile?.full_name, // Standardized: Only use full_name from profiles table
-              profileIcon: profile?.profile_icon, // Golf icon selected by student
+              fullName: profile?.full_name || undefined, // Force: ONLY use full_name from profiles table
+              profileIcon: profile?.profile_icon || undefined, // Golf icon selected by student
               initialHandicap: profile?.initial_handicap,
               createdAt: profile?.created_at || supabaseUser.created_at,
             });
@@ -302,13 +303,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Standardized: Only use full_name from profiles table
+      // Force full_name: ONLY use full_name from profiles table, no fallbacks
+      // This ensures the updated name from the save function is immediately reflected
       setUser((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
-          fullName: profile?.full_name, // Standardized: Only use full_name
-          profileIcon: profile?.profile_icon, // Golf icon selected by student
+          fullName: profile?.full_name || undefined, // Force: ONLY use full_name, no email fallback
+          profileIcon: profile?.profile_icon || undefined, // Golf icon selected by student
           initialHandicap: profile?.initial_handicap,
         };
       });
