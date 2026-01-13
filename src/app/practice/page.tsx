@@ -111,6 +111,7 @@ export default function PracticePage() {
   const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(true); // Weekly schedule expanded state
   const [swappingDrill, setSwappingDrill] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track which drill is being swapped
   const [swapSuccess, setSwapSuccess] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track successful swap for feedback
+  const [expandedScheduleDrill, setExpandedScheduleDrill] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track expanded drill in schedule
   
   // Base XP per facility type (for freestyle practice)
   const facilityBaseXP: Record<FacilityType, number> = {
@@ -1563,22 +1564,22 @@ export default function PracticePage() {
                     const isToday = dayDate.toDateString() === today.toDateString();
                     
                     return (
-                      <div key={dayIndex} className="flex flex-col min-w-[60px]">
+                      <div key={dayIndex} className="flex flex-col min-w-[72px] sm:min-w-[80px]" style={{ transform: 'scale(1.15)' }}>
                         {/* Day Header */}
-                        <div className={`text-center mb-1 sm:mb-2 ${isToday ? 'font-bold' : 'font-medium'}`}>
-                          <div className={`text-[10px] sm:text-xs ${isToday ? 'text-[#014421]' : 'text-gray-600'}`}>
+                        <div className={`text-center mb-1.5 sm:mb-2 ${isToday ? 'font-bold' : 'font-medium'}`}>
+                          <div className={`text-xs sm:text-sm ${isToday ? 'text-[#014421]' : 'text-gray-600'}`}>
                             {dayName.substring(0, 3)}
                           </div>
-                          <div className={`text-[10px] sm:text-xs ${isToday ? 'text-[#FFA500]' : 'text-gray-500'}`}>
+                          <div className={`text-xs sm:text-sm ${isToday ? 'text-[#FFA500]' : 'text-gray-500'}`}>
                             {dayDate.getDate()}
                           </div>
                         </div>
                         
                         {/* Drill Blocks */}
-                        <div className="space-y-0.5 sm:space-y-1 min-h-[50px] sm:min-h-[60px]">
+                        <div className="space-y-1 sm:space-y-1.5 min-h-[60px] sm:min-h-[72px]">
                           {dayDrills.length === 0 ? (
                             <div className="text-center py-2">
-                              <span className="text-xs text-gray-400">—</span>
+                              <span className="text-xs sm:text-sm text-gray-400">—</span>
                             </div>
                           ) : (
                             dayDrills.slice(0, 3).map((drill, drillIdx) => {
@@ -1586,40 +1587,95 @@ export default function PracticePage() {
                               const actualDrillIndex = day.drills.findIndex(d => d.id === drill.id);
                               const isSwapping = swappingDrill?.dayIndex === dayIndex && swappingDrill?.drillIndex === actualDrillIndex;
                               const justSwapped = swapSuccess?.dayIndex === dayIndex && swapSuccess?.drillIndex === actualDrillIndex;
+                              const isExpanded = expandedScheduleDrill?.dayIndex === dayIndex && expandedScheduleDrill?.drillIndex === actualDrillIndex;
                               
                               return (
                                 <div key={`${dayIndex}-${drill.id}-${drillIdx}`} className="relative group">
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      // Expand/collapse instead of auto-complete
                                       if (actualDrillIndex !== -1) {
-                                        markDrillComplete(dayIndex, actualDrillIndex);
+                                        if (isExpanded) {
+                                          setExpandedScheduleDrill(null);
+                                        } else {
+                                          setExpandedScheduleDrill({ dayIndex, drillIndex: actualDrillIndex });
+                                        }
                                       }
                                     }}
-                                    className={`w-full p-1.5 rounded text-left transition-all hover:scale-105 relative ${
+                                    className={`w-full p-2 sm:p-2.5 rounded text-left transition-all hover:scale-105 relative ${
                                       isCompleted
                                         ? 'bg-green-500 text-white border-2 border-green-600'
                                         : 'bg-[#FFA500] text-[#014421] border-2 border-[#FFA500] hover:bg-[#FFA500]/90'
-                                    } ${justSwapped ? 'ring-2 ring-green-400 ring-offset-1' : ''}`}
+                                    } ${justSwapped ? 'ring-2 ring-green-400 ring-offset-1' : ''} ${isExpanded ? 'ring-2 ring-[#014421]' : ''}`}
                                     title={drill.title}
                                   >
-                                    <div className="text-[10px] font-semibold truncate pr-4">
-                                      {drill.title.length > 15 ? drill.title.substring(0, 15) + '...' : drill.title}
+                                    <div className="text-xs sm:text-sm font-semibold truncate pr-5">
+                                      {drill.title.length > 12 ? drill.title.substring(0, 12) + '...' : drill.title}
                                     </div>
                                     {isCompleted && (
-                                      <Check className="w-3 h-3 mt-0.5" />
+                                      <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 mt-0.5" />
                                     )}
                                     {justSwapped && (
-                                      <div className="absolute top-0 right-0 bg-green-400 text-white text-[8px] px-1 rounded animate-pulse">
+                                      <div className="absolute top-0 right-0 bg-green-400 text-white text-[9px] sm:text-[10px] px-1 rounded animate-pulse">
                                         Swapped!
                                       </div>
                                     )}
                                     {isSwapping && (
                                       <div className="absolute inset-0 flex items-center justify-center bg-white/80 rounded">
-                                        <RefreshCw className="w-3 h-3 animate-spin text-[#014421]" />
+                                        <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-[#014421]" />
                                       </div>
                                     )}
+                                    {isExpanded && (
+                                      <ChevronUp className="absolute top-1 right-1 w-3 h-3 text-[#014421]" />
+                                    )}
                                   </button>
+                                  
+                                  {/* Expanded Drill View */}
+                                  {isExpanded && (
+                                    <div className="absolute z-10 mt-1 w-full bg-white border-2 border-[#014421] rounded-lg shadow-lg p-2.5 sm:p-3">
+                                      <div className="space-y-2">
+                                        <div className="font-semibold text-xs sm:text-sm text-gray-900">{drill.title}</div>
+                                        {drill.description && (
+                                          <div className="text-[10px] sm:text-xs text-gray-600 max-h-24 overflow-y-auto">
+                                            {drill.description}
+                                          </div>
+                                        )}
+                                        <div className="flex items-center justify-between text-[10px] sm:text-xs text-gray-500">
+                                          <span>{drill.estimatedMinutes} min</span>
+                                          {drill.facility && (
+                                            <span>@ {facilityInfo[drill.facility].label}</span>
+                                          )}
+                                        </div>
+                                        {/* Complete Drill Button */}
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (actualDrillIndex !== -1) {
+                                              markDrillComplete(dayIndex, actualDrillIndex);
+                                              setExpandedScheduleDrill(null);
+                                            }
+                                          }}
+                                          disabled={isCompleted}
+                                          className={`w-full py-1.5 sm:py-2 px-3 rounded-lg font-semibold text-xs sm:text-sm transition-all ${
+                                            isCompleted
+                                              ? 'bg-green-500 text-white cursor-not-allowed'
+                                              : 'bg-[#014421] text-white hover:bg-[#014421]/90'
+                                          }`}
+                                        >
+                                          {isCompleted ? (
+                                            <span className="flex items-center justify-center gap-1.5">
+                                              <CheckCircle2 className="w-3.5 h-3.5" />
+                                              Completed
+                                            </span>
+                                          ) : (
+                                            'Complete Drill'
+                                          )}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                  
                                   {/* Swap Button */}
                                   <button
                                     onClick={(e) => {
@@ -1629,14 +1685,14 @@ export default function PracticePage() {
                                       }
                                     }}
                                     disabled={isSwapping || drill.isRound}
-                                    className={`absolute top-0 right-0 p-0.5 rounded-bl rounded-tr transition-all ${
+                                    className={`absolute top-0 right-0 p-0.5 sm:p-1 rounded-bl rounded-tr transition-all ${
                                       drill.isRound
                                         ? 'opacity-30 cursor-not-allowed'
                                         : 'opacity-0 group-hover:opacity-100 hover:bg-gray-200/80'
                                     } ${isSwapping ? 'opacity-100' : ''}`}
                                     title="Swap Drill"
                                   >
-                                    <RefreshCw className={`w-2.5 h-2.5 ${isSwapping ? 'animate-spin text-[#014421]' : 'text-gray-600'}`} />
+                                    <RefreshCw className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isSwapping ? 'animate-spin text-[#014421]' : 'text-gray-600'}`} />
                                   </button>
                                 </div>
                               );
@@ -1644,15 +1700,15 @@ export default function PracticePage() {
                           )}
                           {dayDrills.length > 3 && (
                             <div className="text-center">
-                              <span className="text-[10px] text-gray-500">+{dayDrills.length - 3} more</span>
+                              <span className="text-xs sm:text-sm text-gray-500">+{dayDrills.length - 3} more</span>
                             </div>
                           )}
                         </div>
                         
                         {/* Completion Indicator */}
                         {totalCount > 0 && (
-                          <div className="mt-1 text-center">
-                            <span className={`text-[10px] font-semibold ${
+                          <div className="mt-1.5 sm:mt-2 text-center">
+                            <span className={`text-xs sm:text-sm font-semibold ${
                               completedCount === totalCount ? 'text-green-600' : 'text-gray-600'
                             }`}>
                               {completedCount}/{totalCount}
