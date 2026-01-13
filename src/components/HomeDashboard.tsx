@@ -103,13 +103,14 @@ export default function HomeDashboard() {
   // Ensure rounds is always an array, never null or undefined
   const safeRounds = rounds || [];
   
+  // Clean Display: Ensure Home page pulls from profiles.full_name (blake Dowd)
   // Verify Data Source: Force it to display profile?.full_name || user.email
   // No fallbacks to 'User' - if full_name is an email, show email; if it's a name, show name
   const getUserDisplayName = () => {
     // Force: ONLY use full_name from profiles table
     if (user?.fullName) {
       console.log('Dashboard: Displaying full_name from profile:', user.fullName);
-      return user.fullName; // Show whatever is in full_name (email or name)
+      return user.fullName; // Show whatever is in full_name (email or name like 'blake Dowd')
     }
     // If no full_name exists, show email as fallback
     if (user?.email) {

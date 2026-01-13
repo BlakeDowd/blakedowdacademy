@@ -145,6 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           // Verify Data Source: Force it to display profile?.full_name || user.email
+          // Robust Fetching: Make initial_handicap optional, use default of 0 if missing
           // Force full_name: Set user with profile data from profiles table
           // ONLY use full_name column, no fallbacks to email or other columns
             console.log('AuthContext: Setting user with full_name:', profile?.full_name);
@@ -153,7 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               email: supabaseUser.email || '',
               fullName: profile?.full_name || undefined, // Force: ONLY use full_name from profiles table
               profileIcon: profile?.profile_icon || undefined, // Golf icon selected by student
-              initialHandicap: profile?.initial_handicap,
+              initialHandicap: profile?.initial_handicap ?? 0, // Robust: Use default 0 if missing
               createdAt: profile?.created_at || supabaseUser.created_at,
             });
           setIsAuthenticated(true);
@@ -236,9 +237,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser({
               id: session.user.id,
               email: session.user.email || '',
-              fullName: profile?.full_name, // Standardized: Only use full_name from profiles table
+              fullName: profile?.full_name || undefined, // Force: ONLY use full_name from profiles table
               profileIcon: profile?.profile_icon, // Golf icon selected by student
-              initialHandicap: profile?.initial_handicap,
+              initialHandicap: profile?.initial_handicap ?? 0, // Robust: Use default 0 if missing
               createdAt: profile?.created_at || session.user.created_at,
             });
             setIsAuthenticated(true);
@@ -274,7 +275,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: { user: supabaseUser } } = await supabase.auth.getUser();
       if (!supabaseUser) return;
 
-      // Standardized to use full_name only (not display_name)
+      // Force: ONLY use full_name column
       // Also fetch profile_icon for leaderboard display
       // Check Academy Fetch: Log exactly what full_name strings are being returned from the database
       console.log('refreshUser: Fetching profile for user ID:', supabaseUser.id);
@@ -378,7 +379,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Fetch user profile with try/catch - login should succeed even if profile fetch fails
       let profile = null;
       try {
-        // Standardized to use full_name only (not display_name)
+        // Force: ONLY use full_name column
         // Also fetch profile_icon for leaderboard display
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
@@ -430,7 +431,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Continue with login even if profile fetch fails
       }
 
-      // Standardized: Only use full_name from profiles table
+      // Force: ONLY use full_name column
       setUser({
         id: data.user.id,
         email: data.user.email || '',
@@ -465,7 +466,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .from('profiles')
           .insert({
             id: data.user.id,
-            full_name: fullName, // Standardized: Only use full_name
+            full_name: fullName, // Force: ONLY use full_name column
             profile_icon: profileIcon || null, // Golf icon selected by student
             initial_handicap: initialHandicap,
             created_at: new Date().toISOString(),

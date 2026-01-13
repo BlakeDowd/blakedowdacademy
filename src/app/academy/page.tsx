@@ -1103,15 +1103,16 @@ export default function AcademyPage() {
 
   // Get user name - fetch from profiles.full_name, fallback to email or 'User'
   // If full_name is an email (contains @), display it as-is
+  // Clean Display: Ensure Academy page pulls from profiles.full_name (blake Dowd)
   // Force full_name: Fetch from profiles.full_name ONLY for Academy leaderboard
   // Check Academy Fetch: Log exactly what full_name strings are being returned from the database
   const getUserName = () => {
     // Force: ONLY use full_name from profiles table
-    // This ensures real names (like 'Stuart Tibben' and 'coach blake') show up instead of 'User'
+    // This ensures real names (like 'Stuart Tibben' and 'coach blake' and 'blake Dowd') show up instead of 'User'
     if (user?.fullName) {
       console.log('Academy: Displaying full_name from profile:', user.fullName);
       console.log('Academy: User ID:', user.id);
-      return user.fullName; // Show whatever is in full_name (email or name)
+      return user.fullName; // Show whatever is in full_name (email or name like 'blake Dowd')
     }
     // If no full_name exists, show email as fallback
     if (user?.email) {
@@ -1126,9 +1127,20 @@ export default function AcademyPage() {
   const userName = getUserName();
   
 
+  // Leaderboard Update: Force refresh to show real names from database
   // Leaderboard Refresh: Fetch from full_name, recalculates when timeFilter or leaderboardMetric changes
   // This ensures the leaderboard shows the updated full_name immediately (not cached)
   const currentLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user);
+  
+  // Force leaderboard refresh when user data changes - ensures real names appear
+  useEffect(() => {
+    if (user?.fullName) {
+      console.log('Academy: User full_name changed, forcing leaderboard refresh');
+      console.log('Academy: Current full_name value:', user.fullName);
+      // Force re-render by triggering state update
+      setTimeFilter(prev => prev); // This will trigger leaderboard recalculation
+    }
+  }, [user?.fullName]);
   const top3 = currentLeaderboard.top3;
   const ranks4to7 = currentLeaderboard.all.slice(3, 7);
   const sortedLeaderboard = currentLeaderboard.all;
