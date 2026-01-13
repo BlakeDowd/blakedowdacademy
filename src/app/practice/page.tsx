@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ExternalLink, Download } from "lucide-react";
+import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ExternalLink, Download, X } from "lucide-react";
 import { DRILLS as LIBRARY_DRILLS, type Drill as LibraryDrill } from "@/data/drills";
 
 type FacilityType = 'home' | 'range-mat' | 'range-grass' | 'bunker' | 'chipping-green' | 'putting-green';
@@ -108,6 +108,7 @@ export default function PracticePage() {
   const [expandedDrill, setExpandedDrill] = useState<string | null>(null); // Track which drill is expanded
   const [durationModal, setDurationModal] = useState<{ open: boolean; facility: FacilityType | null }>({ open: false, facility: null });
   const [totalPracticeMinutes, setTotalPracticeMinutes] = useState<number>(0);
+  const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(true); // Weekly schedule expanded state
   
   // Base XP per facility type (for freestyle practice)
   const facilityBaseXP: Record<FacilityType, number> = {
@@ -829,6 +830,120 @@ export default function PracticePage() {
               Total Time This Week: {Math.floor(totalPracticeMinutes / 60)}h {totalPracticeMinutes % 60}m
             </div>
           )}
+        </div>
+
+        {/* Weekly Training Schedule - Horizontal 7-Day Row */}
+        <div className="mb-6">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            {/* Header with Collapse Toggle */}
+            <div 
+              className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+              onClick={() => setScheduleExpanded(!scheduleExpanded)}
+            >
+              <div className="flex items-center gap-2">
+                <Calendar className="w-5 h-5" style={{ color: '#014421' }} />
+                <h2 className="text-lg font-semibold text-gray-900">Weekly Training Schedule</h2>
+              </div>
+              {scheduleExpanded ? (
+                <ChevronUp className="w-5 h-5 text-gray-500" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-500" />
+              )}
+            </div>
+
+            {/* Schedule Content - Collapsible */}
+            {scheduleExpanded && (
+              <div className="px-4 pb-4">
+                {/* Horizontal 7-Day Calendar Row */}
+                <div className="grid grid-cols-7 gap-2">
+                  {DAY_NAMES.map((dayName, dayIndex) => {
+                    const day = weeklyPlan[dayIndex];
+                    const dayDrills = day?.drills || [];
+                    const completedCount = dayDrills.filter(d => d.completed).length;
+                    const totalCount = dayDrills.length;
+                    
+                    // Get current week's Monday
+                    const today = new Date();
+                    const currentDay = today.getDay();
+                    const monday = new Date(today);
+                    monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+                    const dayDate = new Date(monday);
+                    dayDate.setDate(monday.getDate() + dayIndex);
+                    const isToday = dayDate.toDateString() === today.toDateString();
+                    
+                    return (
+                      <div key={dayIndex} className="flex flex-col">
+                        {/* Day Header */}
+                        <div className={`text-center mb-2 ${isToday ? 'font-bold' : 'font-medium'}`}>
+                          <div className={`text-xs ${isToday ? 'text-[#014421]' : 'text-gray-600'}`}>
+                            {dayName.substring(0, 3)}
+                          </div>
+                          <div className={`text-xs ${isToday ? 'text-[#FFA500]' : 'text-gray-500'}`}>
+                            {dayDate.getDate()}
+                          </div>
+                        </div>
+                        
+                        {/* Drill Blocks */}
+                        <div className="space-y-1 min-h-[60px]">
+                          {dayDrills.length === 0 ? (
+                            <div className="text-center py-2">
+                              <span className="text-xs text-gray-400">—</span>
+                            </div>
+                          ) : (
+                            dayDrills.slice(0, 3).map((drill, drillIdx) => {
+                              const isCompleted = drill.completed || false;
+                              return (
+                                <button
+                                  key={`${dayIndex}-${drill.id}-${drillIdx}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    // Find the drill index in the actual day plan
+                                    const actualDrillIndex = day.drills.findIndex(d => d.id === drill.id);
+                                    if (actualDrillIndex !== -1) {
+                                      markDrillComplete(dayIndex, actualDrillIndex);
+                                    }
+                                  }}
+                                  className={`w-full p-1.5 rounded text-left transition-all hover:scale-105 ${
+                                    isCompleted
+                                      ? 'bg-green-500 text-white border-2 border-green-600'
+                                      : 'bg-[#FFA500] text-[#014421] border-2 border-[#FFA500] hover:bg-[#FFA500]/90'
+                                  }`}
+                                  title={drill.title}
+                                >
+                                  <div className="text-[10px] font-semibold truncate">
+                                    {drill.title.length > 15 ? drill.title.substring(0, 15) + '...' : drill.title}
+                                  </div>
+                                  {isCompleted && (
+                                    <Check className="w-3 h-3 mt-0.5" />
+                                  )}
+                                </button>
+                              );
+                            })
+                          )}
+                          {dayDrills.length > 3 && (
+                            <div className="text-center">
+                              <span className="text-[10px] text-gray-500">+{dayDrills.length - 3} more</span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Completion Indicator */}
+                        {totalCount > 0 && (
+                          <div className="mt-1 text-center">
+                            <span className={`text-[10px] font-semibold ${
+                              completedCount === totalCount ? 'text-green-600' : 'text-gray-600'
+                            }`}>
+                              {completedCount}/{totalCount}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Weekly Calendar - Fully Responsive Grid */}
