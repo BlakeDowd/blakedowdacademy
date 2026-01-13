@@ -1564,7 +1564,7 @@ export default function PracticePage() {
                     const isToday = dayDate.toDateString() === today.toDateString();
                     
                     return (
-                      <div key={dayIndex} className="flex flex-col min-w-[100px] sm:min-w-[112px]" style={{ transform: 'scale(1.35)' }}>
+                      <div key={dayIndex} className="flex flex-col min-w-[120px] sm:min-w-[135px]" style={{ transform: 'scale(1.62)' }}>
                         {/* Day Header - Larger font for better readability on mobile */}
                         <div className={`text-center mb-1.5 sm:mb-2 ${isToday ? 'font-bold' : 'font-medium'}`}>
                           <div className={`text-base sm:text-lg ${isToday ? 'text-[#014421]' : 'text-gray-600'}`}>
