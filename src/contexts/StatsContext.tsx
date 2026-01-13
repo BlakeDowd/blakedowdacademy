@@ -73,18 +73,19 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       // Verify Join: Using left join (profiles without !inner) so rounds without profiles are NOT discarded
       // Check for Null Profiles: Rounds missing profiles will show as 'Unknown User' instead of disappearing
       // Search Academy Page: Removed .eq('user_id', user.id) so leaderboard shows all users' rounds
+      // Foreign key relationship: rounds.user_id -> profiles.id (Supabase auto-detects this)
       const { data, error } = await supabase
         .from('rounds')
         .select(`
           *,
-          profiles!left (
+          profiles (
             full_name,
             profile_icon
           )
         `)
         .order('created_at', { ascending: false });
       
-      // Debug: Log the query - now fetching ALL rounds with left join
+      // Debug: Log the query - now fetching ALL rounds with left join (default)
       console.log('StatsContext: Query - fetching ALL rounds (no user_id filter, left join with profiles)');
 
       if (error) {
