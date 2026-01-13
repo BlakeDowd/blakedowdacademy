@@ -129,8 +129,18 @@ export default function HomeDashboard() {
   const [isSavingName, setIsSavingName] = useState(false);
   const [selectedIcon, setSelectedIcon] = useState<string | null>(user?.profileIcon || null);
   const [isSavingIcon, setIsSavingIcon] = useState(false);
+  const [showProfileSetup, setShowProfileSetup] = useState(false);
   
   const userName = getUserDisplayName();
+  
+  // Check if full_name is an email (contains '@') - show setup modal if so
+  useEffect(() => {
+    if (user?.fullName && user.fullName.includes('@')) {
+      setShowProfileSetup(true);
+      // Initialize editedName with current email (user can change it)
+      setEditedName(user.fullName);
+    }
+  }, [user?.fullName]);
   
   // Update selectedIcon when user.profileIcon changes
   useEffect(() => {
@@ -145,7 +155,7 @@ export default function HomeDashboard() {
     setIsEditingName(true);
   };
   
-  // Instant UI feedback: Update local state immediately
+  // Fix save function: Use supabase.auth.updateUser AND update profiles table
   const handleSaveName = async () => {
     if (!user?.id || !editedName.trim()) {
       setIsEditingName(false);
@@ -155,24 +165,30 @@ export default function HomeDashboard() {
     const newName = editedName.trim();
     setIsSavingName(true);
     
-    // INSTANT UI FEEDBACK: Update local state immediately (optimistic update)
-    setOptimisticName(newName);
-    setIsEditingName(false); // Close edit mode immediately
-    
     try {
-      // Update in Supabase using full_name (snake_case) to match database schema
-      // Standardized: ONLY use full_name column, never display_name or name
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
       
-      // Update the specific user's profile using their auth.uid() as the id
-      const { data, error } = await supabase
+      // Update BOTH auth.user metadata AND public.profiles table
+      // Standardized: ONLY use full_name column, never display_name or name
+      
+      // 1. Update auth.user metadata
+      const { error: authError } = await supabase.auth.updateUser({
+        data: { full_name: newName }
+      });
+      
+      if (authError) {
+        console.error('Error updating auth user metadata:', authError);
+      }
+      
+      // 2. Update public.profiles table
+      const { data, error: profileError } = await supabase
         .from('profiles')
         .update({ full_name: newName })
         .eq('id', user.id)
         .select();
 
-      if (error && (error.code === 'PGRST116' || error.message?.includes('No rows'))) {
+      if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('No rows'))) {
         // Create profile if it doesn't exist
         const { error: createError } = await supabase
           .from('profiles')
@@ -189,28 +205,23 @@ export default function HomeDashboard() {
           setIsSavingName(false);
           return;
         }
-      } else if (error) {
-        console.error('Error updating full_name:', error);
-        alert(`Failed to update name: ${error.message || 'Unknown error'}`);
+      } else if (profileError) {
+        console.error('Error updating full_name in profiles:', profileError);
+        alert(`Failed to update name: ${profileError.message || 'Unknown error'}`);
         setIsSavingName(false);
         return;
       }
 
-      // Refresh user context to sync across app (this will update the actual user state)
+      // Refresh user context to sync across app
       if (refreshUser) {
         await refreshUser();
       }
       
-      // Clear optimistic name since we now have the real data
-      setOptimisticName(null);
+      // Force refresh to clear old email-only data
+      window.location.reload();
     } catch (error) {
       console.error('Error saving name:', error);
-      // Revert optimistic update on error
-      setOptimisticName(null);
-      setIsEditingName(true); // Reopen edit mode
-      setEditedName(newName); // Keep the edited name
       alert('Failed to update name. Please try again.');
-    } finally {
       setIsSavingName(false);
     }
   };
@@ -226,9 +237,6 @@ export default function HomeDashboard() {
     
     setSelectedIcon(iconId);
     setIsSavingIcon(true);
-    
-    // INSTANT UI FEEDBACK: Update immediately (optimistic update)
-    // The icon will appear selected right away
     
     try {
       const { createClient } = await import("@/lib/supabase/client");
@@ -254,6 +262,57 @@ export default function HomeDashboard() {
       console.error('Error saving icon:', error);
       setSelectedIcon(user?.profileIcon || null);
     } finally {
+      setIsSavingIcon(false);
+    }
+  };
+  
+  // Handle profile setup completion (from modal)
+  const handleProfileSetupComplete = async () => {
+    if (!user?.id || !editedName.trim() || !selectedIcon) {
+      alert('Please enter your name and select an icon.');
+      return;
+    }
+    
+    setIsSavingName(true);
+    setIsSavingIcon(true);
+    
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      
+      const newName = editedName.trim();
+      
+      // Update BOTH auth.user metadata AND public.profiles table
+      await supabase.auth.updateUser({
+        data: { full_name: newName }
+      });
+      
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ 
+          full_name: newName,
+          profile_icon: selectedIcon
+        })
+        .eq('id', user.id);
+
+      if (profileError) {
+        console.error('Error updating profile:', profileError);
+        alert('Failed to save profile. Please try again.');
+        return;
+      }
+
+      // Refresh and reload
+      if (refreshUser) {
+        await refreshUser();
+      }
+      
+      setShowProfileSetup(false);
+      window.location.reload();
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      alert('Failed to save profile. Please try again.');
+    } finally {
+      setIsSavingName(false);
       setIsSavingIcon(false);
     }
   };
@@ -447,34 +506,71 @@ export default function HomeDashboard() {
     return (
       <div className="min-h-screen bg-gray-50 pb-20">
       <div className="max-w-md mx-auto bg-white min-h-screen">
-        {/* Top Section - Premium Header with Name/Icon Editing */}
-        <div className="px-5 pt-6 pb-4 mb-4 bg-white">
-          <div className="flex flex-col items-center gap-4">
-            {/* Profile Icon Display/Edit */}
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-gray-100 shadow-sm flex items-center justify-center text-4xl bg-white">
-                {selectedIcon ? (
-                  GOLF_ICONS.find(icon => icon.id === selectedIcon)?.emoji || '👤'
-                ) : (
-                  '👤'
-                )}
+        {/* Profile Setup Modal - Only shows if full_name is an email */}
+        {showProfileSetup && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Complete Your Profile</h2>
+              <p className="text-sm text-gray-600 mb-6">
+                Let's set up your profile with your name and a fun icon!
+              </p>
+              
+              {/* Name Input */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Your Name
+                </label>
+                <input
+                  type="text"
+                  value={editedName}
+                  onChange={(e) => setEditedName(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#014421] focus:border-[#014421]"
+                  placeholder="Enter your name"
+                  autoFocus
+                />
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">Choose Icon:</span>
-                <IconPicker selectedIcon={selectedIcon} onSelectIcon={handleIconSelect} />
+              
+              {/* Icon Picker */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Choose Your Icon
+                </label>
+                <IconPicker selectedIcon={selectedIcon} onSelectIcon={setSelectedIcon} />
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={handleProfileSetupComplete}
+                  disabled={isSavingName || !editedName.trim() || !selectedIcon}
+                  className="flex-1 px-4 py-3 bg-[#014421] text-white rounded-lg font-semibold hover:bg-[#013320] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSavingName ? 'Saving...' : 'Save Profile'}
+                </button>
               </div>
             </div>
-            
-            {/* Name Display/Edit */}
-            <div className="flex flex-col items-center gap-2 w-full">
+          </div>
+        )}
+        
+        {/* Top Section - Premium Header */}
+        <div className="px-5 pt-6 pb-4 flex items-center justify-between mb-4 bg-white">
+          <div className="flex items-center gap-3">
+            <div className="w-14 h-14 rounded-full overflow-hidden ring-2 ring-gray-100 shadow-sm flex items-center justify-center text-3xl bg-white">
+              {selectedIcon ? (
+                GOLF_ICONS.find(icon => icon.id === selectedIcon)?.emoji || '👤'
+              ) : (
+                '👤'
+              )}
+            </div>
+            <div className="flex-1">
               <p className="text-gray-400 text-xs">Welcome back,</p>
               {isEditingName ? (
-                <div className="flex items-center gap-2 w-full max-w-xs">
+                <div className="flex items-center gap-2 mt-1">
                   <input
                     type="text"
                     value={editedName}
                     onChange={(e) => setEditedName(e.target.value)}
-                    className="flex-1 text-xl font-bold text-gray-900 border-2 border-[#014421] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#014421]"
+                    className="text-gray-900 font-bold text-xl border-2 border-[#014421] rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#014421] flex-1"
                     autoFocus
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
@@ -488,26 +584,27 @@ export default function HomeDashboard() {
                   <button
                     onClick={handleSaveName}
                     disabled={isSavingName}
-                    className="p-2 rounded hover:bg-green-100 transition-colors disabled:opacity-50"
-                    style={{ color: '#014421' }}
+                    className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
                   >
                     {isSavingName ? (
-                      <div className="w-5 h-5 border-2 border-[#014421] border-t-transparent rounded-full animate-spin" />
+                      <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
                     ) : (
-                      <Check className="w-5 h-5" />
+                      <Check className="w-4 h-4 text-green-600" />
                     )}
                   </button>
                   <button
                     onClick={handleCancelEdit}
                     disabled={isSavingName}
-                    className="p-2 rounded hover:bg-red-100 transition-colors disabled:opacity-50"
+                    className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
                   >
-                    <X className="w-5 h-5 text-gray-600" />
+                    <X className="w-4 h-4 text-gray-600" />
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-bold text-gray-900">{userName}</h1>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-gray-900 font-bold text-xl">
+                    {userName}
+                  </p>
                   <button
                     onClick={handleEditName}
                     className="p-1 rounded hover:bg-gray-100 transition-colors"
@@ -521,7 +618,7 @@ export default function HomeDashboard() {
           </div>
         </div>
         
-        {/* Stats Cards Section */}
+        {/* Stats Cards Section - Streak and Trophy Case */}
         <div className="px-5 mb-4">
           <div 
             className="rounded-full px-4 py-2 flex items-center gap-2 shadow-md"
@@ -534,6 +631,17 @@ export default function HomeDashboard() {
             <div className="flex flex-col">
               <span className="text-xs font-medium text-white">Streak</span>
               <span className="text-white text-sm font-bold">0 days</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* Trophy Case Section */}
+        <div className="px-5 mb-4">
+          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Trophy Case</h2>
+            <div className="text-center py-8">
+              <Trophy className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+              <p className="text-sm text-gray-500">No trophies yet. Keep practicing!</p>
             </div>
           </div>
         </div>
