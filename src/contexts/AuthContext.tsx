@@ -8,9 +8,7 @@ import type { User as SupabaseUser } from "@supabase/supabase-js";
 interface User {
   id: string;
   email: string;
-  fullName?: string;
-  display_name?: string;
-  name?: string;
+  fullName?: string; // Standardized: Only use full_name from profiles table
   initialHandicap?: number;
   createdAt?: string;
 }
@@ -85,9 +83,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log('AuthContext: Fetching user profile...');
 
           // Fetch user profile with initialHandicap and full_name from profiles table
+          // Standardized to use full_name only (not display_name)
           let { data: profile, error: profileError } = await supabase
             .from('profiles')
-            .select('initial_handicap, full_name, display_name, name, created_at')
+            .select('initial_handicap, full_name, created_at')
             .eq('id', supabaseUser.id)
             .single();
 
@@ -101,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 full_name: supabaseUser.email?.split('@')[0] || 'User',
                 created_at: new Date().toISOString(),
               })
-              .select('initial_handicap, full_name, display_name, name, created_at')
+              .select('initial_handicap, full_name, created_at')
               .single();
             
             if (createError) {
@@ -120,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 full_name: supabaseUser.email?.split('@')[0] || 'User',
                 created_at: new Date().toISOString(),
               })
-              .select('initial_handicap, full_name, display_name, name, created_at')
+              .select('initial_handicap, full_name, created_at')
               .single();
             
             if (!createError && newProfile) {
@@ -130,15 +129,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           // Set user with profile data from profiles table
-          setUser({
-            id: supabaseUser.id,
-            email: supabaseUser.email || '',
-            fullName: profile?.full_name, // Fetch from profiles.full_name
-            display_name: profile?.display_name,
-            name: profile?.name,
-            initialHandicap: profile?.initial_handicap,
-            createdAt: profile?.created_at || supabaseUser.created_at,
-          });
+            setUser({
+              id: supabaseUser.id,
+              email: supabaseUser.email || '',
+              fullName: profile?.full_name, // Standardized: Only use full_name from profiles table
+              initialHandicap: profile?.initial_handicap,
+              createdAt: profile?.created_at || supabaseUser.created_at,
+            });
           setIsAuthenticated(true);
           console.log('AuthContext: Initial check complete, user loaded');
         } catch (error) {
@@ -170,10 +167,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log('AuthContext: Fetching user profile for:', session.user.id);
           
           try {
-            // Fetch user profile
+            // Fetch user profile - standardized to use full_name only
             let { data: profile, error: profileError } = await supabase
               .from('profiles')
-              .select('initial_handicap, full_name, display_name, name, created_at')
+              .select('initial_handicap, full_name, created_at')
               .eq('id', session.user.id)
               .single();
 
@@ -187,7 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   full_name: session.user.email?.split('@')[0] || 'User',
                   created_at: new Date().toISOString(),
                 })
-                .select('initial_handicap, full_name, display_name, name, created_at')
+                .select('initial_handicap, full_name, created_at')
                 .single();
               
               if (createError) {
@@ -206,7 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   full_name: session.user.email?.split('@')[0] || 'User',
                   created_at: new Date().toISOString(),
                 })
-                .select('initial_handicap, full_name, display_name, name, created_at')
+                .select('initial_handicap, full_name, created_at')
                 .single();
               
               if (!createError && newProfile) {
@@ -215,13 +212,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               }
             }
 
-            // Set user with profile data from profiles table
+            // Set user with profile data from profiles table - standardized to use full_name only
             setUser({
               id: session.user.id,
               email: session.user.email || '',
-              fullName: profile?.full_name, // Fetch from profiles.full_name
-              display_name: profile?.display_name,
-              name: profile?.name,
+              fullName: profile?.full_name, // Standardized: Only use full_name from profiles table
               initialHandicap: profile?.initial_handicap,
               createdAt: profile?.created_at || session.user.created_at,
             });
@@ -258,9 +253,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: { user: supabaseUser } } = await supabase.auth.getUser();
       if (!supabaseUser) return;
 
+      // Standardized to use full_name only (not display_name)
       let { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('initial_handicap, full_name, display_name, name, created_at')
+        .select('initial_handicap, full_name, created_at')
         .eq('id', supabaseUser.id)
         .single();
 
@@ -302,13 +298,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Standardized: Only use full_name from profiles table
       setUser((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
-          fullName: profile?.full_name,
-          display_name: profile?.display_name,
-          name: profile?.name,
+          fullName: profile?.full_name, // Standardized: Only use full_name
           initialHandicap: profile?.initial_handicap,
         };
       });
@@ -342,9 +337,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Fetch user profile with try/catch - login should succeed even if profile fetch fails
       let profile = null;
       try {
+        // Standardized to use full_name only (not display_name)
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('initial_handicap, full_name, display_name, name, created_at')
+          .select('initial_handicap, full_name, created_at')
           .eq('id', data.user.id)
           .single();
         
@@ -392,12 +388,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Continue with login even if profile fetch fails
       }
 
+      // Standardized: Only use full_name from profiles table
       setUser({
         id: data.user.id,
         email: data.user.email || '',
-        fullName: profile?.full_name,
-        display_name: profile?.display_name,
-        name: profile?.name,
+        fullName: profile?.full_name, // Standardized: Only use full_name
         initialHandicap: profile?.initial_handicap,
         createdAt: profile?.created_at || data.user.created_at,
       });
