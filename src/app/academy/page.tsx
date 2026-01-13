@@ -549,7 +549,7 @@ const TROPHY_LIST: TrophyData[] = [
 ];
 
 // Helper function to get timeframe dates
-function getTimeframeDates(timeFilter: 'week' | 'month' | 'allTime') {
+function getTimeframeDates(timeFilter: 'week' | 'month' | 'year' | 'allTime') {
   const now = new Date();
   let startDate: Date;
   
@@ -559,6 +559,9 @@ function getTimeframeDates(timeFilter: 'week' | 'month' | 'allTime') {
   } else if (timeFilter === 'month') {
     startDate = new Date(now);
     startDate.setMonth(now.getMonth() - 1);
+  } else if (timeFilter === 'year') {
+    startDate = new Date(now);
+    startDate.setFullYear(now.getFullYear() - 1);
   } else {
     startDate = new Date(0); // All time
   }
@@ -567,7 +570,7 @@ function getTimeframeDates(timeFilter: 'week' | 'month' | 'allTime') {
 }
 
 // Calculate rounds count
-function calculateUserRounds(rounds: any[], timeFilter: 'week' | 'month' | 'allTime') {
+function calculateUserRounds(rounds: any[], timeFilter: 'week' | 'month' | 'year' | 'allTime') {
   const { startDate } = getTimeframeDates(timeFilter);
   return rounds.filter(round => {
     if (timeFilter === 'allTime') return true;
@@ -577,7 +580,7 @@ function calculateUserRounds(rounds: any[], timeFilter: 'week' | 'month' | 'allT
 }
 
 // Calculate practice time (in hours)
-function calculateUserPracticeTime(timeFilter: 'week' | 'month' | 'allTime') {
+function calculateUserPracticeTime(timeFilter: 'week' | 'month' | 'year' | 'allTime') {
   if (typeof window === 'undefined') return 0;
   try {
     const { startDate } = getTimeframeDates(timeFilter);
@@ -605,7 +608,7 @@ function calculateUserPracticeTime(timeFilter: 'week' | 'month' | 'allTime') {
 }
 
 // Calculate drills count
-function calculateUserDrills(timeFilter: 'week' | 'month' | 'allTime') {
+function calculateUserDrills(timeFilter: 'week' | 'month' | 'year' | 'allTime') {
   if (typeof window === 'undefined') return 0;
   try {
     const { startDate } = getTimeframeDates(timeFilter);
@@ -626,7 +629,7 @@ function calculateUserDrills(timeFilter: 'week' | 'month' | 'allTime') {
 }
 
 // Calculate library lessons count (completed lessons with both video and text)
-function calculateUserLibraryLessons(timeFilter: 'week' | 'month' | 'allTime') {
+function calculateUserLibraryLessons(timeFilter: 'week' | 'month' | 'year' | 'allTime') {
   if (typeof window === 'undefined') return 0;
   try {
     const { startDate } = getTimeframeDates(timeFilter);
@@ -681,7 +684,7 @@ function formatMetricValue(value: number, metric: 'library' | 'practice' | 'roun
 // Generate mock leaderboard data for a specific metric (four-pillar cards)
 function getMockLeaderboard(
   metric: 'library' | 'practice' | 'rounds' | 'drills',
-  timeFilter: 'week' | 'month' | 'allTime',
+  timeFilter: 'week' | 'month' | 'year' | 'allTime',
   rounds: any[],
   userName: string,
   user?: { initialHandicap?: number } | null
@@ -778,7 +781,7 @@ function formatLeaderboardValue(value: number, metric: 'xp' | 'library' | 'pract
 // Get leaderboard data for selected metric (main XP leaderboard)
 function getLeaderboardData(
   metric: 'xp' | 'library' | 'practice' | 'rounds' | 'drills' | 'lowGross' | 'lowNett' | 'birdies' | 'eagles',
-  timeFilter: 'week' | 'month' | 'allTime',
+  timeFilter: 'week' | 'month' | 'year' | 'allTime',
   rounds: any[],
   totalXP: number,
   userName: string
@@ -932,7 +935,7 @@ function getLeaderboardData(
 }
 
 // Calculate total XP filtered by timeframe
-function calculateTotalXPByTimeframe(rounds: any[], userProgress: { totalXP: number; completedDrills: string[] }, timeFilter: 'week' | 'month' | 'allTime') {
+function calculateTotalXPByTimeframe(rounds: any[], userProgress: { totalXP: number; completedDrills: string[] }, timeFilter: 'week' | 'month' | 'year' | 'allTime') {
   const { startDate } = getTimeframeDates(timeFilter);
   
   // Filter rounds by timeframe
@@ -980,7 +983,7 @@ export default function AcademyPage() {
     totalXP: 0,
     completedDrills: []
   });
-  const [timeFilter, setTimeFilter] = useState<'week' | 'month' | 'allTime'>('allTime');
+  const [timeFilter, setTimeFilter] = useState<'week' | 'month' | 'year' | 'allTime'>('allTime');
   const [showFullLeaderboard, setShowFullLeaderboard] = useState(false);
   const [leaderboardSearch, setLeaderboardSearch] = useState('');
   const [selectedTrophy, setSelectedTrophy] = useState<TrophyData | null>(null);
@@ -1957,12 +1960,13 @@ export default function AcademyPage() {
               </button>
             </div>
             
-            {/* Time Filter Buttons */}
-            <div className="flex items-center gap-2 mb-4">
-              {(['week', 'month', 'allTime'] as const).map((filter) => {
+            {/* Time Filter Buttons - Centered */}
+            <div className="flex items-center justify-center gap-2 mb-4">
+              {(['week', 'month', 'year', 'allTime'] as const).map((filter) => {
                 const labels = {
                   week: 'Week',
                   month: 'Month',
+                  year: 'Year',
                   allTime: 'All-Time'
                 };
                 
