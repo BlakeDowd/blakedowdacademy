@@ -15,6 +15,8 @@ interface LeaderboardEntry {
   tier: 'Bronze' | 'Silver' | 'Gold' | 'Platinum';
   previousRank?: number; // For trend arrows
   avatar?: string; // Avatar initial or emoji
+  lowRound?: number | null; // Lowest score
+  birdieCount?: number; // Total birdies
 }
 
 interface WeeklyPlan {
@@ -813,13 +815,32 @@ function getLeaderboardData(
     };
   }
   
+  // Calculate low round and birdie count from rounds data
+  const filteredRounds = rounds.filter(round => {
+    if (timeFilter === 'allTime') return true;
+    const roundDate = new Date(round.date);
+    const { startDate } = getTimeframeDates(timeFilter);
+    return roundDate >= startDate;
+  });
+  
+  // Calculate min score (low round) - only valid scores
+  const validScores = filteredRounds
+    .map(r => r.score)
+    .filter(score => score !== null && score !== undefined && score > 0);
+  const lowRound = validScores.length > 0 ? Math.min(...validScores) : null;
+  
+  // Calculate total birdies
+  const birdieCount = filteredRounds.reduce((sum, round) => sum + (round.birdies || 0), 0);
+  
   // Only include user in leaderboard if they have activity
   const userEntry = {
     id: 'user',
     name: userName, // Use actual full_name instead of 'You'
     avatar: userName.split(' ').map(n => n[0]).join('') || 'Y',
     value: userValue,
-    previousRank: undefined
+    previousRank: undefined,
+    lowRound: lowRound,
+    birdieCount: birdieCount
   };
   
   // Sort by value descending
@@ -1081,6 +1102,12 @@ export default function AcademyPage() {
   const top3 = currentLeaderboard.top3;
   const ranks4to7 = currentLeaderboard.all.slice(3, 7);
   const sortedLeaderboard = currentLeaderboard.all;
+  
+  // Find the lowest round across all entries for trophy icon
+  const allLowRounds: number[] = sortedLeaderboard
+    .map(entry => entry.lowRound)
+    .filter((score): score is number => score !== null && score !== undefined && score > 0) as number[];
+  const globalLowRound = allLowRounds.length > 0 ? Math.min(...allLowRounds) : null;
 
   // Get four-pillar leaderboard data - recalculates when timeFilter changes
   const libraryLeaderboard = getMockLeaderboard('library', timeFilter, rounds, userName, user);
@@ -1927,23 +1954,40 @@ export default function AcademyPage() {
                           </span>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className={`font-semibold text-sm ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
+                          <div className={`font-semibold text-sm flex items-center gap-1 ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
                             {entry.name}
+                            {entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound && (
+                              <Trophy className="w-3 h-3" style={{ color: '#FFA500' }} />
+                            )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold" style={{ color: '#FFA500' }}>
-                            {formatLeaderboardValue(entry.value, leaderboardMetric)}
-                          </span>
-                          {entry.movedUp && (
-                            <TrendingUp className="w-4 h-4" style={{ color: '#10B981' }} />
-                          )}
-                          {entry.movedDown && (
-                            <TrendingDown className="w-4 h-4" style={{ color: '#EF4444' }} />
-                          )}
-                          {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
-                            <div className="w-4 h-4" />
-                          )}
+                        <div className="flex items-center gap-3 text-xs">
+                          <div className="text-right min-w-[60px]">
+                            <span className="text-gray-500">Low:</span>
+                            <span className="ml-1 font-semibold text-gray-700">
+                              {entry.lowRound !== null && entry.lowRound !== undefined ? entry.lowRound : '—'}
+                            </span>
+                          </div>
+                          <div className="text-right min-w-[60px]">
+                            <span className="text-gray-500">Birdies:</span>
+                            <span className="ml-1 font-semibold text-gray-700">
+                              {entry.birdieCount || 0}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold" style={{ color: '#FFA500' }}>
+                              {formatLeaderboardValue(entry.value, leaderboardMetric)}
+                            </span>
+                            {entry.movedUp && (
+                              <TrendingUp className="w-4 h-4" style={{ color: '#10B981' }} />
+                            )}
+                            {entry.movedDown && (
+                              <TrendingDown className="w-4 h-4" style={{ color: '#EF4444' }} />
+                            )}
+                            {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
+                              <div className="w-4 h-4" />
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -1999,23 +2043,40 @@ export default function AcademyPage() {
                             </span>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className={`font-semibold text-sm ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
+                            <div className={`font-semibold text-sm flex items-center gap-1 ${entry.id === 'user' ? 'text-[#014421]' : 'text-gray-900'}`}>
                               {entry.name}
+                              {entry.lowRound !== null && entry.lowRound !== undefined && entry.lowRound === globalLowRound && (
+                                <Trophy className="w-3 h-3" style={{ color: '#FFA500' }} />
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold" style={{ color: '#FFA500' }}>
-                              {formatLeaderboardValue(entry.value, leaderboardMetric)}
-                            </span>
-                            {entry.movedUp && (
-                              <TrendingUp className="w-4 h-4" style={{ color: '#10B981' }} />
-                            )}
-                            {entry.movedDown && (
-                              <TrendingDown className="w-4 h-4" style={{ color: '#EF4444' }} />
-                            )}
-                            {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
-                              <div className="w-4 h-4" />
-                            )}
+                          <div className="flex items-center gap-3 text-xs">
+                            <div className="text-right min-w-[60px]">
+                              <span className="text-gray-500">Low:</span>
+                              <span className="ml-1 font-semibold text-gray-700">
+                                {entry.lowRound !== null && entry.lowRound !== undefined ? entry.lowRound : '—'}
+                              </span>
+                            </div>
+                            <div className="text-right min-w-[60px]">
+                              <span className="text-gray-500">Birdies:</span>
+                              <span className="ml-1 font-semibold text-gray-700">
+                                {entry.birdieCount || 0}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold" style={{ color: '#FFA500' }}>
+                                {formatLeaderboardValue(entry.value, leaderboardMetric)}
+                              </span>
+                              {entry.movedUp && (
+                                <TrendingUp className="w-4 h-4" style={{ color: '#10B981' }} />
+                              )}
+                              {entry.movedDown && (
+                                <TrendingDown className="w-4 h-4" style={{ color: '#EF4444' }} />
+                              )}
+                              {!entry.movedUp && !entry.movedDown && entry.rankChange === 0 && (
+                                <div className="w-4 h-4" />
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
