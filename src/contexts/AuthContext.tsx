@@ -108,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               console.error('AuthContext: Error creating profile:', createError);
             } else {
               profile = newProfile;
-              console.log('AuthContext: Profile created successfully with id:', newProfile?.id);
+              console.log('AuthContext: Profile created successfully with id:', supabaseUser.id);
             }
           } else if (!profile && !profileError) {
             // Fallback: if profile is null but no error, try to create it
@@ -194,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 console.error('AuthContext: Error creating profile:', createError);
               } else {
                 profile = newProfile;
-                console.log('AuthContext: Profile created successfully with id:', newProfile?.id);
+                console.log('AuthContext: Profile created successfully with id:', session.user.id);
               }
             } else if (!profile && !profileError) {
               // Fallback: if profile is null but no error, try to create it
@@ -281,7 +281,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error('refreshUser: Error creating profile:', createError);
         } else {
           profile = newProfile;
-          console.log('refreshUser: Profile created successfully with id:', newProfile?.id);
+          console.log('refreshUser: Profile created successfully with id:', supabaseUser.id);
         }
       } else if (!profile && !profileError) {
         // Fallback: if profile is null but no error, try to create it
@@ -365,7 +365,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.error('Login: Error creating profile:', createError);
           } else {
             profile = newProfile;
-            console.log('Login: Profile created successfully with id:', newProfile?.id);
+            console.log('Login: Profile created successfully with id:', data.user.id);
           }
         } else if (!profileData && !profileError) {
           // Fallback: if profile is null but no error, try to create it

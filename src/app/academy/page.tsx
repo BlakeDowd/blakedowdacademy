@@ -1168,15 +1168,17 @@ export default function AcademyPage() {
         return;
       }
 
-      // Refresh user context to sync across app
+      // Refresh user context to sync across app - this updates user.fullName
       if (refreshUser) {
         await refreshUser();
       }
       
-      // Use router.refresh() for instant update across the page
-      router.refresh();
-      
+      // Close edit mode immediately
       setIsEditingName(false);
+      
+      // Use router.refresh() to force a full page refresh which ensures all data is fresh
+      // This will recalculate userName from user.fullName and update the leaderboard
+      router.refresh();
     } catch (error) {
       console.error('Error saving name:', error);
       alert('Failed to update name. Please try again.');
