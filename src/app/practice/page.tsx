@@ -118,18 +118,19 @@ export default function PracticePage() {
   const [editedName, setEditedName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
   
-  // Get user name - fetch from profiles.full_name, fallback to email or 'User'
+  // Force full_name: Fetch from profiles.full_name ONLY
+  // No fallbacks to 'User' - if full_name is an email, show email; if it's a name, show name
   const getUserName = () => {
-    // Try fullName from profiles table first (standardized to use full_name only)
+    // Force: ONLY use full_name from profiles table
     if (user?.fullName) {
-      return user.fullName;
+      return user.fullName; // Show whatever is in full_name (email or name)
     }
-    // Fallback to full email if available
+    // If no full_name exists, show email as fallback
     if (user?.email) {
       return user.email;
     }
-    // Final fallback
-    return 'User';
+    // Final fallback only if nothing exists
+    return '';
   };
   
   const userName = getUserName();

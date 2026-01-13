@@ -103,20 +103,19 @@ export default function HomeDashboard() {
   // Ensure rounds is always an array, never null or undefined
   const safeRounds = rounds || [];
   
-  // Force full_name: Fetch from profiles.full_name ONLY, no fallbacks to email
+  // Force full_name: Fetch from profiles.full_name ONLY
+  // No fallbacks to 'User' - if full_name is an email, show email; if it's a name, show name
   const getUserDisplayName = () => {
     // Force: ONLY use full_name from profiles table
-    // If full_name exists and is not an email, use it
-    if (user?.fullName && !user.fullName.includes('@')) {
-      return user.fullName;
+    if (user?.fullName) {
+      return user.fullName; // Show whatever is in full_name (email or name)
     }
-    // If full_name is an email or doesn't exist, show placeholder
-    if (user?.fullName && user.fullName.includes('@')) {
-      // Still an email - show it but indicate it needs to be changed
-      return user.fullName;
+    // If no full_name exists, show email as fallback
+    if (user?.email) {
+      return user.email;
     }
-    // No full_name set yet
-    return 'User';
+    // Final fallback only if nothing exists
+    return '';
   };
   
   // Profile modal state
@@ -196,7 +195,8 @@ export default function HomeDashboard() {
       const newName = editedName.trim();
       
       // Bulletproof Save: Update ONLY full_name and profile_icon in profiles table
-      // Standardized: ONLY use full_name column, never display_name or name
+      // Force: ONLY use full_name column, never display_name or name
+      // This specifically updates the full_name column in Supabase
       const { error: profileError } = await supabase
         .from('profiles')
         .update({ 
