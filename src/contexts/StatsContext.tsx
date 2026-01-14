@@ -184,6 +184,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       console.log('StatsContext: Transformed rounds data:', transformedRounds);
       
       // Verify App State: Alert if rounds.length === 0 so we know if data is actually arriving from Supabase
+      // Dismiss the Alert: Once the data loads, the alert should automatically stop appearing
       if (transformedRounds.length === 0) {
         console.warn('⚠️ StatsContext: transformedRounds.length === 0 - No rounds data from Supabase');
         console.warn('⚠️ This could mean:');
@@ -197,9 +198,10 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         }
       } else {
         console.log('✅ StatsContext: Rounds data loaded successfully:', transformedRounds.length, 'rounds');
-        // Clear alert flag if rounds are found
+        // Dismiss the Alert: Clear alert flag if rounds are found - alert will stop appearing
         if (typeof window !== 'undefined') {
           sessionStorage.removeItem('statsContextRoundsAlertShown');
+          sessionStorage.removeItem('roundsAlertShown');
         }
       }
       

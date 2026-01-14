@@ -799,6 +799,7 @@ function getLeaderboardData(
     userName,
   });
   // Debug: Log all rounds with user info to verify Stuart's rounds are included
+  // Map Stuart's Data: Ensure the Academy page correctly renders Stuart's round now that the database is allowing us to see it
   // Check for Null Profiles: Verify rounds without profiles are included as 'Unknown User'
   if (rounds && rounds.length > 0) {
     console.log('Leaderboard: All rounds with user info:', rounds.map((r: any) => ({
@@ -807,6 +808,23 @@ function getLeaderboardData(
       date: r.date,
       score: r.score
     })));
+    // Map Stuart's Data: Check if Stuart's rounds are in the data
+    const stuartRounds = rounds.filter((r: any) => 
+      r.full_name?.toLowerCase().includes('stuart') || 
+      r.user_id?.includes('stuart') ||
+      r.full_name === 'Stuart Tibben'
+    );
+    if (stuartRounds.length > 0) {
+      console.log('✅ Leaderboard: Stuart\'s rounds found:', stuartRounds.length);
+      console.log('✅ Leaderboard: Stuart\'s rounds data:', stuartRounds.map((r: any) => ({
+        user_id: r.user_id,
+        full_name: r.full_name,
+        date: r.date,
+        score: r.score
+      })));
+    } else {
+      console.log('Leaderboard: No Stuart rounds found in data (this is OK if Stuart hasn\'t logged rounds)');
+    }
     // Check for Null Profiles: Count rounds with 'Unknown User'
     const unknownUserRounds = rounds.filter((r: any) => !r.full_name || r.full_name === 'Unknown User');
     if (unknownUserRounds.length > 0) {

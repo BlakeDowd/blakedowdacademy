@@ -101,30 +101,38 @@ export default function HomeDashboard() {
   const { user, refreshUser } = useAuth();
   
   // Ensure rounds is always an array, never null or undefined
-  // Check Dashboard Fetch: Ensure we aren't accidentally filtering for a specific ID
-  const safeRounds = rounds || [];
+  // Filter Dashboard Rounds: Even though we fetch 'all' rounds in the background, 
+  // filter safeRounds to show only the ones where round.user_id === user.id for personal stats
+  const allRounds = rounds || [];
+  const safeRounds = user?.id 
+    ? allRounds.filter((round: any) => round.user_id === user.id)
+    : [];
   
   // Verify App State: Alert if rounds.length === 0 so we know if data is actually arriving from Supabase
+  // Dismiss the Alert: Once the data loads, the alert should automatically stop appearing
   useEffect(() => {
     if (safeRounds.length === 0 && user?.id) {
       console.warn('⚠️ HomeDashboard: rounds.length === 0 - No rounds data from Supabase');
       console.warn('⚠️ This could mean:');
-      console.warn('  1. No rounds exist in database');
+      console.warn('  1. No rounds exist in database for this user');
       console.warn('  2. RLS policies are blocking access');
       console.warn('  3. Query is failing silently');
+      console.warn('⚠️ Total rounds in database:', allRounds.length);
       // Alert user to check console for details
       if (typeof window !== 'undefined' && !sessionStorage.getItem('roundsAlertShown')) {
         alert('⚠️ No rounds found!\n\nCheck browser console for details.\n\nThis alert will only show once per session.');
         sessionStorage.setItem('roundsAlertShown', 'true');
       }
     } else if (safeRounds.length > 0) {
-      console.log('✅ HomeDashboard: Rounds data loaded successfully:', safeRounds.length, 'rounds');
-      // Clear alert flag if rounds are found
+      console.log('✅ HomeDashboard: Rounds data loaded successfully:', safeRounds.length, 'user rounds');
+      console.log('✅ HomeDashboard: Total rounds in database:', allRounds.length);
+      // Dismiss the Alert: Clear alert flag if rounds are found - alert will stop appearing
       if (typeof window !== 'undefined') {
         sessionStorage.removeItem('roundsAlertShown');
+        sessionStorage.removeItem('statsContextRoundsAlertShown');
       }
     }
-  }, [safeRounds.length, user?.id]);
+  }, [safeRounds.length, allRounds.length, user?.id]);
   
   // Clean Display: Ensure Home page pulls from profiles.full_name (blake Dowd)
   // Verify Data Source: Force it to display profile?.full_name || user.email
