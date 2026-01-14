@@ -86,22 +86,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           
           console.log('AuthContext: User authenticated via', session ? 'getSession()' : 'getUser()', supabaseUser.id);
+          
+          // Kill the Wait: Set authentication and loading state immediately after supabaseUser is found
+          setIsAuthenticated(true);
+          setLoading(false);
+          console.log('AuthContext: Authentication state set immediately, loading disabled');
+          
           console.log('AuthContext: Fetching user profile...');
 
-          // Fetch user profile with initialHandicap, full_name, and profile_icon from profiles table
-          // Make Handicap Optional: Wrap the fetch so if initial_handicap fails, the app still loads the rest of the profile
+          // Fetch user profile with full_name and profile_icon from profiles table
+          // Remove Database Dependency: Removed initial_handicap from .select() to avoid database dependency
           // Force: ONLY use full_name column
           // Check Academy Fetch: Log exactly what full_name strings are being returned from the database
           console.log('AuthContext: Fetching profile for user ID:', supabaseUser.id);
           
-          // Make Handicap Optional: Try to fetch profile, but don't fail if initial_handicap is missing
+          // Make Handicap Optional: Try to fetch profile, but don't fail if profile fetch fails
           let profile: any = null;
           let profileError: any = null;
           
           try {
             const { data, error } = await supabase
               .from('profiles')
-              .select('initial_handicap, full_name, profile_icon, created_at')
+              .select('full_name, profile_icon, created_at')
               .eq('id', supabaseUser.id)
               .single();
             
@@ -111,7 +117,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (profile) {
               console.log('AuthContext: Profile found - full_name:', profile.full_name);
               console.log('AuthContext: Profile found - profile_icon:', profile.profile_icon);
-              console.log('AuthContext: Profile found - initial_handicap:', profile.initial_handicap);
             } else {
               console.log('AuthContext: No profile found for user ID:', supabaseUser.id);
             }
@@ -140,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 full_name: supabaseUser.email?.split('@')[0] || 'User',
                 created_at: new Date().toISOString(),
               })
-              .select('initial_handicap, full_name, profile_icon, created_at')
+              .select('full_name, profile_icon, created_at')
               .single();
             
             if (createError) {
@@ -159,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 full_name: supabaseUser.email?.split('@')[0] || 'User',
                 created_at: new Date().toISOString(),
               })
-              .select('initial_handicap, full_name, profile_icon, created_at')
+              .select('full_name, profile_icon, created_at')
               .single();
             
             if (!createError && newProfile) {
@@ -169,11 +174,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           // Verify Data Source: Force it to display profile?.full_name || user.email
-          // Make Handicap Optional: If initial_handicap fetch fails, still load the rest of the profile (like full_name)
-          // Robust Fetching: Make initial_handicap optional, use default of 0 if missing
+          // Hard-Code Defaults: Manually set initialHandicap: 0 instead of getting it from database
           // Force full_name: Set user with profile data from profiles table
           // ONLY use full_name column, no fallbacks to email or other columns
-          // Make Handicap Optional: Even if profile fetch failed, set user with available data
           // Hard-Code Profile: If profile fetch fails, use hard-coded values
           console.log('AuthContext: Setting user with full_name:', profile?.full_name);
           setUser({
@@ -181,10 +184,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             email: supabaseUser.email || '',
             fullName: profile?.full_name || 'Blake (Bypassed)', // Hard-Code Profile: Set hard-coded name if profile fetch fails
             profileIcon: profile?.profile_icon || undefined, // Golf icon selected by student
-            initialHandicap: profile?.initial_handicap ?? 0, // Hard-Code Profile: Set to 0 if profile fetch fails
+            initialHandicap: 0, // Hard-Code Defaults: Manually set to 0 instead of getting from database
             createdAt: profile?.created_at || supabaseUser.created_at,
           });
-          setIsAuthenticated(true);
           console.log('AuthContext: Initial check complete, user loaded (even if profile fetch had errors)');
         } catch (error) {
           // Bypass Profile Errors: Even if profile fetch fails, set user state so the rest of the app (like Navbar) can mount
@@ -241,9 +243,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           
           try {
             // Fetch user profile - standardized to use full_name only
+            // Remove Database Dependency: Removed initial_handicap from .select() to avoid database dependency
             let { data: profile, error: profileError } = await supabase
               .from('profiles')
-              .select('initial_handicap, full_name, profile_icon, created_at')
+              .select('full_name, profile_icon, created_at')
               .eq('id', session.user.id)
               .single();
 
@@ -257,7 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   full_name: session.user.email?.split('@')[0] || 'User',
                   created_at: new Date().toISOString(),
                 })
-                .select('initial_handicap, full_name, profile_icon, created_at')
+                .select('full_name, profile_icon, created_at')
                 .single();
               
               if (createError) {
@@ -276,7 +279,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   full_name: session.user.email?.split('@')[0] || 'User',
                   created_at: new Date().toISOString(),
                 })
-                .select('initial_handicap, full_name, profile_icon, created_at')
+                .select('full_name, profile_icon, created_at')
                 .single();
               
               if (!createError && newProfile) {
@@ -286,12 +289,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
 
             // Set user with profile data from profiles table - standardized to use full_name only
+            // Hard-Code Defaults: Manually set initialHandicap: 0 instead of getting it from database
             setUser({
               id: session.user.id,
               email: session.user.email || '',
               fullName: profile?.full_name || undefined, // Force: ONLY use full_name from profiles table
               profileIcon: profile?.profile_icon, // Golf icon selected by student
-              initialHandicap: profile?.initial_handicap ?? 0, // Robust: Use default 0 if missing
+              initialHandicap: 0, // Hard-Code Defaults: Manually set to 0 instead of getting from database
               createdAt: profile?.created_at || session.user.created_at,
             });
             setIsAuthenticated(true);
@@ -328,19 +332,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!supabaseUser) return;
 
       // Force: ONLY use full_name column
-      // Make Handicap Optional: Wrap the fetch so if initial_handicap fails, the app still loads the rest of the profile
+      // Remove Database Dependency: Removed initial_handicap from .select() to avoid database dependency
       // Also fetch profile_icon for leaderboard display
       // Check Academy Fetch: Log exactly what full_name strings are being returned from the database
       console.log('refreshUser: Fetching profile for user ID:', supabaseUser.id);
       
-      // Make Handicap Optional: Try to fetch profile, but don't fail if initial_handicap is missing
+      // Make Handicap Optional: Try to fetch profile, but don't fail if profile fetch fails
       let profile: any = null;
       let profileError: any = null;
       
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('initial_handicap, full_name, profile_icon, created_at')
+          .select('full_name, profile_icon, created_at')
           .eq('id', supabaseUser.id)
           .single();
         
@@ -350,7 +354,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (profile) {
           console.log('refreshUser: Profile found - full_name:', profile.full_name);
           console.log('refreshUser: Profile found - profile_icon:', profile.profile_icon);
-          console.log('refreshUser: Profile found - initial_handicap:', profile.initial_handicap);
         } else {
           console.log('refreshUser: No profile found for user ID:', supabaseUser.id);
         }
@@ -379,7 +382,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: supabaseUser.email?.split('@')[0] || 'User',
             created_at: new Date().toISOString(),
           })
-          .select('initial_handicap, full_name, profile_icon, created_at')
+          .select('full_name, profile_icon, created_at')
           .single();
         
         if (createError) {
@@ -398,7 +401,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: supabaseUser.email?.split('@')[0] || 'User',
             created_at: new Date().toISOString(),
           })
-          .select('initial_handicap, full_name, profile_icon, created_at')
+          .select('full_name, profile_icon, created_at')
           .single();
         
         if (!createError && newProfile) {
@@ -408,18 +411,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Verify Data Source: Force it to display profile?.full_name || user.email
-      // Make Handicap Optional: If initial_handicap fetch fails, still load the rest of the profile (like full_name)
+      // Hard-Code Defaults: Manually set initialHandicap: 0 instead of getting it from database
       // Force full_name: ONLY use full_name from profiles table, no fallbacks
       // This ensures the updated name from the save function is immediately reflected
-      // Make Handicap Optional: Even if profile fetch failed, update user with available data
       console.log('refreshUser: Updating user with full_name:', profile?.full_name);
       setUser((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
-          fullName: profile?.full_name || prev.fullName || undefined, // Make Handicap Optional: Use existing fullName if profile fetch failed
+          fullName: profile?.full_name || prev.fullName || undefined,
           profileIcon: profile?.profile_icon || prev.profileIcon || undefined,
-          initialHandicap: profile?.initial_handicap ?? prev.initialHandicap ?? 0, // Make Handicap Optional: Use default 0 if missing or fetch failed
+          initialHandicap: 0, // Hard-Code Defaults: Manually set to 0 instead of getting from database
         };
       });
     } catch (error) {
@@ -454,9 +456,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         // Force: ONLY use full_name column
         // Also fetch profile_icon for leaderboard display
+        // Remove Database Dependency: Removed initial_handicap from .select() to avoid database dependency
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('initial_handicap, full_name, profile_icon, created_at')
+          .select('full_name, profile_icon, created_at')
           .eq('id', data.user.id)
           .single();
         
@@ -489,7 +492,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               full_name: data.user.email?.split('@')[0] || 'User',
               created_at: new Date().toISOString(),
             })
-            .select('initial_handicap, full_name, profile_icon, created_at')
+            .select('full_name, profile_icon, created_at')
             .single();
           
           if (!createError && newProfile) {
@@ -505,12 +508,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Force: ONLY use full_name column
+      // Hard-Code Defaults: Manually set initialHandicap: 0 instead of getting it from database
       setUser({
         id: data.user.id,
         email: data.user.email || '',
         fullName: profile?.full_name, // Standardized: Only use full_name
         profileIcon: profile?.profile_icon, // Golf icon selected by student
-        initialHandicap: profile?.initial_handicap,
+        initialHandicap: 0, // Hard-Code Defaults: Manually set to 0 instead of getting from database
         createdAt: profile?.created_at || data.user.created_at,
       });
       setIsAuthenticated(true);
