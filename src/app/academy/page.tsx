@@ -570,14 +570,20 @@ function getTimeframeDates(timeFilter: 'week' | 'month' | 'year' | 'allTime') {
   return { startDate, endDate: now };
 }
 
-// Calculate rounds count
-function calculateUserRounds(rounds: any[], timeFilter: 'week' | 'month' | 'year' | 'allTime') {
+// Calculate rounds count for a specific user
+function calculateUserRounds(rounds: any[], timeFilter: 'week' | 'month' | 'year' | 'allTime', userId?: string) {
   const { startDate } = getTimeframeDates(timeFilter);
-  return rounds.filter(round => {
+  // Find the Top 3 Render: Replace placeholder with actual count of rounds for that user
+  // Verify StatsContext: Ensure the data coming from StatsContext is being passed into the leaderboard calculation correctly
+  const userRounds = rounds.filter(round => {
+    // Filter by user_id if provided
+    if (userId && round.user_id !== userId) return false;
+    // Filter by timeframe
     if (timeFilter === 'allTime') return true;
-    const roundDate = new Date(round.date);
+    const roundDate = new Date(round.date || round.created_at);
     return roundDate >= startDate;
-  }).length;
+  });
+  return userRounds.length;
 }
 
 // Calculate practice time (in hours)
@@ -688,7 +694,7 @@ function getMockLeaderboard(
   timeFilter: 'week' | 'month' | 'year' | 'allTime',
   rounds: any[],
   userName: string,
-  user?: { initialHandicap?: number; profileIcon?: string } | null
+  user?: { id?: string; initialHandicap?: number; profileIcon?: string } | null
 ) {
   let userValue: number;
   
@@ -700,7 +706,8 @@ function getMockLeaderboard(
       userValue = calculateUserPracticeTime(timeFilter);
       break;
     case 'rounds':
-      userValue = calculateUserRounds(rounds, timeFilter);
+      // Find the Top 3 Render: Replace placeholder with actual count of rounds for that user (e.g., userRounds.length)
+      userValue = calculateUserRounds(rounds, timeFilter, user?.id);
       break;
     case 'drills':
       userValue = calculateUserDrills(timeFilter);
@@ -786,7 +793,7 @@ function getLeaderboardData(
   rounds: any[],
   totalXP: number,
   userName: string,
-  user?: { profileIcon?: string } | null
+  user?: { id?: string; profileIcon?: string } | null
 ) {
   // Debug: Log leaderboard calculation inputs
   // Debug Logs: Keep console.log to see if Stuart's round is in the raw data
@@ -880,7 +887,8 @@ function getLeaderboardData(
       userValue = calculateUserPracticeTime(timeFilter);
       break;
     case 'rounds':
-      userValue = calculateUserRounds(rounds, timeFilter);
+      // Find the Top 3 Render: Replace placeholder with actual count of rounds for that user (e.g., userRounds.length)
+      userValue = calculateUserRounds(rounds, timeFilter, user?.id);
       break;
     case 'drills':
       userValue = calculateUserDrills(timeFilter);
