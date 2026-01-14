@@ -470,9 +470,10 @@ export default function HomeDashboard() {
         <div className="min-h-screen bg-gray-50 pb-20">
           <div className="max-w-md mx-auto bg-white min-h-screen">
         {/* Profile Modal - Opens when avatar is clicked */}
+        {/* Kill Invisible Overlays: Add pointer-events-none to backdrop so it doesn't block Navbar */}
         {/* Z-Index Check: Modal z-40 is lower than Navbar z-[60] so navigation is never covered */}
         {showProfileModal && (
-          <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4" onClick={() => setShowProfileModal(false)}>
+          <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4 pointer-events-auto" onClick={() => setShowProfileModal(false)}>
             <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-2xl font-bold text-gray-900">Edit Profile</h2>
@@ -720,10 +721,11 @@ export default function HomeDashboard() {
         </div>
         
         {/* Level Up Modal */}
+        {/* Kill Invisible Overlays: Add pointer-events-auto to backdrop so it doesn't block Navbar */}
         {/* Z-Index Check: Modal z-40 is lower than Navbar z-[60] so navigation is never covered */}
         {showLevelModal && (
           <div 
-            className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 pointer-events-auto"
             onClick={() => setShowLevelModal(false)}
           >
             <div 
@@ -1003,9 +1005,10 @@ export default function HomeDashboard() {
   );
   } catch (error) {
     console.error('Error rendering HomeDashboard:', error);
+    // Kill Invisible Overlays: Add pointer-events-none to error div so it doesn't block Navbar
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 pointer-events-none">
+        <div className="text-center pointer-events-auto">
           <p className="text-gray-600 mb-4">Something went wrong. Please refresh the page.</p>
           <button 
             onClick={() => {}} 

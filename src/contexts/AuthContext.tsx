@@ -209,7 +209,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(null);
             setIsAuthenticated(false);
           }
+          // State Reset: Force authLoading to false in catch block so Navbar buttons aren't disabled
+          console.log('AuthContext: Forcing loading to false in catch block');
+          setLoading(false);
         } finally {
+          // State Reset: Ensure loading is always set to false
           setLoading(false);
         }
       }, 0);

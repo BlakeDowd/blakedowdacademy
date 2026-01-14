@@ -38,6 +38,10 @@ export default function Navbar() {
             href={item.href}
             className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80"
             onClick={() => {
+              // Navbar Verification: Simple onClick log to test if clicks are registered
+              if (item.label === 'Home') {
+                console.log('NAV CLICKED');
+              }
               // Manual Override: Add onClick log to test if clicks are registered
               console.log('Nav Clicked:', item.label, item.href);
             }}
@@ -45,6 +49,12 @@ export default function Navbar() {
             <Icon 
               className={`w-6 h-6 ${isActive ? "" : "text-white"}`}
               style={isActive ? { color: '#FFA500', fill: '#FFA500' } : {}}
+              onClick={() => {
+                // Navbar Verification: Add onClick to icon itself to test if clicks are registered
+                if (item.label === 'Home') {
+                  console.log('NAV CLICKED - Icon');
+                }
+              }}
             />
             <span className="text-white text-xs">{item.label}</span>
           </Link>
