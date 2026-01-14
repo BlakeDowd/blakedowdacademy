@@ -127,11 +127,12 @@ export default function HomeDashboard() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   
   // Initialize editedName when modal opens
+  // Use Profile Data: Use user.fullName instead of hardcoded 'Member'
   useEffect(() => {
     if (showProfileModal) {
-      setEditedName('Member');
+      setEditedName(user?.fullName || (user?.email ? user.email.split('@')[0] : ''));
     }
-  }, [showProfileModal]);
+  }, [showProfileModal, user?.fullName, user?.email]);
   
   // Update selectedIcon when user.profileIcon changes
   useEffect(() => {
@@ -535,8 +536,10 @@ export default function HomeDashboard() {
             <div className="flex-1">
               <p className="text-gray-400 text-xs">Welcome back,</p>
               <p className="text-gray-900 font-bold text-xl mt-1">
-                {/* Professional Wipe: Hard-code the name line to just say Member */}
-                <span>Member</span>
+                {/* Use Profile Data: Change it to use user.full_name or profile.full_name. If the name is missing, use a fallback like user.email.split('@')[0] so it is at least personalized */}
+                <span>
+                  {user?.fullName || (user?.email ? user.email.split('@')[0] : 'Member')}
+                </span>
               </p>
             </div>
           </div>
