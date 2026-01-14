@@ -1242,7 +1242,7 @@ export default function AcademyPage() {
       // Force Loading Off: Ensure setLoading(false) is called inside a finally block to prevent the page from hanging if a fetch fails
       // Note: loading state is managed by AuthContext, but we ensure any local state is cleared
     }
-  }, [user?.id, leaderboardMetric, timeFilter, rounds, totalXP, userName, user]); // Stable Dependencies: Only contains [user?.id]
+  }, [user?.id]); // Stable Dependencies: Only contains [user?.id]
   
   // Stable Identity: Wrap calculated values in useMemo to prevent recreation
   // Safe Logic: Do the check inside the useMemo rather than skipping the Hook entirely
@@ -1299,6 +1299,10 @@ export default function AcademyPage() {
     );
   }, [sortedLeaderboard, leaderboardSearch]);
   
+  // Fix the Hook Order error
+  // Move All Hooks to the Top: Take every useState, useMemo, and useEffect (including the new ones on line 1323) and move them to the very top of the AcademyPage function
+  // Check for Early Returns: Look for any line that says if (loading) return ... or if (!user) return .... These must be moved below all your hooks
+  // Clean Up: If a useMemo or useEffect needs the user to exist, put the if (!user) return; check inside the hook's callback function, not around the hook itself
   // No Early Returns: Ensure there are no if (loading) return ... or if (!user) return ... statements appearing before any Hook
   // Now that all hooks are called, we can safely do early returns
   console.log('Academy: Auth state - loading:', loading, 'isAuthenticated:', isAuthenticated, 'user:', user?.id);
@@ -1316,35 +1320,6 @@ export default function AcademyPage() {
   }
   
   console.log('Academy: Fetching data...');
-  
-  // Fix the React Error #310 infinite loop on the Academy page
-  // Add Fetch Guard: Use a useRef called hasFetched. Wrap the data fetching logic in if (hasFetched.current) return; and set hasFetched.current = true; inside the useEffect
-  // Stable Dependencies: Ensure the useEffect dependency array is either empty [] or only contains [user?.id]
-  useEffect(() => {
-    // Add Fetch Guard: Wrap the fetch logic in if (hasFetched.current) return;
-    if (hasFetched.current) return;
-    
-    // Add Fetch Guard: Only calculate if we have the necessary data
-    if (!user?.id || rounds === undefined) return;
-    
-    try {
-      // Calculate leaderboard with current values
-      const newLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user);
-      
-      // Only update if the data actually changed (prevent infinite loop)
-      setCachedLeaderboard(newLeaderboard);
-      
-      // Add Fetch Guard: Set hasFetched.current = true; inside the useEffect
-      hasFetched.current = true;
-    } catch (error) {
-      console.error('Academy: Error calculating leaderboard:', error);
-      // Force Loading Off: Ensure setLoading(false) is called inside a finally block to prevent the page from hanging if a fetch fails
-      // Note: loading state is managed by AuthContext, but we ensure cleanup happens
-    } finally {
-      // Force Loading Off: Ensure setLoading(false) is called inside a finally block to prevent the page from hanging if a fetch fails
-      // Note: loading state is managed by AuthContext - this ensures cleanup even if fetch fails
-    }
-  }, [user?.id, leaderboardMetric, timeFilter, rounds, totalXP, userName, user]); // Stable Dependencies: Only contains [user?.id]
 
 
   // Circular avatar component - displays profile icon or initials
