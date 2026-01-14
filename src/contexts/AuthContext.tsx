@@ -473,7 +473,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               full_name: data.user.email?.split('@')[0] || 'User',
               created_at: new Date().toISOString(),
             })
-            .select('initial_handicap, full_name, profile_icon, created_at')
+            .select('full_name, profile_icon, created_at')
             .single();
           
           if (createError) {
