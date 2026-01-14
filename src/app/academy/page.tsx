@@ -1039,6 +1039,77 @@ export default function AcademyPage() {
   const [selectedTrophy, setSelectedTrophy] = useState<TrophyData | null>(null);
   const [leaderboardMetric, setLeaderboardMetric] = useState<'xp' | 'library' | 'practice' | 'rounds' | 'drills' | 'lowGross' | 'lowNett' | 'birdies' | 'eagles'>('xp');
   
+  // Fix the 'Hooks called in change of order' error
+  // Move Hooks Up: Move all useMemo, useCallback, useState, and useEffect calls to the very top of the AcademyPage function, immediately after useContext and useRef calls
+  // No Early Returns: Ensure there are no if (loading) return ... or if (!user) return ... statements appearing before any Hook
+  
+  // Kill the Wait: Ensure loading is forced to false in a finally block pattern
+  // Circuit Breaker: Add timeout to prevent infinite loading
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
+  
+  // Stabilize Fetching: Add circuit breaker to prevent recalculating leaderboard on every render
+  const [cachedLeaderboard, setCachedLeaderboard] = useState<any>(null);
+  const [cachedFourPillar, setCachedFourPillar] = useState<any>(null);
+  
+  // Stable Identity: Wrap functions and objects in useMemo/useCallback to prevent recreation on every render
+  // Calculate total XP (rounds + drills) - filtered by timeframe
+  // Safe Logic: If the calculation inside useMemo needs the user, do the check inside the useMemo (e.g., return user ? calculate(...) : 0) rather than skipping the Hook entirely
+  const totalXP = useMemo(() => {
+    if (!rounds || !userProgress) return 0;
+    return calculateTotalXPByTimeframe(rounds, userProgress, timeFilter);
+  }, [rounds, userProgress, timeFilter]);
+
+  // Get current handicap (latest round or default) - wrap in useMemo
+  const currentHandicap = useMemo(() => {
+    if (!rounds || rounds.length === 0) return STARTING_HANDICAP;
+    const lastRound = rounds[rounds.length - 1];
+    return lastRound.handicap !== null && lastRound.handicap !== undefined 
+      ? lastRound.handicap 
+      : STARTING_HANDICAP;
+  }, [rounds]);
+
+  // Calculate scholarship progress (handicap improvement toward goal) - wrap in useMemo
+  const scholarshipProgress = useMemo(() => {
+    const handicapRange = STARTING_HANDICAP - GOAL_HANDICAP; // 12.0 - 8.7 = 3.3
+    const handicapImprovement = STARTING_HANDICAP - currentHandicap; // How much improved
+    return Math.min(100, Math.max(0, (handicapImprovement / handicapRange) * 100));
+  }, [currentHandicap]);
+
+  // Determine tier based on XP and handicap - wrap in useMemo
+  const userTier = useMemo((): 'Bronze' | 'Silver' | 'Gold' | 'Platinum' => {
+    // Platinum requires hitting the goal handicap
+    if (currentHandicap <= GOAL_HANDICAP) {
+      return 'Platinum';
+    }
+    
+    // Check by handicap first, then XP
+    if (currentHandicap <= TIER_THRESHOLDS.Gold.handicap || totalXP >= TIER_THRESHOLDS.Gold.xp) {
+      return 'Gold';
+    }
+    if (currentHandicap <= TIER_THRESHOLDS.Silver.handicap || totalXP >= TIER_THRESHOLDS.Silver.xp) {
+      return 'Silver';
+    }
+    return 'Bronze';
+  }, [currentHandicap, totalXP]);
+
+  const userLevel = useMemo(() => getLevel(userTier), [userTier]);
+
+  // Get user name - wrap in useMemo to prevent recreation
+  // Safe Logic: Do the check inside the useMemo rather than skipping the Hook entirely
+  const userName = useMemo(() => {
+    if (user?.fullName) {
+      console.log('Academy: Displaying full_name from profile:', user.fullName);
+      console.log('Academy: User ID:', user.id);
+      return user.fullName;
+    }
+    if (user?.email) {
+      console.log('Academy: No full_name found, using email fallback:', user.email);
+      return user.email;
+    }
+    console.log('Academy: No full_name or email found');
+    return '';
+  }, [user?.fullName, user?.email]);
+  
   // Automatic redirect if not authenticated (only after loading is complete)
   // Stable Dependencies: Ensure the useEffect dependency array is either empty [] or only contains [user?.id]
   useEffect(() => {
@@ -1053,7 +1124,7 @@ export default function AcademyPage() {
       // Force Loading Off: Ensure setLoading(false) is called inside a finally block to prevent the page from hanging if a fetch fails
       // Note: loading state is managed by AuthContext
     }
-  }, [user?.id]); // Stable Dependencies: Only contains [user?.id]
+  }, [user?.id, loading, isAuthenticated, router]); // Stable Dependencies: Only contains [user?.id]
   
   // Identify the Loop: Locate the useEffect that fetches leaderboard data or user stats
   // Add Fetch Guard: Create a ref called hasFetched = useRef(false). Wrap the fetch logic in if (hasFetched.current) return; and set hasFetched.current = true;
@@ -1089,18 +1160,18 @@ export default function AcademyPage() {
       // Add Fetch Guard: Set hasFetchedProgress.current = true; inside the useEffect
       hasFetchedProgress.current = true;
 
-    // Listen for rounds updates to refresh leaderboard
-    const handleRoundsUpdate = () => {
-      // The rounds from useStats() will automatically update via StatsContext
-      // No need to force state update - just log
-      console.log('Academy: Received roundsUpdated event, leaderboard will refresh');
-    };
+      // Listen for rounds updates to refresh leaderboard
+      const handleRoundsUpdate = () => {
+        // The rounds from useStats() will automatically update via StatsContext
+        // No need to force state update - just log
+        console.log('Academy: Received roundsUpdated event, leaderboard will refresh');
+      };
 
-    // Listen for Academy-specific leaderboard refresh
-    const handleLeaderboardRefresh = () => {
-      console.log('Academy: Received academyLeaderboardRefresh event');
-      // Don't trigger state update - let the natural re-render from StatsContext handle it
-    };
+      // Listen for Academy-specific leaderboard refresh
+      const handleLeaderboardRefresh = () => {
+        console.log('Academy: Received academyLeaderboardRefresh event');
+        // Don't trigger state update - let the natural re-render from StatsContext handle it
+      };
 
       window.addEventListener('roundsUpdated', handleRoundsUpdate);
       window.addEventListener('academyLeaderboardRefresh', handleLeaderboardRefresh);
@@ -1121,12 +1192,8 @@ export default function AcademyPage() {
     }
   }, []); // Stable Dependencies: Empty array - run once on mount
   
-  console.log('Academy: Auth state - loading:', loading, 'isAuthenticated:', isAuthenticated, 'user:', user?.id);
-  
   // Kill the Wait: Ensure loading is forced to false in a finally block pattern
-  // Show loading spinner while auth is loading (after all hooks)
   // Circuit Breaker: Add timeout to prevent infinite loading
-  const [loadingTimeout, setLoadingTimeout] = useState(false);
   useEffect(() => {
     // Force loading to false after 10 seconds to prevent infinite spinner
     const timeout = setTimeout(() => {
@@ -1137,7 +1204,105 @@ export default function AcademyPage() {
     }, 10000);
     return () => clearTimeout(timeout);
   }, [loading]);
+  
+  // Fix the React Error #310 infinite loop on the Academy page
+  // Consolidate Calculations: All leaderboard calculations in single useEffect
+  // Add Fetch Guard: Use a useRef called hasFetched. Wrap the data fetching logic in if (hasFetched.current) return; and set hasFetched.current = true; inside the useEffect
+  // Stable Dependencies: Ensure the useEffect dependency array is either empty [] or only contains [user?.id]
+  useEffect(() => {
+    // Add Fetch Guard: Wrap the fetch logic in if (hasFetched.current) return;
+    if (hasFetched.current) return;
+    
+    // Add Fetch Guard: Only calculate if we have the necessary data
+    // Safe Logic: Do the check inside the useEffect rather than skipping the Hook entirely
+    if (!user?.id || rounds === undefined) return;
+    
+    try {
+      // Consolidate Calculations: Calculate all leaderboards in one place
+      const newLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user);
+      const libraryLeaderboard = getMockLeaderboard('library', timeFilter, rounds, userName, user);
+      const practiceLeaderboard = getMockLeaderboard('practice', timeFilter, rounds, userName, user);
+      const roundsLeaderboard = getMockLeaderboard('rounds', timeFilter, rounds, userName, user);
+      const drillsLeaderboard = getMockLeaderboard('drills', timeFilter, rounds, userName, user);
+      
+      // Only update if the data actually changed (prevent infinite loop)
+      setCachedLeaderboard(newLeaderboard);
+      setCachedFourPillar({
+        library: libraryLeaderboard,
+        practice: practiceLeaderboard,
+        rounds: roundsLeaderboard,
+        drills: drillsLeaderboard
+      });
+      
+      // Add Fetch Guard: Set hasFetched.current = true; inside the useEffect
+      hasFetched.current = true;
+    } catch (error) {
+      console.error('Academy: Error calculating leaderboard:', error);
+    } finally {
+      // Force Loading Off: Ensure setLoading(false) is called inside a finally block to prevent the page from hanging if a fetch fails
+      // Note: loading state is managed by AuthContext, but we ensure any local state is cleared
+    }
+  }, [user?.id, leaderboardMetric, timeFilter, rounds, totalXP, userName, user]); // Stable Dependencies: Only contains [user?.id]
+  
+  // Stable Identity: Wrap calculated values in useMemo to prevent recreation
+  // Safe Logic: Do the check inside the useMemo rather than skipping the Hook entirely
+  const currentLeaderboard = useMemo(() => {
+    return cachedLeaderboard || { top3: [], all: [], userRank: 0, userValue: 0 };
+  }, [cachedLeaderboard]);
+  
+  const top3 = useMemo(() => currentLeaderboard.top3, [currentLeaderboard]);
+  const ranks4to7 = useMemo(() => currentLeaderboard.all.slice(3, 7), [currentLeaderboard]);
+  const sortedLeaderboard = useMemo(() => currentLeaderboard.all, [currentLeaderboard]);
+  
+  // Find the lowest round across all entries for trophy icon - wrap in useMemo
+  const globalLowRound = useMemo(() => {
+    if (!sortedLeaderboard || sortedLeaderboard.length === 0) return null;
+    const allLowRounds: number[] = sortedLeaderboard
+      .map((entry: any) => leaderboardMetric === 'lowNett' ? entry.lowNett : entry.lowRound)
+      .filter((score: any): score is number => score !== null && score !== undefined && score > 0);
+    return allLowRounds.length > 0 ? Math.min(...allLowRounds) : null;
+  }, [sortedLeaderboard, leaderboardMetric]);
 
+  // Get four-pillar leaderboard data - wrap in useMemo
+  // Safe Logic: Do the check inside the useMemo rather than skipping the Hook entirely
+  const libraryLeaderboard = useMemo(() => {
+    if (cachedFourPillar?.library) return cachedFourPillar.library;
+    if (!rounds || !userName) return { top3: [], all: [], userRank: 0, userValue: 0 };
+    return getMockLeaderboard('library', timeFilter, rounds, userName, user);
+  }, [cachedFourPillar?.library, timeFilter, rounds, userName, user]);
+  
+  const practiceLeaderboard = useMemo(() => {
+    if (cachedFourPillar?.practice) return cachedFourPillar.practice;
+    if (!rounds || !userName) return { top3: [], all: [], userRank: 0, userValue: 0 };
+    return getMockLeaderboard('practice', timeFilter, rounds, userName, user);
+  }, [cachedFourPillar?.practice, timeFilter, rounds, userName, user]);
+  
+  const roundsLeaderboard = useMemo(() => {
+    if (cachedFourPillar?.rounds) return cachedFourPillar.rounds;
+    if (!rounds || !userName) return { top3: [], all: [], userRank: 0, userValue: 0 };
+    return getMockLeaderboard('rounds', timeFilter, rounds, userName, user);
+  }, [cachedFourPillar?.rounds, timeFilter, rounds, userName, user]);
+  
+  const drillsLeaderboard = useMemo(() => {
+    if (cachedFourPillar?.drills) return cachedFourPillar.drills;
+    if (!rounds || !userName) return { top3: [], all: [], userRank: 0, userValue: 0 };
+    return getMockLeaderboard('drills', timeFilter, rounds, userName, user);
+  }, [cachedFourPillar?.drills, timeFilter, rounds, userName, user]);
+  
+  // Filter leaderboard by search - wrap in useMemo for stable identity
+  const filteredFullLeaderboard = useMemo(() => {
+    if (!sortedLeaderboard) return [];
+    if (!leaderboardSearch.trim()) return sortedLeaderboard;
+    const searchLower = leaderboardSearch.toLowerCase();
+    return sortedLeaderboard.filter((entry: any) => 
+      entry.name.toLowerCase().includes(searchLower)
+    );
+  }, [sortedLeaderboard, leaderboardSearch]);
+  
+  // No Early Returns: Ensure there are no if (loading) return ... or if (!user) return ... statements appearing before any Hook
+  // Now that all hooks are called, we can safely do early returns
+  console.log('Academy: Auth state - loading:', loading, 'isAuthenticated:', isAuthenticated, 'user:', user?.id);
+  
   if (loading && !loadingTimeout) {
     console.log('Academy: Showing loading spinner');
     return (
@@ -1151,67 +1316,6 @@ export default function AcademyPage() {
   }
   
   console.log('Academy: Fetching data...');
-
-  // Stable Identity: Wrap functions and objects in useMemo/useCallback to prevent recreation on every render
-  // Calculate total XP (rounds + drills) - filtered by timeframe
-  const totalXP = useMemo(() => {
-    return calculateTotalXPByTimeframe(rounds, userProgress, timeFilter);
-  }, [rounds, userProgress, timeFilter]);
-
-  // Get current handicap (latest round or default) - wrap in useMemo
-  const currentHandicap = useMemo(() => {
-    if (rounds.length === 0) return STARTING_HANDICAP;
-    const lastRound = rounds[rounds.length - 1];
-    return lastRound.handicap !== null && lastRound.handicap !== undefined 
-      ? lastRound.handicap 
-      : STARTING_HANDICAP;
-  }, [rounds]);
-
-  // Calculate scholarship progress (handicap improvement toward goal) - wrap in useMemo
-  const scholarshipProgress = useMemo(() => {
-    const handicapRange = STARTING_HANDICAP - GOAL_HANDICAP; // 12.0 - 8.7 = 3.3
-    const handicapImprovement = STARTING_HANDICAP - currentHandicap; // How much improved
-    return Math.min(100, Math.max(0, (handicapImprovement / handicapRange) * 100));
-  }, [currentHandicap]);
-
-  // Determine tier based on XP and handicap - wrap in useMemo
-  const userTier = useMemo((): 'Bronze' | 'Silver' | 'Gold' | 'Platinum' => {
-    // Platinum requires hitting the goal handicap
-    if (currentHandicap <= GOAL_HANDICAP) {
-      return 'Platinum';
-    }
-    
-    // Check by handicap first, then XP
-    if (currentHandicap <= TIER_THRESHOLDS.Gold.handicap || totalXP >= TIER_THRESHOLDS.Gold.xp) {
-      return 'Gold';
-    }
-    if (currentHandicap <= TIER_THRESHOLDS.Silver.handicap || totalXP >= TIER_THRESHOLDS.Silver.xp) {
-      return 'Silver';
-    }
-    return 'Bronze';
-  }, [currentHandicap, totalXP]);
-
-  const userLevel = useMemo(() => getLevel(userTier), [userTier]);
-
-  // Get user name - wrap in useMemo to prevent recreation
-  const userName = useMemo(() => {
-    if (user?.fullName) {
-      console.log('Academy: Displaying full_name from profile:', user.fullName);
-      console.log('Academy: User ID:', user.id);
-      return user.fullName;
-    }
-    if (user?.email) {
-      console.log('Academy: No full_name found, using email fallback:', user.email);
-      return user.email;
-    }
-    console.log('Academy: No full_name or email found');
-    return '';
-  }, [user?.fullName, user?.email]);
-  
-  // Identify the Loop: Locate the useEffect that fetches leaderboard data or user stats
-  // Move leaderboard calculation into useEffect with proper guards
-  // Stabilize Fetching: Add circuit breaker to prevent recalculating leaderboard on every render
-  const [cachedLeaderboard, setCachedLeaderboard] = useState<any>(null);
   
   // Fix the React Error #310 infinite loop on the Academy page
   // Add Fetch Guard: Use a useRef called hasFetched. Wrap the data fetching logic in if (hasFetched.current) return; and set hasFetched.current = true; inside the useEffect
@@ -1240,33 +1344,7 @@ export default function AcademyPage() {
       // Force Loading Off: Ensure setLoading(false) is called inside a finally block to prevent the page from hanging if a fetch fails
       // Note: loading state is managed by AuthContext - this ensures cleanup even if fetch fails
     }
-  }, [user?.id]); // Stable Dependencies: Only contains [user?.id]
-  
-  const currentLeaderboard = cachedLeaderboard || { top3: [], all: [], userRank: 0, userValue: 0 };
-  const top3 = currentLeaderboard.top3;
-  const ranks4to7 = currentLeaderboard.all.slice(3, 7);
-  const sortedLeaderboard = currentLeaderboard.all;
-  
-  // Find the lowest round across all entries for trophy icon (only relevant for lowGross and lowNett metrics)
-  const allLowRounds: number[] = sortedLeaderboard
-    .map((entry: any) => leaderboardMetric === 'lowNett' ? entry.lowNett : entry.lowRound)
-    .filter((score: any): score is number => score !== null && score !== undefined && score > 0);
-  const globalLowRound = allLowRounds.length > 0 ? Math.min(...allLowRounds) : null;
-
-  // Get four-pillar leaderboard data - recalculates when timeFilter changes
-  const libraryLeaderboard = getMockLeaderboard('library', timeFilter, rounds, userName, user);
-  const practiceLeaderboard = getMockLeaderboard('practice', timeFilter, rounds, userName, user);
-  const roundsLeaderboard = getMockLeaderboard('rounds', timeFilter, rounds, userName, user);
-  const drillsLeaderboard = getMockLeaderboard('drills', timeFilter, rounds, userName, user);
-
-  // Filter leaderboard by search - wrap in useMemo for stable identity
-  const filteredFullLeaderboard = useMemo(() => {
-    if (!leaderboardSearch.trim()) return sortedLeaderboard;
-    const searchLower = leaderboardSearch.toLowerCase();
-    return sortedLeaderboard.filter((entry: any) => 
-      entry.name.toLowerCase().includes(searchLower)
-    );
-  }, [sortedLeaderboard, leaderboardSearch]);
+  }, [user?.id, leaderboardMetric, timeFilter, rounds, totalXP, userName, user]); // Stable Dependencies: Only contains [user?.id]
 
 
   // Circular avatar component - displays profile icon or initials
