@@ -120,19 +120,20 @@ export default function HomeDashboard() {
   // Verify Data Source: Force it to display profile?.full_name || user.email
   // No fallbacks to 'User' - if full_name is an email, show email; if it's a name, show name
   const getUserDisplayName = () => {
+    // Manual Name Check: Replace with debug text to check if profile fetch is working
     // Force: ONLY use full_name from profiles table
     if (user?.fullName) {
       console.log('Dashboard: Displaying full_name from profile:', user.fullName);
-      return user.fullName; // Show whatever is in full_name (email or name like 'blake Dowd')
+      return 'DEBUG: ' + user.fullName; // Manual Name Check: Show debug prefix
     }
     // If no full_name exists, show email as fallback
     if (user?.email) {
       console.log('Dashboard: No full_name found, using email fallback:', user.email);
-      return user.email;
+      return 'DEBUG: ' + user.email; // Manual Name Check: Show debug prefix
     }
     // Final fallback only if nothing exists
     console.log('Dashboard: No full_name or email found');
-    return '';
+    return 'DEBUG: No Name Found'; // Manual Name Check: Show debug text if profile fetch failed
   };
   
   // Profile modal state

@@ -34,8 +34,14 @@ export default function RootLayout({
         <ErrorBoundary>
           <AuthProvider>
             <StatsProvider>
-              {children}
-              <ConditionalNavbar />
+              {/* Global Click-Through: Wrap children in z-0 div to ensure navbar is on top */}
+              <div className="relative z-0">
+                {children}
+              </div>
+              {/* Global Click-Through: Ensure ConditionalNavbar is z-[100] to guarantee it's on top of any invisible error layers */}
+              <div className="relative z-[100]">
+                <ConditionalNavbar />
+              </div>
             </StatsProvider>
           </AuthProvider>
         </ErrorBoundary>
