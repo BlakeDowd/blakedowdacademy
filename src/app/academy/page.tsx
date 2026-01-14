@@ -1053,7 +1053,7 @@ export default function AcademyPage() {
       // Force Loading Off: Ensure setLoading(false) is called inside a finally block to prevent the page from hanging if a fetch fails
       // Note: loading state is managed by AuthContext
     }
-  }, [user?.id, loading, isAuthenticated, router]); // Stable Dependencies: Use stable user?.id
+  }, [user?.id]); // Stable Dependencies: Only contains [user?.id]
   
   // Identify the Loop: Locate the useEffect that fetches leaderboard data or user stats
   // Add Fetch Guard: Create a ref called hasFetched = useRef(false). Wrap the fetch logic in if (hasFetched.current) return; and set hasFetched.current = true;
@@ -1240,25 +1240,13 @@ export default function AcademyPage() {
       hasFetched.current = true;
     } catch (error) {
       console.error('Academy: Error calculating leaderboard:', error);
+      // Force Loading Off: Ensure setLoading(false) is called inside a finally block to prevent the page from hanging if a fetch fails
+      // Note: loading state is managed by AuthContext, but we ensure cleanup happens
     } finally {
       // Force Loading Off: Ensure setLoading(false) is called inside a finally block to prevent the page from hanging if a fetch fails
-      // Note: loading state is managed by AuthContext, but we ensure any local state is cleared
+      // Note: loading state is managed by AuthContext - this ensures cleanup even if fetch fails
     }
   }, [user?.id]); // Stable Dependencies: Only contains [user?.id]
-  
-  // Separate effect to update leaderboard when filters change (after initial fetch)
-  useEffect(() => {
-    // Only update if we've already done the initial fetch
-    if (!hasFetched.current || !user?.id || rounds === undefined) return;
-    
-    try {
-      // Recalculate leaderboard when filters change
-      const newLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user);
-      setCachedLeaderboard(newLeaderboard);
-    } catch (error) {
-      console.error('Academy: Error recalculating leaderboard:', error);
-    }
-  }, [leaderboardMetric, timeFilter, rounds?.length, totalXP, userName, user?.id]);
   
   const currentLeaderboard = cachedLeaderboard || { top3: [], all: [], userRank: 0, userValue: 0 };
   const top3 = currentLeaderboard.top3;
