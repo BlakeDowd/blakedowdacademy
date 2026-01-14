@@ -23,11 +23,9 @@ export default function Navbar() {
   // Debug Navigation: Add console.log to see if Navbar is being rendered
   console.log('Navbar Mounted - Navbar component rendered, pathname:', pathname);
 
-  // Native HTML Nav: Replace router.push(href) with window.location.href = href
-  // This completely bypasses React's internal routing and forces the browser to fetch a brand-new page from the server
-  const handleNavigation = (href: string, label: string) => {
-    console.log('Nav Clicked:', label, href);
-    // Native HTML Nav: Use window.location.href to bypass React routing completely
+  // Native Navigation: Replace the handleNavigation function logic with window.location.href = href
+  // This bypasses React entirely and forces a hard browser load to the new page
+  const handleNavigation = (href: string) => {
     window.location.href = href;
   };
 
@@ -42,7 +40,7 @@ export default function Navbar() {
         return (
           <button
             key={item.href}
-            onClick={() => handleNavigation(item.href, item.label)}
+            onClick={() => handleNavigation(item.href)}
             className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80"
             type="button"
           >

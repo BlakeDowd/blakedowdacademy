@@ -116,28 +116,9 @@ export default function HomeDashboard() {
   // This useEffect was causing an infinite loop that blocks the navigation bar
   // Removed entirely to prevent navigation freeze
   
-  // Clean Display: Ensure Home page pulls from profiles.full_name (blake Dowd)
-  // Verify Data Source: Force it to display profile?.full_name || user.email
-  // No fallbacks to 'User' - if full_name is an email, show email; if it's a name, show name
-  const getUserDisplayName = () => {
-    // Manual Name Override: Change the display to a static string 'Member' for 5 minutes just to see if the UI updates at all
-    // If it still says 'No Name Found', the app is not even deploying your new code
-    return 'Member';
-    
-    // Clean UI: Remove all DEBUG: prefixes, just return user?.fullName || 'User'
-    // Force: ONLY use full_name from profiles table
-    // if (user?.fullName) {
-    //   console.log('Dashboard: Displaying full_name from profile:', user.fullName);
-    //   return user.fullName;
-    // }
-    // // If no full_name exists, show email as fallback
-    // if (user?.email) {
-    //   console.log('Dashboard: No full_name found, using email fallback:', user.email);
-    //   return user.email;
-    // }
-    // // Final fallback
-    // return 'User';
-  };
+  // Clean Everything: Remove the entire getUserDisplayName logic and just hard-code the word 'Member' for now
+  // If it still says 'DEBUG', the site isn't deploying your changes
+  const userName = 'Member';
   
   // Profile modal state
   const [editedName, setEditedName] = useState('');
@@ -145,8 +126,6 @@ export default function HomeDashboard() {
   const [selectedIcon, setSelectedIcon] = useState<string | null>(user?.profileIcon || null);
   const [isSavingIcon, setIsSavingIcon] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
-  
-  const userName = getUserDisplayName();
   
   // Initialize editedName when modal opens
   useEffect(() => {
