@@ -183,25 +183,21 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       console.log('StatsContext: Loaded rounds from database:', transformedRounds.length);
       console.log('StatsContext: Transformed rounds data:', transformedRounds);
       
-      // Verify App State: Alert if rounds.length === 0 so we know if data is actually arriving from Supabase
-      // Dismiss the Alert: Once the data loads, the alert should automatically stop appearing
+      // Verify App State: Log if rounds.length === 0 (no UI alerts in context provider)
+      // Remove Browser Alerts: Context providers shouldn't show alerts - logged to console only
       if (transformedRounds.length === 0) {
         console.warn('⚠️ StatsContext: transformedRounds.length === 0 - No rounds data from Supabase');
         console.warn('⚠️ This could mean:');
         console.warn('  1. No rounds exist in database');
         console.warn('  2. RLS policies are blocking access');
         console.warn('  3. Query is failing silently');
-        // Alert user to check console for details
-        if (typeof window !== 'undefined' && !sessionStorage.getItem('statsContextRoundsAlertShown')) {
-          alert('⚠️ No rounds found in StatsContext!\n\nCheck browser console for details.\n\nThis alert will only show once per session.');
-          sessionStorage.setItem('statsContextRoundsAlertShown', 'true');
-        }
+        // Remove Browser Alerts: No alert() in context provider - UI components handle notifications
       } else {
         console.log('✅ StatsContext: Rounds data loaded successfully:', transformedRounds.length, 'rounds');
-        // Dismiss the Alert: Clear alert flag if rounds are found - alert will stop appearing
+        // Clear flags if rounds are found
         if (typeof window !== 'undefined') {
-          sessionStorage.removeItem('statsContextRoundsAlertShown');
-          sessionStorage.removeItem('roundsAlertShown');
+          sessionStorage.removeItem('statsContextRoundsToastShown');
+          sessionStorage.removeItem('roundsToastShown');
         }
       }
       

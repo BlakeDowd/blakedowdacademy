@@ -21,8 +21,9 @@ const navItems = [
 export default function Navbar() {
   const pathname = usePathname();
 
+  // Z-Index Check: Ensure navbar z-[60] is higher than modals (z-40) so navigation is never covered
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center">
+    <div className="fixed bottom-0 left-0 right-0 z-[60] flex justify-center">
       <nav className="w-full max-w-md flex items-center justify-around py-3" style={{ backgroundColor: '#014421' }}>
         {navItems.map((item) => {
         const Icon = item.icon;

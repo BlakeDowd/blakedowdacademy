@@ -23,6 +23,7 @@ import {
   Check
 } from "lucide-react";
 import IconPicker, { GOLF_ICONS } from "@/components/IconPicker";
+import Toast from "@/components/Toast";
 
 // Video drills for Daily Focus rotation
 const VIDEO_DRILLS = [
@@ -100,6 +101,9 @@ export default function HomeDashboard() {
   const { rounds } = useStats();
   const { user, refreshUser } = useAuth();
   
+  // Toast state for non-blocking notifications
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
+  
   // Ensure rounds is always an array, never null or undefined
   // Filter Dashboard Rounds: Even though we fetch 'all' rounds in the background, 
   // filter safeRounds to show only the ones where round.user_id === user.id for personal stats
@@ -108,30 +112,35 @@ export default function HomeDashboard() {
     ? allRounds.filter((round: any) => round.user_id === user.id)
     : [];
   
-  // Verify App State: Alert if rounds.length === 0 so we know if data is actually arriving from Supabase
-  // Dismiss the Alert: Once the data loads, the alert should automatically stop appearing
+  // State Guards: Ensure 'No rounds found' logic is wrapped in useEffect with proper dependency array
+  // Remove Browser Alerts: Replaced alert() with non-blocking Toast notification
+  // Verify App State: Toast notification if rounds.length === 0 (non-blocking)
   useEffect(() => {
-    if (safeRounds.length === 0 && user?.id) {
+    // Use sessionStorage to track if toast has been shown to prevent infinite loops
+    const hasShownToast = typeof window !== 'undefined' && sessionStorage.getItem('roundsToastShown') === 'true';
+    
+    if (safeRounds.length === 0 && user?.id && !hasShownToast) {
       console.warn('⚠️ HomeDashboard: rounds.length === 0 - No rounds data from Supabase');
       console.warn('⚠️ This could mean:');
       console.warn('  1. No rounds exist in database for this user');
       console.warn('  2. RLS policies are blocking access');
       console.warn('  3. Query is failing silently');
       console.warn('⚠️ Total rounds in database:', allRounds.length);
-      // Alert user to check console for details
-      if (typeof window !== 'undefined' && !sessionStorage.getItem('roundsAlertShown')) {
-        alert('⚠️ No rounds found!\n\nCheck browser console for details.\n\nThis alert will only show once per session.');
-        sessionStorage.setItem('roundsAlertShown', 'true');
+      // Remove Browser Alerts: Use non-blocking Toast instead of alert()
+      setToast({ message: 'No rounds found. Check console for details.', type: 'warning' });
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('roundsToastShown', 'true');
       }
     } else if (safeRounds.length > 0) {
       console.log('✅ HomeDashboard: Rounds data loaded successfully:', safeRounds.length, 'user rounds');
       console.log('✅ HomeDashboard: Total rounds in database:', allRounds.length);
-      // Dismiss the Alert: Clear alert flag if rounds are found - alert will stop appearing
+      // Dismiss the Alert: Clear toast flag if rounds are found
       if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('roundsAlertShown');
-        sessionStorage.removeItem('statsContextRoundsAlertShown');
+        sessionStorage.removeItem('roundsToastShown');
+        sessionStorage.removeItem('statsContextRoundsToastShown');
       }
     }
+    // State Guards: Only depend on lengths and user.id to prevent infinite loops
   }, [safeRounds.length, allRounds.length, user?.id]);
   
   // Clean Display: Ensure Home page pulls from profiles.full_name (blake Dowd)
@@ -198,7 +207,8 @@ export default function HomeDashboard() {
         console.error('Error updating profile_icon:', error);
         // Revert on error
         setSelectedIcon(user?.profileIcon || null);
-        alert('Failed to update icon. Please try again.');
+        // Remove Browser Alerts: Use non-blocking Toast instead of alert()
+        setToast({ message: 'Failed to update icon. Please try again.', type: 'error' });
       } else {
         // Refresh user context to sync
         if (refreshUser) {
@@ -208,6 +218,8 @@ export default function HomeDashboard() {
     } catch (error) {
       console.error('Error saving icon:', error);
       setSelectedIcon(user?.profileIcon || null);
+      // Remove Browser Alerts: Use non-blocking Toast instead of alert()
+      setToast({ message: 'Failed to update icon. Please try again.', type: 'error' });
     } finally {
       setIsSavingIcon(false);
     }
@@ -216,7 +228,8 @@ export default function HomeDashboard() {
   // Bulletproof Save: Update full_name and profile_icon in profiles table
   const handleProfileModalSave = async () => {
     if (!user?.id || !editedName.trim()) {
-      alert('Please enter your name.');
+      // Remove Browser Alerts: Use non-blocking Toast instead of alert()
+      setToast({ message: 'Please enter your name.', type: 'warning' });
       return;
     }
     
@@ -243,13 +256,14 @@ export default function HomeDashboard() {
         })
         .eq('id', user.id);
 
-      // Capture RLS Errors: Alert the specific Supabase error
+      // Capture RLS Errors: Show error via non-blocking Toast
       if (profileError) {
         console.error('Error updating full_name:', profileError);
         console.error('Error code:', profileError.code);
         console.error('Error message:', profileError.message);
         console.error('Error details:', profileError.details);
-        alert(`Supabase Error: ${profileError.message || 'Unknown error'}\nCode: ${profileError.code || 'N/A'}`);
+        // Remove Browser Alerts: Use non-blocking Toast instead of alert()
+        setToast({ message: `Error: ${profileError.message || 'Unknown error'} (Code: ${profileError.code || 'N/A'})`, type: 'error' });
         setIsSavingName(false);
         setIsSavingIcon(false);
         return;
@@ -270,7 +284,8 @@ export default function HomeDashboard() {
       router.refresh();
     } catch (error) {
       console.error('Error saving profile:', error);
-      alert('Failed to save profile. Please try again.');
+      // Remove Browser Alerts: Use non-blocking Toast instead of alert()
+      setToast({ message: 'Failed to save profile. Please try again.', type: 'error' });
     } finally {
       setIsSavingName(false);
       setIsSavingIcon(false);
@@ -470,11 +485,21 @@ export default function HomeDashboard() {
   // Wrap return in try-catch to prevent crashes
   try {
     return (
-      <div className="min-h-screen bg-gray-50 pb-20">
-      <div className="max-w-md mx-auto bg-white min-h-screen">
+      <>
+        {/* Remove Browser Alerts: Non-blocking Toast notification instead of alert() */}
+        {toast && (
+          <Toast
+            message={toast.message}
+            type={toast.type}
+            onClose={() => setToast(null)}
+          />
+        )}
+        <div className="min-h-screen bg-gray-50 pb-20">
+          <div className="max-w-md mx-auto bg-white min-h-screen">
         {/* Profile Modal - Opens when avatar is clicked */}
+        {/* Z-Index Check: Modal z-40 is lower than Navbar z-[60] so navigation is never covered */}
         {showProfileModal && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowProfileModal(false)}>
+          <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4" onClick={() => setShowProfileModal(false)}>
             <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-2xl font-bold text-gray-900">Edit Profile</h2>
@@ -722,9 +747,10 @@ export default function HomeDashboard() {
         </div>
         
         {/* Level Up Modal */}
+        {/* Z-Index Check: Modal z-40 is lower than Navbar z-[60] so navigation is never covered */}
         {showLevelModal && (
           <div 
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
             onClick={() => setShowLevelModal(false)}
           >
             <div 
@@ -998,8 +1024,9 @@ export default function HomeDashboard() {
           </div>
         </div>
 
-      </div>
-    </div>
+          </div>
+        </div>
+      </>
   );
   } catch (error) {
     console.error('Error rendering HomeDashboard:', error);
