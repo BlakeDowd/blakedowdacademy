@@ -1043,15 +1043,23 @@ export default function AcademyPage() {
     }
   }, [isAuthenticated, user, router, loading]);
   
+  // Stabilize Fetching: Add circuit breaker to prevent multiple state updates
   // Load user progress and set up event listeners
+  const [progressLoaded, setProgressLoaded] = useState(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const loadProgress = () => {
       const savedProgress = localStorage.getItem('userProgress');
-      if (savedProgress) {
-        const progress = JSON.parse(savedProgress);
-        setUserProgress(progress);
+      // Circuit Breaker: Only set if data exists and we haven't loaded it yet
+      if (savedProgress && !progressLoaded) {
+        try {
+          const progress = JSON.parse(savedProgress);
+          setUserProgress(progress);
+          setProgressLoaded(true);
+        } catch (error) {
+          console.error('Academy: Error parsing user progress:', error);
+        }
       }
     };
 
@@ -1059,16 +1067,15 @@ export default function AcademyPage() {
 
     // Listen for rounds updates to refresh leaderboard
     const handleRoundsUpdate = () => {
-      // Force a re-render by updating a state or triggering a refresh
       // The rounds from useStats() will automatically update via StatsContext
+      // No need to force state update - just log
       console.log('Academy: Received roundsUpdated event, leaderboard will refresh');
     };
 
     // Listen for Academy-specific leaderboard refresh
     const handleLeaderboardRefresh = () => {
-      console.log('Academy: Received academyLeaderboardRefresh event, forcing update');
-      // Trigger a state update to force re-render with new rounds data
-      setTimeFilter(prev => prev); // This will trigger a re-render
+      console.log('Academy: Received academyLeaderboardRefresh event');
+      // Don't trigger state update - let the natural re-render from StatsContext handle it
     };
 
     window.addEventListener('roundsUpdated', handleRoundsUpdate);
@@ -1082,12 +1089,26 @@ export default function AcademyPage() {
       window.removeEventListener('userProgressUpdated', loadProgress);
       window.removeEventListener('storage', loadProgress);
     };
-  }, []);
+  }, [progressLoaded]);
   
   console.log('Academy: Auth state - loading:', loading, 'isAuthenticated:', isAuthenticated, 'user:', user?.id);
   
+  // Kill the Wait: Ensure loading is forced to false in a finally block pattern
   // Show loading spinner while auth is loading (after all hooks)
-  if (loading) {
+  // Circuit Breaker: Add timeout to prevent infinite loading
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
+  useEffect(() => {
+    // Force loading to false after 10 seconds to prevent infinite spinner
+    const timeout = setTimeout(() => {
+      if (loading) {
+        console.warn('Academy: Loading timeout - forcing render');
+        setLoadingTimeout(true);
+      }
+    }, 10000);
+    return () => clearTimeout(timeout);
+  }, [loading]);
+
+  if (loading && !loadingTimeout) {
     console.log('Academy: Showing loading spinner');
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -1171,28 +1192,50 @@ export default function AcademyPage() {
   const userName = getUserName();
   
 
+  // Stabilize Fetching: Add circuit breaker to prevent recalculating leaderboard on every render
   // Leaderboard Update: Force refresh to show real names from database
   // Leaderboard Refresh: Fetch from full_name, recalculates when timeFilter or leaderboardMetric changes
   // This ensures the leaderboard shows the updated full_name immediately (not cached)
-  const currentLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user);
+  // Circuit Breaker: Memoize leaderboard calculation to prevent infinite loops
+  const [cachedLeaderboard, setCachedLeaderboard] = useState<any>(null);
+  const [lastCalculationKey, setLastCalculationKey] = useState<string>('');
   
-  // Force leaderboard refresh when user data changes - ensures real names appear
-  useEffect(() => {
-    if (user?.fullName) {
-      console.log('Academy: User full_name changed, forcing leaderboard refresh');
-      console.log('Academy: Current full_name value:', user.fullName);
-      // Force re-render by triggering state update
-      setTimeFilter(prev => prev); // This will trigger leaderboard recalculation
+  // Create a stable key for the calculation
+  const calculationKey = `${leaderboardMetric}-${timeFilter}-${rounds.length}-${totalXP}-${userName}`;
+  
+  // Only recalculate if the key changed
+  let currentLeaderboard;
+  if (cachedLeaderboard && calculationKey === lastCalculationKey) {
+    currentLeaderboard = cachedLeaderboard;
+  } else {
+    currentLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user);
+    // Circuit Breaker: Only set if data exists and key changed
+    if (currentLeaderboard && calculationKey !== lastCalculationKey) {
+      setCachedLeaderboard(currentLeaderboard);
+      setLastCalculationKey(calculationKey);
     }
-  }, [user?.fullName]);
+  }
+  
+  // Stabilize Fetching: Fix useEffect dependency array and add circuit breaker to prevent infinite loops
+  // Force leaderboard refresh when user data changes - ensures real names appear
+  const [hasInitialized, setHasInitialized] = useState(false);
+  useEffect(() => {
+    // Circuit Breaker: Only update if we haven't initialized yet or if fullName actually changed
+    if (user?.fullName && !hasInitialized) {
+      console.log('Academy: User full_name initialized, forcing leaderboard refresh');
+      console.log('Academy: Current full_name value:', user.fullName);
+      setHasInitialized(true);
+      // Only trigger update once on initialization
+    }
+  }, [user?.fullName, hasInitialized]);
   const top3 = currentLeaderboard.top3;
   const ranks4to7 = currentLeaderboard.all.slice(3, 7);
   const sortedLeaderboard = currentLeaderboard.all;
   
   // Find the lowest round across all entries for trophy icon (only relevant for lowGross and lowNett metrics)
   const allLowRounds: number[] = sortedLeaderboard
-    .map(entry => leaderboardMetric === 'lowNett' ? entry.lowNett : entry.lowRound)
-    .filter((score): score is number => score !== null && score !== undefined && score > 0) as number[];
+    .map((entry: any) => leaderboardMetric === 'lowNett' ? entry.lowNett : entry.lowRound)
+    .filter((score: any): score is number => score !== null && score !== undefined && score > 0);
   const globalLowRound = allLowRounds.length > 0 ? Math.min(...allLowRounds) : null;
 
   // Get four-pillar leaderboard data - recalculates when timeFilter changes
@@ -1205,7 +1248,7 @@ export default function AcademyPage() {
   const getFilteredFullLeaderboard = () => {
     if (!leaderboardSearch.trim()) return sortedLeaderboard;
     const searchLower = leaderboardSearch.toLowerCase();
-    return sortedLeaderboard.filter(entry => 
+    return sortedLeaderboard.filter((entry: any) => 
       entry.name.toLowerCase().includes(searchLower)
     );
   };
@@ -2078,7 +2121,7 @@ export default function AcademyPage() {
               </div>
             ) : !showFullLeaderboard ? (
               <div className="space-y-3">
-                  {ranks4to7.map((entry) => {
+                  {ranks4to7.map((entry: any) => {
                     return (
                       <div
                         key={entry.id}
@@ -2166,7 +2209,7 @@ export default function AcademyPage() {
                       No players found
                     </div>
                   ) : (
-                    filteredFullLeaderboard.map((entry) => {
+                    filteredFullLeaderboard.map((entry: any) => {
                       const isTop3 = entry.rank <= 3;
 
                       return (
