@@ -548,6 +548,17 @@ export default function HomeDashboard() {
                 {userName}
               </p>
             </div>
+            {/* Force Refresh Logic: Add window.location.reload() button to see if a hard browser-level reset unfreezes the state */}
+            <button
+              onClick={() => {
+                console.log('Force Refresh: Reloading page...');
+                window.location.reload();
+              }}
+              className="ml-2 px-3 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600"
+              title="Force Refresh"
+            >
+              🔄
+            </button>
           </div>
         </div>
         

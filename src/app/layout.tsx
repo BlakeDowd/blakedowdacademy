@@ -38,12 +38,13 @@ export default function RootLayout({
               <div className="relative z-0">
                 {children}
               </div>
-              {/* Global Click-Through: Ensure ConditionalNavbar is z-[100] to guarantee it's on top of any invisible error layers */}
-              <div className="relative z-[100]">
-                <ConditionalNavbar />
-              </div>
             </StatsProvider>
           </AuthProvider>
+          {/* Layout Clean-up: Temporarily remove StatsProvider and AuthProvider wrappers around ConditionalNavbar to see if a provider is crashing */}
+          {/* Global Click-Through: Ensure ConditionalNavbar is z-[100] to guarantee it's on top of any invisible error layers */}
+          <div className="relative z-[100]">
+            <ConditionalNavbar />
+          </div>
         </ErrorBoundary>
       </body>
     </html>
