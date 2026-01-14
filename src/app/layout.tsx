@@ -41,8 +41,8 @@ export default function RootLayout({
             </StatsProvider>
           </AuthProvider>
           {/* Layout Clean-up: Temporarily remove StatsProvider and AuthProvider wrappers around ConditionalNavbar to see if a provider is crashing */}
-          {/* Global Click-Through: Ensure ConditionalNavbar is z-[100] to guarantee it's on top of any invisible error layers */}
-          <div className="relative z-[100]">
+          {/* Force Interactive: Ensure ConditionalNavbar has pointerEvents: auto and high z-index to override any crashed components */}
+          <div style={{ pointerEvents: 'auto', zIndex: 99999 }}>
             <ConditionalNavbar />
           </div>
         </ErrorBoundary>

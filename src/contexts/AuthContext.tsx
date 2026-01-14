@@ -94,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           
           console.log('AuthContext: Fetching user profile...');
 
+          // Kill the Loop: Wrap the entire profile fetch in a try/finally block that always sets setLoading(false)
           // Fetch user profile with full_name and profile_icon from profiles table
           // Remove Database Dependency: Removed initial_handicap from .select() to avoid database dependency
           // Force: ONLY use full_name column
@@ -105,89 +106,96 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           let profileError: any = null;
           
           try {
-            const { data, error } = await supabase
-              .from('profiles')
-              .select('full_name, profile_icon, created_at')
-              .eq('id', supabaseUser.id)
-              .single();
-            
-            profile = data;
-            profileError = error;
-            
-            if (profile) {
-              console.log('AuthContext: Profile found - full_name:', profile.full_name);
-              console.log('AuthContext: Profile found - profile_icon:', profile.profile_icon);
-            } else {
-              console.log('AuthContext: No profile found for user ID:', supabaseUser.id);
+            // Kill the Loop: Wrap entire profile fetch section in try/finally to guarantee setLoading(false)
+            try {
+              const { data, error } = await supabase
+                .from('profiles')
+                .select('full_name, profile_icon, created_at')
+                .eq('id', supabaseUser.id)
+                .single();
+              
+              profile = data;
+              profileError = error;
+              
+              if (profile) {
+                console.log('AuthContext: Profile found - full_name:', profile.full_name);
+                console.log('AuthContext: Profile found - profile_icon:', profile.profile_icon);
+              } else {
+                console.log('AuthContext: No profile found for user ID:', supabaseUser.id);
+              }
+              
+              if (profileError) {
+                console.error('AuthContext: Profile fetch error:', profileError);
+                console.error('AuthContext: Error code:', profileError.code);
+                console.error('AuthContext: Error message:', profileError.message);
+                // Make Handicap Optional: If profile fetch fails, continue anyway - don't block app load
+                console.warn('AuthContext: Profile fetch failed, but continuing to load app with partial data');
+              }
+            } catch (fetchError) {
+              // Make Handicap Optional: Catch any errors and continue - don't block app load
+              console.error('AuthContext: Exception during profile fetch:', fetchError);
+              console.warn('AuthContext: Continuing to load app despite profile fetch error');
+              profileError = fetchError;
             }
-            
-            if (profileError) {
-              console.error('AuthContext: Profile fetch error:', profileError);
-              console.error('AuthContext: Error code:', profileError.code);
-              console.error('AuthContext: Error message:', profileError.message);
-              // Make Handicap Optional: If profile fetch fails, continue anyway - don't block app load
-              console.warn('AuthContext: Profile fetch failed, but continuing to load app with partial data');
-            }
-          } catch (fetchError) {
-            // Make Handicap Optional: Catch any errors and continue - don't block app load
-            console.error('AuthContext: Exception during profile fetch:', fetchError);
-            console.warn('AuthContext: Continuing to load app despite profile fetch error');
-            profileError = fetchError;
-          }
 
-          // Auto-create profile if it doesn't exist (id matches auth.uid())
-          if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('No rows'))) {
-            console.log('AuthContext: Profile not found, creating new profile with id:', supabaseUser.id);
-            const { data: newProfile, error: createError } = await supabase
-              .from('profiles')
-              .insert({
-                id: supabaseUser.id, // This matches auth.uid() - ensures profile belongs to the right student
-                full_name: supabaseUser.email?.split('@')[0] || 'User',
-                created_at: new Date().toISOString(),
-              })
-              .select('full_name, profile_icon, created_at')
-              .single();
-            
-            if (createError) {
-              console.error('AuthContext: Error creating profile:', createError);
-            } else {
-              profile = newProfile;
-              console.log('AuthContext: Profile created successfully with id:', supabaseUser.id);
+            // Auto-create profile if it doesn't exist (id matches auth.uid())
+            if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('No rows'))) {
+              console.log('AuthContext: Profile not found, creating new profile with id:', supabaseUser.id);
+              const { data: newProfile, error: createError } = await supabase
+                .from('profiles')
+                .insert({
+                  id: supabaseUser.id, // This matches auth.uid() - ensures profile belongs to the right student
+                  full_name: supabaseUser.email?.split('@')[0] || 'User',
+                  created_at: new Date().toISOString(),
+                })
+                .select('full_name, profile_icon, created_at')
+                .single();
+              
+              if (createError) {
+                console.error('AuthContext: Error creating profile:', createError);
+              } else {
+                profile = newProfile;
+                console.log('AuthContext: Profile created successfully with id:', supabaseUser.id);
+              }
+            } else if (!profile && !profileError) {
+              // Fallback: if profile is null but no error, try to create it
+              console.log('AuthContext: Profile is null, creating new profile with id:', supabaseUser.id);
+              const { data: newProfile, error: createError } = await supabase
+                .from('profiles')
+                .insert({
+                  id: supabaseUser.id,
+                  full_name: supabaseUser.email?.split('@')[0] || 'User',
+                  created_at: new Date().toISOString(),
+                })
+                .select('full_name, profile_icon, created_at')
+                .single();
+              
+              if (!createError && newProfile) {
+                profile = newProfile;
+                console.log('AuthContext: Profile created successfully (fallback)');
+              }
             }
-          } else if (!profile && !profileError) {
-            // Fallback: if profile is null but no error, try to create it
-            console.log('AuthContext: Profile is null, creating new profile with id:', supabaseUser.id);
-            const { data: newProfile, error: createError } = await supabase
-              .from('profiles')
-              .insert({
-                id: supabaseUser.id,
-                full_name: supabaseUser.email?.split('@')[0] || 'User',
-                created_at: new Date().toISOString(),
-              })
-              .select('full_name, profile_icon, created_at')
-              .single();
-            
-            if (!createError && newProfile) {
-              profile = newProfile;
-              console.log('AuthContext: Profile created successfully (fallback)');
-            }
-          }
 
-          // Verify Data Source: Force it to display profile?.full_name || user.email
-          // Hard-Code Defaults: Manually set initialHandicap: 0 instead of getting it from database
-          // Force full_name: Set user with profile data from profiles table
-          // ONLY use full_name column, no fallbacks to email or other columns
-          // Hard-Code Profile: If profile fetch fails, use hard-coded values
-          console.log('AuthContext: Setting user with full_name:', profile?.full_name);
-          setUser({
-            id: supabaseUser.id,
-            email: supabaseUser.email || '',
-            fullName: profile?.full_name || 'Blake (Bypassed)', // Hard-Code Profile: Set hard-coded name if profile fetch fails
-            profileIcon: profile?.profile_icon || undefined, // Golf icon selected by student
-            initialHandicap: 0, // Hard-Code Defaults: Manually set to 0 instead of getting from database
-            createdAt: profile?.created_at || supabaseUser.created_at,
-          });
-          console.log('AuthContext: Initial check complete, user loaded (even if profile fetch had errors)');
+            // Verify Data Source: Force it to display profile?.full_name || user.email
+            // Hard-Code Defaults: Manually set initialHandicap: 0 instead of getting it from database
+            // Force full_name: Set user with profile data from profiles table
+            // ONLY use full_name column, no fallbacks to email or other columns
+            // Hard-Code Profile: If profile fetch fails, use hard-coded values
+            console.log('AuthContext: Setting user with full_name:', profile?.full_name);
+            setUser({
+              id: supabaseUser.id,
+              email: supabaseUser.email || '',
+              fullName: profile?.full_name || 'Blake (Bypassed)', // Hard-Code Profile: Set hard-coded name if profile fetch fails
+              profileIcon: profile?.profile_icon || undefined, // Golf icon selected by student
+              initialHandicap: 0, // Hard-Code Defaults: Manually set to 0 instead of getting from database
+              createdAt: profile?.created_at || supabaseUser.created_at,
+            });
+            console.log('AuthContext: Initial check complete, user loaded (even if profile fetch had errors)');
+          } finally {
+            // Kill the Loop: Always set loading to false in finally block so app never stays stuck
+            console.log('AuthContext: Profile fetch finally block - ensuring loading is false');
+            setLoading(false);
+          }
         } catch (error) {
           // Bypass Profile Errors: Even if profile fetch fails, set user state so the rest of the app (like Navbar) can mount
           console.error("AuthContext: Error checking auth:", error);
