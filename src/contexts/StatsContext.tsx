@@ -82,24 +82,15 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       console.log('StatsContext: Fetching ALL rounds for leaderboard (not filtering by user_id)');
       console.log('StatsContext: User object:', user ? { id: user.id, email: user.email, fullName: user.fullName } : 'No user (fetching all rounds anyway)');
       
-      // Profile Join: Fetch all rounds and join with profiles table to get full_name
-      // Verify Join: Using left join (profiles without !inner) so rounds without profiles are NOT discarded
-      // Check for Null Profiles: Rounds missing profiles will show as 'Unknown User' instead of disappearing
-      // Search Academy Page: Removed .eq('user_id', user.id) so leaderboard shows all users' rounds
-      // Foreign key relationship: rounds.user_id -> profiles.id (Supabase auto-detects this)
+      // Modify loadRounds: Change the Supabase query to only select from the rounds table: .select('*') instead of .select('*, profiles(...)')
+      // Why: We already have the user profile in AuthContext, so we don't need to join it here to get the leaderboard data to appear
       const { data, error } = await supabase
         .from('rounds')
-        .select(`
-          *,
-          profiles (
-            full_name,
-            profile_icon
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
       
-      // Debug: Log the query - now fetching ALL rounds with left join (default)
-      console.log('StatsContext: Query - fetching ALL rounds (no user_id filter, left join with profiles)');
+      // Debug: Log the query - now fetching ALL rounds without profile join
+      console.log('StatsContext: Query - fetching ALL rounds (no user_id filter, no profile join)');
 
       if (error) {
         // Set the Guard: Inside the if (error) block (line 100), add hasAttemptedFetch.current = true; before the console error
@@ -122,29 +113,16 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       console.log('StatsContext: Raw data from database:', data);
       console.log('StatsContext: Number of rounds fetched:', data?.length || 0);
       
-      // Debug: Check user_id and full_name in fetched rounds
+      // Debug: Check user_id in fetched rounds
       if (data && data.length > 0) {
-        console.log('StatsContext: Sample rounds with profiles:', data.slice(0, 5).map((r: any) => ({
+        console.log('StatsContext: Sample rounds:', data.slice(0, 5).map((r: any) => ({
           round_id: r.id,
           user_id: r.user_id,
-          full_name: r.profiles?.full_name || 'No profile found',
-          profile_icon: r.profiles?.profile_icon || null,
           date: r.date,
           score: r.score
         })));
         // Debug Logs: Keep console.log to see if Stuart's round is in the raw data
         console.log('StatsContext: All rounds user_ids:', data.map((r: any) => r.user_id));
-        console.log('StatsContext: All rounds full_names:', data.map((r: any) => r.profiles?.full_name || 'No name'));
-        // Check for Null Profiles: Log rounds with missing profiles
-        const roundsWithoutProfiles = data.filter((r: any) => !r.profiles || !r.profiles.full_name);
-        if (roundsWithoutProfiles.length > 0) {
-          console.log('StatsContext: Rounds without profiles (will show as "Unknown User"):', roundsWithoutProfiles.length);
-          console.log('StatsContext: Sample rounds without profiles:', roundsWithoutProfiles.slice(0, 3).map((r: any) => ({
-            round_id: r.id,
-            user_id: r.user_id,
-            date: r.date
-          })));
-        }
       } else {
         console.warn('StatsContext: No rounds found in database');
         console.warn('StatsContext: This could mean:');
@@ -187,11 +165,11 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         threePutts: round.three_putts,
         missed6ftAndIn: round.missed_6ft_and_in,
         puttsUnder6ftAttempts: round.putts_under_6ft_attempts,
-        // Profile Join: Include user_id and profile data for leaderboard
-        // Check for Null Profiles: If profile is missing, show 'Unknown User' instead of discarding the round
+        // Include user_id for leaderboard (profile data available from AuthContext)
         user_id: round.user_id,
-        full_name: round.profiles?.full_name || 'Unknown User', // Check for Null Profiles: Show 'Unknown User' if profile missing
-        profile_icon: round.profiles?.profile_icon || null, // Get profile_icon from joined profiles table
+        // Profile data is available from AuthContext, so we don't need to join it here
+        full_name: undefined, // Profile data available from AuthContext
+        profile_icon: undefined, // Profile data available from AuthContext
       }));
 
       setRounds(transformedRounds);
