@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { 
   Home, 
   Target, 
@@ -20,9 +19,18 @@ const navItems = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
 
   // Debug Navigation: Add console.log to see if Navbar is being rendered
   console.log('Navbar Mounted - Navbar component rendered, pathname:', pathname);
+
+  // Fix Navigation Logic: Replace Link components with manual router.push() function inside onClick
+  // Sometimes standard Links fail if the DOM is partially frozen, but a direct function call will force the browser to move
+  const handleNavigation = (href: string, label: string) => {
+    console.log('Nav Clicked:', label, href);
+    // Fix Navigation Logic: Use router.push() instead of Link to force navigation even if DOM is partially frozen
+    router.push(href);
+  };
 
   // Z-Index Check: Ensure navbar z-[60] is higher than modals (z-40) so navigation is never covered
   return (
@@ -33,33 +41,18 @@ export default function Navbar() {
         const isActive = pathname === item.href;
         
         return (
-          <Link
+          <button
             key={item.href}
-            href={item.href}
-            className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80 active:bg-red-500"
-            onClick={() => {
-              // Navbar Verification: Simple onClick log to test if clicks are registered
-              // Visual Feedback: Add active:bg-red-500 to test if touch events work (if red but no navigation, it's Router issue)
-              if (item.label === 'Home') {
-                console.log('NAV CLICKED');
-              }
-              // Manual Override: Add onClick log to test if clicks are registered
-              console.log('Nav Clicked:', item.label, item.href);
-            }}
+            onClick={() => handleNavigation(item.href, item.label)}
+            className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80"
+            type="button"
           >
             <Icon 
-              className={`w-6 h-6 active:bg-red-500 ${isActive ? "" : "text-white"}`}
+              className={`w-6 h-6 ${isActive ? "" : "text-white"}`}
               style={isActive ? { color: '#FFA500', fill: '#FFA500' } : {}}
-              onClick={() => {
-                // Navbar Verification: Add onClick to icon itself to test if clicks are registered
-                // Visual Feedback: Add active:bg-red-500 to test if touch events work (if red but no navigation, it's Router issue)
-                if (item.label === 'Home') {
-                  console.log('NAV CLICKED - Icon');
-                }
-              }}
             />
             <span className="text-white text-xs">{item.label}</span>
-          </Link>
+          </button>
         );
       })}
       </nav>

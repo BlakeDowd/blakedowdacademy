@@ -120,20 +120,19 @@ export default function HomeDashboard() {
   // Verify Data Source: Force it to display profile?.full_name || user.email
   // No fallbacks to 'User' - if full_name is an email, show email; if it's a name, show name
   const getUserDisplayName = () => {
-    // Manual Name Check: Replace with debug text to check if profile fetch is working
+    // Clean UI: Remove all DEBUG: prefixes, just return user?.fullName || 'User'
     // Force: ONLY use full_name from profiles table
     if (user?.fullName) {
       console.log('Dashboard: Displaying full_name from profile:', user.fullName);
-      return 'DEBUG: ' + user.fullName; // Manual Name Check: Show debug prefix
+      return user.fullName;
     }
     // If no full_name exists, show email as fallback
     if (user?.email) {
       console.log('Dashboard: No full_name found, using email fallback:', user.email);
-      return 'DEBUG: ' + user.email; // Manual Name Check: Show debug prefix
+      return user.email;
     }
-    // Final fallback only if nothing exists
-    console.log('Dashboard: No full_name or email found');
-    return 'DEBUG: No Name Found'; // Manual Name Check: Show debug text if profile fetch failed
+    // Final fallback
+    return 'User';
   };
   
   // Profile modal state
@@ -548,17 +547,6 @@ export default function HomeDashboard() {
                 {userName}
               </p>
             </div>
-            {/* Force Refresh Logic: Add window.location.reload() button to see if a hard browser-level reset unfreezes the state */}
-            <button
-              onClick={() => {
-                console.log('Force Refresh: Reloading page...');
-                window.location.reload();
-              }}
-              className="ml-2 px-3 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600"
-              title="Force Refresh"
-            >
-              🔄
-            </button>
           </div>
         </div>
         
