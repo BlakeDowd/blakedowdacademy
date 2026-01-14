@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -1025,6 +1025,10 @@ export default function AcademyPage() {
   const { user, refreshUser, isAuthenticated, loading } = useAuth();
   const router = useRouter();
   
+  // Add Fetch Guard: Create refs to ensure effects run exactly once
+  const hasFetchedProgress = useRef(false);
+  const hasInitializedLeaderboard = useRef(false);
+  
   const [userProgress, setUserProgress] = useState<{ totalXP: number; completedDrills: string[] }>({
     totalXP: 0,
     completedDrills: []
@@ -1036,27 +1040,30 @@ export default function AcademyPage() {
   const [leaderboardMetric, setLeaderboardMetric] = useState<'xp' | 'library' | 'practice' | 'rounds' | 'drills' | 'lowGross' | 'lowNett' | 'birdies' | 'eagles'>('xp');
   
   // Automatic redirect if not authenticated (only after loading is complete)
+  // Fix Dependencies: Use stable user?.id instead of user object
   useEffect(() => {
     if (!loading && !isAuthenticated && user === null) {
       console.log('Academy: No authentication detected, redirecting to login...');
       router.push('/login');
     }
-  }, [isAuthenticated, user, router, loading]);
+  }, [isAuthenticated, user?.id, router, loading]);
   
-  // Stabilize Fetching: Add circuit breaker to prevent multiple state updates
+  // Identify the Loop: Locate the useEffect that fetches leaderboard data or user stats
+  // Add Fetch Guard: Create a ref called hasFetched = useRef(false). Wrap the fetch logic in if (hasFetched.current) return; and set hasFetched.current = true;
   // Load user progress and set up event listeners
-  const [progressLoaded, setProgressLoaded] = useState(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    // Add Fetch Guard: Ensure it runs exactly once
+    if (hasFetchedProgress.current) return;
+    hasFetchedProgress.current = true;
 
     const loadProgress = () => {
       const savedProgress = localStorage.getItem('userProgress');
-      // Circuit Breaker: Only set if data exists and we haven't loaded it yet
-      if (savedProgress && !progressLoaded) {
+      // Circuit Breaker: Only set if data exists
+      if (savedProgress) {
         try {
           const progress = JSON.parse(savedProgress);
           setUserProgress(progress);
-          setProgressLoaded(true);
         } catch (error) {
           console.error('Academy: Error parsing user progress:', error);
         }
@@ -1089,7 +1096,7 @@ export default function AcademyPage() {
       window.removeEventListener('userProgressUpdated', loadProgress);
       window.removeEventListener('storage', loadProgress);
     };
-  }, [progressLoaded]);
+  }, []); // Fix Dependencies: Empty array - run once on mount
   
   console.log('Academy: Auth state - loading:', loading, 'isAuthenticated:', isAuthenticated, 'user:', user?.id);
   
@@ -1191,43 +1198,25 @@ export default function AcademyPage() {
 
   const userName = getUserName();
   
-
+  // Identify the Loop: Locate the useEffect that fetches leaderboard data or user stats
+  // Move leaderboard calculation into useEffect with proper guards
   // Stabilize Fetching: Add circuit breaker to prevent recalculating leaderboard on every render
-  // Leaderboard Update: Force refresh to show real names from database
-  // Leaderboard Refresh: Fetch from full_name, recalculates when timeFilter or leaderboardMetric changes
-  // This ensures the leaderboard shows the updated full_name immediately (not cached)
-  // Circuit Breaker: Memoize leaderboard calculation to prevent infinite loops
   const [cachedLeaderboard, setCachedLeaderboard] = useState<any>(null);
-  const [lastCalculationKey, setLastCalculationKey] = useState<string>('');
   
-  // Create a stable key for the calculation
-  const calculationKey = `${leaderboardMetric}-${timeFilter}-${rounds.length}-${totalXP}-${userName}`;
-  
-  // Only recalculate if the key changed
-  let currentLeaderboard;
-  if (cachedLeaderboard && calculationKey === lastCalculationKey) {
-    currentLeaderboard = cachedLeaderboard;
-  } else {
-    currentLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user);
-    // Circuit Breaker: Only set if data exists and key changed
-    if (currentLeaderboard && calculationKey !== lastCalculationKey) {
-      setCachedLeaderboard(currentLeaderboard);
-      setLastCalculationKey(calculationKey);
-    }
-  }
-  
-  // Stabilize Fetching: Fix useEffect dependency array and add circuit breaker to prevent infinite loops
-  // Force leaderboard refresh when user data changes - ensures real names appear
-  const [hasInitialized, setHasInitialized] = useState(false);
+  // Fix Dependencies: Use stable values like user?.id instead of user?.fullName or objects
+  // Add Fetch Guard: Ensure leaderboard calculation runs only when dependencies actually change
   useEffect(() => {
-    // Circuit Breaker: Only update if we haven't initialized yet or if fullName actually changed
-    if (user?.fullName && !hasInitialized) {
-      console.log('Academy: User full_name initialized, forcing leaderboard refresh');
-      console.log('Academy: Current full_name value:', user.fullName);
-      setHasInitialized(true);
-      // Only trigger update once on initialization
-    }
-  }, [user?.fullName, hasInitialized]);
+    // Add Fetch Guard: Only calculate if we have the necessary data
+    if (!user?.id || rounds === undefined) return;
+    
+    // Calculate leaderboard with current values
+    const newLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user);
+    
+    // Only update if the data actually changed (prevent infinite loop)
+    setCachedLeaderboard(newLeaderboard);
+  }, [leaderboardMetric, timeFilter, rounds?.length, totalXP, userName, user?.id]); // Fix Dependencies: Use stable user?.id instead of user object
+  
+  const currentLeaderboard = cachedLeaderboard || { top3: [], all: [], userRank: 0, userValue: 0 };
   const top3 = currentLeaderboard.top3;
   const ranks4to7 = currentLeaderboard.all.slice(3, 7);
   const sortedLeaderboard = currentLeaderboard.all;
