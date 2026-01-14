@@ -8,9 +8,19 @@ import HomeDashboard from "@/components/HomeDashboard";
 
 export default function Home() {
   const router = useRouter();
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const { rounds, loading: statsLoading } = useStats();
   const [forceLoaded, setForceLoaded] = useState(false); // Emergency timeout bypass
+  
+  // Console Log Check: Add console.log to see if the app knows who is logged in
+  useEffect(() => {
+    console.log('Current User State:', user);
+    console.log('Current User ID:', user?.id);
+    console.log('Current User Email:', user?.email);
+    console.log('Current User Full Name:', user?.fullName);
+    console.log('Is Authenticated:', isAuthenticated);
+    console.log('Auth Loading:', authLoading);
+  }, [user, isAuthenticated, authLoading]);
   
   // Ensure rounds is always an array, never null or undefined
   const safeRounds = rounds || [];

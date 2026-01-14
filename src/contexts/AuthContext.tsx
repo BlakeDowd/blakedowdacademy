@@ -58,22 +58,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Wrap in setTimeout to prevent deadlocks (Supabase recommendation)
       setTimeout(async () => {
+        // Bypass Profile Errors: Declare supabaseUser outside try block so we can use it in catch
+        let supabaseUser: any = null;
+        let session: any = null;
+        
         try {
           // Try getSession() first (more reliable for client-side auth)
-          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          const sessionResult = await supabase.auth.getSession();
+          session = sessionResult.data?.session || null;
           
-          let supabaseUser = session?.user || null;
-          let authError = sessionError;
+          supabaseUser = session?.user || null;
+          let authError = sessionResult.error;
           
           // Fallback to getUser() if session is null
           if (!supabaseUser) {
-            const { data: { user: getUserResult }, error: getUserError } = await supabase.auth.getUser();
-            supabaseUser = getUserResult;
-            authError = getUserError;
+            const getUserResult = await supabase.auth.getUser();
+            supabaseUser = getUserResult.data?.user || null;
+            authError = getUserResult.error;
           }
           
           if (authError || !supabaseUser) {
-            console.warn('AuthContext: No authenticated user found', { sessionError, authError });
+            console.warn('AuthContext: No authenticated user found', { sessionError: sessionResult.error, authError });
             setUser(null);
             setIsAuthenticated(false);
             setLoading(false);
@@ -181,12 +186,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setIsAuthenticated(true);
           console.log('AuthContext: Initial check complete, user loaded (even if profile fetch had errors)');
         } catch (error) {
-          // Silent Errors: Don't throw - just log and continue
+          // Bypass Profile Errors: Even if profile fetch fails, set user state so the rest of the app (like Navbar) can mount
           console.error("AuthContext: Error checking auth:", error);
           console.warn("AuthContext: Continuing to load app despite auth error");
-          // Make Handicap Optional: Clear user on error to prevent partial state
-          setUser(null);
-          setIsAuthenticated(false);
+          
+          // Bypass Profile Errors: If we got supabaseUser before the error, set user with minimal data
+          if (supabaseUser) {
+            console.log('AuthContext: Setting user with minimal data (id/email only) despite error');
+            setUser({
+              id: supabaseUser.id,
+              email: supabaseUser.email || '',
+              fullName: undefined,
+              profileIcon: undefined,
+              initialHandicap: 0,
+              createdAt: supabaseUser.created_at,
+            });
+            setIsAuthenticated(true);
+            console.log('AuthContext: User state set with minimal data - app can mount');
+          } else {
+            // Only clear user if we couldn't get supabaseUser at all
+            console.warn('AuthContext: No supabaseUser available, clearing user state');
+            setUser(null);
+            setIsAuthenticated(false);
+          }
         } finally {
           setLoading(false);
         }
