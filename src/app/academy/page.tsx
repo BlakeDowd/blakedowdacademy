@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -1066,11 +1066,18 @@ export default function AcademyPage() {
     try {
       const loadProgress = () => {
         const savedProgress = localStorage.getItem('userProgress');
-        // Circuit Breaker: Only set if data exists
+        // Circuit Breaker: Only set if data exists and it's different from current state
+        // Check for State Syncing: Don't call setUserProgress if it would cause a loop
         if (savedProgress) {
           try {
             const progress = JSON.parse(savedProgress);
-            setUserProgress(progress);
+            // Only update if the data actually changed to prevent infinite loops
+            setUserProgress(prev => {
+              if (JSON.stringify(prev) === JSON.stringify(progress)) {
+                return prev; // Return same reference if unchanged
+              }
+              return progress;
+            });
           } catch (error) {
             console.error('Academy: Error parsing user progress:', error);
           }
@@ -1145,32 +1152,30 @@ export default function AcademyPage() {
   
   console.log('Academy: Fetching data...');
 
+  // Stable Identity: Wrap functions and objects in useMemo/useCallback to prevent recreation on every render
   // Calculate total XP (rounds + drills) - filtered by timeframe
-  const totalXP = calculateTotalXPByTimeframe(rounds, userProgress, timeFilter);
+  const totalXP = useMemo(() => {
+    return calculateTotalXPByTimeframe(rounds, userProgress, timeFilter);
+  }, [rounds, userProgress, timeFilter]);
 
-  // Get current handicap (latest round or default)
-  const getCurrentHandicap = () => {
+  // Get current handicap (latest round or default) - wrap in useMemo
+  const currentHandicap = useMemo(() => {
     if (rounds.length === 0) return STARTING_HANDICAP;
     const lastRound = rounds[rounds.length - 1];
     return lastRound.handicap !== null && lastRound.handicap !== undefined 
       ? lastRound.handicap 
       : STARTING_HANDICAP;
-  };
+  }, [rounds]);
 
-  const currentHandicap = getCurrentHandicap();
-
-  // Calculate scholarship progress (handicap improvement toward goal)
-  const calculateScholarshipProgress = () => {
+  // Calculate scholarship progress (handicap improvement toward goal) - wrap in useMemo
+  const scholarshipProgress = useMemo(() => {
     const handicapRange = STARTING_HANDICAP - GOAL_HANDICAP; // 12.0 - 8.7 = 3.3
     const handicapImprovement = STARTING_HANDICAP - currentHandicap; // How much improved
-    const progress = Math.min(100, Math.max(0, (handicapImprovement / handicapRange) * 100));
-    return progress;
-  };
+    return Math.min(100, Math.max(0, (handicapImprovement / handicapRange) * 100));
+  }, [currentHandicap]);
 
-  const scholarshipProgress = calculateScholarshipProgress();
-
-  // Determine tier based on XP and handicap
-  const getTier = (): 'Bronze' | 'Silver' | 'Gold' | 'Platinum' => {
+  // Determine tier based on XP and handicap - wrap in useMemo
+  const userTier = useMemo((): 'Bronze' | 'Silver' | 'Gold' | 'Platinum' => {
     // Platinum requires hitting the goal handicap
     if (currentHandicap <= GOAL_HANDICAP) {
       return 'Platinum';
@@ -1184,35 +1189,24 @@ export default function AcademyPage() {
       return 'Silver';
     }
     return 'Bronze';
-  };
+  }, [currentHandicap, totalXP]);
 
-  const userTier = getTier();
-  const userLevel = getLevel(userTier);
+  const userLevel = useMemo(() => getLevel(userTier), [userTier]);
 
-  // Get user name - fetch from profiles.full_name, fallback to email or 'User'
-  // If full_name is an email (contains @), display it as-is
-  // Clean Display: Ensure Academy page pulls from profiles.full_name (blake Dowd)
-  // Force full_name: Fetch from profiles.full_name ONLY for Academy leaderboard
-  // Check Academy Fetch: Log exactly what full_name strings are being returned from the database
-  const getUserName = () => {
-    // Force: ONLY use full_name from profiles table
-    // This ensures real names (like 'Stuart Tibben' and 'coach blake' and 'blake Dowd') show up instead of 'User'
+  // Get user name - wrap in useMemo to prevent recreation
+  const userName = useMemo(() => {
     if (user?.fullName) {
       console.log('Academy: Displaying full_name from profile:', user.fullName);
       console.log('Academy: User ID:', user.id);
-      return user.fullName; // Show whatever is in full_name (email or name like 'blake Dowd')
+      return user.fullName;
     }
-    // If no full_name exists, show email as fallback
     if (user?.email) {
       console.log('Academy: No full_name found, using email fallback:', user.email);
       return user.email;
     }
-    // Final fallback only if nothing exists
     console.log('Academy: No full_name or email found');
     return '';
-  };
-
-  const userName = getUserName();
+  }, [user?.fullName, user?.email]);
   
   // Identify the Loop: Locate the useEffect that fetches leaderboard data or user stats
   // Move leaderboard calculation into useEffect with proper guards
@@ -1265,16 +1259,14 @@ export default function AcademyPage() {
   const roundsLeaderboard = getMockLeaderboard('rounds', timeFilter, rounds, userName, user);
   const drillsLeaderboard = getMockLeaderboard('drills', timeFilter, rounds, userName, user);
 
-  // Filter leaderboard by search
-  const getFilteredFullLeaderboard = () => {
+  // Filter leaderboard by search - wrap in useMemo for stable identity
+  const filteredFullLeaderboard = useMemo(() => {
     if (!leaderboardSearch.trim()) return sortedLeaderboard;
     const searchLower = leaderboardSearch.toLowerCase();
     return sortedLeaderboard.filter((entry: any) => 
       entry.name.toLowerCase().includes(searchLower)
     );
-  };
-
-  const filteredFullLeaderboard = getFilteredFullLeaderboard();
+  }, [sortedLeaderboard, leaderboardSearch]);
 
 
   // Circular avatar component - displays profile icon or initials
