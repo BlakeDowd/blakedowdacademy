@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import { useAuth } from "./AuthContext";
 
 interface RoundData {
@@ -53,11 +53,17 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   // Set loading to true initially
   const [loading, setLoading] = useState<boolean>(true);
   const { user } = useAuth();
+  
+  // Add Fetch Guard: At the top of StatsProvider, add const roundsFetched = useRef(false);
+  const roundsFetched = useRef(false);
 
   // Load rounds from database
   // Check Dashboard Fetch: Don't require user.id - fetch ALL rounds even if user is not logged in
   // Profile Mapping: Rounds with user_id that doesn't exist in profiles will still show (with 'Unknown User')
   const loadRounds = async () => {
+    // Block Infinite Retries: In loadRounds, add if (roundsFetched.current) return; at the very start
+    if (roundsFetched.current) return;
+    
     // Verify App State: Don't block fetching if user.id is missing - fetch all rounds anyway
     // This ensures rounds show up even if user state is temporarily unavailable
     if (!user?.id) {
@@ -100,7 +106,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
           code: error.code,
         });
         setRounds([]);
-        setLoading(false);
+        // Set Guard on Error: Even if there is an error (line 94), set roundsFetched.current = true;. This prevents the app from DDoS-ing the database when a request fails.
+        roundsFetched.current = true;
         return;
       }
 
@@ -201,15 +208,19 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         }
       }
       
-      setLoading(false);
+      // Set guard after successful fetch
+      roundsFetched.current = true;
     } catch (error) {
       // Silent Errors: Modify the data fetch so it simply returns an empty array [] on error instead of throwing
       console.error('StatsContext: Error loading rounds from database:', error);
       console.error('StatsContext: Returning empty array to prevent UI freeze');
       // Silent Errors: Return empty array instead of throwing exception
       setRounds([]);
+      // Set Guard on Error: Even if there is an error, set roundsFetched.current = true;. This prevents the app from DDoS-ing the database when a request fails.
+      roundsFetched.current = true;
+    } finally {
+      // Clear Loading State: Ensure setLoading(false) is called in the finally block so the UI doesn't stay frozen
       setLoading(false);
-      // Silent Errors: Don't re-throw error - just return empty array
     }
   };
 
