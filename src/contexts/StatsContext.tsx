@@ -61,7 +61,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   // Check Dashboard Fetch: Don't require user.id - fetch ALL rounds even if user is not logged in
   // Profile Mapping: Rounds with user_id that doesn't exist in profiles will still show (with 'Unknown User')
   const loadRounds = async () => {
-    // Block Infinite Retries: In loadRounds, add if (roundsFetched.current) return; at the very start
+    // Prevent Retries: In loadRounds, add if (roundsFetched.current) return; at the very start
     if (roundsFetched.current) return;
     
     // Verify App State: Don't block fetching if user.id is missing - fetch all rounds anyway
@@ -105,9 +105,11 @@ export function StatsProvider({ children }: { children: ReactNode }) {
           hint: error.hint,
           code: error.code,
         });
+        // Safe Fallback: If an error occurs, set setRounds([]) so the rest of the app doesn't stay 'loading' forever
         setRounds([]);
-        // Set Guard on Error: Even if there is an error (line 94), set roundsFetched.current = true;. This prevents the app from DDoS-ing the database when a request fails.
+        // Set Guard on Error: Inside the if (error) block (line 100), add roundsFetched.current = true;. This stops the console from spamming errors and freezing the CPU.
         roundsFetched.current = true;
+        setLoading(false); // Ensure loading state is cleared on error
         return;
       }
 
@@ -214,7 +216,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       // Silent Errors: Modify the data fetch so it simply returns an empty array [] on error instead of throwing
       console.error('StatsContext: Error loading rounds from database:', error);
       console.error('StatsContext: Returning empty array to prevent UI freeze');
-      // Silent Errors: Return empty array instead of throwing exception
+      // Safe Fallback: If an error occurs, set setRounds([]) so the rest of the app doesn't stay 'loading' forever
       setRounds([]);
       // Set Guard on Error: Even if there is an error, set roundsFetched.current = true;. This prevents the app from DDoS-ing the database when a request fails.
       roundsFetched.current = true;
