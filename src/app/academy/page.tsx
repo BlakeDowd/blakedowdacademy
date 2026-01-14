@@ -735,22 +735,14 @@ function getMockLeaderboard(
       userValue = 0;
   }
   
-  // If user has no activity, return empty leaderboard
-  if (userValue === 0) {
-    return {
-      top3: [],
-      all: [],
-      userRank: 0,
-      userValue: 0
-    };
-  }
-  
-  // Only include user in leaderboard if they have activity
+  // Ensure Display: If the leaderboard data is empty, ensure it shows '0 Rounds' instead of a fake number so users know they need to log a round
+  // Replace Hardcoded Value: Change any hardcoded 2000 or 1000 values to the dynamic roundCount or userRounds.length coming from the leaderboard data
+  // Always include user in leaderboard even if value is 0 (so they see "0 Rounds" instead of empty)
   const userEntry = {
     id: 'user',
     name: userName, // Use actual full_name instead of 'You'
     avatar: user?.profileIcon || userName.split(' ').map((n: string) => n[0]).join('') || 'Y', // Use profile_icon if available, else initials
-    value: userValue,
+    value: userValue, // Use dynamic userValue from calculateUserRounds, not hardcoded
     handicap: user?.initialHandicap // Include handicap for sorting rounds by skill level
   };
   
@@ -928,26 +920,26 @@ function getLeaderboardData(
       userValue = 0;
   }
   
-  // If user has no activity, return empty leaderboard
-  // For lowGross and lowNett, also check if they are null
-  if ((userValue === 0 && metric !== 'lowGross' && metric !== 'lowNett' && metric !== 'birdies' && metric !== 'eagles') || 
-      (metric === 'lowGross' && lowGross === null) || 
+  // Ensure Display: If the leaderboard data is empty, ensure it shows '0 Rounds' instead of a fake number so users know they need to log a round
+  // For lowGross and lowNett, check if they are null (these should return empty if null)
+  if ((metric === 'lowGross' && lowGross === null) || 
       (metric === 'lowNett' && lowNett === null)) {
     return {
       top3: [],
       all: [],
       userRank: 0,
-      userValue: (metric === 'lowGross' || metric === 'lowNett') ? 0 : userValue
+      userValue: 0
     };
   }
   
-  // Only include user in leaderboard if they have activity
+  // Replace Hardcoded Value: Change any hardcoded 2000 or 1000 values to the dynamic roundCount or userRounds.length coming from the leaderboard data
+  // Only include user in leaderboard - always show user even if value is 0 (so they see "0 Rounds" instead of empty)
   const userEntry = {
     id: 'user',
     name: userName, // Use actual full_name instead of 'You'
     avatar: user?.profileIcon || userName.split(' ').map(n => n[0]).join('') || 'Y', // Use profile_icon if available, else initials
     value: metric === 'lowGross' ? (lowGross !== null ? lowGross : 0) : 
-           metric === 'lowNett' ? (lowNett !== null ? lowNett : 0) : userValue,
+           metric === 'lowNett' ? (lowNett !== null ? lowNett : 0) : userValue, // Use dynamic userValue, not hardcoded
     previousRank: undefined,
     lowRound: lowGross, // Keep for trophy icon logic
     lowNett: lowNett,
