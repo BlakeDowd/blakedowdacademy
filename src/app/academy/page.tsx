@@ -792,12 +792,29 @@ function getMockLeaderboard(
   // Connect to Real Data: Replace any hardcoded values with userRounds.length or the score property from the actual leaderboardData array
   // Unify Labels: Ensure the top card and Rank section both use the same value from the entry in the leaderboard array
   const userEntryInSorted = sorted.find(entry => entry.id === 'user');
+  const finalUserValue = userEntryInSorted?.value || userValue;
+  
+  // Search for '3000': Find the variable or hardcoded string '3000' inside AcademyPage or the Top3Leaders component
+  // Debug: Log the value to ensure it's not 3000
+  if (metric === 'rounds') {
+    console.log('getMockLeaderboard - rounds metric:', {
+      userValue,
+      userEntryValue: userEntryInSorted?.value,
+      finalUserValue,
+      roundCount,
+      top3FirstValue: sorted[0]?.value
+    });
+    if (finalUserValue === 3000 || userEntryInSorted?.value === 3000) {
+      console.error('⚠️ Found 3000 value in mock leaderboard! This should be replaced with actual roundCount');
+    }
+  }
+  
   return {
     top3: sorted.slice(0, 3),
     all: sorted,
     userRank: sorted.length > 0 ? sorted.findIndex(entry => entry.id === 'user') + 1 : 0,
     // Use the actual value from the user entry in the leaderboard array, not a separate userValue
-    userValue: userEntryInSorted?.value || userValue
+    userValue: finalUserValue
   };
 }
 
@@ -1038,12 +1055,30 @@ function getLeaderboardData(
   
   // Connect to Real Data: Replace any hardcoded values with userRounds.length or the score property from the actual leaderboardData array
   // Unify Labels: Ensure the top card and Rank section both use the same value from the entry in the leaderboard array
+  const userEntryInRanks = withRanks.find(entry => entry.id === 'user');
+  const finalUserValue = userEntryInRanks?.value || userValue;
+  
+  // Search for '3000': Find the variable or hardcoded string '3000' inside AcademyPage or the Top3Leaders component
+  // Debug: Log the value to ensure it's not 3000
+  if (metric === 'rounds') {
+    console.log('getLeaderboardData - rounds metric:', {
+      userValue,
+      userEntryValue: userEntryInRanks?.value,
+      finalUserValue,
+      top3FirstValue: withRanks[0]?.value,
+      allEntries: withRanks.map((e: any) => ({ id: e.id, value: e.value, name: e.name }))
+    });
+    if (finalUserValue === 3000 || userEntryInRanks?.value === 3000) {
+      console.error('⚠️ Found 3000 value in leaderboard! This should be replaced with actual roundCount');
+    }
+  }
+  
   const result = {
     top3: withRanks.slice(0, 3),
     all: withRanks,
     userRank: withRanks.length > 0 ? withRanks.findIndex(entry => entry.id === 'user') + 1 : 0,
     // Use the actual value from the user entry in the leaderboard array, not a separate userValue
-    userValue: withRanks.length > 0 ? (withRanks.find(entry => entry.id === 'user')?.value || userValue) : userValue
+    userValue: finalUserValue
   };
   
   // Debug Check: Look at the Leaderboard Result: log. If it's an empty array [], the issue is definitely the SQL Policy above.
@@ -2220,6 +2255,7 @@ export default function AcademyPage() {
                     <div className="text-center mt-2">
                       <div className="text-sm font-bold text-gray-900">#{2}</div>
                       <div className="text-sm font-semibold text-gray-900">{top3[1].name}</div>
+                      {/* Connect to Real Data: Use value from leaderboardData array */}
                       <div className="text-xs text-gray-600">{formatLeaderboardValue(top3[1].value, leaderboardMetric)}</div>
                     </div>
                   </div>
@@ -2271,6 +2307,7 @@ export default function AcademyPage() {
                     <div className="text-center mt-2">
                       <div className="text-sm font-bold text-gray-900">#{3}</div>
                       <div className="text-sm font-semibold text-gray-900">{top3[2].name}</div>
+                      {/* Connect to Real Data: Use value from leaderboardData array */}
                       <div className="text-xs text-gray-600">{formatLeaderboardValue(top3[2].value, leaderboardMetric)}</div>
                     </div>
                   </div>
