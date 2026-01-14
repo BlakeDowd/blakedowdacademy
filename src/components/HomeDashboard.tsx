@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
@@ -254,6 +254,9 @@ export default function HomeDashboard() {
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [scoreTab, setScoreTab] = useState<'myRounds' | 'community'>('myRounds');
   
+  // Add Fetch Guard: At the top of the HomeDashboard component, add const activitiesFetched = useRef(false);
+  const activitiesFetched = useRef(false);
+  
   // Calculate level and progress - Level 1 starts at 0 XP, Level 2 requires 100 XP
   const currentLevel = totalXP === 0 ? 1 : Math.floor(totalXP / 100) + 1;
   const xpForCurrentLevel = totalXP % 100;
@@ -376,6 +379,9 @@ export default function HomeDashboard() {
     });
     
     setRecentActivities(allActivities.slice(0, 3));
+    
+    // Set the Guard: Inside loadRecentActivities, after you call setRecentActivities on line 378, add activitiesFetched.current = true;
+    activitiesFetched.current = true;
   };
   
   // Check if round is personal best
@@ -398,6 +404,9 @@ export default function HomeDashboard() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    
+    // Wrap the Call: In the useEffect on line 411, add a check: if (activitiesFetched.current) return;
+    if (activitiesFetched.current) return;
 
     const loadXP = () => {
       const savedProgress = localStorage.getItem('userProgress');
@@ -435,7 +444,7 @@ export default function HomeDashboard() {
       window.removeEventListener('practiceActivityUpdated', handlePracticeUpdate);
       window.removeEventListener('roundsUpdated', handleRoundsUpdate);
     };
-  }, [refreshKey, safeRounds]);
+  }, [user?.id]); // Cleanup Dependencies: Ensure the useEffect dependency array only contains stable values like [user?.id] and not the recentActivities state itself
 
   // Wrap return in try-catch to prevent crashes
   try {
