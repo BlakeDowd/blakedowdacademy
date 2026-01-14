@@ -789,11 +789,15 @@ function getMockLeaderboard(
     sorted = [userEntry].sort((a, b) => b.value - a.value);
   }
   
+  // Connect to Real Data: Replace any hardcoded values with userRounds.length or the score property from the actual leaderboardData array
+  // Unify Labels: Ensure the top card and Rank section both use the same value from the entry in the leaderboard array
+  const userEntryInSorted = sorted.find(entry => entry.id === 'user');
   return {
     top3: sorted.slice(0, 3),
     all: sorted,
     userRank: sorted.length > 0 ? sorted.findIndex(entry => entry.id === 'user') + 1 : 0,
-    userValue: userValue
+    // Use the actual value from the user entry in the leaderboard array, not a separate userValue
+    userValue: userEntryInSorted?.value || userValue
   };
 }
 
@@ -1032,11 +1036,14 @@ function getLeaderboardData(
     };
   });
   
+  // Connect to Real Data: Replace any hardcoded values with userRounds.length or the score property from the actual leaderboardData array
+  // Unify Labels: Ensure the top card and Rank section both use the same value from the entry in the leaderboard array
   const result = {
     top3: withRanks.slice(0, 3),
     all: withRanks,
     userRank: withRanks.length > 0 ? withRanks.findIndex(entry => entry.id === 'user') + 1 : 0,
-    userValue: userValue
+    // Use the actual value from the user entry in the leaderboard array, not a separate userValue
+    userValue: withRanks.length > 0 ? (withRanks.find(entry => entry.id === 'user')?.value || userValue) : userValue
   };
   
   // Debug Check: Look at the Leaderboard Result: log. If it's an empty array [], the issue is definitely the SQL Policy above.
@@ -2238,6 +2245,8 @@ export default function AcademyPage() {
                     <div className="text-center mt-2">
                       <div className="text-base font-bold text-gray-900">#{1}</div>
                       <div className="text-base font-semibold text-gray-900">{top3[0].name}</div>
+                      {/* Connect to Real Data: Replace any hardcoded values with the score property from the actual leaderboardData array */}
+                      {/* Unify Labels: Ensure the top card says the same value as the Rank section */}
                       <div className="text-xs text-gray-600">{formatLeaderboardValue(top3[0].value, leaderboardMetric)}</div>
                     </div>
                   </div>
@@ -2363,6 +2372,8 @@ export default function AcademyPage() {
                             </div>
                           </div>
                           <div className="flex items-center justify-end gap-2">
+                            {/* Connect to Real Data: Replace any hardcoded values with the score property from the actual leaderboardData array */}
+                            {/* Unify Labels: Ensure the top card and Rank section both show the same value (e.g., '5 Rounds') */}
                             <span className="text-sm font-bold whitespace-nowrap" style={{ color: '#FFA500' }}>
                               {formatLeaderboardValue(entry.value, leaderboardMetric)}
                             </span>
