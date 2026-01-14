@@ -54,6 +54,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState<boolean>(true);
   const { user } = useAuth();
   
+  // Add Fetch Guard: At the top of the StatsProvider component, add const hasAttemptedFetch = useRef(false);
+  const hasAttemptedFetch = useRef(false);
   // Add Fetch Guard: At the top of StatsProvider, add const roundsFetched = useRef(false);
   const roundsFetched = useRef(false);
 
@@ -61,6 +63,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   // Check Dashboard Fetch: Don't require user.id - fetch ALL rounds even if user is not logged in
   // Profile Mapping: Rounds with user_id that doesn't exist in profiles will still show (with 'Unknown User')
   const loadRounds = async () => {
+    // Block Infinite Retries: In the loadRounds function, add if (hasAttemptedFetch.current) return; at the very top
+    if (hasAttemptedFetch.current) return;
     // Prevent Retries: In loadRounds, add if (roundsFetched.current) return; at the very start
     if (roundsFetched.current) return;
     
@@ -98,6 +102,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       console.log('StatsContext: Query - fetching ALL rounds (no user_id filter, left join with profiles)');
 
       if (error) {
+        // Set the Guard: Inside the if (error) block (line 100), add hasAttemptedFetch.current = true; before the console error
+        hasAttemptedFetch.current = true;
         console.error('StatsContext: Error loading rounds from database:', error);
         console.error('StatsContext: Error details:', {
           message: error.message,
@@ -212,6 +218,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       
       // Set guard after successful fetch
       roundsFetched.current = true;
+      hasAttemptedFetch.current = true;
     } catch (error) {
       // Silent Errors: Modify the data fetch so it simply returns an empty array [] on error instead of throwing
       console.error('StatsContext: Error loading rounds from database:', error);
@@ -220,6 +227,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       setRounds([]);
       // Set Guard on Error: Even if there is an error, set roundsFetched.current = true;. This prevents the app from DDoS-ing the database when a request fails.
       roundsFetched.current = true;
+      hasAttemptedFetch.current = true;
     } finally {
       // Clear Loading State: Ensure setLoading(false) is called in the finally block so the UI doesn't stay frozen
       setLoading(false);
