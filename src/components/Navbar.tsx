@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { 
   Home, 
   Target, 
@@ -19,17 +19,16 @@ const navItems = [
 
 export default function Navbar() {
   const pathname = usePathname();
-  const router = useRouter();
 
   // Debug Navigation: Add console.log to see if Navbar is being rendered
   console.log('Navbar Mounted - Navbar component rendered, pathname:', pathname);
 
-  // Fix Navigation Logic: Replace Link components with manual router.push() function inside onClick
-  // Sometimes standard Links fail if the DOM is partially frozen, but a direct function call will force the browser to move
+  // Native HTML Nav: Replace router.push(href) with window.location.href = href
+  // This completely bypasses React's internal routing and forces the browser to fetch a brand-new page from the server
   const handleNavigation = (href: string, label: string) => {
     console.log('Nav Clicked:', label, href);
-    // Fix Navigation Logic: Use router.push() instead of Link to force navigation even if DOM is partially frozen
-    router.push(href);
+    // Native HTML Nav: Use window.location.href to bypass React routing completely
+    window.location.href = href;
   };
 
   // Z-Index Check: Ensure navbar z-[60] is higher than modals (z-40) so navigation is never covered

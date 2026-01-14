@@ -124,16 +124,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 console.log('AuthContext: No profile found for user ID:', supabaseUser.id);
               }
               
-              if (profileError) {
-                console.error('AuthContext: Profile fetch error:', profileError);
-                console.error('AuthContext: Error code:', profileError.code);
-                console.error('AuthContext: Error message:', profileError.message);
-                // Make Handicap Optional: If profile fetch fails, continue anyway - don't block app load
-                console.warn('AuthContext: Profile fetch failed, but continuing to load app with partial data');
+            if (profileError) {
+              console.error('AuthContext: Profile fetch error:', profileError);
+              console.error('AuthContext: Error code:', profileError.code);
+              console.error('AuthContext: Error message:', profileError.message);
+              // Clear Storage on Failure: If profile fetch fails, clear localStorage and sessionStorage to wipe any poisoned session data
+              if (typeof window !== 'undefined') {
+                console.warn('AuthContext: Clearing localStorage and sessionStorage due to profile fetch failure');
+                localStorage.clear();
+                sessionStorage.clear();
               }
+              // Make Handicap Optional: If profile fetch fails, continue anyway - don't block app load
+              console.warn('AuthContext: Profile fetch failed, but continuing to load app with partial data');
+            }
             } catch (fetchError) {
               // Make Handicap Optional: Catch any errors and continue - don't block app load
+              // Clear Storage on Failure: If profile fetch fails, clear localStorage and sessionStorage to wipe any poisoned session data
               console.error('AuthContext: Exception during profile fetch:', fetchError);
+              if (typeof window !== 'undefined') {
+                console.warn('AuthContext: Clearing localStorage and sessionStorage due to profile fetch exception');
+                localStorage.clear();
+                sessionStorage.clear();
+              }
               console.warn('AuthContext: Continuing to load app despite profile fetch error');
               profileError = fetchError;
             }
