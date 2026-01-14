@@ -735,14 +735,42 @@ function getMockLeaderboard(
       userValue = 0;
   }
   
-  // Ensure Display: If the leaderboard data is empty, ensure it shows '0 Rounds' instead of a fake number so users know they need to log a round
-  // Replace Hardcoded Value: Change any hardcoded 2000 or 1000 values to the dynamic roundCount or userRounds.length coming from the leaderboard data
-  // Always include user in leaderboard even if value is 0 (so they see "0 Rounds" instead of empty)
+  // Remove Mock Data: Find the top3 or leaders array calculation. Remove any code that inserts a 'dummy' or 'mock' user when the database is empty.
+  // Use Real Count: Ensure the roundCount displayed is userRounds.length from the actual rounds array.
+  // Handle Empty State: If there are no rounds in the database, show a 'No Rounds Logged' message instead of fake leaders.
+  
+  // Calculate actual user rounds count from the rounds array
+  const userRounds = rounds.filter(round => {
+    if (user?.id && round.user_id !== user.id) return false;
+    if (timeFilter === 'allTime') return true;
+    const { startDate } = getTimeframeDates(timeFilter);
+    const roundDate = new Date(round.date || round.created_at);
+    return roundDate >= startDate;
+  });
+  const roundCount = userRounds.length;
+  
+  // If no rounds exist, return empty leaderboard (will show "No Rounds Logged" in UI)
+  if (metric === 'rounds' && roundCount === 0) {
+    return {
+      top3: [],
+      all: [],
+      userRank: 0,
+      userValue: 0
+    };
+  }
+  
+  // Use Real Count: Ensure the roundCount displayed is userRounds.length from the actual rounds array
+  // Only create user entry if they have actual rounds (for rounds metric) or activity (for other metrics)
+  if (metric === 'rounds' && userValue !== roundCount) {
+    // Ensure userValue matches actual roundCount
+    userValue = roundCount;
+  }
+  
   const userEntry = {
     id: 'user',
     name: userName, // Use actual full_name instead of 'You'
     avatar: user?.profileIcon || userName.split(' ').map((n: string) => n[0]).join('') || 'Y', // Use profile_icon if available, else initials
-    value: userValue, // Use dynamic userValue from calculateUserRounds, not hardcoded
+    value: userValue, // Use dynamic userValue from calculateUserRounds (which uses userRounds.length), not hardcoded
     handicap: user?.initialHandicap // Include handicap for sorting rounds by skill level
   };
   
@@ -752,10 +780,8 @@ function getMockLeaderboard(
   if (metric === 'rounds' && user?.initialHandicap !== undefined) {
     // For rounds, we want to show by skill level (handicap)
     // Lower handicap = better, so we sort by handicap ascending
-    // But since we only have one user, we'll just use the value
     sorted = [userEntry].sort((a, b) => {
-      // If we had multiple users, we'd sort by handicap here
-      // For now, just sort by value (round count)
+      // Sort by value (round count) descending
       return b.value - a.value;
     });
   } else {
@@ -920,7 +946,10 @@ function getLeaderboardData(
       userValue = 0;
   }
   
-  // Ensure Display: If the leaderboard data is empty, ensure it shows '0 Rounds' instead of a fake number so users know they need to log a round
+  // Remove Mock Data: Find the top3 or leaders array calculation. Remove any code that inserts a 'dummy' or 'mock' user when the database is empty.
+  // Use Real Count: Ensure the roundCount displayed is userRounds.length from the actual rounds array.
+  // Handle Empty State: If there are no rounds in the database, show a 'No Rounds Logged' message instead of fake leaders.
+  
   // For lowGross and lowNett, check if they are null (these should return empty if null)
   if ((metric === 'lowGross' && lowGross === null) || 
       (metric === 'lowNett' && lowNett === null)) {
@@ -932,14 +961,39 @@ function getLeaderboardData(
     };
   }
   
+  // For rounds metric, calculate actual user rounds count from the rounds array
+  if (metric === 'rounds') {
+    const userRounds = rounds.filter(round => {
+      if (user?.id && round.user_id !== user.id) return false;
+      if (timeFilter === 'allTime') return true;
+      const { startDate } = getTimeframeDates(timeFilter);
+      const roundDate = new Date(round.date || round.created_at);
+      return roundDate >= startDate;
+    });
+    const roundCount = userRounds.length;
+    
+    // If no rounds exist, return empty leaderboard (will show "No Rounds Logged" in UI)
+    if (roundCount === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0
+      };
+    }
+    
+    // Use Real Count: Ensure the roundCount displayed is userRounds.length from the actual rounds array
+    userValue = roundCount;
+  }
+  
   // Replace Hardcoded Value: Change any hardcoded 2000 or 1000 values to the dynamic roundCount or userRounds.length coming from the leaderboard data
-  // Only include user in leaderboard - always show user even if value is 0 (so they see "0 Rounds" instead of empty)
+  // Only include user in leaderboard if they have actual data (no mock/dummy entries)
   const userEntry = {
     id: 'user',
     name: userName, // Use actual full_name instead of 'You'
     avatar: user?.profileIcon || userName.split(' ').map(n => n[0]).join('') || 'Y', // Use profile_icon if available, else initials
     value: metric === 'lowGross' ? (lowGross !== null ? lowGross : 0) : 
-           metric === 'lowNett' ? (lowNett !== null ? lowNett : 0) : userValue, // Use dynamic userValue, not hardcoded
+           metric === 'lowNett' ? (lowNett !== null ? lowNett : 0) : userValue, // Use dynamic userValue (roundCount for rounds), not hardcoded
     previousRank: undefined,
     lowRound: lowGross, // Keep for trophy icon logic
     lowNett: lowNett,
@@ -2117,7 +2171,18 @@ export default function AcademyPage() {
               
               // Add Null Check: Ensure the leaderboard component only renders if leaderboardData exists, but provide a 'No Data' state instead of a white screen
               // Verify the Variable: Make sure leaderboardData is being calculated using the rounds from StatsContext and that it isn't being filtered out by a mismatching user_id
+              // Handle Empty State: If there are no rounds in the database, show a 'No Rounds Logged' message instead of fake leaders
               if (!currentLeaderboard || !sortedLeaderboard || sortedLeaderboard.length === 0) {
+                // Check if this is specifically a rounds metric with no data
+                if (leaderboardMetric === 'rounds') {
+                  return (
+                    <div className="text-center py-12">
+                      <p className="text-sm text-gray-500">No Rounds Logged</p>
+                      <p className="text-xs text-gray-400 mt-2">Start logging rounds to appear on the leaderboard!</p>
+                      <p className="text-xs text-gray-400 mt-1">Rounds in database: {rounds?.length || 0}</p>
+                    </div>
+                  );
+                }
                 return (
                   <div className="text-center py-12">
                     <p className="text-sm text-gray-500">No rankings yet. Start logging to take the lead!</p>
