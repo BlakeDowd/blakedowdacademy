@@ -37,6 +37,10 @@ export default function Navbar() {
             key={item.href}
             href={item.href}
             className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80"
+            onClick={() => {
+              // Manual Override: Add onClick log to test if clicks are registered
+              console.log('Nav Clicked:', item.label, item.href);
+            }}
           >
             <Icon 
               className={`w-6 h-6 ${isActive ? "" : "text-white"}`}

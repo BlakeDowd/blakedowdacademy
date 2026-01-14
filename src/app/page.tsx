@@ -48,10 +48,11 @@ export default function Home() {
   }, [isAuthenticated, authLoading, router]);
 
   // Show loading if either auth or stats are loading (with emergency timeout bypass)
+  // Disable Overlays: Add pointer-events-none so loading overlay doesn't block the Navbar
   if ((authLoading || statsLoading) && !forceLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 pointer-events-none">
+        <div className="text-center pointer-events-auto">
           <div className="w-8 h-8 border-4 border-[#014421] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
         </div>
