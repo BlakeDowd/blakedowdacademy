@@ -572,17 +572,36 @@ function getTimeframeDates(timeFilter: 'week' | 'month' | 'year' | 'allTime') {
 
 // Calculate rounds count for a specific user
 function calculateUserRounds(rounds: any[], timeFilter: 'week' | 'month' | 'year' | 'allTime', userId?: string) {
+  // Verify the Variable: Make sure leaderboardData is being calculated using the rounds from StatsContext and that it isn't being filtered out by a mismatching user_id
+  console.log('calculateUserRounds: Input rounds count:', rounds?.length || 0);
+  console.log('calculateUserRounds: Filtering for user_id:', userId);
+  console.log('calculateUserRounds: TimeFilter:', timeFilter);
+  
+  if (!rounds || rounds.length === 0) {
+    console.log('calculateUserRounds: No rounds provided, returning 0');
+    return 0;
+  }
+  
   const { startDate } = getTimeframeDates(timeFilter);
   // Find the Top 3 Render: Replace placeholder with actual count of rounds for that user
   // Verify StatsContext: Ensure the data coming from StatsContext is being passed into the leaderboard calculation correctly
   const userRounds = rounds.filter(round => {
     // Filter by user_id if provided
-    if (userId && round.user_id !== userId) return false;
+    if (userId && round.user_id !== userId) {
+      console.log('calculateUserRounds: Round filtered out - user_id mismatch:', round.user_id, 'vs', userId);
+      return false;
+    }
     // Filter by timeframe
     if (timeFilter === 'allTime') return true;
     const roundDate = new Date(round.date || round.created_at);
-    return roundDate >= startDate;
+    const isInTimeframe = roundDate >= startDate;
+    if (!isInTimeframe) {
+      console.log('calculateUserRounds: Round filtered out - outside timeframe:', roundDate, 'vs', startDate);
+    }
+    return isInTimeframe;
   });
+  
+  console.log('calculateUserRounds: Filtered userRounds count:', userRounds.length);
   return userRounds.length;
 }
 
@@ -1221,17 +1240,50 @@ export default function AcademyPage() {
     // Add Fetch Guard: Wrap the fetch logic in if (hasFetched.current) return;
     if (hasFetched.current) return;
     
+    // Debug Logging: Add console.log('Academy: Current rounds count:', rounds.length) right before the leaderboard render to see if the data is actually reaching the page
+    console.log('Academy: useEffect - Current rounds count:', rounds?.length || 0);
+    console.log('Academy: useEffect - Rounds from StatsContext:', rounds);
+    console.log('Academy: useEffect - User ID:', user?.id);
+    console.log('Academy: useEffect - User name:', userName);
+    
     // Add Fetch Guard: Only calculate if we have the necessary data
     // Safe Logic: Do the check inside the useEffect rather than skipping the Hook entirely
-    if (!user?.id || rounds === undefined) return;
+    // Verify the Variable: Make sure leaderboardData is being calculated using the rounds from StatsContext and that it isn't being filtered out by a mismatching user_id
+    if (!user?.id) {
+      console.warn('Academy: useEffect - No user.id, skipping leaderboard calculation');
+      return;
+    }
+    if (rounds === undefined) {
+      console.warn('Academy: useEffect - Rounds is undefined, skipping leaderboard calculation');
+      return;
+    }
+    if (!rounds || rounds.length === 0) {
+      console.warn('Academy: useEffect - Rounds array is empty, but continuing with calculation');
+    }
     
     try {
       // Consolidate Calculations: Calculate all leaderboards in one place
+      console.log('Academy: useEffect - Calculating leaderboards with:', {
+        leaderboardMetric,
+        timeFilter,
+        roundsCount: rounds?.length || 0,
+        totalXP,
+        userName,
+        userId: user?.id
+      });
       const newLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user);
       const libraryLeaderboard = getMockLeaderboard('library', timeFilter, rounds, userName, user);
       const practiceLeaderboard = getMockLeaderboard('practice', timeFilter, rounds, userName, user);
       const roundsLeaderboard = getMockLeaderboard('rounds', timeFilter, rounds, userName, user);
       const drillsLeaderboard = getMockLeaderboard('drills', timeFilter, rounds, userName, user);
+      
+      console.log('Academy: useEffect - Calculated leaderboards:', {
+        main: newLeaderboard,
+        library: libraryLeaderboard,
+        practice: practiceLeaderboard,
+        rounds: roundsLeaderboard,
+        drills: drillsLeaderboard
+      });
       
       // Only update if the data actually changed (prevent infinite loop)
       setCachedLeaderboard(newLeaderboard);
@@ -2062,11 +2114,28 @@ export default function AcademyPage() {
         <div className="mb-6 w-full">
           <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 text-center">Top 3 Leaders</h2>
-            {sortedLeaderboard.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-sm text-gray-500">No rankings yet. Start logging to take the lead!</p>
-              </div>
-            ) : (
+            {(() => {
+              // Debug Logging: Add console.log('Academy: Current rounds count:', rounds.length) right before the leaderboard render to see if the data is actually reaching the page
+              console.log('Academy: Current rounds count:', rounds?.length || 0);
+              console.log('Academy: Leaderboard data exists:', !!currentLeaderboard);
+              console.log('Academy: Top3 data:', top3);
+              console.log('Academy: Sorted leaderboard length:', sortedLeaderboard?.length || 0);
+              console.log('Academy: User ID:', user?.id);
+              console.log('Academy: Rounds from StatsContext:', rounds);
+              
+              // Add Null Check: Ensure the leaderboard component only renders if leaderboardData exists, but provide a 'No Data' state instead of a white screen
+              // Verify the Variable: Make sure leaderboardData is being calculated using the rounds from StatsContext and that it isn't being filtered out by a mismatching user_id
+              if (!currentLeaderboard || !sortedLeaderboard || sortedLeaderboard.length === 0) {
+                return (
+                  <div className="text-center py-12">
+                    <p className="text-sm text-gray-500">No rankings yet. Start logging to take the lead!</p>
+                    <p className="text-xs text-gray-400 mt-2">Rounds loaded: {rounds?.length || 0}</p>
+                  </div>
+                );
+              }
+              
+              // Render the actual leaderboard
+              return (
               <div className="flex items-end justify-center gap-3">
                 {/* 2nd Place */}
                 {top3[1] && (
@@ -2141,7 +2210,8 @@ export default function AcademyPage() {
                   </div>
                 )}
               </div>
-            )}
+              );
+            })()}
           </div>
         </div>
 
