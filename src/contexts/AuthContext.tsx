@@ -84,26 +84,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log('AuthContext: Fetching user profile...');
 
           // Fetch user profile with initialHandicap, full_name, and profile_icon from profiles table
+          // Make Handicap Optional: Wrap the fetch so if initial_handicap fails, the app still loads the rest of the profile
           // Force: ONLY use full_name column
           // Check Academy Fetch: Log exactly what full_name strings are being returned from the database
           console.log('AuthContext: Fetching profile for user ID:', supabaseUser.id);
-          let { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('initial_handicap, full_name, profile_icon, created_at')
-            .eq('id', supabaseUser.id)
-            .single();
           
-          if (profile) {
-            console.log('AuthContext: Profile found - full_name:', profile.full_name);
-            console.log('AuthContext: Profile found - profile_icon:', profile.profile_icon);
-          } else {
-            console.log('AuthContext: No profile found for user ID:', supabaseUser.id);
-          }
+          // Make Handicap Optional: Try to fetch profile, but don't fail if initial_handicap is missing
+          let profile: any = null;
+          let profileError: any = null;
           
-          if (profileError) {
-            console.error('AuthContext: Profile fetch error:', profileError);
-            console.error('AuthContext: Error code:', profileError.code);
-            console.error('AuthContext: Error message:', profileError.message);
+          try {
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('initial_handicap, full_name, profile_icon, created_at')
+              .eq('id', supabaseUser.id)
+              .single();
+            
+            profile = data;
+            profileError = error;
+            
+            if (profile) {
+              console.log('AuthContext: Profile found - full_name:', profile.full_name);
+              console.log('AuthContext: Profile found - profile_icon:', profile.profile_icon);
+              console.log('AuthContext: Profile found - initial_handicap:', profile.initial_handicap);
+            } else {
+              console.log('AuthContext: No profile found for user ID:', supabaseUser.id);
+            }
+            
+            if (profileError) {
+              console.error('AuthContext: Profile fetch error:', profileError);
+              console.error('AuthContext: Error code:', profileError.code);
+              console.error('AuthContext: Error message:', profileError.message);
+              // Make Handicap Optional: If profile fetch fails, continue anyway - don't block app load
+              console.warn('AuthContext: Profile fetch failed, but continuing to load app with partial data');
+            }
+          } catch (fetchError) {
+            // Make Handicap Optional: Catch any errors and continue - don't block app load
+            console.error('AuthContext: Exception during profile fetch:', fetchError);
+            console.warn('AuthContext: Continuing to load app despite profile fetch error');
+            profileError = fetchError;
           }
 
           // Auto-create profile if it doesn't exist (id matches auth.uid())
@@ -145,22 +164,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           // Verify Data Source: Force it to display profile?.full_name || user.email
+          // Make Handicap Optional: If initial_handicap fetch fails, still load the rest of the profile (like full_name)
           // Robust Fetching: Make initial_handicap optional, use default of 0 if missing
           // Force full_name: Set user with profile data from profiles table
           // ONLY use full_name column, no fallbacks to email or other columns
-            console.log('AuthContext: Setting user with full_name:', profile?.full_name);
-            setUser({
-              id: supabaseUser.id,
-              email: supabaseUser.email || '',
-              fullName: profile?.full_name || undefined, // Force: ONLY use full_name from profiles table
-              profileIcon: profile?.profile_icon || undefined, // Golf icon selected by student
-              initialHandicap: profile?.initial_handicap ?? 0, // Robust: Use default 0 if missing
-              createdAt: profile?.created_at || supabaseUser.created_at,
-            });
+          // Make Handicap Optional: Even if profile fetch failed, set user with available data
+          console.log('AuthContext: Setting user with full_name:', profile?.full_name);
+          setUser({
+            id: supabaseUser.id,
+            email: supabaseUser.email || '',
+            fullName: profile?.full_name || undefined, // Force: ONLY use full_name from profiles table
+            profileIcon: profile?.profile_icon || undefined, // Golf icon selected by student
+            initialHandicap: profile?.initial_handicap ?? 0, // Make Handicap Optional: Use default 0 if missing or fetch failed
+            createdAt: profile?.created_at || supabaseUser.created_at,
+          });
           setIsAuthenticated(true);
-          console.log('AuthContext: Initial check complete, user loaded');
+          console.log('AuthContext: Initial check complete, user loaded (even if profile fetch had errors)');
         } catch (error) {
+          // Silent Errors: Don't throw - just log and continue
           console.error("AuthContext: Error checking auth:", error);
+          console.warn("AuthContext: Continuing to load app despite auth error");
+          // Make Handicap Optional: Clear user on error to prevent partial state
           setUser(null);
           setIsAuthenticated(false);
         } finally {
@@ -276,26 +300,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!supabaseUser) return;
 
       // Force: ONLY use full_name column
+      // Make Handicap Optional: Wrap the fetch so if initial_handicap fails, the app still loads the rest of the profile
       // Also fetch profile_icon for leaderboard display
       // Check Academy Fetch: Log exactly what full_name strings are being returned from the database
       console.log('refreshUser: Fetching profile for user ID:', supabaseUser.id);
-      let { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('initial_handicap, full_name, profile_icon, created_at')
-        .eq('id', supabaseUser.id)
-        .single();
       
-      if (profile) {
-        console.log('refreshUser: Profile found - full_name:', profile.full_name);
-        console.log('refreshUser: Profile found - profile_icon:', profile.profile_icon);
-      } else {
-        console.log('refreshUser: No profile found for user ID:', supabaseUser.id);
-      }
+      // Make Handicap Optional: Try to fetch profile, but don't fail if initial_handicap is missing
+      let profile: any = null;
+      let profileError: any = null;
       
-      if (profileError) {
-        console.error('refreshUser: Profile fetch error:', profileError);
-        console.error('refreshUser: Error code:', profileError.code);
-        console.error('refreshUser: Error message:', profileError.message);
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('initial_handicap, full_name, profile_icon, created_at')
+          .eq('id', supabaseUser.id)
+          .single();
+        
+        profile = data;
+        profileError = error;
+        
+        if (profile) {
+          console.log('refreshUser: Profile found - full_name:', profile.full_name);
+          console.log('refreshUser: Profile found - profile_icon:', profile.profile_icon);
+          console.log('refreshUser: Profile found - initial_handicap:', profile.initial_handicap);
+        } else {
+          console.log('refreshUser: No profile found for user ID:', supabaseUser.id);
+        }
+        
+        if (profileError) {
+          console.error('refreshUser: Profile fetch error:', profileError);
+          console.error('refreshUser: Error code:', profileError.code);
+          console.error('refreshUser: Error message:', profileError.message);
+          // Make Handicap Optional: If profile fetch fails, continue anyway - don't block app load
+          console.warn('refreshUser: Profile fetch failed, but continuing to load app with partial data');
+        }
+      } catch (fetchError) {
+        // Make Handicap Optional: Catch any errors and continue - don't block app load
+        console.error('refreshUser: Exception during profile fetch:', fetchError);
+        console.warn('refreshUser: Continuing to load app despite profile fetch error');
+        profileError = fetchError;
       }
 
       // Auto-create profile if it doesn't exist (id matches auth.uid())
@@ -337,16 +380,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Verify Data Source: Force it to display profile?.full_name || user.email
+      // Make Handicap Optional: If initial_handicap fetch fails, still load the rest of the profile (like full_name)
       // Force full_name: ONLY use full_name from profiles table, no fallbacks
       // This ensures the updated name from the save function is immediately reflected
+      // Make Handicap Optional: Even if profile fetch failed, update user with available data
       console.log('refreshUser: Updating user with full_name:', profile?.full_name);
       setUser((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
-          fullName: profile?.full_name || undefined, // Force: ONLY use full_name, no email fallback
-          profileIcon: profile?.profile_icon || undefined, // Golf icon selected by student
-          initialHandicap: profile?.initial_handicap,
+          fullName: profile?.full_name || prev.fullName || undefined, // Make Handicap Optional: Use existing fullName if profile fetch failed
+          profileIcon: profile?.profile_icon || prev.profileIcon || undefined,
+          initialHandicap: profile?.initial_handicap ?? prev.initialHandicap ?? 0, // Make Handicap Optional: Use default 0 if missing or fetch failed
         };
       });
     } catch (error) {

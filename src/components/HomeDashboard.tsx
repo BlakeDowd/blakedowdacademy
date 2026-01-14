@@ -112,36 +112,9 @@ export default function HomeDashboard() {
     ? allRounds.filter((round: any) => round.user_id === user.id)
     : [];
   
-  // State Guards: Ensure 'No rounds found' logic is wrapped in useEffect with proper dependency array
-  // Disable Blocking Toasts: Temporarily commented out the 'No rounds found' Toast to test navigation
-  // Verify App State: Toast notification if rounds.length === 0 (non-blocking) - DISABLED FOR TESTING
-  useEffect(() => {
-    // Disable Blocking Toasts: Commented out toast trigger to test if navigation works
-    // const hasShownToast = typeof window !== 'undefined' && sessionStorage.getItem('roundsToastShown') === 'true';
-    
-    if (safeRounds.length === 0 && user?.id) {
-      console.warn('⚠️ HomeDashboard: rounds.length === 0 - No rounds data from Supabase');
-      console.warn('⚠️ This could mean:');
-      console.warn('  1. No rounds exist in database for this user');
-      console.warn('  2. RLS policies are blocking access');
-      console.warn('  3. Query is failing silently');
-      console.warn('⚠️ Total rounds in database:', allRounds.length);
-      // Disable Blocking Toasts: Toast temporarily commented out
-      // setToast({ message: 'No rounds found. Check console for details.', type: 'warning' });
-      // if (typeof window !== 'undefined') {
-      //   sessionStorage.setItem('roundsToastShown', 'true');
-      // }
-    } else if (safeRounds.length > 0) {
-      console.log('✅ HomeDashboard: Rounds data loaded successfully:', safeRounds.length, 'user rounds');
-      console.log('✅ HomeDashboard: Total rounds in database:', allRounds.length);
-      // Dismiss the Alert: Clear toast flag if rounds are found
-      if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('roundsToastShown');
-        sessionStorage.removeItem('statsContextRoundsToastShown');
-      }
-    }
-    // State Guards: Only depend on lengths and user.id to prevent infinite loops
-  }, [safeRounds.length, allRounds.length, user?.id]);
+  // Kill the Freeze: Completely removed the useEffect that triggers the 'No rounds found' Toast
+  // This useEffect was causing an infinite loop that blocks the navigation bar
+  // Removed entirely to prevent navigation freeze
   
   // Clean Display: Ensure Home page pulls from profiles.full_name (blake Dowd)
   // Verify Data Source: Force it to display profile?.full_name || user.email
