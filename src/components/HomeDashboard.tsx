@@ -116,9 +116,8 @@ export default function HomeDashboard() {
   // This useEffect was causing an infinite loop that blocks the navigation bar
   // Removed entirely to prevent navigation freeze
   
-  // Clean Everything: Remove the entire getUserDisplayName logic and just hard-code the word 'Member' for now
-  // If it still says 'DEBUG', the site isn't deploying your changes
-  const userName = 'Member';
+  // Professional Wipe: Delete the entire getUserDisplayName function. Hard-code the name line to just say 'Member'
+  // If I still see 'DEBUG' after this, I will know the deployment is failing
   
   // Profile modal state
   const [editedName, setEditedName] = useState('');
@@ -130,9 +129,9 @@ export default function HomeDashboard() {
   // Initialize editedName when modal opens
   useEffect(() => {
     if (showProfileModal) {
-      setEditedName(userName);
+      setEditedName('Member');
     }
-  }, [showProfileModal, userName]);
+  }, [showProfileModal]);
   
   // Update selectedIcon when user.profileIcon changes
   useEffect(() => {
@@ -527,7 +526,8 @@ export default function HomeDashboard() {
             <div className="flex-1">
               <p className="text-gray-400 text-xs">Welcome back,</p>
               <p className="text-gray-900 font-bold text-xl mt-1">
-                {userName}
+                {/* Professional Wipe: Hard-code the name line to just say Member */}
+                <span>Member</span>
               </p>
             </div>
           </div>

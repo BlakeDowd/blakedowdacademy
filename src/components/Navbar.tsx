@@ -23,12 +23,8 @@ export default function Navbar() {
   // Debug Navigation: Add console.log to see if Navbar is being rendered
   console.log('Navbar Mounted - Navbar component rendered, pathname:', pathname);
 
-  // Native Navigation: Replace the handleNavigation function logic with window.location.href = href
-  // This bypasses React entirely and forces a hard browser load to the new page
-  const handleNavigation = (href: string) => {
-    window.location.href = href;
-  };
-
+  // Nuclear Navigation: Delete all Link and button tags for navigation. Replace them with standard HTML <a> tags
+  // This forces the browser to kill the current frozen process and download a fresh page
   // Z-Index Check: Ensure navbar z-[60] is higher than modals (z-40) so navigation is never covered
   return (
     <div className="fixed bottom-0 left-0 right-0 z-[60] flex justify-center">
@@ -38,18 +34,17 @@ export default function Navbar() {
         const isActive = pathname === item.href;
         
         return (
-          <button
+          <a
             key={item.href}
-            onClick={() => handleNavigation(item.href)}
+            href={item.href}
             className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80"
-            type="button"
           >
             <Icon 
               className={`w-6 h-6 ${isActive ? "" : "text-white"}`}
               style={isActive ? { color: '#FFA500', fill: '#FFA500' } : {}}
             />
             <span className="text-white text-xs">{item.label}</span>
-          </button>
+          </a>
         );
       })}
       </nav>
