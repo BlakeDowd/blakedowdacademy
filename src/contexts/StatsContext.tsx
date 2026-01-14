@@ -203,9 +203,13 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       
       setLoading(false);
     } catch (error) {
+      // Silent Errors: Modify the data fetch so it simply returns an empty array [] on error instead of throwing
       console.error('StatsContext: Error loading rounds from database:', error);
+      console.error('StatsContext: Returning empty array to prevent UI freeze');
+      // Silent Errors: Return empty array instead of throwing exception
       setRounds([]);
       setLoading(false);
+      // Silent Errors: Don't re-throw error - just return empty array
     }
   };
 
@@ -250,7 +254,9 @@ export function StatsProvider({ children }: { children: ReactNode }) {
 export function useStats() {
   const context = useContext(StatsContext);
   if (context === undefined) {
-    throw new Error('useStats must be used within a StatsProvider');
+    // Silent Errors: Don't throw - return empty context to prevent UI freeze
+    console.error('useStats must be used within a StatsProvider - returning empty context');
+    return { rounds: [], loading: false, refreshRounds: () => {}, calculateStats: () => ({ handicap: 'N/A', totalRounds: 0 }) };
   }
   return context;
 }

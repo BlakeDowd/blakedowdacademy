@@ -21,6 +21,9 @@ const navItems = [
 export default function Navbar() {
   const pathname = usePathname();
 
+  // Debug Navigation: Add console.log to see if Navbar is being rendered
+  console.log('Navbar Mounted - Navbar component rendered, pathname:', pathname);
+
   // Z-Index Check: Ensure navbar z-[60] is higher than modals (z-40) so navigation is never covered
   return (
     <div className="fixed bottom-0 left-0 right-0 z-[60] flex justify-center">
