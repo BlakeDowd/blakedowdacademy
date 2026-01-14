@@ -18,8 +18,13 @@ export default function ConditionalNavbar() {
   }
 
   // Force Render: Render navbar regardless of loading state
+  // Global Unblock: Wrap the entire ConditionalNavbar return in a div with fixed positioning and high z-index
   // Force Navbar: Ensure the ConditionalNavbar has style={{ pointerEvents: 'all' }} to override any invisible layers
   console.log('Navbar Mounted - Rendering Navbar component (forced render, not checking loading)');
-  return <div style={{ pointerEvents: 'all' }}><Navbar /></div>;
+  return (
+    <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 99999, pointerEvents: 'all' }}>
+      <Navbar />
+    </div>
+  );
 }
 

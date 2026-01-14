@@ -36,9 +36,10 @@ export default function Navbar() {
           <Link
             key={item.href}
             href={item.href}
-            className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80"
+            className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80 active:bg-red-500"
             onClick={() => {
               // Navbar Verification: Simple onClick log to test if clicks are registered
+              // Visual Feedback: Add active:bg-red-500 to test if touch events work (if red but no navigation, it's Router issue)
               if (item.label === 'Home') {
                 console.log('NAV CLICKED');
               }
@@ -47,10 +48,11 @@ export default function Navbar() {
             }}
           >
             <Icon 
-              className={`w-6 h-6 ${isActive ? "" : "text-white"}`}
+              className={`w-6 h-6 active:bg-red-500 ${isActive ? "" : "text-white"}`}
               style={isActive ? { color: '#FFA500', fill: '#FFA500' } : {}}
               onClick={() => {
                 // Navbar Verification: Add onClick to icon itself to test if clicks are registered
+                // Visual Feedback: Add active:bg-red-500 to test if touch events work (if red but no navigation, it's Router issue)
                 if (item.label === 'Home') {
                   console.log('NAV CLICKED - Icon');
                 }
