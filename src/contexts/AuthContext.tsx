@@ -174,13 +174,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Force full_name: Set user with profile data from profiles table
           // ONLY use full_name column, no fallbacks to email or other columns
           // Make Handicap Optional: Even if profile fetch failed, set user with available data
+          // Hard-Code Profile: If profile fetch fails, use hard-coded values
           console.log('AuthContext: Setting user with full_name:', profile?.full_name);
           setUser({
             id: supabaseUser.id,
             email: supabaseUser.email || '',
-            fullName: profile?.full_name || undefined, // Force: ONLY use full_name from profiles table
+            fullName: profile?.full_name || 'Blake (Bypassed)', // Hard-Code Profile: Set hard-coded name if profile fetch fails
             profileIcon: profile?.profile_icon || undefined, // Golf icon selected by student
-            initialHandicap: profile?.initial_handicap ?? 0, // Make Handicap Optional: Use default 0 if missing or fetch failed
+            initialHandicap: profile?.initial_handicap ?? 0, // Hard-Code Profile: Set to 0 if profile fetch fails
             createdAt: profile?.created_at || supabaseUser.created_at,
           });
           setIsAuthenticated(true);
@@ -191,18 +192,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.warn("AuthContext: Continuing to load app despite auth error");
           
           // Bypass Profile Errors: If we got supabaseUser before the error, set user with minimal data
+          // Hard-Code Profile: If profile fetch fails, manually set user.fullName to 'Blake (Bypassed)' and initialHandicap to 0
           if (supabaseUser) {
-            console.log('AuthContext: Setting user with minimal data (id/email only) despite error');
+            console.log('AuthContext: Setting user with hard-coded profile data (bypassed) despite error');
             setUser({
               id: supabaseUser.id,
               email: supabaseUser.email || '',
-              fullName: undefined,
+              fullName: 'Blake (Bypassed)', // Hard-Code Profile: Set hard-coded name if profile fetch fails
               profileIcon: undefined,
-              initialHandicap: 0,
+              initialHandicap: 0, // Hard-Code Profile: Set to 0 if profile fetch fails
               createdAt: supabaseUser.created_at,
             });
             setIsAuthenticated(true);
-            console.log('AuthContext: User state set with minimal data - app can mount');
+            console.log('AuthContext: User state set with hard-coded profile data - app can mount');
           } else {
             // Only clear user if we couldn't get supabaseUser at all
             console.warn('AuthContext: No supabaseUser available, clearing user state');

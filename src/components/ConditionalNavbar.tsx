@@ -18,7 +18,8 @@ export default function ConditionalNavbar() {
   }
 
   // Force Render: Render navbar regardless of loading state
+  // Force Navbar: Ensure the ConditionalNavbar has style={{ pointerEvents: 'all' }} to override any invisible layers
   console.log('Navbar Mounted - Rendering Navbar component (forced render, not checking loading)');
-  return <Navbar />;
+  return <div style={{ pointerEvents: 'all' }}><Navbar /></div>;
 }
 
