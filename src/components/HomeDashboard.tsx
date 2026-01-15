@@ -101,6 +101,9 @@ export default function HomeDashboard() {
   const { rounds } = useStats();
   const { user, refreshUser } = useAuth();
   
+  // Initialization Guard: Initialize the rounds variable as an empty array [] at the top of the component to ensure it exists before the code tries to access it
+  const safeRoundsArray = (rounds || []) as any[];
+  
   // Add Fetch Guard: Use useRef guards similar to Academy page to prevent loops
   const dataFetched = useRef(false);
   
@@ -175,9 +178,10 @@ export default function HomeDashboard() {
   // Ensure rounds is always an array, never null or undefined
   // Filter Dashboard Rounds: Even though we fetch 'all' rounds in the background, 
   // filter safeRounds to show only the ones where round.user_id === user.id for personal stats
-  const allRounds = rounds || [];
+  // Initialization Guard: Initialize the rounds variable as an empty array [] at the top of the component to ensure it exists before the code tries to access it
+  const allRounds = (rounds || []) as any[];
   const safeRounds = user?.id 
-    ? allRounds.filter((round: any) => round.user_id === user.id)
+    ? allRounds.filter((round: any) => round?.user_id === user.id)
     : [];
   
   // Kill the Freeze: Completely removed the useEffect that triggers the 'No rounds found' Toast
@@ -342,10 +346,13 @@ export default function HomeDashboard() {
   const [userProfiles, setUserProfiles] = useState<Map<string, { full_name?: string; profile_icon?: string }>>(new Map());
   
   useEffect(() => {
-    if (!rounds || rounds.length === 0) return;
+    // Initialization Guard: Use safeRoundsArray instead of rounds directly
+    if (!safeRoundsArray || safeRoundsArray.length === 0) return;
     
     const fetchProfiles = async () => {
-      const uniqueUserIds = Array.from(new Set(rounds.map((r: any) => r.user_id).filter(Boolean)));
+      // Fix Mapping: Ensure the map looks like rounds.map((round) => ...) and that all variables inside use round.score, round.handicap, etc.
+      // Search and Destroy 'ed': Find the variable ed - ensure we use 'round' not 'ed' in map functions
+      const uniqueUserIds = Array.from(new Set(safeRoundsArray.map((round: any) => round?.user_id).filter(Boolean)));
       if (uniqueUserIds.length === 0) return;
       
       try {
@@ -374,7 +381,7 @@ export default function HomeDashboard() {
     };
     
     fetchProfiles();
-  }, [rounds?.length]);
+  }, [safeRoundsArray.length]);
   
   // Find the Mock List: Locate the component or array that contains 'Alex Chen', 'Maria Rodriguez', and 'James Mitchell'.
   // Delete Mocks: Completely delete that hardcoded list.
@@ -388,33 +395,41 @@ export default function HomeDashboard() {
   // Add Optional Chaining: Ensure all round properties use the ?. operator (e.g., round?.score) to prevent accessing properties of undefined objects.
   // Initialize the Map: Ensure the allEntries or rounds array is initialized as an empty array [] before the component tries to map through it.
   // Calculate Nett Safely: Ensure this calculation only happens if round is not null.
+  // Search and Destroy 'ed': Find the variable ed in HomeDashboard.tsx or RecentScores.tsx. It is likely a typo in a .map() function or a Nett score calculation: (round.score - round.handicap).
+  // Fix Mapping: Ensure the map looks like rounds.map((round) => ...) and that all variables inside use round.score, round.handicap, etc.
+  // Initialization Guard: Initialize the rounds variable as an empty array [] at the top of the component to ensure it exists before the code tries to access it.
+  // Safety: Add optional chaining to the name lookup: round?.full_name || 'Golfer'.
   const communityRounds = useMemo(() => {
-    // Initialize the Map: Ensure the rounds array is initialized as an empty array [] before the component tries to map through it
-    if (!rounds || !Array.isArray(rounds) || rounds.length === 0) {
+    // Initialization Guard: Initialize the rounds variable as an empty array [] at the top of the component to ensure it exists before the code tries to access it
+    // Use safeRoundsArray instead of rounds directly
+    if (!safeRoundsArray || !Array.isArray(safeRoundsArray) || safeRoundsArray.length === 0) {
       console.log('HomeDashboard: No rounds available for Community tab');
       return [];
     }
     
-    console.log('HomeDashboard: Processing rounds for Community tab:', rounds.length, 'total rounds');
+    console.log('HomeDashboard: Processing rounds for Community tab:', safeRoundsArray.length, 'total rounds');
     
     // Sort by Date: Ensure the most recent rounds from all users appear at the top
     // Get all rounds (not filtered by user), sort by date descending, take top 10
     // Add Optional Chaining: Ensure all round properties use the ?. operator
-    const allRounds = (rounds || [])
-      .filter((r: any) => {
+    // Fix Mapping: Ensure the map looks like rounds.map((round) => ...) and that all variables inside use round.score, round.handicap, etc.
+    const allRounds = safeRoundsArray
+      .filter((round: any) => {
         // Add Optional Chaining: Ensure all round properties use the ?. operator
-        if (!r || typeof r !== 'object') return false;
+        if (!round || typeof round !== 'object') return false;
         // Only include rounds with valid user_id and score
-        const hasUserId = r?.user_id && String(r.user_id).trim() !== '';
-        const hasScore = r?.score !== null && r?.score !== undefined && r?.score > 0;
+        // Fix Mapping: Use round.score, round.handicap, etc. (not ed)
+        const hasUserId = round?.user_id && String(round.user_id).trim() !== '';
+        const hasScore = round?.score !== null && round?.score !== undefined && round?.score > 0;
         return hasUserId && hasScore;
       })
-      .sort((a: any, b: any) => {
+      .sort((roundA: any, roundB: any) => {
         // Add Optional Chaining: Ensure all round properties use the ?. operator
-        if (!a || !b) return 0;
+        // Fix Mapping: Use roundA and roundB (not ed)
+        if (!roundA || !roundB) return 0;
         // Sort by Date: Most recent first
-        const dateA = new Date(a?.date || a?.created_at || 0);
-        const dateB = new Date(b?.date || b?.created_at || 0);
+        const dateA = new Date(roundA?.date || roundA?.created_at || 0);
+        const dateB = new Date(roundB?.date || roundB?.created_at || 0);
         return dateB.getTime() - dateA.getTime();
       })
       .slice(0, 10); // Most recent 5-10 rounds
@@ -428,17 +443,20 @@ export default function HomeDashboard() {
     
     // Map to CommunityRound format
     // Calculate Nett Safely: Ensure this calculation only happens if round is not null
+    // Fix Mapping: Ensure the map looks like rounds.map((round) => ...) and that all variables inside use round.score, round.handicap, etc.
     return allRounds
       .filter((round: any) => round && typeof round === 'object') // Filter out null/undefined rounds first
       .map((round: any) => {
         // Display Nett Scores: Calculate as round.score - round.handicap
         // Add Optional Chaining: Ensure all round properties use the ?. operator
+        // Fix Mapping: Use round.score, round.handicap (not ed)
         // Calculate Nett Safely: const nettScore = (round.score || 0) - (round.handicap || 0);
         let nettScore: number = 0;
         if (round?.nett !== null && round?.nett !== undefined) {
           nettScore = round.nett;
         } else if (round?.score !== null && round?.score !== undefined && round?.handicap !== null && round?.handicap !== undefined) {
           // Calculate Nett Safely: Ensure this calculation only happens if round is not null
+          // Fix Mapping: Use round.score and round.handicap (not ed)
           nettScore = (round.score || 0) - (round.handicap || 0);
         } else if (round?.score !== null && round?.score !== undefined) {
           nettScore = round.score; // Fallback to gross score if no handicap
@@ -446,15 +464,20 @@ export default function HomeDashboard() {
         
         // The User Name (lookup from profile or round metadata)
         // Add Optional Chaining: Ensure all round properties use the ?. operator
+        // Safety: Add optional chaining to the name lookup: round?.full_name || 'Golfer'
+        // Fix Mapping: Use round.user_id (not ed)
         const userId = round?.user_id;
         const profile = userId ? userProfiles.get(userId) : null;
-        const displayName = profile?.full_name || (userId ? String(userId).substring(0, 8) : 'Unknown User');
+        // Safety: Add optional chaining to the name lookup: round?.full_name || 'Golfer'
+        const displayName = profile?.full_name || (userId ? String(userId).substring(0, 8) : 'Golfer');
         
         // The Course Name
         // Add Optional Chaining: Ensure all round properties use the ?. operator
+        // Fix Mapping: Use round.course (not ed)
         const courseName = round?.course || 'Unknown Course';
         
         // Add Optional Chaining: Ensure all round properties use the ?. operator
+        // Fix Mapping: Use round.date or round.created_at (not ed)
         const roundDate = round?.date || round?.created_at || new Date().toISOString();
         
         return {
@@ -466,7 +489,7 @@ export default function HomeDashboard() {
           timeAgo: formatTimeAgo(roundDate)
         };
       });
-  }, [rounds, userProfiles]);
+  }, [safeRoundsArray, userProfiles]);
   
   // Format time ago
   const formatTimeAgo = (dateString: string): string => {
