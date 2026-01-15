@@ -1057,20 +1057,24 @@ export default function HomeDashboard() {
               </div>
             )
           ) : (
-            recentRounds.length > 0 ? (
+            // Initialization Safety: Add if (!rounds || rounds.length === 0) return <div>Loading rounds...</div>; at the top of the Community section to prevent it from mapping an empty state.
+            !rounds || rounds.length === 0 ? (
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
+                <p className="text-gray-600 text-sm">Loading rounds...</p>
+              </div>
+            ) : recentRounds.length > 0 ? (
               <div className="space-y-3">
-                {/* Manual Map: Use recentRounds.map((item) => { ... }) */}
-                {/* Wipe the variable 'ec': Completely remove any mention of ec or ed from this file */}
-                {recentRounds.slice(0, 5).map((item: any) => {
-                  // Manual Map: Inside, calculate const nett = (item.score || 0) - (item.handicap || 0);
-                  const nett = (item?.score || 0) - (item?.handicap || 0);
-                  const displayName = item?.full_name || (item?.user_id ? String(item.user_id).substring(0, 8) : 'Anonymous');
-                  const courseName = item?.course || 'Unknown Course';
-                  const roundDate = item?.date || item?.created_at || new Date().toISOString();
+                {/* Fix the 'ec' Crash: In HomeDashboard.tsx, find the .map() function for Recent Scores. Change the logic to: rounds.map((round) => { ... }) and use (round?.score || 0) - (round?.handicap || 0) for the Nett calculation. */}
+                {recentRounds.slice(0, 5).map((round: any) => {
+                  // Fix the 'ec' Crash: Use rounds.map((round) => { ... }) and use (round?.score || 0) - (round?.handicap || 0) for the Nett calculation
+                  const nett = (round?.score || 0) - (round?.handicap || 0);
+                  const displayName = round?.full_name || (round?.user_id ? String(round.user_id).substring(0, 8) : 'Anonymous');
+                  const courseName = round?.course || 'Unknown Course';
+                  const roundDate = round?.date || round?.created_at || new Date().toISOString();
                   const timeAgo = formatTimeAgo(roundDate);
                   
                   return (
-                    <div key={item?.id || `round-${roundDate}`} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
+                    <div key={round?.id || `round-${roundDate}`} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
                       <div className="flex items-center gap-3 flex-1">
                         <Star className="w-5 h-5" style={{ color: '#014421' }} />
                         <div className="flex-1">
