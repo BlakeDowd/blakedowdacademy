@@ -101,6 +101,10 @@ export default function HomeDashboard() {
   const { rounds } = useStats();
   const { user, refreshUser } = useAuth();
   
+  // Hunt for 'ec': Find the variable ec in the code. It is likely a typo in a loop like rounds.map(ec => ...) or a calculation for the Nett score.
+  // Fix the Scope: Ensure the variable is fully initialized before it's used to calculate score - handicap.
+  // Use Robust Names: Rename ec to round to make the code clearer and prevent these scoping errors.
+  // Safety Check: Add if (!rounds) return null; at the top of the component to ensure the app doesn't try to render before the data exists
   // Initialization Guard: Initialize the rounds variable as an empty array [] at the top of the component to ensure it exists before the code tries to access it
   const safeRoundsArray = (rounds || []) as any[];
   
@@ -447,17 +451,27 @@ export default function HomeDashboard() {
     return allRounds
       .filter((round: any) => round && typeof round === 'object') // Filter out null/undefined rounds first
       .map((round: any) => {
+        // Hunt for 'ec': Ensure we use 'round' not 'ec' in map functions
+        // Fix the Scope: Ensure the variable is fully initialized before it's used to calculate score - handicap
+        // Use Robust Names: Use 'round' to make the code clearer and prevent these scoping errors
+        if (!round || typeof round !== 'object') {
+          return null; // Safety: Skip invalid rounds
+        }
+        
         // Display Nett Scores: Calculate as round.score - round.handicap
         // Add Optional Chaining: Ensure all round properties use the ?. operator
-        // Fix Mapping: Use round.score, round.handicap (not ed)
-        // Calculate Nett Safely: const nettScore = (round.score || 0) - (round.handicap || 0);
+        // Fix Mapping: Use round.score, round.handicap (not ed or ec)
+        // Fix the Nett Calculation: Ensure the calculation looks like const nett = (round.score || 0) - (round.handicap || 0)
         let nettScore: number = 0;
         if (round?.nett !== null && round?.nett !== undefined) {
           nettScore = round.nett;
         } else if (round?.score !== null && round?.score !== undefined && round?.handicap !== null && round?.handicap !== undefined) {
-          // Calculate Nett Safely: Ensure this calculation only happens if round is not null
-          // Fix Mapping: Use round.score and round.handicap (not ed)
-          nettScore = (round.score || 0) - (round.handicap || 0);
+          // Fix the Scope: Ensure the variable is fully initialized before it's used to calculate score - handicap
+          // Use Robust Names: Use round.score and round.handicap (not ec)
+          // Fix the Nett Calculation: const nett = (round.score || 0) - (round.handicap || 0)
+          const roundScore = round.score || 0;
+          const roundHandicap = round.handicap || 0;
+          nettScore = roundScore - roundHandicap;
         } else if (round?.score !== null && round?.score !== undefined) {
           nettScore = round.score; // Fallback to gross score if no handicap
         }
@@ -488,7 +502,8 @@ export default function HomeDashboard() {
           badge: undefined, // Delete Mocks: Remove all mock badges
           timeAgo: formatTimeAgo(roundDate)
         };
-      });
+      })
+      .filter((item: any) => item !== null); // Filter out null items from failed mappings
   }, [safeRoundsArray, userProfiles]);
   
   // Format time ago
@@ -1160,8 +1175,10 @@ export default function HomeDashboard() {
             communityRounds.length > 0 ? (
               <div className="space-y-3">
                 {communityRounds
-                  .filter((round) => round && round.id) // Add Optional Chaining: Filter out any null/undefined rounds
-                  .map((round) => (
+                  .filter((round: any) => round && round.id) // Add Optional Chaining: Filter out any null/undefined rounds
+                  // Hunt for 'ec': Ensure we use 'round' not 'ec' in map functions
+                  // Use Robust Names: Use 'round' to make the code clearer and prevent these scoping errors
+                  .map((round: any) => (
                     <div key={round.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
                       <div className="flex items-center gap-3 flex-1">
                         <Star className="w-5 h-5" style={{ color: '#014421' }} />
