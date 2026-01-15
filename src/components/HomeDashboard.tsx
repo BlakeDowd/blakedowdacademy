@@ -98,20 +98,15 @@ interface CommunityRound {
 
 export default function HomeDashboard() {
   const router = useRouter();
-  const { rounds } = useStats();
+  
+  // Re-initialize simply: Define const { user } = useAuth();
   const { user, refreshUser } = useAuth();
   
-  // Add Initialization Guard: Initialize the rounds array as [] at the top of the component to ensure it is never undefined during the first render
-  // Rename the loop variable: Find any .map((ec) => ...) or similar shorthand and rename ec to round throughout the block
-  // Safety Check: Add if (!rounds) return null; at the top of the component to ensure the app doesn't try to render before the data exists
-  // Initialization Guard: Initialize the rounds variable as an empty array [] at the top of the component to ensure it exists before the code tries to access it
-  const safeRoundsArray: any[] = (rounds || []) as any[];
+  // Re-initialize simply: Define const { rounds = [] } = useStats();
+  const { rounds = [] } = useStats();
   
-  // Add Initialization Guard: Early return if rounds is not available (but allow empty array)
-  // Note: We allow empty array to render, but if rounds is null/undefined, we return null
-  if (rounds === null || rounds === undefined) {
-    return null;
-  }
+  // Wipe the variable 'ec': Completely remove any mention of ec or ed from this file
+  // All variables now use 'item' or 'round' - never 'ec' or 'ed'
   
   // Add Fetch Guard: Use useRef guards similar to Academy page to prevent loops
   const dataFetched = useRef(false);
@@ -119,18 +114,9 @@ export default function HomeDashboard() {
   // Toast state for non-blocking notifications
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
   
-  // Sync Name: Replace 'Member' with {user?.full_name || 'Golfer'}
+  // Greeting: Change 'Member' to {user?.full_name || 'Golfer'}
   // Note: AuthContext maps full_name from database to fullName property
-  // Safety: Keep the existing useRef guards to ensure this doesn't trigger a re-fetch loop
-  const displayName = useMemo(() => {
-    // Sync Name: Replace 'Member' with {user?.full_name || 'Golfer'}
-    // AuthContext provides fullName (mapped from full_name in database)
-    if (!user) return 'Golfer';
-    // Use user.fullName (which comes from profiles.full_name) with fallback to 'Golfer'
-    const name = user.fullName || 'Golfer';
-    console.log('HomeDashboard: displayName calculated:', { fullName: user.fullName, email: user.email, result: name });
-    return name;
-  }, [user?.fullName, user]);
+  const displayName = user?.fullName || 'Golfer';
   
   // Use useMemo to safely calculate rounds count from useStats()
   // Update HomeDashboard.tsx to use useStats() to get the actual rounds.length so the stats are dynamic instead of zero
@@ -357,13 +343,10 @@ export default function HomeDashboard() {
   const [userProfiles, setUserProfiles] = useState<Map<string, { full_name?: string; profile_icon?: string }>>(new Map());
   
   useEffect(() => {
-    // Initialization Guard: Use safeRoundsArray instead of rounds directly
-    if (!safeRoundsArray || safeRoundsArray.length === 0) return;
+    if (!rounds || rounds.length === 0) return;
     
     const fetchProfiles = async () => {
-      // Fix Mapping: Ensure the map looks like rounds.map((round) => ...) and that all variables inside use round.score, round.handicap, etc.
-      // Search and Destroy 'ed': Find the variable ed - ensure we use 'round' not 'ed' in map functions
-      const uniqueUserIds = Array.from(new Set(safeRoundsArray.map((round: any) => round?.user_id).filter(Boolean)));
+      const uniqueUserIds = Array.from(new Set(rounds.map((item: any) => item?.user_id).filter(Boolean)));
       if (uniqueUserIds.length === 0) return;
       
       try {
@@ -392,132 +375,21 @@ export default function HomeDashboard() {
     };
     
     fetchProfiles();
-  }, [safeRoundsArray.length]);
+  }, [rounds.length]);
   
-  // Find the Mock List: Locate the component or array that contains 'Alex Chen', 'Maria Rodriguez', and 'James Mitchell'.
-  // Delete Mocks: Completely delete that hardcoded list.
-  // Use Real Rounds: Use the rounds array from StatsContext.
-  // Display Nett Scores: For each round in the 'Community' tab, display:
-  //   - The User Name (lookup from profile or round metadata).
-  //   - The Course Name.
-  //   - The Nett Score (calculated as round.score - round.handicap).
-  // Sort by Date: Ensure the most recent rounds from all users appear at the top.
-  // Check for Typo: Search the file for any variable named ed. It is likely a typo of round.score, handicap, or formattedDate.
-  // Add Optional Chaining: Ensure all round properties use the ?. operator (e.g., round?.score) to prevent accessing properties of undefined objects.
-  // Initialize the Map: Ensure the allEntries or rounds array is initialized as an empty array [] before the component tries to map through it.
-  // Calculate Nett Safely: Ensure this calculation only happens if round is not null.
-  // Search and Destroy 'ed': Find the variable ed in HomeDashboard.tsx or RecentScores.tsx. It is likely a typo in a .map() function or a Nett score calculation: (round.score - round.handicap).
-  // Fix Mapping: Ensure the map looks like rounds.map((round) => ...) and that all variables inside use round.score, round.handicap, etc.
-  // Initialization Guard: Initialize the rounds variable as an empty array [] at the top of the component to ensure it exists before the code tries to access it.
-  // Safety: Add optional chaining to the name lookup: round?.full_name || 'Golfer'.
-  // Emergency fix: Delete the map using 'ec' - replaced with simple direct map in JSX
-  // The complex useMemo with 'ec' has been removed and replaced with simple rounds.slice(0, 5).map((round) => ...) in JSX
-  // Remove 'ec': The variable ec is completely removed from the file
-  // Note: communityRounds useMemo removed - now using direct map in JSX for simplicity
-  const _unused_communityRounds = useMemo(() => {
-    // Add Safety Guards: Wrap the community rounds logic in a check: if (!rounds || rounds.length === 0) return [];
-    // Initialization Guard: Initialize the rounds variable as an empty array [] at the top of the component to ensure it exists before the code tries to access it
-    // Use safeRoundsArray instead of rounds directly
-    if (!safeRoundsArray || !Array.isArray(safeRoundsArray) || safeRoundsArray.length === 0) {
-      console.log('HomeDashboard: No rounds available for Community tab');
-      return [];
-    }
+  // Delete all logic related to 'Alex Chen', 'Maria Rodriguez', and any hardcoded mock users
+  // Wipe the variable 'ec': Completely remove any mention of ec or ed from this file
+  // Safe Community List: Create a new recentRounds variable by sorting the rounds array by date
+  const recentRounds = useMemo(() => {
+    if (!rounds || rounds.length === 0) return [];
     
-    console.log('HomeDashboard: Processing rounds for Community tab:', safeRoundsArray.length, 'total rounds');
-    
-    // Sort by Date: Ensure the most recent rounds from all users appear at the top
-    // Get all rounds (not filtered by user), sort by date descending, take top 10
-    // Add Optional Chaining: Ensure all round properties use the ?. operator
-    // Fix Mapping: Ensure the map looks like rounds.map((round) => ...) and that all variables inside use round.score, round.handicap, etc.
-    const allRounds = safeRoundsArray
-      .filter((round: any) => {
-        // Add Optional Chaining: Ensure all round properties use the ?. operator
-        if (!round || typeof round !== 'object') return false;
-        // Only include rounds with valid user_id and score
-        // Fix Mapping: Use round.score, round.handicap, etc. (not ed)
-        const hasUserId = round?.user_id && String(round.user_id).trim() !== '';
-        const hasScore = round?.score !== null && round?.score !== undefined && round?.score > 0;
-        return hasUserId && hasScore;
-      })
-      .sort((roundA: any, roundB: any) => {
-        // Add Optional Chaining: Ensure all round properties use the ?. operator
-        // Fix Mapping: Use roundA and roundB (not ed)
-        if (!roundA || !roundB) return 0;
-        // Sort by Date: Most recent first
-        const dateA = new Date(roundA?.date || roundA?.created_at || 0);
-        const dateB = new Date(roundB?.date || roundB?.created_at || 0);
-        return dateB.getTime() - dateA.getTime();
-      })
-      .slice(0, 10); // Most recent 5-10 rounds
-    
-    console.log('HomeDashboard: Filtered to', allRounds.length, 'valid rounds for Community tab');
-    
-    // Initialize the Map: Ensure allEntries or rounds array is initialized as an empty array [] before mapping
-    if (!Array.isArray(allRounds) || allRounds.length === 0) {
-      return [];
-    }
-    
-    // Map to CommunityRound format
-    // Calculate Nett Safely: Ensure this calculation only happens if round is not null
-    // Fix Mapping: Ensure the map looks like rounds.map((round) => ...) and that all variables inside use round.score, round.handicap, etc.
-    return allRounds
-      .filter((round: any) => round && typeof round === 'object') // Filter out null/undefined rounds first
-      .map((round: any) => {
-        // Rename the loop variable: Find any .map((ec) => ...) or similar shorthand and rename ec to round throughout the block
-        // Move calculations inside the block: Ensure the Nett Score calculation (round.score - round.handicap) happens after the variable is defined in the map function
-        // Hunt for 'ec': Ensure we use 'round' not 'ec' in map functions
-        // Fix the Scope: Ensure the variable is fully initialized before it's used to calculate score - handicap
-        // Use Robust Names: Use 'round' to make the code clearer and prevent these scoping errors
-        if (!round || typeof round !== 'object') {
-          return null; // Safety: Skip invalid rounds
-        }
-
-        // Move calculations inside the block: Ensure the Nett Score calculation (round.score - round.handicap) happens after the variable is defined
-        // Fix Nett Calculation: Ensure the nett score is calculated safely: const nett = (round.score || 0) - (round.handicap || 0)
-        // All calculations happen AFTER round is defined in the map function
-        let nettScore: number = 0;
-        if (round?.nett !== null && round?.nett !== undefined) {
-          nettScore = round.nett;
-        } else {
-          // Move calculations inside the block: Nett calculation happens after round is defined
-          // Fix Nett Calculation: const nett = (round.score || 0) - (round.handicap || 0)
-          const nett = (round?.score || 0) - (round?.handicap || 0);
-          nettScore = nett;
-          // If calculation results in invalid score, fallback to gross score
-          if (nettScore < 0 || !isFinite(nettScore)) {
-            nettScore = round?.score || 0;
-          }
-        }
-        
-        // The User Name (lookup from profile or round metadata)
-        // Add Optional Chaining: Ensure all round properties use the ?. operator
-        // Safety: Add optional chaining to the name lookup: round?.full_name || 'Golfer'
-        // Fix Mapping: Use round.user_id (not ed)
-        const userId = round?.user_id;
-        const profile = userId ? userProfiles.get(userId) : null;
-        // Safety: Add optional chaining to the name lookup: round?.full_name || 'Golfer'
-        const displayName = profile?.full_name || (userId ? String(userId).substring(0, 8) : 'Golfer');
-        
-        // The Course Name
-        // Add Optional Chaining: Ensure all round properties use the ?. operator
-        // Fix Mapping: Use round.course (not ed)
-        const courseName = round?.course || 'Unknown Course';
-        
-        // Add Optional Chaining: Ensure all round properties use the ?. operator
-        // Fix Mapping: Use round.date or round.created_at (not ed)
-        const roundDate = round?.date || round?.created_at || new Date().toISOString();
-        
-        return {
-          id: round?.id || `round-${userId || 'unknown'}-${roundDate}`,
-          name: displayName,
-          course: courseName,
-          score: nettScore,
-          badge: undefined, // Delete Mocks: Remove all mock badges
-          timeAgo: formatTimeAgo(roundDate)
-        };
-      })
-      .filter((item: any) => item !== null); // Filter out null items from failed mappings
-  }, [safeRoundsArray, userProfiles]);
+    // Sort by date (most recent first)
+    return [...rounds].sort((a: any, b: any) => {
+      const dateA = new Date(a?.date || a?.created_at || 0);
+      const dateB = new Date(b?.date || b?.created_at || 0);
+      return dateB.getTime() - dateA.getTime();
+    });
+  }, [rounds]);
   
   // Format time ago
   const formatTimeAgo = (dateString: string): string => {
@@ -1185,41 +1057,37 @@ export default function HomeDashboard() {
               </div>
             )
           ) : (
-            safeRoundsArray.length > 0 ? (
+            recentRounds.length > 0 ? (
               <div className="space-y-3">
-                {/* Emergency fix: Delete the map using 'ec', replace with simple loop */}
-                {/* Re-write simply: Replace it with a simple loop: rounds.slice(0, 5).map((round) => { ... }) */}
-                {/* Remove 'ec': Ensure the variable ec is completely removed from the file */}
-                {safeRoundsArray
-                  .slice(0, 5)
-                  .map((round: any) => {
-                    // Safe Nett Score: Inside the new loop, use: const nett = (round.score || 0) - (round.handicap || 0);
-                    const nett = (round?.score || 0) - (round?.handicap || 0);
-                    // Fallback Name: Use round.full_name || 'Anonymous' to ensure it doesn't crash if a name is missing
-                    const displayName = round?.full_name || (round?.user_id ? String(round.user_id).substring(0, 8) : 'Anonymous');
-                    const courseName = round?.course || 'Unknown Course';
-                    const roundDate = round?.date || round?.created_at || new Date().toISOString();
-                    const timeAgo = formatTimeAgo(roundDate);
-                    
-                    return (
-                      <div key={round?.id || `round-${roundDate}`} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
-                        <div className="flex items-center gap-3 flex-1">
-                          <Star className="w-5 h-5" style={{ color: '#014421' }} />
-                          <div className="flex-1">
-                            <p className="text-gray-800 font-medium">{displayName}</p>
-                            <p className="text-gray-400 text-sm">{courseName}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-gray-400 text-xs">• {timeAgo}</span>
-                            </div>
+                {/* Manual Map: Use recentRounds.map((item) => { ... }) */}
+                {/* Wipe the variable 'ec': Completely remove any mention of ec or ed from this file */}
+                {recentRounds.slice(0, 5).map((item: any) => {
+                  // Manual Map: Inside, calculate const nett = (item.score || 0) - (item.handicap || 0);
+                  const nett = (item?.score || 0) - (item?.handicap || 0);
+                  const displayName = item?.full_name || (item?.user_id ? String(item.user_id).substring(0, 8) : 'Anonymous');
+                  const courseName = item?.course || 'Unknown Course';
+                  const roundDate = item?.date || item?.created_at || new Date().toISOString();
+                  const timeAgo = formatTimeAgo(roundDate);
+                  
+                  return (
+                    <div key={item?.id || `round-${roundDate}`} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
+                      <div className="flex items-center gap-3 flex-1">
+                        <Star className="w-5 h-5" style={{ color: '#014421' }} />
+                        <div className="flex-1">
+                          <p className="text-gray-800 font-medium">{displayName}</p>
+                          <p className="text-gray-400 text-sm">{courseName}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-gray-400 text-xs">• {timeAgo}</span>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{nett.toFixed(0)}</p>
-                          <p className="text-xs text-gray-400">Nett</p>
-                        </div>
                       </div>
-                    );
-                  })}
+                      <div className="text-right">
+                        <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{nett.toFixed(0)}</p>
+                        <p className="text-xs text-gray-400">Nett</p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
