@@ -191,32 +191,12 @@ export default function HomeDashboard() {
   }, [rounds?.length]); // Recalculate when rounds change (practice activities are in localStorage)
   
   // Ensure rounds is always an array, never null or undefined
-  // Check the Filter: Ensure that when the 'My Rounds' tab is active, the app filters the rounds array to only show rounds where user_id === user.id
-  // Verify User Object: Make sure the user object from useAuth() is correctly identifying me so it can find my rounds in the database
   const allRounds = (rounds || []) as any[];
   
-  // Check the Filter: Filter rounds to only show rounds where user_id === user.id
-  // Verify User Object: Log user.id to verify it's correctly identifying the user
+  // Keep safeRounds for backward compatibility with other parts of the component
   const safeRounds = useMemo(() => {
-    if (!user?.id) {
-      console.log('HomeDashboard: No user.id available for filtering rounds');
-      return [];
-    }
-    
-    console.log('HomeDashboard: Filtering rounds for user.id:', user.id);
-    console.log('HomeDashboard: Total rounds available:', allRounds.length);
-    
-    const filtered = allRounds.filter((round: any) => {
-      // Check the Filter: Ensure user_id === user.id (using strict equality)
-      const matches = round?.user_id === user.id;
-      if (matches) {
-        console.log('HomeDashboard: Found matching round:', { round_id: round?.id, user_id: round?.user_id, course: round?.course });
-      }
-      return matches;
-    });
-    
-    console.log('HomeDashboard: Filtered to', filtered.length, 'rounds for user', user.id);
-    return filtered;
+    if (!user?.id) return [];
+    return allRounds.filter((round: any) => round?.user_id === user.id);
   }, [allRounds, user?.id]);
   
   // Kill the Freeze: Completely removed the useEffect that triggers the 'No rounds found' Toast
@@ -362,6 +342,28 @@ export default function HomeDashboard() {
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [scoreTab, setScoreTab] = useState<'myRounds' | 'community'>('myRounds');
   
+  // Add a useMemo Hook: Wrap the rounds display logic in a useMemo that depends on the activeTab state
+  // Strict Filtering: If activeTab === 'my-rounds', explicitly return rounds.filter(r => r.user_id === user?.id)
+  // If activeTab === 'community', return the full rounds array (Global)
+  const filteredRoundsByTab = useMemo(() => {
+    // Clear the Cache: Ensure that when the tab changes, the filtering logic re-runs
+    if (scoreTab === 'myRounds') {
+      // Strict Filtering: If activeTab === 'my-rounds', explicitly return rounds.filter(r => r.user_id === user?.id)
+      if (!user?.id) {
+        console.log('HomeDashboard: No user.id available for filtering My Rounds');
+        return [];
+      }
+      
+      const myRounds = allRounds.filter((r: any) => r?.user_id === user.id);
+      console.log('HomeDashboard: My Rounds tab - filtered to', myRounds.length, 'rounds for user', user.id);
+      return myRounds;
+    } else {
+      // Strict Filtering: If activeTab === 'community', return the full rounds array (Global)
+      console.log('HomeDashboard: Community tab - showing all', allRounds.length, 'rounds');
+      return allRounds;
+    }
+  }, [allRounds, user?.id, scoreTab]); // Add scoreTab to dependencies to re-run when tab changes
+  
   // Add Fetch Guard: At the top of the HomeDashboard component, add const activitiesFetched = useRef(false);
   const activitiesFetched = useRef(false);
   
@@ -378,9 +380,11 @@ export default function HomeDashboard() {
   // Add Labels: Display the user's name (or ID fallback), the course name, and a 'Nett' label next to their score.
   
   // Fetch user profiles for name lookup (similar to Academy page)
+  // Clear the Cache: Ensure that when the tab changes, the name-mapping logic re-runs so Luke's name doesn't stay stuck on my personal rounds
   const [userProfiles, setUserProfiles] = useState<Map<string, { full_name?: string; profile_icon?: string }>>(new Map());
   
   // Add Name Mapping: Create a way to fetch the full_name from the profiles table for every user_id found in the rounds
+  // Clear the Cache: Re-fetch profiles when tab changes or rounds change
   useEffect(() => {
     if (!rounds || rounds.length === 0) {
       setUserProfiles(new Map());
@@ -389,13 +393,18 @@ export default function HomeDashboard() {
     
     const fetchProfiles = async () => {
       // Add Name Mapping: Extract all unique user_ids from rounds
-      const uniqueUserIds = Array.from(new Set(rounds.map((item: any) => item?.user_id).filter(Boolean)));
+      // Clear the Cache: Use filteredRoundsByTab to get user_ids based on current tab
+      const roundsToUse = scoreTab === 'myRounds' 
+        ? rounds.filter((r: any) => r?.user_id === user?.id)
+        : rounds;
+      
+      const uniqueUserIds = Array.from(new Set(roundsToUse.map((item: any) => item?.user_id).filter(Boolean)));
       if (uniqueUserIds.length === 0) {
         setUserProfiles(new Map());
         return;
       }
       
-      console.log('HomeDashboard: Fetching profiles for', uniqueUserIds.length, 'users:', uniqueUserIds);
+      console.log('HomeDashboard: Fetching profiles for', uniqueUserIds.length, 'users (tab:', scoreTab, '):', uniqueUserIds);
       
       try {
         const { createClient } = await import("@/lib/supabase/client");
@@ -412,6 +421,7 @@ export default function HomeDashboard() {
         }
         
         // Add Name Mapping: Create a Map to store user_id -> full_name mappings
+        // Clear the Cache: Reset and rebuild the map when tab changes
         const profileMap = new Map<string, { full_name?: string; profile_icon?: string }>();
         if (data) {
           data.forEach((profile: any) => {
@@ -419,7 +429,7 @@ export default function HomeDashboard() {
             console.log('HomeDashboard: Mapped user', profile.id, 'to name:', profile.full_name);
           });
         }
-        console.log('HomeDashboard: Loaded', profileMap.size, 'profiles for Community feed');
+        console.log('HomeDashboard: Loaded', profileMap.size, 'profiles for tab:', scoreTab);
         setUserProfiles(profileMap);
       } catch (error) {
         console.error('Error in fetchProfiles for Community:', error);
@@ -428,21 +438,11 @@ export default function HomeDashboard() {
     };
     
     fetchProfiles();
-  }, [rounds]); // Update dependency to rounds array itself, not just length
+  }, [rounds, scoreTab, user?.id]); // Clear the Cache: Add scoreTab to dependencies so name-mapping re-runs when tab changes
   
   // Delete all logic related to 'Alex Chen', 'Maria Rodriguez', and any hardcoded mock users
   // Wipe the variable 'ec': Completely remove any mention of ec or ed from this file
-  // Safe Community List: Create a new recentRounds variable by sorting the rounds array by date
-  const recentRounds = useMemo(() => {
-    if (!rounds || rounds.length === 0) return [];
-    
-    // Sort by date (most recent first)
-    return [...rounds].sort((a: any, b: any) => {
-      const dateA = new Date(a?.date || a?.created_at || 0);
-      const dateB = new Date(b?.date || b?.created_at || 0);
-      return dateB.getTime() - dateA.getTime();
-    });
-  }, [rounds]);
+  // Note: recentRounds removed - now using filteredRoundsByTab which handles both tabs
   
   // Format time ago
   const formatTimeAgo = (dateString: string): string => {
@@ -1053,12 +1053,13 @@ export default function HomeDashboard() {
           </div>
           
           {/* Scores List */}
+          {/* Key the List: Add a unique key to the list container based on the activeTab to force React to re-render the list from scratch when switching */}
           {scoreTab === 'myRounds' ? (
             // Fix the Display: Once filtered, the list should show my specific rounds (like the one at Twin Creeks) instead of the 'No rounds recorded' message
-            // Check the Filter: Ensure that when the 'My Rounds' tab is active, the app filters the rounds array to only show rounds where user_id === user.id
-            safeRounds && safeRounds.length > 0 ? (
-              <div className="space-y-3">
-                {safeRounds
+            // Strict Filtering: Use filteredRoundsByTab which is filtered by user_id === user.id for myRounds tab
+            filteredRoundsByTab && filteredRoundsByTab.length > 0 ? (
+              <div key={`myRounds-${scoreTab}`} className="space-y-3">
+                {filteredRoundsByTab
                   .sort((a, b) => new Date(b.date || b.created_at || 0).getTime() - new Date(a.date || a.created_at || 0).getTime())
                   .slice(0, 3)
                   .map((round, index) => {
@@ -1113,14 +1114,25 @@ export default function HomeDashboard() {
             )
           ) : (
             // Initialization Safety: Add if (!rounds || rounds.length === 0) return <div>Loading rounds...</div>; at the top of the Community section to prevent it from mapping an empty state.
+            // Strict Filtering: Use filteredRoundsByTab which returns the full rounds array for community tab
+            // Clear the Cache: Ensure that when the tab changes, the name-mapping logic re-runs so Luke's name doesn't stay stuck on my personal rounds
             !rounds || rounds.length === 0 ? (
               <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
                 <p className="text-gray-600 text-sm">Loading rounds...</p>
               </div>
-            ) : recentRounds.length > 0 ? (
-              <div className="space-y-3">
+            ) : filteredRoundsByTab.length > 0 ? (
+              <div key={`community-${scoreTab}`} className="space-y-3">
+                {/* Key the List: Add a unique key to the list container based on the activeTab to force React to re-render the list from scratch when switching */}
                 {/* Fix the 'ec' Crash: In HomeDashboard.tsx, find the .map() function for Recent Scores. Change the logic to: rounds.map((round) => { ... }) and use (round?.score || 0) - (round?.handicap || 0) for the Nett calculation. */}
-                {recentRounds.slice(0, 5).map((round: any) => {
+                {/* Clear the Cache: Sort and slice filteredRoundsByTab (which is the full array for community tab) */}
+                {[...filteredRoundsByTab]
+                  .sort((a: any, b: any) => {
+                    const dateA = new Date(a?.date || a?.created_at || 0);
+                    const dateB = new Date(b?.date || b?.created_at || 0);
+                    return dateB.getTime() - dateA.getTime();
+                  })
+                  .slice(0, 5)
+                  .map((round: any) => {
                   // Fix the 'ec' Crash: Use rounds.map((round) => { ... }) and use (round?.score || 0) - (round?.handicap || 0) for the Nett calculation
                   const nett = (round?.score || 0) - (round?.handicap || 0);
                   
