@@ -82,7 +82,9 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       console.log('StatsContext: Fetching ALL rounds for leaderboard (not filtering by user_id)');
       console.log('StatsContext: User object:', user ? { id: user.id, email: user.email, fullName: user.fullName } : 'No user (fetching all rounds anyway)');
       
-      // Modify loadRounds: Change the Supabase query to only select from the rounds table: .select('*') instead of .select('*, profiles(...)')
+      // Modify loadRounds: Remove any .eq('user_id', ...) filters from the query used for the global leaderboard
+      // Ensure Select All: Confirm the query is .from('rounds').select('*') so it pulls every round in the database
+      // Verify Sorting: Keep the .order('created_at', { ascending: false }) so the most recent rounds are still at the top
       // Why: We already have the user profile in AuthContext, so we don't need to join it here to get the leaderboard data to appear
       const { data, error } = await supabase
         .from('rounds')
@@ -220,20 +222,19 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   const calculateStats = () => ({ handicap: 'N/A', totalRounds: 0 });
 
   // Load rounds on mount and listen for updates
+  // Modify loadRounds: Remove any .eq('user_id', ...) filters from the query used for the global leaderboard
+  // Ensure Select All: Confirm the query is .from('rounds').select('*') so it pulls every round in the database
+  // Verify Sorting: Keep the .order('created_at', { ascending: false }) so the most recent rounds are still at the top
   useEffect(() => {
-    if (user?.id) {
-      loadRounds();
-    } else {
-      setRounds([]);
-      setLoading(false);
-    }
+    // Always fetch all rounds for the global leaderboard, regardless of user.id
+    // This ensures the leaderboard shows all users' rounds, not just the current user's
+    loadRounds();
 
     // Listen for roundsUpdated event
     const handleRoundsUpdate = () => {
       console.log('StatsContext: Received roundsUpdated event, refreshing from database...');
-      if (user?.id) {
-        loadRounds();
-      }
+      // Always refresh all rounds for the global leaderboard
+      loadRounds();
     };
 
     window.addEventListener('roundsUpdated', handleRoundsUpdate);
@@ -241,7 +242,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     return () => {
       window.removeEventListener('roundsUpdated', handleRoundsUpdate);
     };
-  }, [user?.id]);
+  }, []); // Empty dependency array - fetch once on mount, then listen for updates
 
   return (
     <StatsContext.Provider value={{ rounds, loading, refreshRounds, calculateStats }}>
