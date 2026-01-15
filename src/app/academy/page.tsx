@@ -754,7 +754,9 @@ function getMockLeaderboard(
   rounds: any[],
   userName: string,
   user?: { id?: string; initialHandicap?: number; profileIcon?: string } | null,
-  userProfiles?: Map<string, { full_name?: string; profile_icon?: string }>
+  userProfiles?: Map<string, { full_name?: string; profile_icon?: string }>,
+  drills?: any[],
+  practiceSessions?: any[]
 ) {
   let userValue: number;
   
@@ -779,6 +781,191 @@ function getMockLeaderboard(
   // Remove Mock Data: Find the top3 or leaders array calculation. Remove any code that inserts a 'dummy' or 'mock' user when the database is empty.
   // Use Real Count: Ensure the roundCount displayed is userRounds.length from the actual rounds array.
   // Handle Empty State: If there are no rounds in the database, show a 'No Rounds Logged' message instead of fake leaders.
+  
+  // Check Fetch Logic: Ensure the loadStats function is fetching data from the drills and practice_sessions tables as well as rounds
+  // Remove User Filters: Just like we did for Rounds, remove any .eq('user_id', user.id) from the Drills and Practice fetch calls so the leaderboard can see everyone's progress
+  
+  // For drills metric, group all drills by user_id and create leaderboard entries for each user
+  if (metric === 'drills') {
+    // Check Fetch Logic: Use drills from database (StatsContext) instead of localStorage
+    // Remove User Filters: Process ALL drills from all users, not just current user
+    const allDrills = drills || [];
+    
+    // Filter by timeframe if needed
+    const { startDate } = getTimeframeDates(timeFilter);
+    const filteredDrills = allDrills.filter((drill: any) => {
+      if (timeFilter === 'allTime') return true;
+      const drillDate = new Date(drill.completed_at || drill.created_at || Date.now());
+      return drillDate >= startDate;
+    });
+    
+    // Group drills by user_id to count drills per user
+    const drillsByUser = new Map<string, any[]>();
+    filteredDrills.forEach((drill: any) => {
+      if (!drill.user_id) return; // Skip drills without user_id
+      if (!drillsByUser.has(drill.user_id)) {
+        drillsByUser.set(drill.user_id, []);
+      }
+      drillsByUser.get(drill.user_id)!.push(drill);
+    });
+    
+    // Create leaderboard entries for all users
+    const allEntries: any[] = [];
+    drillsByUser.forEach((userDrills, userId) => {
+      const drillCount = userDrills.length;
+      
+      // Create a Name Lookup: Get profile data from userProfiles map
+      const profile = userProfiles?.get(userId);
+      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      
+      // Fix Avatars: Update the avatar circles to show the first letter of their names
+      let nameForAvatar = 'U';
+      if (profile?.full_name) {
+        nameForAvatar = profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else if (displayName && displayName.length > 8) {
+        nameForAvatar = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else {
+        nameForAvatar = displayName.substring(0, 1).toUpperCase() || 'U';
+      }
+      
+      const userIcon = profile?.profile_icon || nameForAvatar;
+      
+      allEntries.push({
+        id: userId,
+        name: displayName,
+        avatar: userIcon,
+        value: drillCount,
+        isCurrentUser: user?.id === userId
+      });
+    });
+    
+    // Sort by drill count descending (most drills first)
+    allEntries.sort((a, b) => b.value - a.value);
+    
+    // If no drills exist, return empty leaderboard
+    if (allEntries.length === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0
+      };
+    }
+    
+    // Find current user's entry and value
+    const currentUserEntry = allEntries.find(entry => entry.isCurrentUser);
+    userValue = currentUserEntry?.value || 0;
+    
+    const userEntryInSorted = allEntries.find(entry => entry.isCurrentUser);
+    const finalUserValue = userEntryInSorted?.value || userValue;
+    
+    console.log('getMockLeaderboard - drills metric (global):', {
+      totalDrillsInDatabase: allDrills.length,
+      totalUsers: allEntries.length,
+      top3Values: allEntries.slice(0, 3).map(e => ({ name: e.name, value: e.value, id: e.id })),
+      currentUserValue: finalUserValue
+    });
+    
+    return {
+      top3: allEntries.slice(0, 3),
+      all: allEntries,
+      userRank: userEntryInSorted ? allEntries.findIndex(entry => entry.isCurrentUser) + 1 : 0,
+      userValue: finalUserValue
+    };
+  }
+  
+  // For practice metric, group all practice_sessions by user_id and create leaderboard entries for each user
+  if (metric === 'practice') {
+    // Check Fetch Logic: Use practice_sessions from database (StatsContext) instead of localStorage
+    // Remove User Filters: Process ALL practice_sessions from all users, not just current user
+    const allPracticeSessions = practiceSessions || [];
+    
+    // Filter by timeframe if needed
+    const { startDate } = getTimeframeDates(timeFilter);
+    const filteredSessions = allPracticeSessions.filter((session: any) => {
+      if (timeFilter === 'allTime') return true;
+      const sessionDate = new Date(session.practice_date || session.created_at || Date.now());
+      return sessionDate >= startDate;
+    });
+    
+    // Group practice_sessions by user_id to sum hours per user
+    const sessionsByUser = new Map<string, any[]>();
+    filteredSessions.forEach((session: any) => {
+      if (!session.user_id) return; // Skip sessions without user_id
+      if (!sessionsByUser.has(session.user_id)) {
+        sessionsByUser.set(session.user_id, []);
+      }
+      sessionsByUser.get(session.user_id)!.push(session);
+    });
+    
+    // Create leaderboard entries for all users
+    const allEntries: any[] = [];
+    sessionsByUser.forEach((userSessions, userId) => {
+      // Sum total practice hours for this user
+      const totalMinutes = userSessions.reduce((sum, session) => {
+        return sum + (session.duration_minutes || 0);
+      }, 0);
+      const totalHours = totalMinutes / 60;
+      
+      // Create a Name Lookup: Get profile data from userProfiles map
+      const profile = userProfiles?.get(userId);
+      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      
+      // Fix Avatars: Update the avatar circles to show the first letter of their names
+      let nameForAvatar = 'U';
+      if (profile?.full_name) {
+        nameForAvatar = profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else if (displayName && displayName.length > 8) {
+        nameForAvatar = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else {
+        nameForAvatar = displayName.substring(0, 1).toUpperCase() || 'U';
+      }
+      
+      const userIcon = profile?.profile_icon || nameForAvatar;
+      
+      allEntries.push({
+        id: userId,
+        name: displayName,
+        avatar: userIcon,
+        value: totalHours,
+        isCurrentUser: user?.id === userId
+      });
+    });
+    
+    // Sort by practice hours descending (most hours first)
+    allEntries.sort((a, b) => b.value - a.value);
+    
+    // If no practice sessions exist, return empty leaderboard
+    if (allEntries.length === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0
+      };
+    }
+    
+    // Find current user's entry and value
+    const currentUserEntry = allEntries.find(entry => entry.isCurrentUser);
+    userValue = currentUserEntry?.value || 0;
+    
+    const userEntryInSorted = allEntries.find(entry => entry.isCurrentUser);
+    const finalUserValue = userEntryInSorted?.value || userValue;
+    
+    console.log('getMockLeaderboard - practice metric (global):', {
+      totalPracticeSessionsInDatabase: allPracticeSessions.length,
+      totalUsers: allEntries.length,
+      top3Values: allEntries.slice(0, 3).map(e => ({ name: e.name, value: e.value, id: e.id })),
+      currentUserValue: finalUserValue
+    });
+    
+    return {
+      top3: allEntries.slice(0, 3),
+      all: allEntries,
+      userRank: userEntryInSorted ? allEntries.findIndex(entry => entry.isCurrentUser) + 1 : 0,
+      userValue: finalUserValue
+    };
+  }
   
   // Remove User Filter: For global leaderboard, process ALL rounds from all users, not just current user
   // Connect Top 3: Ensure the 'Top 3 Leaders' card is pulling from this new global array instead of using a hardcoded mock object
@@ -1536,7 +1723,8 @@ export default function AcademyPage() {
   console.log('Academy: Component rendering...');
   
   // ALL HOOKS MUST BE AT THE TOP - NO EXCEPTIONS (Rules of Hooks)
-  const { rounds } = useStats();
+  // Check Fetch Logic: Ensure the loadStats function is fetching data from the drills and practice_sessions tables as well as rounds
+  const { rounds, drills, practiceSessions } = useStats();
   const { user, refreshUser, isAuthenticated, loading } = useAuth();
   const router = useRouter();
   
@@ -1786,11 +1974,12 @@ export default function AcademyPage() {
         userId: user?.id,
         profilesLoaded: userProfiles.size
       });
+      // Check Fetch Logic: Pass drills and practiceSessions to leaderboard functions
       const newLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user, userProfiles);
-      const libraryLeaderboard = getMockLeaderboard('library', timeFilter, rounds, userName, user, userProfiles);
-      const practiceLeaderboard = getMockLeaderboard('practice', timeFilter, rounds, userName, user, userProfiles);
-      const roundsLeaderboard = getMockLeaderboard('rounds', timeFilter, rounds, userName, user, userProfiles);
-      const drillsLeaderboard = getMockLeaderboard('drills', timeFilter, rounds, userName, user, userProfiles);
+      const libraryLeaderboard = getMockLeaderboard('library', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);
+      const practiceLeaderboard = getMockLeaderboard('practice', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);
+      const roundsLeaderboard = getMockLeaderboard('rounds', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);
+      const drillsLeaderboard = getMockLeaderboard('drills', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);
       
       console.log('Academy: useEffect - Calculated leaderboards:', {
         main: newLeaderboard,
@@ -1820,7 +2009,7 @@ export default function AcademyPage() {
       // Force Loading Off: Ensure setLoading(false) is called inside a finally block to prevent the page from hanging if a fetch fails
       // Note: loading state is managed by AuthContext, but we ensure any local state is cleared
     }
-  }, [user?.id, rounds?.length, leaderboardMetric, timeFilter, totalXP, userName, userProfiles]); // Sync to Database: Recalculate when rounds, metric, filter, or profiles change
+  }, [user?.id, rounds?.length, drills?.length, practiceSessions?.length, leaderboardMetric, timeFilter, totalXP, userName, userProfiles]); // Check Fetch Logic: Recalculate when drills or practiceSessions change
   
   // Stable Identity: Wrap calculated values in useMemo to prevent recreation
   // Safe Logic: Do the check inside the useMemo rather than skipping the Hook entirely
@@ -1846,26 +2035,26 @@ export default function AcademyPage() {
   const libraryLeaderboard = useMemo(() => {
     if (cachedFourPillar?.library) return cachedFourPillar.library;
     if (!rounds || !userName) return { top3: [], all: [], userRank: 0, userValue: 0 };
-    return getMockLeaderboard('library', timeFilter, rounds, userName, user);
-  }, [cachedFourPillar?.library, timeFilter, rounds, userName, user]);
+    return getMockLeaderboard('library', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);
+  }, [cachedFourPillar?.library, timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions]);
   
   const practiceLeaderboard = useMemo(() => {
     if (cachedFourPillar?.practice) return cachedFourPillar.practice;
     if (!rounds || !userName) return { top3: [], all: [], userRank: 0, userValue: 0 };
-    return getMockLeaderboard('practice', timeFilter, rounds, userName, user);
-  }, [cachedFourPillar?.practice, timeFilter, rounds, userName, user]);
+    return getMockLeaderboard('practice', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);
+  }, [cachedFourPillar?.practice, timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions]);
   
   const roundsLeaderboard = useMemo(() => {
     if (cachedFourPillar?.rounds) return cachedFourPillar.rounds;
     if (!rounds || !userName) return { top3: [], all: [], userRank: 0, userValue: 0 };
-    return getMockLeaderboard('rounds', timeFilter, rounds, userName, user);
-  }, [cachedFourPillar?.rounds, timeFilter, rounds, userName, user]);
+    return getMockLeaderboard('rounds', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);
+  }, [cachedFourPillar?.rounds, timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions]);
   
   const drillsLeaderboard = useMemo(() => {
     if (cachedFourPillar?.drills) return cachedFourPillar.drills;
     if (!rounds || !userName) return { top3: [], all: [], userRank: 0, userValue: 0 };
-    return getMockLeaderboard('drills', timeFilter, rounds, userName, user);
-  }, [cachedFourPillar?.drills, timeFilter, rounds, userName, user]);
+    return getMockLeaderboard('drills', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);
+  }, [cachedFourPillar?.drills, timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions]);
   
   // Filter leaderboard by search - wrap in useMemo for stable identity
   const filteredFullLeaderboard = useMemo(() => {

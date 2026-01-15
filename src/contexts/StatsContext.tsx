@@ -38,10 +38,33 @@ interface RoundData {
   puttsUnder6ftAttempts: number;
 }
 
+interface DrillData {
+  id: string;
+  user_id: string;
+  drill_id?: string;
+  drill_title?: string;
+  category?: string;
+  completed_at?: string;
+  created_at?: string;
+}
+
+interface PracticeSessionData {
+  id: string;
+  user_id: string;
+  duration_minutes?: number;
+  facility_type?: string;
+  practice_date?: string;
+  created_at?: string;
+}
+
 interface StatsContextType {
   rounds: RoundData[];
+  drills: DrillData[];
+  practiceSessions: PracticeSessionData[];
   loading: boolean;
   refreshRounds: () => void;
+  refreshDrills: () => void;
+  refreshPracticeSessions: () => void;
   calculateStats: () => { handicap: string; totalRounds: number };
 }
 
@@ -50,6 +73,9 @@ const StatsContext = createContext<StatsContextType | undefined>(undefined);
 export function StatsProvider({ children }: { children: ReactNode }) {
   // Set rounds to empty array
   const [rounds, setRounds] = useState<RoundData[]>([]);
+  // Check Fetch Logic: Add state for drills and practice_sessions
+  const [drills, setDrills] = useState<DrillData[]>([]);
+  const [practiceSessions, setPracticeSessions] = useState<PracticeSessionData[]>([]);
   // Set loading to true initially
   const [loading, setLoading] = useState<boolean>(true);
   const { user } = useAuth();
@@ -58,6 +84,9 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   const hasAttemptedFetch = useRef(false);
   // Add Fetch Guard: At the top of StatsProvider, add const roundsFetched = useRef(false);
   const roundsFetched = useRef(false);
+  // Check Fetch Logic: Add fetch guards for drills and practice_sessions
+  const drillsFetched = useRef(false);
+  const practiceSessionsFetched = useRef(false);
 
   // Load rounds from database
   // Check Dashboard Fetch: Don't require user.id - fetch ALL rounds even if user is not logged in
@@ -214,14 +243,91 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Check Fetch Logic: Ensure the loadStats function is fetching data from the drills and practice_sessions tables as well as rounds
+  // Remove User Filters: Just like we did for Rounds, remove any .eq('user_id', user.id) from the Drills and Practice fetch calls so the leaderboard can see everyone's progress
+  const loadDrills = async () => {
+    if (drillsFetched.current) return;
+    
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+
+      console.log('StatsContext: Fetching ALL drills for leaderboard (not filtering by user_id)');
+      
+      // Remove User Filters: Remove any .eq('user_id', user.id) from the Drills fetch calls
+      const { data, error } = await supabase
+        .from('drills')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('StatsContext: Error loading drills from database:', error);
+        setDrills([]);
+        drillsFetched.current = true;
+        return;
+      }
+
+      console.log('StatsContext: Loaded drills from database:', data?.length || 0);
+      setDrills((data || []) as DrillData[]);
+      drillsFetched.current = true;
+    } catch (error) {
+      console.error('StatsContext: Error loading drills:', error);
+      setDrills([]);
+      drillsFetched.current = true;
+    }
+  };
+
+  const loadPracticeSessions = async () => {
+    if (practiceSessionsFetched.current) return;
+    
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+
+      console.log('StatsContext: Fetching ALL practice_sessions for leaderboard (not filtering by user_id)');
+      
+      // Remove User Filters: Remove any .eq('user_id', user.id) from the Practice fetch calls
+      const { data, error } = await supabase
+        .from('practice_sessions')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('StatsContext: Error loading practice_sessions from database:', error);
+        setPracticeSessions([]);
+        practiceSessionsFetched.current = true;
+        return;
+      }
+
+      console.log('StatsContext: Loaded practice_sessions from database:', data?.length || 0);
+      setPracticeSessions((data || []) as PracticeSessionData[]);
+      practiceSessionsFetched.current = true;
+    } catch (error) {
+      console.error('StatsContext: Error loading practice_sessions:', error);
+      setPracticeSessions([]);
+      practiceSessionsFetched.current = true;
+    }
+  };
+
   const refreshRounds = () => {
     loadRounds();
+  };
+
+  const refreshDrills = () => {
+    drillsFetched.current = false;
+    loadDrills();
+  };
+
+  const refreshPracticeSessions = () => {
+    practiceSessionsFetched.current = false;
+    loadPracticeSessions();
   };
 
   // Make calculateStats return only { handicap: 'N/A', totalRounds: 0 }
   const calculateStats = () => ({ handicap: 'N/A', totalRounds: 0 });
 
-  // Load rounds on mount and listen for updates
+  // Check Fetch Logic: Ensure the loadStats function is fetching data from the drills and practice_sessions tables as well as rounds
+  // Load rounds, drills, and practice_sessions on mount and listen for updates
   // Modify loadRounds: Remove any .eq('user_id', ...) filters from the query used for the global leaderboard
   // Ensure Select All: Confirm the query is .from('rounds').select('*') so it pulls every round in the database
   // Verify Sorting: Keep the .order('created_at', { ascending: false }) so the most recent rounds are still at the top
@@ -229,6 +335,10 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     // Always fetch all rounds for the global leaderboard, regardless of user.id
     // This ensures the leaderboard shows all users' rounds, not just the current user's
     loadRounds();
+    
+    // Check Fetch Logic: Fetch drills and practice_sessions from database tables
+    loadDrills();
+    loadPracticeSessions();
 
     // Listen for roundsUpdated event
     const handleRoundsUpdate = () => {
@@ -236,16 +346,33 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       // Always refresh all rounds for the global leaderboard
       loadRounds();
     };
+    
+    // Listen for drills and practice_sessions updates
+    const handleDrillsUpdate = () => {
+      console.log('StatsContext: Received drillsUpdated event, refreshing from database...');
+      drillsFetched.current = false;
+      loadDrills();
+    };
+    
+    const handlePracticeSessionsUpdate = () => {
+      console.log('StatsContext: Received practiceSessionsUpdated event, refreshing from database...');
+      practiceSessionsFetched.current = false;
+      loadPracticeSessions();
+    };
 
     window.addEventListener('roundsUpdated', handleRoundsUpdate);
+    window.addEventListener('drillsUpdated', handleDrillsUpdate);
+    window.addEventListener('practiceSessionsUpdated', handlePracticeSessionsUpdate);
 
     return () => {
       window.removeEventListener('roundsUpdated', handleRoundsUpdate);
+      window.removeEventListener('drillsUpdated', handleDrillsUpdate);
+      window.removeEventListener('practiceSessionsUpdated', handlePracticeSessionsUpdate);
     };
   }, []); // Empty dependency array - fetch once on mount, then listen for updates
 
   return (
-    <StatsContext.Provider value={{ rounds, loading, refreshRounds, calculateStats }}>
+    <StatsContext.Provider value={{ rounds, drills, practiceSessions, loading, refreshRounds, refreshDrills, refreshPracticeSessions, calculateStats }}>
       {children}
     </StatsContext.Provider>
   );
@@ -256,7 +383,16 @@ export function useStats() {
   if (context === undefined) {
     // Silent Errors: Don't throw - return empty context to prevent UI freeze
     console.error('useStats must be used within a StatsProvider - returning empty context');
-    return { rounds: [], loading: false, refreshRounds: () => {}, calculateStats: () => ({ handicap: 'N/A', totalRounds: 0 }) };
+    return { 
+      rounds: [], 
+      drills: [], 
+      practiceSessions: [], 
+      loading: false, 
+      refreshRounds: () => {}, 
+      refreshDrills: () => {}, 
+      refreshPracticeSessions: () => {}, 
+      calculateStats: () => ({ handicap: 'N/A', totalRounds: 0 }) 
+    };
   }
   return context;
 }
