@@ -114,9 +114,9 @@ export default function HomeDashboard() {
   // Toast state for non-blocking notifications
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
   
-  // Sync My Name: Ensure the main greeting at the top also uses {user?.full_name} instead of 'Member'
+  // Sync Personal Greeting: Ensure the 'Member' greeting at the top also uses the logged-in user's full_name
   // Note: AuthContext maps full_name from database to fullName property
-  // Add a Fallback: If a name is missing, show 'Golfer' instead of the code
+  // Safe Fallback: If a name isn't found, default to showing 'Golfer' instead of 'Member'
   const displayName = user?.fullName || 'Golfer';
   
   // Use useMemo to safely calculate rounds count from useStats()
@@ -343,12 +343,22 @@ export default function HomeDashboard() {
   // Fetch user profiles for name lookup (similar to Academy page)
   const [userProfiles, setUserProfiles] = useState<Map<string, { full_name?: string; profile_icon?: string }>>(new Map());
   
+  // Add Name Mapping: Create a way to fetch the full_name from the profiles table for every user_id found in the rounds
   useEffect(() => {
-    if (!rounds || rounds.length === 0) return;
+    if (!rounds || rounds.length === 0) {
+      setUserProfiles(new Map());
+      return;
+    }
     
     const fetchProfiles = async () => {
+      // Add Name Mapping: Extract all unique user_ids from rounds
       const uniqueUserIds = Array.from(new Set(rounds.map((item: any) => item?.user_id).filter(Boolean)));
-      if (uniqueUserIds.length === 0) return;
+      if (uniqueUserIds.length === 0) {
+        setUserProfiles(new Map());
+        return;
+      }
+      
+      console.log('HomeDashboard: Fetching profiles for', uniqueUserIds.length, 'users:', uniqueUserIds);
       
       try {
         const { createClient } = await import("@/lib/supabase/client");
@@ -360,23 +370,28 @@ export default function HomeDashboard() {
         
         if (error) {
           console.error('Error fetching user profiles for Community:', error);
+          setUserProfiles(new Map());
           return;
         }
         
+        // Add Name Mapping: Create a Map to store user_id -> full_name mappings
         const profileMap = new Map<string, { full_name?: string; profile_icon?: string }>();
         if (data) {
           data.forEach((profile: any) => {
             profileMap.set(profile.id, { full_name: profile.full_name, profile_icon: profile.profile_icon });
+            console.log('HomeDashboard: Mapped user', profile.id, 'to name:', profile.full_name);
           });
         }
+        console.log('HomeDashboard: Loaded', profileMap.size, 'profiles for Community feed');
         setUserProfiles(profileMap);
       } catch (error) {
         console.error('Error in fetchProfiles for Community:', error);
+        setUserProfiles(new Map());
       }
     };
     
     fetchProfiles();
-  }, [rounds.length]);
+  }, [rounds]); // Update dependency to rounds array itself, not just length
   
   // Delete all logic related to 'Alex Chen', 'Maria Rodriguez', and any hardcoded mock users
   // Wipe the variable 'ec': Completely remove any mention of ec or ed from this file
@@ -1070,12 +1085,18 @@ export default function HomeDashboard() {
                   // Fix the 'ec' Crash: Use rounds.map((round) => { ... }) and use (round?.score || 0) - (round?.handicap || 0) for the Nett calculation
                   const nett = (round?.score || 0) - (round?.handicap || 0);
                   
-                  // Map Names to IDs: Create a function to look up the full_name from the profiles table for each user_id in the rounds array
-                  // Update the Display: Replace the text currently showing the ID with the user's full_name
-                  // Add a Fallback: If a name is missing, show 'Golfer' instead of the code
+                  // Add Name Mapping: Create a way to fetch the full_name from the profiles table for every user_id found in the rounds
+                  // Update the List: Inside the .map() function for the Community feed, replace the display of the ID (e.g., '3261994e') with the actual full_name
+                  // Safe Fallback: If a name isn't found for an ID, default to showing 'Golfer' instead of the weird code
                   const userId = round?.user_id;
                   const profile = userId ? userProfiles.get(userId) : null;
-                  const displayName = profile?.full_name || 'Golfer'; // Add a Fallback: If a name is missing, show 'Golfer' instead of the code
+                  // Update the List: Replace ID display with actual full_name
+                  const displayName = profile?.full_name || 'Golfer'; // Safe Fallback: If a name isn't found for an ID, default to showing 'Golfer' instead of the weird code
+                  
+                  // Debug logging to verify name lookup
+                  if (userId && !profile?.full_name) {
+                    console.warn('HomeDashboard: No profile found for user_id:', userId, 'in userProfiles Map');
+                  }
                   
                   const courseName = round?.course || 'Unknown Course';
                   const roundDate = round?.date || round?.created_at || new Date().toISOString();
