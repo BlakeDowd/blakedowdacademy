@@ -384,9 +384,13 @@ export default function HomeDashboard() {
   //   - The Course Name.
   //   - The Nett Score (calculated as round.score - round.handicap).
   // Sort by Date: Ensure the most recent rounds from all users appear at the top.
+  // Check for Typo: Search the file for any variable named ed. It is likely a typo of round.score, handicap, or formattedDate.
+  // Add Optional Chaining: Ensure all round properties use the ?. operator (e.g., round?.score) to prevent accessing properties of undefined objects.
+  // Initialize the Map: Ensure the allEntries or rounds array is initialized as an empty array [] before the component tries to map through it.
+  // Calculate Nett Safely: Ensure this calculation only happens if round is not null.
   const communityRounds = useMemo(() => {
-    // Use Real Rounds: Use the rounds array from StatsContext
-    if (!rounds || rounds.length === 0) {
+    // Initialize the Map: Ensure the rounds array is initialized as an empty array [] before the component tries to map through it
+    if (!rounds || !Array.isArray(rounds) || rounds.length === 0) {
       console.log('HomeDashboard: No rounds available for Community tab');
       return [];
     }
@@ -395,51 +399,73 @@ export default function HomeDashboard() {
     
     // Sort by Date: Ensure the most recent rounds from all users appear at the top
     // Get all rounds (not filtered by user), sort by date descending, take top 10
-    const allRounds = rounds
+    // Add Optional Chaining: Ensure all round properties use the ?. operator
+    const allRounds = (rounds || [])
       .filter((r: any) => {
+        // Add Optional Chaining: Ensure all round properties use the ?. operator
+        if (!r || typeof r !== 'object') return false;
         // Only include rounds with valid user_id and score
-        const hasUserId = r.user_id && r.user_id.trim() !== '';
-        const hasScore = r.score !== null && r.score !== undefined && r.score > 0;
+        const hasUserId = r?.user_id && String(r.user_id).trim() !== '';
+        const hasScore = r?.score !== null && r?.score !== undefined && r?.score > 0;
         return hasUserId && hasScore;
       })
       .sort((a: any, b: any) => {
+        // Add Optional Chaining: Ensure all round properties use the ?. operator
+        if (!a || !b) return 0;
         // Sort by Date: Most recent first
-        const dateA = new Date(a.date || a.created_at || 0);
-        const dateB = new Date(b.date || b.created_at || 0);
+        const dateA = new Date(a?.date || a?.created_at || 0);
+        const dateB = new Date(b?.date || b?.created_at || 0);
         return dateB.getTime() - dateA.getTime();
       })
       .slice(0, 10); // Most recent 5-10 rounds
     
     console.log('HomeDashboard: Filtered to', allRounds.length, 'valid rounds for Community tab');
     
+    // Initialize the Map: Ensure allEntries or rounds array is initialized as an empty array [] before mapping
+    if (!Array.isArray(allRounds) || allRounds.length === 0) {
+      return [];
+    }
+    
     // Map to CommunityRound format
-    return allRounds.map((round: any) => {
-      // Display Nett Scores: Calculate as round.score - round.handicap
-      let nettScore: number | null = null;
-      if (round.nett !== null && round.nett !== undefined) {
-        nettScore = round.nett;
-      } else if (round.score !== null && round.handicap !== null && round.handicap !== undefined) {
-        nettScore = round.score - round.handicap;
-      } else if (round.score !== null) {
-        nettScore = round.score; // Fallback to gross score if no handicap
-      }
-      
-      // The User Name (lookup from profile or round metadata)
-      const profile = userProfiles.get(round.user_id);
-      const displayName = profile?.full_name || round.user_id?.substring(0, 8) || 'Unknown User';
-      
-      // The Course Name
-      const courseName = round.course || 'Unknown Course';
-      
-      return {
-        id: round.id || `round-${round.user_id}-${round.date}`,
-        name: displayName,
-        course: courseName,
-        score: nettScore || 0,
-        badge: undefined, // Delete Mocks: Remove all mock badges
-        timeAgo: formatTimeAgo(round.date || round.created_at || new Date().toISOString())
-      };
-    });
+    // Calculate Nett Safely: Ensure this calculation only happens if round is not null
+    return allRounds
+      .filter((round: any) => round && typeof round === 'object') // Filter out null/undefined rounds first
+      .map((round: any) => {
+        // Display Nett Scores: Calculate as round.score - round.handicap
+        // Add Optional Chaining: Ensure all round properties use the ?. operator
+        // Calculate Nett Safely: const nettScore = (round.score || 0) - (round.handicap || 0);
+        let nettScore: number = 0;
+        if (round?.nett !== null && round?.nett !== undefined) {
+          nettScore = round.nett;
+        } else if (round?.score !== null && round?.score !== undefined && round?.handicap !== null && round?.handicap !== undefined) {
+          // Calculate Nett Safely: Ensure this calculation only happens if round is not null
+          nettScore = (round.score || 0) - (round.handicap || 0);
+        } else if (round?.score !== null && round?.score !== undefined) {
+          nettScore = round.score; // Fallback to gross score if no handicap
+        }
+        
+        // The User Name (lookup from profile or round metadata)
+        // Add Optional Chaining: Ensure all round properties use the ?. operator
+        const userId = round?.user_id;
+        const profile = userId ? userProfiles.get(userId) : null;
+        const displayName = profile?.full_name || (userId ? String(userId).substring(0, 8) : 'Unknown User');
+        
+        // The Course Name
+        // Add Optional Chaining: Ensure all round properties use the ?. operator
+        const courseName = round?.course || 'Unknown Course';
+        
+        // Add Optional Chaining: Ensure all round properties use the ?. operator
+        const roundDate = round?.date || round?.created_at || new Date().toISOString();
+        
+        return {
+          id: round?.id || `round-${userId || 'unknown'}-${roundDate}`,
+          name: displayName,
+          course: courseName,
+          score: nettScore,
+          badge: undefined, // Delete Mocks: Remove all mock badges
+          timeAgo: formatTimeAgo(roundDate)
+        };
+      });
   }, [rounds, userProfiles]);
   
   // Format time ago
@@ -1110,25 +1136,27 @@ export default function HomeDashboard() {
           ) : (
             communityRounds.length > 0 ? (
               <div className="space-y-3">
-                {communityRounds.map((round) => (
-                  <div key={round.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
-                    <div className="flex items-center gap-3 flex-1">
-                      <Star className="w-5 h-5" style={{ color: '#014421' }} />
-                      <div className="flex-1">
-                        <p className="text-gray-800 font-medium">{round.name}</p>
-                        <p className="text-gray-400 text-sm">{round.course}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-gray-400 text-xs">• {round.timeAgo}</span>
+                {communityRounds
+                  .filter((round) => round && round.id) // Add Optional Chaining: Filter out any null/undefined rounds
+                  .map((round) => (
+                    <div key={round.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
+                      <div className="flex items-center gap-3 flex-1">
+                        <Star className="w-5 h-5" style={{ color: '#014421' }} />
+                        <div className="flex-1">
+                          <p className="text-gray-800 font-medium">{round?.name || 'Unknown User'}</p>
+                          <p className="text-gray-400 text-sm">{round?.course || 'Unknown Course'}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-gray-400 text-xs">• {round?.timeAgo || 'Recently'}</span>
+                          </div>
                         </div>
                       </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{(round?.score ?? 0).toFixed(0)}</p>
+                        {/* Add Labels: Display 'Nett' label next to their score */}
+                        <p className="text-xs text-gray-400">Nett</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{round.score?.toFixed(0) || 'N/A'}</p>
-                      {/* Add Labels: Display 'Nett' label next to their score */}
-                      <p className="text-xs text-gray-400">Nett</p>
-                    </div>
-                  </div>
-                ))}
+                  ))}
               </div>
             ) : (
               <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
