@@ -52,8 +52,16 @@ export default function StatsPage() {
   const { rounds, loading: statsLoading, refreshRounds } = useStats();
   const { user, loading: authLoading } = useAuth();
   
-  // Ensure rounds is always an array
-  const safeRounds = rounds || [];
+  // Filter by User ID: Filter the array so it only includes rounds belonging to the current user
+  // Keep Academy Global: This change only happens on the stats page. The Academy leaderboard must stay global so Stuart and Sean still show up there.
+  const personalRounds = useMemo(() => {
+    if (!rounds || !user?.id) return [];
+    // Type assertion: rounds from StatsContext include user_id even though RoundData interface doesn't explicitly list it
+    return rounds.filter((r: any) => (r as any).user_id === user.id);
+  }, [rounds, user?.id]);
+  
+  // Ensure rounds is always an array (use personalRounds for stats page)
+  const safeRounds = personalRounds || [];
   
   // Debug: Log rounds data
   useEffect(() => {
