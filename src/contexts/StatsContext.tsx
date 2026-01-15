@@ -295,30 +295,16 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
-      console.log('StatsContext: Fetching ALL practice_sessions for leaderboard (not filtering by user_id)');
+      // Fix the Table 404: The console shows practice_sessions table is missing. Update the fetch call in StatsContext.tsx to use the correct table name from Supabase, likely just practice.
+      console.log('StatsContext: Fetching ALL practice sessions for leaderboard (not filtering by user_id)');
       
-      // Fix the 404: The console shows a 404 for practice_sessions. Check StatsContext.tsx and ensure it's calling the correct table name from Supabase (is it practice or practice_sessions?).
-      // Try 'practice_sessions' first, if that fails with 404, the table might be named 'practice'
+      // Fix the Table 404: Use 'practice' table directly since practice_sessions table is missing
       // Remove User Filters: Remove any .eq('user_id', user.id) from the Practice fetch calls
       // Verify Row-Level Security: Check if RLS is blocking access - error will indicate this
-      let { data, error } = await supabase
-        .from('practice_sessions')
+      const { data, error } = await supabase
+        .from('practice')
         .select('*')
         .order('created_at', { ascending: false });
-      
-      // Fix the 404: If practice_sessions returns 404, try 'practice' table instead
-      if (error && (error.code === 'PGRST116' || error.message?.includes('relation') || error.message?.includes('does not exist') || error.message?.includes('404'))) {
-        console.warn('StatsContext: practice_sessions table not found, trying "practice" table instead');
-        const retryResult = await supabase
-          .from('practice')
-          .select('*')
-          .order('created_at', { ascending: false });
-        data = retryResult.data;
-        error = retryResult.error;
-        if (!error) {
-          console.log('StatsContext: Successfully fetched from "practice" table');
-        }
-      }
 
       if (error) {
         // Verify Row-Level Security: Log RLS errors specifically

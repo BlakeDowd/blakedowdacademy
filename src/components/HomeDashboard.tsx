@@ -101,10 +101,11 @@ export default function HomeDashboard() {
   const { rounds } = useStats();
   const { user, refreshUser } = useAuth();
   
-  // Add Initialization Guard: Wrap the component return in a check: if (!rounds) return null;
+  // Add Initialization Guard: Initialize the rounds array as [] at the top of the component to ensure it is never undefined during the first render
+  // Rename the loop variable: Find any .map((ec) => ...) or similar shorthand and rename ec to round throughout the block
   // Safety Check: Add if (!rounds) return null; at the top of the component to ensure the app doesn't try to render before the data exists
   // Initialization Guard: Initialize the rounds variable as an empty array [] at the top of the component to ensure it exists before the code tries to access it
-  const safeRoundsArray = (rounds || []) as any[];
+  const safeRoundsArray: any[] = (rounds || []) as any[];
   
   // Add Initialization Guard: Early return if rounds is not available (but allow empty array)
   // Note: We allow empty array to render, but if rounds is null/undefined, we return null
@@ -460,24 +461,24 @@ export default function HomeDashboard() {
     return allRounds
       .filter((round: any) => round && typeof round === 'object') // Filter out null/undefined rounds first
       .map((round: any) => {
-        // Fix the Map: Look for Array.map functions using ec. Rename ec to round and ensure no calculations happen before the variable is defined.
+        // Rename the loop variable: Find any .map((ec) => ...) or similar shorthand and rename ec to round throughout the block
+        // Move calculations inside the block: Ensure the Nett Score calculation (round.score - round.handicap) happens after the variable is defined in the map function
         // Hunt for 'ec': Ensure we use 'round' not 'ec' in map functions
         // Fix the Scope: Ensure the variable is fully initialized before it's used to calculate score - handicap
         // Use Robust Names: Use 'round' to make the code clearer and prevent these scoping errors
         if (!round || typeof round !== 'object') {
           return null; // Safety: Skip invalid rounds
         }
-        
+
+        // Move calculations inside the block: Ensure the Nett Score calculation (round.score - round.handicap) happens after the variable is defined
         // Fix Nett Calculation: Ensure the nett score is calculated safely: const nett = (round.score || 0) - (round.handicap || 0)
-        // Display Nett Scores: Calculate as round.score - round.handicap
-        // Add Optional Chaining: Ensure all round properties use the ?. operator
-        // Hunt for 'ec': All map functions use 'round' not 'ec'
+        // All calculations happen AFTER round is defined in the map function
         let nettScore: number = 0;
         if (round?.nett !== null && round?.nett !== undefined) {
           nettScore = round.nett;
         } else {
-          // Fix Nett Calculation: Ensure the nett score is calculated safely: const nett = (round.score || 0) - (round.handicap || 0)
-          // Hunt for 'ec': Use 'round' not 'ec' - all variables initialized before calculation
+          // Move calculations inside the block: Nett calculation happens after round is defined
+          // Fix Nett Calculation: const nett = (round.score || 0) - (round.handicap || 0)
           const nett = (round?.score || 0) - (round?.handicap || 0);
           nettScore = nett;
           // If calculation results in invalid score, fallback to gross score
