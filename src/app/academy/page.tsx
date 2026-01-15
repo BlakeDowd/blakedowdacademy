@@ -739,33 +739,82 @@ function getMockLeaderboard(
   // Use Real Count: Ensure the roundCount displayed is userRounds.length from the actual rounds array.
   // Handle Empty State: If there are no rounds in the database, show a 'No Rounds Logged' message instead of fake leaders.
   
-  // Calculate actual user rounds count from the rounds array
-  const userRounds = rounds.filter(round => {
-    if (user?.id && round.user_id !== user.id) return false;
-    if (timeFilter === 'allTime') return true;
-    const { startDate } = getTimeframeDates(timeFilter);
-    const roundDate = new Date(round.date || round.created_at);
-    return roundDate >= startDate;
-  });
-  const roundCount = userRounds.length;
-  
-  // If no rounds exist, return empty leaderboard (will show "No Rounds Logged" in UI)
-  if (metric === 'rounds' && roundCount === 0) {
+  // Remove User Filter: For global leaderboard, process ALL rounds from all users, not just current user
+  // Connect Top 3: Ensure the 'Top 3 Leaders' card is pulling from this new global array instead of using a hardcoded mock object
+  if (metric === 'rounds') {
+    // Filter by timeframe first (no user_id filter - get all users' rounds)
+    const timeFilteredRounds = rounds.filter(round => {
+      if (timeFilter === 'allTime') return true;
+      const { startDate } = getTimeframeDates(timeFilter);
+      const roundDate = new Date(round.date || round.created_at);
+      return roundDate >= startDate;
+    });
+    
+    // Group rounds by user_id to count rounds per user
+    const roundsByUser = new Map<string, any[]>();
+    timeFilteredRounds.forEach(round => {
+      if (!round.user_id) return; // Skip rounds without user_id
+      if (!roundsByUser.has(round.user_id)) {
+        roundsByUser.set(round.user_id, []);
+      }
+      roundsByUser.get(round.user_id)!.push(round);
+    });
+    
+    // Create leaderboard entries for all users
+    const allEntries: any[] = [];
+    roundsByUser.forEach((userRounds, userId) => {
+      const roundCount = userRounds.length;
+      // Get user name from first round (if available) or use user_id
+      const firstRound = userRounds[0];
+      const displayName = firstRound?.full_name || userId.substring(0, 8) || 'Unknown User';
+      const userIcon = firstRound?.profile_icon || displayName.split(' ').map((n: string) => n[0]).join('') || 'U';
+      
+      allEntries.push({
+        id: userId,
+        name: displayName,
+        avatar: userIcon,
+        value: roundCount, // Verify Count: Use rounds.length from database results, not hardcoded 4000
+        isCurrentUser: user?.id === userId,
+        handicap: user?.id === userId ? user?.initialHandicap : undefined
+      });
+    });
+    
+    // Sort by round count descending (most rounds first)
+    allEntries.sort((a, b) => b.value - a.value);
+    
+    // If no rounds exist, return empty leaderboard
+    if (allEntries.length === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0
+      };
+    }
+    
+    // Find current user's entry and value
+    const currentUserEntry = allEntries.find(entry => entry.isCurrentUser);
+    userValue = currentUserEntry?.value || 0;
+    
+    const userEntryInSorted = allEntries.find(entry => entry.isCurrentUser);
+    const finalUserValue = userEntryInSorted?.value || userValue;
+    
+    console.log('getMockLeaderboard - rounds metric (global):', {
+      totalRoundsInDatabase: rounds?.length || 0, // Verify Count: Change display variable from hardcoded 4000 to rounds.length
+      totalUsers: allEntries.length,
+      top3Values: allEntries.slice(0, 3).map(e => ({ name: e.name, value: e.value })),
+      currentUserValue: finalUserValue
+    });
+    
     return {
-      top3: [],
-      all: [],
-      userRank: 0,
-      userValue: 0
+      top3: allEntries.slice(0, 3),
+      all: allEntries,
+      userRank: userEntryInSorted ? allEntries.findIndex(entry => entry.isCurrentUser) + 1 : 0,
+      userValue: finalUserValue
     };
   }
   
-  // Use Real Count: Ensure the roundCount displayed is userRounds.length from the actual rounds array
-  // Only create user entry if they have actual rounds (for rounds metric) or activity (for other metrics)
-  if (metric === 'rounds' && userValue !== roundCount) {
-    // Ensure userValue matches actual roundCount
-    userValue = roundCount;
-  }
-  
+  // For other metrics, keep existing logic
   const userEntry = {
     id: 'user',
     name: userName, // Use actual full_name instead of 'You'
@@ -774,40 +823,13 @@ function getMockLeaderboard(
     handicap: user?.initialHandicap // Include handicap for sorting rounds by skill level
   };
   
-  // For rounds leaderboard, sort by handicap (lower is better) if metric is 'rounds'
-  // Otherwise sort by value descending
-  let sorted;
-  if (metric === 'rounds' && user?.initialHandicap !== undefined) {
-    // For rounds, we want to show by skill level (handicap)
-    // Lower handicap = better, so we sort by handicap ascending
-    sorted = [userEntry].sort((a, b) => {
-      // Sort by value (round count) descending
-      return b.value - a.value;
-    });
-  } else {
-    // Sort by value descending for other metrics
-    sorted = [userEntry].sort((a, b) => b.value - a.value);
-  }
+  // Sort by value descending for other metrics
+  const sorted = [userEntry].sort((a, b) => b.value - a.value);
   
   // Connect to Real Data: Replace any hardcoded values with userRounds.length or the score property from the actual leaderboardData array
   // Unify Labels: Ensure the top card and Rank section both use the same value from the entry in the leaderboard array
   const userEntryInSorted = sorted.find(entry => entry.id === 'user');
   const finalUserValue = userEntryInSorted?.value || userValue;
-  
-  // Search for '3000': Find the variable or hardcoded string '3000' inside AcademyPage or the Top3Leaders component
-  // Debug: Log the value to ensure it's not 3000
-  if (metric === 'rounds') {
-    console.log('getMockLeaderboard - rounds metric:', {
-      userValue,
-      userEntryValue: userEntryInSorted?.value,
-      finalUserValue,
-      roundCount,
-      top3FirstValue: sorted[0]?.value
-    });
-    if (finalUserValue === 3000 || userEntryInSorted?.value === 3000) {
-      console.error('⚠️ Found 3000 value in mock leaderboard! This should be replaced with actual roundCount');
-    }
-  }
   
   return {
     top3: sorted.slice(0, 3),
@@ -982,19 +1004,51 @@ function getLeaderboardData(
     };
   }
   
-  // For rounds metric, calculate actual user rounds count from the rounds array
+  // Remove User Filter: For global leaderboard, process ALL rounds from all users, not just current user
+  // Connect Top 3: Ensure the 'Top 3 Leaders' card is pulling from this new global array instead of using a hardcoded mock object
+  // For rounds metric, group all rounds by user_id and create leaderboard entries for each user
   if (metric === 'rounds') {
-    const userRounds = rounds.filter(round => {
-      if (user?.id && round.user_id !== user.id) return false;
+    // Filter by timeframe first (no user_id filter - get all users' rounds)
+    const timeFilteredRounds = filteredRounds.filter(round => {
       if (timeFilter === 'allTime') return true;
       const { startDate } = getTimeframeDates(timeFilter);
       const roundDate = new Date(round.date || round.created_at);
       return roundDate >= startDate;
     });
-    const roundCount = userRounds.length;
     
-    // If no rounds exist, return empty leaderboard (will show "No Rounds Logged" in UI)
-    if (roundCount === 0) {
+    // Group rounds by user_id to count rounds per user
+    const roundsByUser = new Map<string, any[]>();
+    timeFilteredRounds.forEach(round => {
+      if (!round.user_id) return; // Skip rounds without user_id
+      if (!roundsByUser.has(round.user_id)) {
+        roundsByUser.set(round.user_id, []);
+      }
+      roundsByUser.get(round.user_id)!.push(round);
+    });
+    
+    // Create leaderboard entries for all users
+    const allEntries: any[] = [];
+    roundsByUser.forEach((userRounds, userId) => {
+      const roundCount = userRounds.length;
+      // Get user name from first round (if available) or use user_id
+      const firstRound = userRounds[0];
+      const displayName = firstRound?.full_name || userId.substring(0, 8) || 'Unknown User';
+      const userIcon = firstRound?.profile_icon || displayName.split(' ').map((n: string) => n[0]).join('') || 'U';
+      
+      allEntries.push({
+        id: userId,
+        name: displayName,
+        avatar: userIcon,
+        value: roundCount, // Verify Count: Use rounds.length from database results, not hardcoded 4000
+        isCurrentUser: user?.id === userId
+      });
+    });
+    
+    // Sort by round count descending (most rounds first)
+    allEntries.sort((a, b) => b.value - a.value);
+    
+    // If no rounds exist, return empty leaderboard
+    if (allEntries.length === 0) {
       return {
         top3: [],
         all: [],
@@ -1003,10 +1057,46 @@ function getLeaderboardData(
       };
     }
     
-    // Use Real Count: Ensure the roundCount displayed is userRounds.length from the actual rounds array
-    userValue = roundCount;
+    // Find current user's entry and value
+    const currentUserEntry = allEntries.find(entry => entry.isCurrentUser);
+    userValue = currentUserEntry?.value || 0;
+    
+    // Calculate rank changes and add ranks
+    const withRanks = allEntries.map((entry, index) => {
+      const currentRank = index + 1;
+      return {
+        ...entry,
+        rank: currentRank,
+        rankChange: 0, // No previous rank data available
+        movedUp: false,
+        movedDown: false,
+        previousRank: undefined,
+        lowRound: undefined,
+        lowNett: undefined,
+        birdieCount: 0,
+        eagleCount: 0
+      };
+    });
+    
+    const userEntryInRanks = withRanks.find(entry => entry.isCurrentUser);
+    const finalUserValue = userEntryInRanks?.value || userValue;
+    
+    const result = {
+      top3: withRanks.slice(0, 3),
+      all: withRanks,
+      userRank: userEntryInRanks ? withRanks.findIndex(entry => entry.isCurrentUser) + 1 : 0,
+      userValue: finalUserValue
+    };
+    
+    console.log('Leaderboard Result (rounds metric - global):', result);
+    console.log('Leaderboard Result - top3 count:', result.top3?.length || 0);
+    console.log('Leaderboard Result - all count:', result.all?.length || 0);
+    console.log('Leaderboard Result - total rounds in database:', rounds?.length || 0); // Verify Count: Change display variable from hardcoded 4000 to rounds.length
+    
+    return result;
   }
   
+  // For other metrics, keep existing logic but remove user filter
   // Replace Hardcoded Value: Change any hardcoded 2000 or 1000 values to the dynamic roundCount or userRounds.length coming from the leaderboard data
   // Only include user in leaderboard if they have actual data (no mock/dummy entries)
   const userEntry = {
@@ -1057,21 +1147,6 @@ function getLeaderboardData(
   // Unify Labels: Ensure the top card and Rank section both use the same value from the entry in the leaderboard array
   const userEntryInRanks = withRanks.find(entry => entry.id === 'user');
   const finalUserValue = userEntryInRanks?.value || userValue;
-  
-  // Search for '3000': Find the variable or hardcoded string '3000' inside AcademyPage or the Top3Leaders component
-  // Debug: Log the value to ensure it's not 3000
-  if (metric === 'rounds') {
-    console.log('getLeaderboardData - rounds metric:', {
-      userValue,
-      userEntryValue: userEntryInRanks?.value,
-      finalUserValue,
-      top3FirstValue: withRanks[0]?.value,
-      allEntries: withRanks.map((e: any) => ({ id: e.id, value: e.value, name: e.name }))
-    });
-    if (finalUserValue === 3000 || userEntryInRanks?.value === 3000) {
-      console.error('⚠️ Found 3000 value in leaderboard! This should be replaced with actual roundCount');
-    }
-  }
   
   const result = {
     top3: withRanks.slice(0, 3),
