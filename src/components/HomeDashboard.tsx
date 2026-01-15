@@ -101,12 +101,16 @@ export default function HomeDashboard() {
   const { rounds } = useStats();
   const { user, refreshUser } = useAuth();
   
-  // Hunt for 'ec': Find the variable ec in the code. It is likely a typo in a loop like rounds.map(ec => ...) or a calculation for the Nett score.
-  // Fix the Scope: Ensure the variable is fully initialized before it's used to calculate score - handicap.
-  // Use Robust Names: Rename ec to round to make the code clearer and prevent these scoping errors.
+  // Add Initialization Guard: Wrap the component return in a check: if (!rounds) return null;
   // Safety Check: Add if (!rounds) return null; at the top of the component to ensure the app doesn't try to render before the data exists
   // Initialization Guard: Initialize the rounds variable as an empty array [] at the top of the component to ensure it exists before the code tries to access it
   const safeRoundsArray = (rounds || []) as any[];
+  
+  // Add Initialization Guard: Early return if rounds is not available (but allow empty array)
+  // Note: We allow empty array to render, but if rounds is null/undefined, we return null
+  if (rounds === null || rounds === undefined) {
+    return null;
+  }
   
   // Add Fetch Guard: Use useRef guards similar to Academy page to prevent loops
   const dataFetched = useRef(false);
@@ -114,16 +118,18 @@ export default function HomeDashboard() {
   // Toast state for non-blocking notifications
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
   
-  // Connect Auth: Import useAuth and extract the user object
-  // Personalize Greeting: Replace the hardcoded 'Member' text with {user?.fullName || 'Golfer'}
+  // Sync Name: Replace 'Member' with {user?.full_name || 'Golfer'}
+  // Note: AuthContext maps full_name from database to fullName property
   // Safety: Keep the existing useRef guards to ensure this doesn't trigger a re-fetch loop
   const displayName = useMemo(() => {
+    // Sync Name: Replace 'Member' with {user?.full_name || 'Golfer'}
+    // AuthContext provides fullName (mapped from full_name in database)
     if (!user) return 'Golfer';
-    // Personalize Greeting: Use user.fullName from useAuth(), with fallback to 'Golfer' instead of 'Member'
-    const name = user.fullName || (user.email ? user.email.split('@')[0] : 'Golfer');
+    // Use user.fullName (which comes from profiles.full_name) with fallback to 'Golfer'
+    const name = user.fullName || 'Golfer';
     console.log('HomeDashboard: displayName calculated:', { fullName: user.fullName, email: user.email, result: name });
     return name;
-  }, [user?.fullName, user?.email, user]);
+  }, [user?.fullName, user]);
   
   // Use useMemo to safely calculate rounds count from useStats()
   // Update HomeDashboard.tsx to use useStats() to get the actual rounds.length so the stats are dynamic instead of zero
@@ -462,25 +468,21 @@ export default function HomeDashboard() {
           return null; // Safety: Skip invalid rounds
         }
         
+        // Fix Nett Calculation: Ensure the nett score is calculated safely: const nett = (round.score || 0) - (round.handicap || 0)
         // Display Nett Scores: Calculate as round.score - round.handicap
         // Add Optional Chaining: Ensure all round properties use the ?. operator
-        // Fix Mapping: Use round.score, round.handicap (not ed or ec)
-        // Calculate Nett: Ensure the nett score calculation uses (round.score || 0) - (round.handicap || 0) to avoid crashing on empty data
+        // Hunt for 'ec': All map functions use 'round' not 'ec'
         let nettScore: number = 0;
         if (round?.nett !== null && round?.nett !== undefined) {
           nettScore = round.nett;
         } else {
-          // Calculate Nett: Ensure the nett score calculation uses (round.score || 0) - (round.handicap || 0) to avoid crashing on empty data
-          // Fix the Scope: Ensure the variable is fully initialized before it's used to calculate score - handicap
-          // Use Robust Names: Use round.score and round.handicap (not ec)
-          // Initialize variables before calculation to prevent ReferenceError
-          const roundScore = round?.score || 0;
-          const roundHandicap = round?.handicap || 0;
-          // Calculate Nett: Ensure the nett score calculation uses (round.score || 0) - (round.handicap || 0) to avoid crashing on empty data
-          nettScore = roundScore - roundHandicap;
+          // Fix Nett Calculation: Ensure the nett score is calculated safely: const nett = (round.score || 0) - (round.handicap || 0)
+          // Hunt for 'ec': Use 'round' not 'ec' - all variables initialized before calculation
+          const nett = (round?.score || 0) - (round?.handicap || 0);
+          nettScore = nett;
           // If calculation results in invalid score, fallback to gross score
           if (nettScore < 0 || !isFinite(nettScore)) {
-            nettScore = roundScore;
+            nettScore = round?.score || 0;
           }
         }
         
