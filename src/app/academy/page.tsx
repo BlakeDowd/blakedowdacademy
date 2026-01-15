@@ -1068,19 +1068,215 @@ function getLeaderboardData(
   // Use Real Count: Ensure the roundCount displayed is userRounds.length from the actual rounds array.
   // Handle Empty State: If there are no rounds in the database, show a 'No Rounds Logged' message instead of fake leaders.
   
-  // For lowGross and lowNett, check if they are null (these should return empty if null)
-  if ((metric === 'lowGross' && lowGross === null) || 
-      (metric === 'lowNett' && lowNett === null)) {
-    return {
-      top3: [],
-      all: [],
-      userRank: 0,
-      userValue: 0
-    };
-  }
-  
   // Remove User Filter: For global leaderboard, process ALL rounds from all users, not just current user
   // Connect Top 3: Ensure the 'Top 3 Leaders' card is pulling from this new global array instead of using a hardcoded mock object
+  // For birdies, eagles, lowGross, and lowNett metrics, group all rounds by user_id and create leaderboard entries for each user
+  if (metric === 'birdies' || metric === 'eagles') {
+    // Fix Birdie/Eagle Counting: Iterate through all users' rounds to sum up their birdies/eagles, then sort from highest to lowest
+    // Group rounds by user_id to calculate totals per user
+    const roundsByUser = new Map<string, any[]>();
+    filteredRounds.forEach(round => {
+      if (!round.user_id) return; // Skip rounds without user_id
+      if (!roundsByUser.has(round.user_id)) {
+        roundsByUser.set(round.user_id, []);
+      }
+      roundsByUser.get(round.user_id)!.push(round);
+    });
+    
+    // Create leaderboard entries for all users
+    const allEntries: any[] = [];
+    roundsByUser.forEach((userRounds, userId) => {
+      // Fix Birdie/Eagle Counting: Sum birdies/eagles for this user across all their rounds
+      const totalBirdies = userRounds.reduce((sum, round) => sum + (round.birdies || 0), 0);
+      const totalEagles = userRounds.reduce((sum, round) => sum + (round.eagles || 0), 0);
+      
+      // Create a Name Lookup: Get profile data from userProfiles map
+      const profile = userProfiles?.get(userId);
+      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      
+      // Fix Avatars: Update the avatar circles to show the first letter of their names
+      let nameForAvatar = 'U';
+      if (profile?.full_name) {
+        nameForAvatar = profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else if (displayName && displayName.length > 8) {
+        nameForAvatar = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else {
+        nameForAvatar = displayName.substring(0, 1).toUpperCase() || 'U';
+      }
+      
+      const userIcon = profile?.profile_icon || nameForAvatar;
+      const value = metric === 'birdies' ? totalBirdies : totalEagles;
+      
+      allEntries.push({
+        id: userId,
+        name: displayName,
+        avatar: userIcon,
+        value: value,
+        isCurrentUser: user?.id === userId,
+        birdieCount: totalBirdies,
+        eagleCount: totalEagles
+      });
+    });
+    
+    // Fix Birdie/Eagle Counting: Sort from highest to lowest
+    allEntries.sort((a, b) => b.value - a.value);
+    
+    // If no entries exist, return empty leaderboard
+    if (allEntries.length === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0
+      };
+    }
+    
+    // Calculate rank changes and add ranks
+    const withRanks = allEntries.map((entry, index) => {
+      const currentRank = index + 1;
+      return {
+        ...entry,
+        rank: currentRank,
+        rankChange: 0,
+        movedUp: false,
+        movedDown: false,
+        previousRank: undefined,
+        lowRound: undefined,
+        lowNett: undefined
+      };
+    });
+    
+    const userEntryInRanks = withRanks.find(entry => entry.isCurrentUser);
+    const finalUserValue = userEntryInRanks?.value || 0;
+    
+    const result = {
+      top3: withRanks.slice(0, 3),
+      all: withRanks,
+      userRank: userEntryInRanks ? withRanks.findIndex(entry => entry.isCurrentUser) + 1 : 0,
+      userValue: finalUserValue
+    };
+    
+    console.log('Leaderboard Result (birdies/eagles metric - global):', result);
+    return result;
+  }
+  
+  // Fix 'Low Gross' and 'Low Nett': Find the single lowest score among all users' rounds, not just mine
+  if (metric === 'lowGross' || metric === 'lowNett') {
+    // For lowGross and lowNett, check if they are null (these should return empty if null)
+    if ((metric === 'lowGross' && lowGross === null) || 
+        (metric === 'lowNett' && lowNett === null)) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0
+      };
+    }
+    
+    // Group 18-hole rounds by user_id to find each user's lowest score
+    const roundsByUser = new Map<string, any[]>();
+    eighteenHoleRounds.forEach(round => {
+      if (!round.user_id) return; // Skip rounds without user_id
+      if (!roundsByUser.has(round.user_id)) {
+        roundsByUser.set(round.user_id, []);
+      }
+      roundsByUser.get(round.user_id)!.push(round);
+    });
+    
+    // Create leaderboard entries for all users
+    const allEntries: any[] = [];
+    roundsByUser.forEach((userRounds, userId) => {
+      // Fix 'Low Gross': Find the single lowest score among all this user's rounds
+      const validScores = userRounds
+        .map(r => r.score)
+        .filter(score => score !== null && score !== undefined && score > 0);
+      const userLowGross = validScores.length > 0 ? Math.min(...validScores) : null;
+      
+      // Fix 'Low Nett': Find the single lowest nett score among all this user's rounds
+      const validNettRounds = userRounds.filter(round => 
+        round.score !== null && 
+        round.score !== undefined && 
+        round.score > 0 && 
+        round.handicap !== null && 
+        round.handicap !== undefined
+      );
+      const nettScores = validNettRounds.map(round => round.score! - round.handicap!);
+      const userLowNett = nettScores.length > 0 ? Math.min(...nettScores) : null;
+      
+      // Skip users with no valid scores
+      if (metric === 'lowGross' && userLowGross === null) return;
+      if (metric === 'lowNett' && userLowNett === null) return;
+      
+      // Create a Name Lookup: Get profile data from userProfiles map
+      const profile = userProfiles?.get(userId);
+      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      
+      // Fix Avatars: Update the avatar circles to show the first letter of their names
+      let nameForAvatar = 'U';
+      if (profile?.full_name) {
+        nameForAvatar = profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else if (displayName && displayName.length > 8) {
+        nameForAvatar = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else {
+        nameForAvatar = displayName.substring(0, 1).toUpperCase() || 'U';
+      }
+      
+      const userIcon = profile?.profile_icon || nameForAvatar;
+      const value = metric === 'lowGross' ? userLowGross! : userLowNett!;
+      
+      allEntries.push({
+        id: userId,
+        name: displayName,
+        avatar: userIcon,
+        value: value,
+        isCurrentUser: user?.id === userId,
+        lowRound: userLowGross,
+        lowNett: userLowNett
+      });
+    });
+    
+    // Fix 'Low Gross': Sort ascending (lower score is better)
+    allEntries.sort((a, b) => a.value - b.value);
+    
+    // If no entries exist, return empty leaderboard
+    if (allEntries.length === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0
+      };
+    }
+    
+    // Calculate rank changes and add ranks
+    const withRanks = allEntries.map((entry, index) => {
+      const currentRank = index + 1;
+      return {
+        ...entry,
+        rank: currentRank,
+        rankChange: 0,
+        movedUp: false,
+        movedDown: false,
+        previousRank: undefined,
+        birdieCount: 0,
+        eagleCount: 0
+      };
+    });
+    
+    const userEntryInRanks = withRanks.find(entry => entry.isCurrentUser);
+    const finalUserValue = userEntryInRanks?.value || 0;
+    
+    const result = {
+      top3: withRanks.slice(0, 3),
+      all: withRanks,
+      userRank: userEntryInRanks ? withRanks.findIndex(entry => entry.isCurrentUser) + 1 : 0,
+      userValue: finalUserValue
+    };
+    
+    console.log('Leaderboard Result (lowGross/lowNett metric - global):', result);
+    return result;
+  }
+  
   // For rounds metric, group all rounds by user_id and create leaderboard entries for each user
   if (metric === 'rounds') {
     // Filter by timeframe first (no user_id filter - get all users' rounds)
@@ -1199,38 +1395,25 @@ function getLeaderboardData(
     return result;
   }
   
-  // For other metrics, keep existing logic but remove user filter
-  // Replace Hardcoded Value: Change any hardcoded 2000 or 1000 values to the dynamic roundCount or userRounds.length coming from the leaderboard data
+  // For other metrics (xp, library, practice, drills), keep existing logic but remove user filter
+  // Remove User Filtering: For every metric, ensure the code is processing the allEntries or the global rounds array instead of filtering for just the currentUser
   // Only include user in leaderboard if they have actual data (no mock/dummy entries)
   const userEntry = {
     id: 'user',
     name: userName, // Use actual full_name instead of 'You'
     avatar: user?.profileIcon || userName.split(' ').map(n => n[0]).join('') || 'Y', // Use profile_icon if available, else initials
-    value: metric === 'lowGross' ? (lowGross !== null ? lowGross : 0) : 
-           metric === 'lowNett' ? (lowNett !== null ? lowNett : 0) : userValue, // Use dynamic userValue (roundCount for rounds), not hardcoded
+    value: userValue, // Use dynamic userValue, not hardcoded
     previousRank: undefined,
-    lowRound: lowGross, // Keep for trophy icon logic
-    lowNett: lowNett,
-    birdieCount: birdieCount,
-    eagleCount: eagleCount
+    lowRound: undefined,
+    lowNett: undefined,
+    birdieCount: 0,
+    eagleCount: 0
   };
   
-  // Sort by value - descending for most metrics, ascending for lowGross and lowNett (lower score is better)
+  // Sort by value - descending for most metrics (higher is better)
   const sorted = [userEntry].sort((a, b) => {
-    if (metric === 'lowGross' || metric === 'lowNett') {
-      // For low gross/nett, lower is better, so sort ascending
-      // Handle null values (999 is placeholder for sorting, but shouldn't appear)
-      const aScore = metric === 'lowGross' 
-        ? (a.lowRound !== null && a.lowRound !== undefined ? a.lowRound : 999)
-        : (a.lowNett !== null && a.lowNett !== undefined ? a.lowNett : 999);
-      const bScore = metric === 'lowGross'
-        ? (b.lowRound !== null && b.lowRound !== undefined ? b.lowRound : 999)
-        : (b.lowNett !== null && b.lowNett !== undefined ? b.lowNett : 999);
-      return aScore - bScore;
-    } else {
-      // For all other metrics, higher is better, so sort descending
-      return b.value - a.value;
-    }
+    // For all metrics here (xp, library, practice, drills), higher is better, so sort descending
+    return b.value - a.value;
   });
   
   // Calculate rank changes
