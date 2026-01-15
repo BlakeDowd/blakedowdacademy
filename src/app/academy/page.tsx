@@ -1072,10 +1072,20 @@ function getLeaderboardData(
   // Connect Top 3: Ensure the 'Top 3 Leaders' card is pulling from this new global array instead of using a hardcoded mock object
   // For birdies, eagles, lowGross, and lowNett metrics, group all rounds by user_id and create leaderboard entries for each user
   if (metric === 'birdies' || metric === 'eagles') {
+    // Locate getLeaderboardData: Find the logic that calculates stats like Birdies, Eagles
+    // Remove the User Filter: Ensure the code iterates through all rounds in the rounds array (the global set) instead of filtering for round.user_id === user.id
+    // Group and Sum: For Birdies/Eagles, ensure it sums them up per user ID, then maps them to the allEntries array so Stuart's name and total appear
+    // Fix Ranking: Make sure the sorting for these tabs is set to Descending (highest birdies first) so the leaders show up at the top
+    
+    console.log('Birdies/Eagles: Processing', filteredRounds.length, 'rounds for all users');
+    console.log('Birdies/Eagles: All user_ids in filteredRounds:', Array.from(new Set(filteredRounds.map((r: any) => r.user_id).filter(Boolean))));
+    
     // Fix Birdie/Eagle Counting: Iterate through all users' rounds to sum up their birdies/eagles, then sort from highest to lowest
     // Group rounds by user_id to calculate totals per user
+    // Remove the User Filter: Process ALL rounds, not just current user's rounds
     const roundsByUser = new Map<string, any[]>();
     filteredRounds.forEach(round => {
+      // Remove the User Filter: Don't filter by user.id - process all rounds
       if (!round.user_id) return; // Skip rounds without user_id
       if (!roundsByUser.has(round.user_id)) {
         roundsByUser.set(round.user_id, []);
@@ -1083,12 +1093,17 @@ function getLeaderboardData(
       roundsByUser.get(round.user_id)!.push(round);
     });
     
-    // Create leaderboard entries for all users
+    console.log('Birdies/Eagles: Grouped into', roundsByUser.size, 'users:', Array.from(roundsByUser.keys()));
+    
+    // Group and Sum: For Birdies/Eagles, ensure it sums them up per user ID, then maps them to the allEntries array so Stuart's name and total appear
     const allEntries: any[] = [];
     roundsByUser.forEach((userRounds, userId) => {
-      // Fix Birdie/Eagle Counting: Sum birdies/eagles for this user across all their rounds
+      // Remove the User Filter: Process all users' rounds, not just current user
+      // Group and Sum: Sum birdies/eagles for this user across all their rounds
       const totalBirdies = userRounds.reduce((sum, round) => sum + (round.birdies || 0), 0);
       const totalEagles = userRounds.reduce((sum, round) => sum + (round.eagles || 0), 0);
+      
+      console.log(`Birdies/Eagles: User ${userId} - ${userRounds.length} rounds, ${totalBirdies} birdies, ${totalEagles} eagles`);
       
       // Create a Name Lookup: Get profile data from userProfiles map
       const profile = userProfiles?.get(userId);
@@ -1107,6 +1122,7 @@ function getLeaderboardData(
       const userIcon = profile?.profile_icon || nameForAvatar;
       const value = metric === 'birdies' ? totalBirdies : totalEagles;
       
+      // Group and Sum: Map to allEntries array so Stuart's name and total appear
       allEntries.push({
         id: userId,
         name: displayName,
@@ -1118,8 +1134,11 @@ function getLeaderboardData(
       });
     });
     
+    // Fix Ranking: Make sure the sorting for these tabs is set to Descending (highest birdies first) so the leaders show up at the top
     // Fix Birdie/Eagle Counting: Sort from highest to lowest
     allEntries.sort((a, b) => b.value - a.value);
+    
+    console.log('Birdies/Eagles: Sorted entries:', allEntries.map(e => ({ name: e.name, value: e.value, id: e.id })));
     
     // If no entries exist, return empty leaderboard
     if (allEntries.length === 0) {
@@ -1157,11 +1176,19 @@ function getLeaderboardData(
     };
     
     console.log('Leaderboard Result (birdies/eagles metric - global):', result);
+    console.log('Birdies/Eagles: Top 3:', result.top3?.map((e: any) => ({ name: e.name, value: e.value, id: e.id })));
+    console.log('Birdies/Eagles: All entries count:', result.all?.length);
     return result;
   }
   
   // Fix 'Low Gross' and 'Low Nett': Find the single lowest score among all users' rounds, not just mine
   if (metric === 'lowGross' || metric === 'lowNett') {
+    // Locate getLeaderboardData: Find the logic that calculates stats like Low Gross
+    // Remove the User Filter: Ensure the code iterates through all rounds in the rounds array (the global set) instead of filtering for round.user_id === user.id
+    
+    console.log('Low Gross/Nett: Processing', eighteenHoleRounds.length, '18-hole rounds for all users');
+    console.log('Low Gross/Nett: All user_ids in eighteenHoleRounds:', Array.from(new Set(eighteenHoleRounds.map((r: any) => r.user_id).filter(Boolean))));
+    
     // For lowGross and lowNett, check if they are null (these should return empty if null)
     if ((metric === 'lowGross' && lowGross === null) || 
         (metric === 'lowNett' && lowNett === null)) {
@@ -1173,9 +1200,11 @@ function getLeaderboardData(
       };
     }
     
+    // Remove the User Filter: Process ALL 18-hole rounds, not just current user's rounds
     // Group 18-hole rounds by user_id to find each user's lowest score
     const roundsByUser = new Map<string, any[]>();
     eighteenHoleRounds.forEach(round => {
+      // Remove the User Filter: Don't filter by user.id - process all rounds
       if (!round.user_id) return; // Skip rounds without user_id
       if (!roundsByUser.has(round.user_id)) {
         roundsByUser.set(round.user_id, []);
@@ -1183,9 +1212,12 @@ function getLeaderboardData(
       roundsByUser.get(round.user_id)!.push(round);
     });
     
-    // Create leaderboard entries for all users
+    console.log('Low Gross/Nett: Grouped into', roundsByUser.size, 'users:', Array.from(roundsByUser.keys()));
+    
+    // Group and Sum: Create leaderboard entries for all users
     const allEntries: any[] = [];
     roundsByUser.forEach((userRounds, userId) => {
+      // Remove the User Filter: Process all users' rounds, not just current user
       // Fix 'Low Gross': Find the single lowest score among all this user's rounds
       const validScores = userRounds
         .map(r => r.score)
@@ -1202,6 +1234,8 @@ function getLeaderboardData(
       );
       const nettScores = validNettRounds.map(round => round.score! - round.handicap!);
       const userLowNett = nettScores.length > 0 ? Math.min(...nettScores) : null;
+      
+      console.log(`Low Gross/Nett: User ${userId} - ${userRounds.length} rounds, lowGross: ${userLowGross}, lowNett: ${userLowNett}`);
       
       // Skip users with no valid scores
       if (metric === 'lowGross' && userLowGross === null) return;
@@ -1235,8 +1269,11 @@ function getLeaderboardData(
       });
     });
     
+    // Fix Ranking: Sort ascending (lower score is better) for Low Gross/Nett
     // Fix 'Low Gross': Sort ascending (lower score is better)
     allEntries.sort((a, b) => a.value - b.value);
+    
+    console.log('Low Gross/Nett: Sorted entries:', allEntries.map(e => ({ name: e.name, value: e.value, id: e.id })));
     
     // If no entries exist, return empty leaderboard
     if (allEntries.length === 0) {
@@ -1274,6 +1311,8 @@ function getLeaderboardData(
     };
     
     console.log('Leaderboard Result (lowGross/lowNett metric - global):', result);
+    console.log('Low Gross/Nett: Top 3:', result.top3?.map((e: any) => ({ name: e.name, value: e.value, id: e.id })));
+    console.log('Low Gross/Nett: All entries count:', result.all?.length);
     return result;
   }
   
