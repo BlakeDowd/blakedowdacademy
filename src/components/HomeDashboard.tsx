@@ -376,40 +376,67 @@ export default function HomeDashboard() {
     fetchProfiles();
   }, [rounds?.length]);
   
-  // Map Real Rounds: Filter to show the most recent 5-10 rounds from all users
+  // Find the Mock List: Locate the component or array that contains 'Alex Chen', 'Maria Rodriguez', and 'James Mitchell'.
+  // Delete Mocks: Completely delete that hardcoded list.
+  // Use Real Rounds: Use the rounds array from StatsContext.
+  // Display Nett Scores: For each round in the 'Community' tab, display:
+  //   - The User Name (lookup from profile or round metadata).
+  //   - The Course Name.
+  //   - The Nett Score (calculated as round.score - round.handicap).
+  // Sort by Date: Ensure the most recent rounds from all users appear at the top.
   const communityRounds = useMemo(() => {
-    if (!rounds || rounds.length === 0) return [];
+    // Use Real Rounds: Use the rounds array from StatsContext
+    if (!rounds || rounds.length === 0) {
+      console.log('HomeDashboard: No rounds available for Community tab');
+      return [];
+    }
     
+    console.log('HomeDashboard: Processing rounds for Community tab:', rounds.length, 'total rounds');
+    
+    // Sort by Date: Ensure the most recent rounds from all users appear at the top
     // Get all rounds (not filtered by user), sort by date descending, take top 10
     const allRounds = rounds
-      .filter((r: any) => r.user_id && (r.score !== null && r.score !== undefined)) // Only rounds with valid scores
+      .filter((r: any) => {
+        // Only include rounds with valid user_id and score
+        const hasUserId = r.user_id && r.user_id.trim() !== '';
+        const hasScore = r.score !== null && r.score !== undefined && r.score > 0;
+        return hasUserId && hasScore;
+      })
       .sort((a: any, b: any) => {
+        // Sort by Date: Most recent first
         const dateA = new Date(a.date || a.created_at || 0);
         const dateB = new Date(b.date || b.created_at || 0);
         return dateB.getTime() - dateA.getTime();
       })
       .slice(0, 10); // Most recent 5-10 rounds
     
+    console.log('HomeDashboard: Filtered to', allRounds.length, 'valid rounds for Community tab');
+    
     // Map to CommunityRound format
     return allRounds.map((round: any) => {
-      // Calculate Nett: If the database has score and handicap, calculate it as {round.score - round.handicap}
-      const nettScore = round.nett !== null && round.nett !== undefined 
-        ? round.nett 
-        : (round.score !== null && round.handicap !== null && round.handicap !== undefined)
-          ? round.score - round.handicap
-          : round.score;
+      // Display Nett Scores: Calculate as round.score - round.handicap
+      let nettScore: number | null = null;
+      if (round.nett !== null && round.nett !== undefined) {
+        nettScore = round.nett;
+      } else if (round.score !== null && round.handicap !== null && round.handicap !== undefined) {
+        nettScore = round.score - round.handicap;
+      } else if (round.score !== null) {
+        nettScore = round.score; // Fallback to gross score if no handicap
+      }
       
-      // Add Labels: Display the user's name (or ID fallback), the course name, and a 'Nett' label next to their score
+      // The User Name (lookup from profile or round metadata)
       const profile = userProfiles.get(round.user_id);
       const displayName = profile?.full_name || round.user_id?.substring(0, 8) || 'Unknown User';
+      
+      // The Course Name
       const courseName = round.course || 'Unknown Course';
       
       return {
         id: round.id || `round-${round.user_id}-${round.date}`,
         name: displayName,
         course: courseName,
-        score: nettScore || round.score || 0, // Use nett score, fallback to gross score
-        badge: undefined, // Remove mock badges
+        score: nettScore || 0,
+        badge: undefined, // Delete Mocks: Remove all mock badges
         timeAgo: formatTimeAgo(round.date || round.created_at || new Date().toISOString())
       };
     });
