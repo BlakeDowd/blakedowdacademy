@@ -707,13 +707,54 @@ function formatMetricValue(value: number, metric: 'library' | 'practice' | 'roun
   }
 }
 
+// Create a Name Lookup: Fetch full_name and profile_icon for each user_id
+// Map IDs to Names: Match user IDs to their full_name from profiles table
+async function fetchUserProfiles(userIds: string[]): Promise<Map<string, { full_name?: string; profile_icon?: string }>> {
+  const profileMap = new Map<string, { full_name?: string; profile_icon?: string }>();
+  
+  if (userIds.length === 0) return profileMap;
+  
+  try {
+    const { createClient } = await import("@/lib/supabase/client");
+    const supabase = createClient();
+    
+    // Fetch profiles for all unique user IDs
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, profile_icon')
+      .in('id', userIds);
+    
+    if (error) {
+      console.error('Error fetching user profiles:', error);
+      return profileMap;
+    }
+    
+    // Map IDs to Names: Create a map of user_id -> { full_name, profile_icon }
+    if (data) {
+      data.forEach((profile: any) => {
+        profileMap.set(profile.id, {
+          full_name: profile.full_name,
+          profile_icon: profile.profile_icon
+        });
+      });
+    }
+    
+    console.log('Fetched profiles for', profileMap.size, 'users:', Array.from(profileMap.entries()).map(([id, data]) => ({ id, name: data.full_name })));
+  } catch (error) {
+    console.error('Error in fetchUserProfiles:', error);
+  }
+  
+  return profileMap;
+}
+
 // Generate mock leaderboard data for a specific metric (four-pillar cards)
 function getMockLeaderboard(
   metric: 'library' | 'practice' | 'rounds' | 'drills',
   timeFilter: 'week' | 'month' | 'year' | 'allTime',
   rounds: any[],
   userName: string,
-  user?: { id?: string; initialHandicap?: number; profileIcon?: string } | null
+  user?: { id?: string; initialHandicap?: number; profileIcon?: string } | null,
+  userProfiles?: Map<string, { full_name?: string; profile_icon?: string }>
 ) {
   let userValue: number;
   
@@ -761,13 +802,30 @@ function getMockLeaderboard(
     });
     
     // Create leaderboard entries for all users
+    // Create a Name Lookup: Use userProfiles map to get full_name for each user_id
+    // Map IDs to Names: Match user IDs to their full_name from profiles table
     const allEntries: any[] = [];
     roundsByUser.forEach((userRounds, userId) => {
       const roundCount = userRounds.length;
-      // Get user name from first round (if available) or use user_id
-      const firstRound = userRounds[0];
-      const displayName = firstRound?.full_name || userId.substring(0, 8) || 'Unknown User';
-      const userIcon = firstRound?.profile_icon || displayName.split(' ').map((n: string) => n[0]).join('') || 'U';
+      
+      // Create a Name Lookup: Get profile data from userProfiles map
+      const profile = userProfiles?.get(userId);
+      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      
+      // Fix Avatars: Update the avatar circles to show the first letter of their names (e.g., 'B') instead of the first letter of the ID
+      let nameForAvatar = 'U';
+      if (profile?.full_name) {
+        // Use first letter of each word in full_name
+        nameForAvatar = profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else if (displayName && displayName.length > 8) {
+        // If displayName is a real name (not an ID), use first letters
+        nameForAvatar = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else {
+        // Fallback: use first letter of displayName
+        nameForAvatar = displayName.substring(0, 1).toUpperCase() || 'U';
+      }
+      
+      const userIcon = profile?.profile_icon || nameForAvatar;
       
       allEntries.push({
         id: userId,
@@ -889,7 +947,8 @@ function getLeaderboardData(
   rounds: any[],
   totalXP: number,
   userName: string,
-  user?: { id?: string; profileIcon?: string } | null
+  user?: { id?: string; profileIcon?: string } | null,
+  userProfiles?: Map<string, { full_name?: string; profile_icon?: string }>
 ) {
   // Debug: Log leaderboard calculation inputs
   // Debug Logs: Keep console.log to see if Stuart's round is in the raw data
@@ -1043,13 +1102,30 @@ function getLeaderboardData(
     });
     
     // Create leaderboard entries for all users
+    // Create a Name Lookup: Use userProfiles map to get full_name for each user_id
+    // Map IDs to Names: Match user IDs to their full_name from profiles table
     const allEntries: any[] = [];
     roundsByUser.forEach((userRounds, userId) => {
       const roundCount = userRounds.length;
-      // Get user name from first round (if available) or use user_id
-      const firstRound = userRounds[0];
-      const displayName = firstRound?.full_name || userId.substring(0, 8) || 'Unknown User';
-      const userIcon = firstRound?.profile_icon || displayName.split(' ').map((n: string) => n[0]).join('') || 'U';
+      
+      // Create a Name Lookup: Get profile data from userProfiles map
+      const profile = userProfiles?.get(userId);
+      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      
+      // Fix Avatars: Update the avatar circles to show the first letter of their names (e.g., 'B') instead of the first letter of the ID
+      let nameForAvatar = 'U';
+      if (profile?.full_name) {
+        // Use first letter of each word in full_name
+        nameForAvatar = profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else if (displayName && displayName.length > 8) {
+        // If displayName is a real name (not an ID), use first letters
+        nameForAvatar = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else {
+        // Fallback: use first letter of displayName
+        nameForAvatar = displayName.substring(0, 1).toUpperCase() || 'U';
+      }
+      
+      const userIcon = profile?.profile_icon || nameForAvatar;
       
       allEntries.push({
         id: userId,
@@ -1242,6 +1318,10 @@ export default function AcademyPage() {
   const { user, refreshUser, isAuthenticated, loading } = useAuth();
   const router = useRouter();
   
+  // Create a Name Lookup: Store profile data for all users in the leaderboard
+  // Map IDs to Names: Match user IDs to their full_name from profiles table
+  const [userProfiles, setUserProfiles] = useState<Map<string, { full_name?: string; profile_icon?: string }>>(new Map());
+  
   // Add Fetch Guard: Create refs to ensure effects run exactly once
   const hasFetchedProgress = useRef(false);
   const hasFetched = useRef(false);
@@ -1422,6 +1502,26 @@ export default function AcademyPage() {
     return () => clearTimeout(timeout);
   }, [loading]);
   
+  // Create a Name Lookup: Fetch profiles for all unique user IDs in rounds
+  // Map IDs to Names: Match user IDs to their full_name from profiles table
+  useEffect(() => {
+    if (!rounds || rounds.length === 0) return;
+    
+    const fetchProfiles = async () => {
+      // Get all unique user IDs from rounds
+      const uniqueUserIds = Array.from(new Set(rounds.map((r: any) => r.user_id).filter(Boolean)));
+      
+      if (uniqueUserIds.length === 0) return;
+      
+      console.log('Academy: Fetching profiles for', uniqueUserIds.length, 'users:', uniqueUserIds);
+      const profiles = await fetchUserProfiles(uniqueUserIds);
+      setUserProfiles(profiles);
+      console.log('Academy: Loaded profiles:', Array.from(profiles.entries()).map(([id, data]) => ({ id, name: data.full_name })));
+    };
+    
+    fetchProfiles();
+  }, [rounds?.length]); // Re-fetch profiles when rounds change
+  
   // Fix the React Error #310 infinite loop on the Academy page
   // Consolidate Calculations: All leaderboard calculations in single useEffect
   // Find the top3 calculation: Ensure it recalculates when rounds change
@@ -1434,6 +1534,7 @@ export default function AcademyPage() {
     console.log('Academy: useEffect - User name:', userName);
     console.log('Academy: useEffect - Leaderboard metric:', leaderboardMetric);
     console.log('Academy: useEffect - Time filter:', timeFilter);
+    console.log('Academy: useEffect - User profiles loaded:', userProfiles.size);
     
     // Add Fetch Guard: Only calculate if we have the necessary data
     // Safe Logic: Do the check inside the useEffect rather than skipping the Hook entirely
@@ -1460,13 +1561,14 @@ export default function AcademyPage() {
         roundsCount: rounds?.length || 0,
         totalXP,
         userName,
-        userId: user?.id
+        userId: user?.id,
+        profilesLoaded: userProfiles.size
       });
-      const newLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user);
-      const libraryLeaderboard = getMockLeaderboard('library', timeFilter, rounds, userName, user);
-      const practiceLeaderboard = getMockLeaderboard('practice', timeFilter, rounds, userName, user);
-      const roundsLeaderboard = getMockLeaderboard('rounds', timeFilter, rounds, userName, user);
-      const drillsLeaderboard = getMockLeaderboard('drills', timeFilter, rounds, userName, user);
+      const newLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user, userProfiles);
+      const libraryLeaderboard = getMockLeaderboard('library', timeFilter, rounds, userName, user, userProfiles);
+      const practiceLeaderboard = getMockLeaderboard('practice', timeFilter, rounds, userName, user, userProfiles);
+      const roundsLeaderboard = getMockLeaderboard('rounds', timeFilter, rounds, userName, user, userProfiles);
+      const drillsLeaderboard = getMockLeaderboard('drills', timeFilter, rounds, userName, user, userProfiles);
       
       console.log('Academy: useEffect - Calculated leaderboards:', {
         main: newLeaderboard,
@@ -1496,7 +1598,7 @@ export default function AcademyPage() {
       // Force Loading Off: Ensure setLoading(false) is called inside a finally block to prevent the page from hanging if a fetch fails
       // Note: loading state is managed by AuthContext, but we ensure any local state is cleared
     }
-  }, [user?.id, rounds?.length, leaderboardMetric, timeFilter, totalXP, userName]); // Sync to Database: Recalculate when rounds, metric, or filter change
+  }, [user?.id, rounds?.length, leaderboardMetric, timeFilter, totalXP, userName, userProfiles]); // Sync to Database: Recalculate when rounds, metric, filter, or profiles change
   
   // Stable Identity: Wrap calculated values in useMemo to prevent recreation
   // Safe Logic: Do the check inside the useMemo rather than skipping the Hook entirely
