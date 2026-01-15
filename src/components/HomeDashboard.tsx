@@ -100,10 +100,20 @@ export default function HomeDashboard() {
   const router = useRouter();
   
   // Re-initialize simply: Define const { user } = useAuth();
+  // Verify User Object: Make sure the user object from useAuth() is correctly identifying me so it can find my rounds in the database
   const { user, refreshUser } = useAuth();
   
   // Re-initialize simply: Define const { rounds = [] } = useStats();
   const { rounds = [] } = useStats();
+  
+  // Verify User Object: Log user object to verify it's correctly identifying the user
+  useEffect(() => {
+    if (user?.id) {
+      console.log('HomeDashboard: User object verified:', { id: user.id, email: user.email, fullName: user.fullName });
+    } else {
+      console.warn('HomeDashboard: No user.id available - cannot filter rounds');
+    }
+  }, [user?.id]);
   
   // Wipe the variable 'ec': Completely remove any mention of ec or ed from this file
   // All variables now use 'item' or 'round' - never 'ec' or 'ed'
@@ -123,10 +133,17 @@ export default function HomeDashboard() {
   // Update HomeDashboard.tsx to use useStats() to get the actual rounds.length so the stats are dynamic instead of zero
   // Make sure these are wrapped in the same useRef guards we used in the Academy to prevent any new loops
   const userRoundsCount = useMemo(() => {
-    if (!rounds || !user?.id) return 0;
-    // Filter Dashboard Rounds: Even though we fetch 'all' rounds in the background, 
-    // filter safeRounds to show only the ones where round.user_id === user.id for personal stats
-    const userRounds = rounds.filter((round: any) => round.user_id === user.id);
+    if (!rounds || !user?.id) {
+      console.log('HomeDashboard: userRoundsCount - no rounds or user.id');
+      return 0;
+    }
+    // Check the Filter: Ensure that when the 'My Rounds' tab is active, the app filters the rounds array to only show rounds where user_id === user.id
+    const userRounds = rounds.filter((round: any) => {
+      // Use strict equality and handle optional chaining
+      const matches = round?.user_id === user.id;
+      return matches;
+    });
+    console.log('HomeDashboard: userRoundsCount calculated:', userRounds.length, 'rounds for user', user.id);
     return userRounds.length;
   }, [rounds, user?.id]);
   
@@ -174,13 +191,33 @@ export default function HomeDashboard() {
   }, [rounds?.length]); // Recalculate when rounds change (practice activities are in localStorage)
   
   // Ensure rounds is always an array, never null or undefined
-  // Filter Dashboard Rounds: Even though we fetch 'all' rounds in the background, 
-  // filter safeRounds to show only the ones where round.user_id === user.id for personal stats
-  // Initialization Guard: Initialize the rounds variable as an empty array [] at the top of the component to ensure it exists before the code tries to access it
+  // Check the Filter: Ensure that when the 'My Rounds' tab is active, the app filters the rounds array to only show rounds where user_id === user.id
+  // Verify User Object: Make sure the user object from useAuth() is correctly identifying me so it can find my rounds in the database
   const allRounds = (rounds || []) as any[];
-  const safeRounds = user?.id 
-    ? allRounds.filter((round: any) => round?.user_id === user.id)
-    : [];
+  
+  // Check the Filter: Filter rounds to only show rounds where user_id === user.id
+  // Verify User Object: Log user.id to verify it's correctly identifying the user
+  const safeRounds = useMemo(() => {
+    if (!user?.id) {
+      console.log('HomeDashboard: No user.id available for filtering rounds');
+      return [];
+    }
+    
+    console.log('HomeDashboard: Filtering rounds for user.id:', user.id);
+    console.log('HomeDashboard: Total rounds available:', allRounds.length);
+    
+    const filtered = allRounds.filter((round: any) => {
+      // Check the Filter: Ensure user_id === user.id (using strict equality)
+      const matches = round?.user_id === user.id;
+      if (matches) {
+        console.log('HomeDashboard: Found matching round:', { round_id: round?.id, user_id: round?.user_id, course: round?.course });
+      }
+      return matches;
+    });
+    
+    console.log('HomeDashboard: Filtered to', filtered.length, 'rounds for user', user.id);
+    return filtered;
+  }, [allRounds, user?.id]);
   
   // Kill the Freeze: Completely removed the useEffect that triggers the 'No rounds found' Toast
   // This useEffect was causing an infinite loop that blocks the navigation bar
@@ -1017,10 +1054,12 @@ export default function HomeDashboard() {
           
           {/* Scores List */}
           {scoreTab === 'myRounds' ? (
-            safeRounds?.length > 0 ? (
+            // Fix the Display: Once filtered, the list should show my specific rounds (like the one at Twin Creeks) instead of the 'No rounds recorded' message
+            // Check the Filter: Ensure that when the 'My Rounds' tab is active, the app filters the rounds array to only show rounds where user_id === user.id
+            safeRounds && safeRounds.length > 0 ? (
               <div className="space-y-3">
                 {safeRounds
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                  .sort((a, b) => new Date(b.date || b.created_at || 0).getTime() - new Date(a.date || a.created_at || 0).getTime())
                   .slice(0, 3)
                   .map((round, index) => {
                     const isPB = isPersonalBest(round);
