@@ -333,32 +333,87 @@ export default function HomeDashboard() {
   const levelProgress = (xpForCurrentLevel / xpNeededForNextLevel) * 100;
   const xpRemaining = xpNeededForNextLevel - xpForCurrentLevel;
   
-  // Mock community data
-  const communityRounds: CommunityRound[] = [
-    {
-      id: '1',
-      name: 'Alex Chen',
-      course: 'Pine Valley Club',
-      score: 72,
-      badge: 'Personal Best',
-      timeAgo: '2h ago'
-    },
-    {
-      id: '2',
-      name: 'Maria Rodriguez',
-      course: 'Ocean Links',
-      score: 78,
-      badge: 'Improved 5 strokes',
-      timeAgo: '5h ago'
-    },
-    {
-      id: '3',
-      name: 'James Mitchell',
-      course: 'Riverside Golf',
-      score: 68,
-      timeAgo: '1d ago'
-    }
-  ];
+  // Replace Mock Data: Use real rounds from useStats() instead of hardcoded users like 'Alex Chen'
+  // Map Real Rounds: Use the rounds array from useStats(). Filter it to show the most recent 5-10 rounds from all users.
+  // Calculate Nett: For each round, display the Nett Score. If the database has score and handicap, calculate it as {round.score - round.handicap}.
+  // Add Labels: Display the user's name (or ID fallback), the course name, and a 'Nett' label next to their score.
+  
+  // Fetch user profiles for name lookup (similar to Academy page)
+  const [userProfiles, setUserProfiles] = useState<Map<string, { full_name?: string; profile_icon?: string }>>(new Map());
+  
+  useEffect(() => {
+    if (!rounds || rounds.length === 0) return;
+    
+    const fetchProfiles = async () => {
+      const uniqueUserIds = Array.from(new Set(rounds.map((r: any) => r.user_id).filter(Boolean)));
+      if (uniqueUserIds.length === 0) return;
+      
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, full_name, profile_icon')
+          .in('id', uniqueUserIds);
+        
+        if (error) {
+          console.error('Error fetching user profiles for Community:', error);
+          return;
+        }
+        
+        const profileMap = new Map<string, { full_name?: string; profile_icon?: string }>();
+        if (data) {
+          data.forEach((profile: any) => {
+            profileMap.set(profile.id, { full_name: profile.full_name, profile_icon: profile.profile_icon });
+          });
+        }
+        setUserProfiles(profileMap);
+      } catch (error) {
+        console.error('Error in fetchProfiles for Community:', error);
+      }
+    };
+    
+    fetchProfiles();
+  }, [rounds?.length]);
+  
+  // Map Real Rounds: Filter to show the most recent 5-10 rounds from all users
+  const communityRounds = useMemo(() => {
+    if (!rounds || rounds.length === 0) return [];
+    
+    // Get all rounds (not filtered by user), sort by date descending, take top 10
+    const allRounds = rounds
+      .filter((r: any) => r.user_id && (r.score !== null && r.score !== undefined)) // Only rounds with valid scores
+      .sort((a: any, b: any) => {
+        const dateA = new Date(a.date || a.created_at || 0);
+        const dateB = new Date(b.date || b.created_at || 0);
+        return dateB.getTime() - dateA.getTime();
+      })
+      .slice(0, 10); // Most recent 5-10 rounds
+    
+    // Map to CommunityRound format
+    return allRounds.map((round: any) => {
+      // Calculate Nett: If the database has score and handicap, calculate it as {round.score - round.handicap}
+      const nettScore = round.nett !== null && round.nett !== undefined 
+        ? round.nett 
+        : (round.score !== null && round.handicap !== null && round.handicap !== undefined)
+          ? round.score - round.handicap
+          : round.score;
+      
+      // Add Labels: Display the user's name (or ID fallback), the course name, and a 'Nett' label next to their score
+      const profile = userProfiles.get(round.user_id);
+      const displayName = profile?.full_name || round.user_id?.substring(0, 8) || 'Unknown User';
+      const courseName = round.course || 'Unknown Course';
+      
+      return {
+        id: round.id || `round-${round.user_id}-${round.date}`,
+        name: displayName,
+        course: courseName,
+        score: nettScore || round.score || 0, // Use nett score, fallback to gross score
+        badge: undefined, // Remove mock badges
+        timeAgo: formatTimeAgo(round.date || round.created_at || new Date().toISOString())
+      };
+    });
+  }, [rounds, userProfiles]);
   
   // Format time ago
   const formatTimeAgo = (dateString: string): string => {
@@ -1026,34 +1081,35 @@ export default function HomeDashboard() {
               </div>
             )
           ) : (
-            <div className="space-y-3">
-              {communityRounds.map((round) => (
-                <div key={round.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
-                  <div className="flex items-center gap-3 flex-1">
-                    {round.badge === 'Personal Best' ? (
-                      <Trophy className="w-5 h-5" style={{ color: '#FFA500' }} />
-                    ) : round.badge?.includes('Improved') ? (
-                      <TrendingUp className="w-5 h-5" style={{ color: '#014421' }} />
-                    ) : (
+            communityRounds.length > 0 ? (
+              <div className="space-y-3">
+                {communityRounds.map((round) => (
+                  <div key={round.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
+                    <div className="flex items-center gap-3 flex-1">
                       <Star className="w-5 h-5" style={{ color: '#014421' }} />
-                    )}
-                    <div className="flex-1">
-                      <p className="text-gray-800 font-medium">{round.name}</p>
-                      <p className="text-gray-400 text-sm">{round.course}</p>
-                      {round.badge && (
+                      <div className="flex-1">
+                        <p className="text-gray-800 font-medium">{round.name}</p>
+                        <p className="text-gray-400 text-sm">{round.course}</p>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs px-2 py-0.5 rounded text-white font-medium" style={{ backgroundColor: '#FFA500' }}>
-                            {round.badge}
-                          </span>
                           <span className="text-gray-400 text-xs">• {round.timeAgo}</span>
                         </div>
-                      )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{round.score?.toFixed(0) || 'N/A'}</p>
+                      {/* Add Labels: Display 'Nett' label next to their score */}
+                      <p className="text-xs text-gray-400">Nett</p>
                     </div>
                   </div>
-                  <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{round.score}</p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
+                <Users className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p className="text-gray-600 text-sm mb-2">No community rounds yet</p>
+                <p className="text-gray-400 text-xs">Be the first to log a round!</p>
+              </div>
+            )
           )}
         </div>
 
