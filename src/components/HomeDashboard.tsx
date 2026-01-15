@@ -108,14 +108,18 @@ export default function HomeDashboard() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
   
   // Use useMemo to safely calculate user display name from useAuth()
+  // Update HomeDashboard.tsx to use useAuth() to get the user's real full_name
   // Make sure these are wrapped in the same useRef guards we used in the Academy to prevent any new loops
   const displayName = useMemo(() => {
     if (!user) return 'Member';
     // Use Profile Data: Use user.fullName from useAuth(), with fallback to email username
-    return user.fullName || (user.email ? user.email.split('@')[0] : 'Member');
-  }, [user?.fullName, user?.email]);
+    const name = user.fullName || (user.email ? user.email.split('@')[0] : 'Member');
+    console.log('HomeDashboard: displayName calculated:', { fullName: user.fullName, email: user.email, result: name });
+    return name;
+  }, [user?.fullName, user?.email, user]);
   
   // Use useMemo to safely calculate rounds count from useStats()
+  // Update HomeDashboard.tsx to use useStats() to get the actual rounds.length so the stats are dynamic instead of zero
   // Make sure these are wrapped in the same useRef guards we used in the Academy to prevent any new loops
   const userRoundsCount = useMemo(() => {
     if (!rounds || !user?.id) return 0;
@@ -124,6 +128,49 @@ export default function HomeDashboard() {
     const userRounds = rounds.filter((round: any) => round.user_id === user.id);
     return userRounds.length;
   }, [rounds, user?.id]);
+  
+  // Calculate streak days from practice activity history
+  // Update HomeDashboard.tsx to use useStats() to get the actual rounds.length so the stats are dynamic instead of zero
+  const streakDays = useMemo(() => {
+    if (typeof window === 'undefined') return 0;
+    try {
+      const practiceHistory = JSON.parse(localStorage.getItem('practiceActivityHistory') || '[]');
+      if (!practiceHistory || practiceHistory.length === 0) return 0;
+      
+      // Sort by date descending
+      const sortedHistory = practiceHistory
+        .map((entry: any) => ({
+          date: new Date(entry.timestamp || entry.date),
+          entry
+        }))
+        .sort((a: any, b: any) => b.date.getTime() - a.date.getTime());
+      
+      if (sortedHistory.length === 0) return 0;
+      
+      // Calculate consecutive days from today backwards
+      let streak = 0;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      for (let i = 0; i < sortedHistory.length; i++) {
+        const entryDate = new Date(sortedHistory[i].date);
+        entryDate.setHours(0, 0, 0, 0);
+        
+        const daysDiff = Math.floor((today.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (daysDiff === streak) {
+          streak++;
+        } else if (daysDiff > streak) {
+          break; // Gap in streak
+        }
+      }
+      
+      return streak;
+    } catch (error) {
+      console.error('Error calculating streak:', error);
+      return 0;
+    }
+  }, [rounds?.length]); // Recalculate when rounds change (practice activities are in localStorage)
   
   // Ensure rounds is always an array, never null or undefined
   // Filter Dashboard Rounds: Even though we fetch 'all' rounds in the background, 
@@ -466,7 +513,8 @@ export default function HomeDashboard() {
       window.removeEventListener('practiceActivityUpdated', handlePracticeUpdate);
       window.removeEventListener('roundsUpdated', handleRoundsUpdate);
     };
-  }, [user?.id]); // Cleanup Dependencies: Ensure the useEffect dependency array only contains stable values like [user?.id] and not the recentActivities state itself
+  }, [user?.id, rounds?.length]); // Cleanup Dependencies: Ensure the useEffect dependency array only contains stable values like [user?.id] and not the recentActivities state itself
+  // Update HomeDashboard.tsx: Add rounds?.length to dependencies so streak recalculates when rounds change
 
   // Wrap return in try-catch to prevent crashes
   try {
@@ -577,7 +625,8 @@ export default function HomeDashboard() {
             <Flame className="w-4 h-4 text-white" />
             <div className="flex flex-col">
               <span className="text-xs font-medium text-white">Streak</span>
-              <span className="text-white text-sm font-bold">0 days</span>
+              {/* Update HomeDashboard.tsx to use useStats() to get the actual rounds.length so the stats are dynamic instead of zero */}
+              <span className="text-white text-sm font-bold">{streakDays} day{streakDays !== 1 ? 's' : ''}</span>
             </div>
           </div>
         </div>
@@ -693,7 +742,8 @@ export default function HomeDashboard() {
               className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97]"
             >
               <Flame className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
-              <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>0</p>
+              {/* Update HomeDashboard.tsx to use useStats() to get the actual rounds.length so the stats are dynamic instead of zero */}
+              <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{streakDays}</p>
               <p className="text-gray-400 text-xs mt-1">days streak</p>
             </Link>
             
