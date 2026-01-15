@@ -245,6 +245,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
 
   // Check Fetch Logic: Ensure the loadStats function is fetching data from the drills and practice_sessions tables as well as rounds
   // Remove User Filters: Just like we did for Rounds, remove any .eq('user_id', user.id) from the Drills and Practice fetch calls so the leaderboard can see everyone's progress
+  // Verify Row-Level Security: If Drills aren't saving, I may need to run the SQL 'Enable RLS' command for the drills table specifically
   const loadDrills = async () => {
     if (drillsFetched.current) return;
     
@@ -255,19 +256,29 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       console.log('StatsContext: Fetching ALL drills for leaderboard (not filtering by user_id)');
       
       // Remove User Filters: Remove any .eq('user_id', user.id) from the Drills fetch calls
+      // Verify Row-Level Security: Check if RLS is blocking access - error will indicate this
       const { data, error } = await supabase
         .from('drills')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('StatsContext: Error loading drills from database:', error);
+        // Verify Row-Level Security: Log RLS errors specifically
+        if (error.code === 'PGRST116' || error.message?.includes('permission denied') || error.message?.includes('RLS')) {
+          console.warn('StatsContext: RLS may be blocking drills access. You may need to run SQL to enable RLS for the drills table.');
+          console.warn('StatsContext: Error details:', { code: error.code, message: error.message });
+        } else {
+          console.error('StatsContext: Error loading drills from database:', error);
+        }
         setDrills([]);
         drillsFetched.current = true;
         return;
       }
 
       console.log('StatsContext: Loaded drills from database:', data?.length || 0);
+      if (data && data.length > 0) {
+        console.log('StatsContext: Sample drills:', data.slice(0, 3).map((d: any) => ({ id: d.id, user_id: d.user_id, drill_title: d.drill_title })));
+      }
       setDrills((data || []) as DrillData[]);
       drillsFetched.current = true;
     } catch (error) {
@@ -287,19 +298,29 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       console.log('StatsContext: Fetching ALL practice_sessions for leaderboard (not filtering by user_id)');
       
       // Remove User Filters: Remove any .eq('user_id', user.id) from the Practice fetch calls
+      // Verify Row-Level Security: Check if RLS is blocking access - error will indicate this
       const { data, error } = await supabase
         .from('practice_sessions')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('StatsContext: Error loading practice_sessions from database:', error);
+        // Verify Row-Level Security: Log RLS errors specifically
+        if (error.code === 'PGRST116' || error.message?.includes('permission denied') || error.message?.includes('RLS')) {
+          console.warn('StatsContext: RLS may be blocking practice_sessions access. You may need to run SQL to enable RLS for the practice_sessions table.');
+          console.warn('StatsContext: Error details:', { code: error.code, message: error.message });
+        } else {
+          console.error('StatsContext: Error loading practice_sessions from database:', error);
+        }
         setPracticeSessions([]);
         practiceSessionsFetched.current = true;
         return;
       }
 
       console.log('StatsContext: Loaded practice_sessions from database:', data?.length || 0);
+      if (data && data.length > 0) {
+        console.log('StatsContext: Sample practice_sessions:', data.slice(0, 3).map((p: any) => ({ id: p.id, user_id: p.user_id, duration_minutes: p.duration_minutes })));
+      }
       setPracticeSessions((data || []) as PracticeSessionData[]);
       practiceSessionsFetched.current = true;
     } catch (error) {
