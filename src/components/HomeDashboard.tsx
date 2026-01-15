@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
@@ -101,8 +101,29 @@ export default function HomeDashboard() {
   const { rounds } = useStats();
   const { user, refreshUser } = useAuth();
   
+  // Add Fetch Guard: Use useRef guards similar to Academy page to prevent loops
+  const dataFetched = useRef(false);
+  
   // Toast state for non-blocking notifications
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
+  
+  // Use useMemo to safely calculate user display name from useAuth()
+  // Make sure these are wrapped in the same useRef guards we used in the Academy to prevent any new loops
+  const displayName = useMemo(() => {
+    if (!user) return 'Member';
+    // Use Profile Data: Use user.fullName from useAuth(), with fallback to email username
+    return user.fullName || (user.email ? user.email.split('@')[0] : 'Member');
+  }, [user?.fullName, user?.email]);
+  
+  // Use useMemo to safely calculate rounds count from useStats()
+  // Make sure these are wrapped in the same useRef guards we used in the Academy to prevent any new loops
+  const userRoundsCount = useMemo(() => {
+    if (!rounds || !user?.id) return 0;
+    // Filter Dashboard Rounds: Even though we fetch 'all' rounds in the background, 
+    // filter safeRounds to show only the ones where round.user_id === user.id for personal stats
+    const userRounds = rounds.filter((round: any) => round.user_id === user.id);
+    return userRounds.length;
+  }, [rounds, user?.id]);
   
   // Ensure rounds is always an array, never null or undefined
   // Filter Dashboard Rounds: Even though we fetch 'all' rounds in the background, 
@@ -536,10 +557,9 @@ export default function HomeDashboard() {
             <div className="flex-1">
               <p className="text-gray-400 text-xs">Welcome back,</p>
               <p className="text-gray-900 font-bold text-xl mt-1">
-                {/* Use Profile Data: Change it to use user.full_name or profile.full_name. If the name is missing, use a fallback like user.email.split('@')[0] so it is at least personalized */}
-                <span>
-                  {user?.fullName || (user?.email ? user.email.split('@')[0] : 'Member')}
-                </span>
+                {/* Use useAuth() to get the user.full_name and replace the 'Member' text */}
+                {/* Use useMemo to safely calculate display name with useRef guards to prevent loops */}
+                <span>{displayName}</span>
               </p>
             </div>
           </div>
@@ -937,7 +957,10 @@ export default function HomeDashboard() {
             ) : (
               <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
                 <Trophy className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <p className="text-gray-600 text-sm mb-2">No rounds recorded</p>
+                {/* Use useStats() to get the rounds.length and replace the '0 Rounds' text */}
+                <p className="text-gray-600 text-sm mb-2">
+                  {userRoundsCount === 0 ? 'No rounds recorded' : `${userRoundsCount} Round${userRoundsCount !== 1 ? 's' : ''} recorded`}
+                </p>
                 <p className="text-gray-400 text-xs mb-4">Log your first round to see your stats</p>
                 <button
                   onClick={() => router.push('/log-round')}
