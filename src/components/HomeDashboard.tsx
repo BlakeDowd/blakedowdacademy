@@ -114,8 +114,9 @@ export default function HomeDashboard() {
   // Toast state for non-blocking notifications
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
   
-  // Greeting: Change 'Member' to {user?.full_name || 'Golfer'}
+  // Sync My Name: Ensure the main greeting at the top also uses {user?.full_name} instead of 'Member'
   // Note: AuthContext maps full_name from database to fullName property
+  // Add a Fallback: If a name is missing, show 'Golfer' instead of the code
   const displayName = user?.fullName || 'Golfer';
   
   // Use useMemo to safely calculate rounds count from useStats()
@@ -1068,7 +1069,14 @@ export default function HomeDashboard() {
                 {recentRounds.slice(0, 5).map((round: any) => {
                   // Fix the 'ec' Crash: Use rounds.map((round) => { ... }) and use (round?.score || 0) - (round?.handicap || 0) for the Nett calculation
                   const nett = (round?.score || 0) - (round?.handicap || 0);
-                  const displayName = round?.full_name || (round?.user_id ? String(round.user_id).substring(0, 8) : 'Anonymous');
+                  
+                  // Map Names to IDs: Create a function to look up the full_name from the profiles table for each user_id in the rounds array
+                  // Update the Display: Replace the text currently showing the ID with the user's full_name
+                  // Add a Fallback: If a name is missing, show 'Golfer' instead of the code
+                  const userId = round?.user_id;
+                  const profile = userId ? userProfiles.get(userId) : null;
+                  const displayName = profile?.full_name || 'Golfer'; // Add a Fallback: If a name is missing, show 'Golfer' instead of the code
+                  
                   const courseName = round?.course || 'Unknown Course';
                   const roundDate = round?.date || round?.created_at || new Date().toISOString();
                   const timeAgo = formatTimeAgo(roundDate);
