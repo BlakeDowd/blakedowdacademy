@@ -799,15 +799,31 @@ function getMockLeaderboard(
     const userEntryInSorted = allEntries.find(entry => entry.isCurrentUser);
     const finalUserValue = userEntryInSorted?.value || userValue;
     
+    // Find the top3 calculation: Locate where the leaderboard data is sliced to get the top 3 users
+    // Remove Mock Fallbacks: Search for any code that manually creates a user object with '4000' as the value and delete it
+    // Sync to Database: Ensure the Top3Leaders component is strictly using the values from the allEntries array we just built, which uses roundsByUser.get(userId).length
+    // Update Sub-label: Ensure the text below the name says {entry.value} Rounds instead of a static number
     console.log('getMockLeaderboard - rounds metric (global):', {
       totalRoundsInDatabase: rounds?.length || 0, // Verify Count: Change display variable from hardcoded 4000 to rounds.length
       totalUsers: allEntries.length,
-      top3Values: allEntries.slice(0, 3).map(e => ({ name: e.name, value: e.value })),
-      currentUserValue: finalUserValue
+      top3Values: allEntries.slice(0, 3).map(e => ({ name: e.name, value: e.value, id: e.id })),
+      currentUserValue: finalUserValue,
+      allEntriesValues: allEntries.map(e => ({ name: e.name, value: e.value, id: e.id }))
     });
     
+    // Remove Mock Fallbacks: Verify no entry has value 4000
+    const has4000 = allEntries.some(e => e.value === 4000);
+    if (has4000) {
+      console.error('⚠️ Found entry with value 4000 in getMockLeaderboard! This should be replaced with actual roundCount from roundsByUser.get(userId).length');
+    }
+    
+    // Find the top3 calculation: Slice allEntries to get top 3 users
+    // Sync to Database: Ensure Top3Leaders uses values from allEntries array (which uses roundsByUser.get(userId).length)
+    const top3FromAllEntries = allEntries.slice(0, 3);
+    console.log('getMockLeaderboard - top3 from allEntries:', top3FromAllEntries.map(e => ({ name: e.name, value: e.value })));
+    
     return {
-      top3: allEntries.slice(0, 3),
+      top3: top3FromAllEntries, // Find the top3 calculation: Use allEntries.slice(0, 3) - strictly from database
       all: allEntries,
       userRank: userEntryInSorted ? allEntries.findIndex(entry => entry.isCurrentUser) + 1 : 0,
       userValue: finalUserValue
@@ -1088,10 +1104,21 @@ function getLeaderboardData(
       userValue: finalUserValue
     };
     
+    // Find the top3 calculation: Locate where the leaderboard data is sliced to get the top 3 users
+    // Remove Mock Fallbacks: Search for any code that manually creates a user object with '4000' as the value and delete it
+    // Sync to Database: Ensure the Top3Leaders component is strictly using the values from the allEntries array we just built, which uses roundsByUser.get(userId).length
+    // Update Sub-label: Ensure the text below the name says {entry.value} Rounds instead of a static number
     console.log('Leaderboard Result (rounds metric - global):', result);
     console.log('Leaderboard Result - top3 count:', result.top3?.length || 0);
     console.log('Leaderboard Result - all count:', result.all?.length || 0);
     console.log('Leaderboard Result - total rounds in database:', rounds?.length || 0); // Verify Count: Change display variable from hardcoded 4000 to rounds.length
+    console.log('Leaderboard Result - top3 values:', result.top3?.map((e: any) => ({ name: e.name, value: e.value, id: e.id })));
+    
+    // Remove Mock Fallbacks: Verify no entry has value 4000
+    const has4000 = result.top3?.some((e: any) => e.value === 4000) || result.all?.some((e: any) => e.value === 4000);
+    if (has4000) {
+      console.error('⚠️ Found entry with value 4000! This should be replaced with actual roundCount from roundsByUser.get(userId).length');
+    }
     
     return result;
   }
@@ -1397,17 +1424,16 @@ export default function AcademyPage() {
   
   // Fix the React Error #310 infinite loop on the Academy page
   // Consolidate Calculations: All leaderboard calculations in single useEffect
-  // Add Fetch Guard: Use a useRef called hasFetched. Wrap the data fetching logic in if (hasFetched.current) return; and set hasFetched.current = true; inside the useEffect
-  // Stable Dependencies: Ensure the useEffect dependency array is either empty [] or only contains [user?.id]
+  // Find the top3 calculation: Ensure it recalculates when rounds change
+  // Sync to Database: Recalculate leaderboard when rounds or leaderboardMetric or timeFilter change
   useEffect(() => {
-    // Add Fetch Guard: Wrap the fetch logic in if (hasFetched.current) return;
-    if (hasFetched.current) return;
-    
     // Debug Logging: Add console.log('Academy: Current rounds count:', rounds.length) right before the leaderboard render to see if the data is actually reaching the page
     console.log('Academy: useEffect - Current rounds count:', rounds?.length || 0);
     console.log('Academy: useEffect - Rounds from StatsContext:', rounds);
     console.log('Academy: useEffect - User ID:', user?.id);
     console.log('Academy: useEffect - User name:', userName);
+    console.log('Academy: useEffect - Leaderboard metric:', leaderboardMetric);
+    console.log('Academy: useEffect - Time filter:', timeFilter);
     
     // Add Fetch Guard: Only calculate if we have the necessary data
     // Safe Logic: Do the check inside the useEffect rather than skipping the Hook entirely
@@ -1426,6 +1452,8 @@ export default function AcademyPage() {
     
     try {
       // Consolidate Calculations: Calculate all leaderboards in one place
+      // Find the top3 calculation: Locate where the leaderboard data is sliced to get the top 3 users
+      // Sync to Database: Ensure the Top3Leaders component is strictly using the values from the allEntries array we just built
       console.log('Academy: useEffect - Calculating leaderboards with:', {
         leaderboardMetric,
         timeFilter,
@@ -1448,6 +1476,12 @@ export default function AcademyPage() {
         drills: drillsLeaderboard
       });
       
+      // Remove Mock Fallbacks: Verify no entry has value 4000
+      const mainHas4000 = newLeaderboard.top3?.some((e: any) => e.value === 4000) || newLeaderboard.all?.some((e: any) => e.value === 4000);
+      if (mainHas4000) {
+        console.error('⚠️ Main leaderboard has entry with value 4000!');
+      }
+      
       // Only update if the data actually changed (prevent infinite loop)
       setCachedLeaderboard(newLeaderboard);
       setCachedFourPillar({
@@ -1456,16 +1490,13 @@ export default function AcademyPage() {
         rounds: roundsLeaderboard,
         drills: drillsLeaderboard
       });
-      
-      // Add Fetch Guard: Set hasFetched.current = true; inside the useEffect
-      hasFetched.current = true;
     } catch (error) {
       console.error('Academy: Error calculating leaderboard:', error);
     } finally {
       // Force Loading Off: Ensure setLoading(false) is called inside a finally block to prevent the page from hanging if a fetch fails
       // Note: loading state is managed by AuthContext, but we ensure any local state is cleared
     }
-  }, [user?.id]); // Stable Dependencies: Only contains [user?.id]
+  }, [user?.id, rounds?.length, leaderboardMetric, timeFilter, totalXP, userName]); // Sync to Database: Recalculate when rounds, metric, or filter change
   
   // Stable Identity: Wrap calculated values in useMemo to prevent recreation
   // Safe Logic: Do the check inside the useMemo rather than skipping the Hook entirely
@@ -2279,12 +2310,26 @@ export default function AcademyPage() {
             <h2 className="text-lg font-semibold text-gray-900 mb-4 text-center">Top 3 Leaders</h2>
             {(() => {
               // Debug Logging: Add console.log('Academy: Current rounds count:', rounds.length) right before the leaderboard render to see if the data is actually reaching the page
+              // Find the top3 calculation: Locate where the leaderboard data is sliced to get the top 3 users
+              // Remove Mock Fallbacks: Search for any code that manually creates a user object with '4000' as the value and delete it
+              // Sync to Database: Ensure the Top3Leaders component is strictly using the values from the allEntries array we just built, which uses roundsByUser.get(userId).length
+              // Update Sub-label: Ensure the text below the name says {entry.value} Rounds instead of a static number
               console.log('Academy: Current rounds count:', rounds?.length || 0);
               console.log('Academy: Leaderboard data exists:', !!currentLeaderboard);
               console.log('Academy: Top3 data:', top3);
+              console.log('Academy: Top3 values:', top3?.map((e: any) => ({ name: e.name, value: e.value, id: e.id })));
               console.log('Academy: Sorted leaderboard length:', sortedLeaderboard?.length || 0);
               console.log('Academy: User ID:', user?.id);
               console.log('Academy: Rounds from StatsContext:', rounds);
+              
+              // Remove Mock Fallbacks: Check if any top3 entry has value 4000
+              if (top3 && top3.length > 0) {
+                const has4000 = top3.some((e: any) => e.value === 4000);
+                if (has4000) {
+                  console.error('⚠️ Top3 has entry with value 4000! This should be replaced with actual roundCount from roundsByUser.get(userId).length');
+                  console.error('⚠️ Top3 entries:', top3.map((e: any) => ({ name: e.name, value: e.value, id: e.id })));
+                }
+              }
               
               // Add Null Check: Ensure the leaderboard component only renders if leaderboardData exists, but provide a 'No Data' state instead of a white screen
               // Verify the Variable: Make sure leaderboardData is being calculated using the rounds from StatsContext and that it isn't being filtered out by a mismatching user_id
@@ -2356,9 +2401,18 @@ export default function AcademyPage() {
                     <div className="text-center mt-2">
                       <div className="text-base font-bold text-gray-900">#{1}</div>
                       <div className="text-base font-semibold text-gray-900">{top3[0].name}</div>
-                      {/* Connect to Real Data: Replace any hardcoded values with the score property from the actual leaderboardData array */}
-                      {/* Unify Labels: Ensure the top card says the same value as the Rank section */}
+                      {/* Find the top3 calculation: Ensure Top3Leaders uses values from allEntries array (which uses roundsByUser.get(userId).length) */}
+                      {/* Update Sub-label: Ensure the text below the name says {entry.value} Rounds instead of a static number */}
+                      {/* Remove Mock Fallbacks: Verify this is using entry.value from allEntries, not hardcoded 4000 */}
                       <div className="text-xs text-gray-600">{formatLeaderboardValue(top3[0].value, leaderboardMetric)}</div>
+                      {/* Debug: Log the actual value being displayed */}
+                      {(() => {
+                        console.log('Top3[0] value being displayed:', top3[0].value, 'for', top3[0].name);
+                        if (top3[0].value === 4000) {
+                          console.error('⚠️ Top3[0] has hardcoded value 4000! This should be replaced with actual roundCount');
+                        }
+                        return null;
+                      })()}
                     </div>
                   </div>
                 )}
