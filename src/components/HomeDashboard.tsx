@@ -107,13 +107,13 @@ export default function HomeDashboard() {
   // Toast state for non-blocking notifications
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
   
-  // Use useMemo to safely calculate user display name from useAuth()
-  // Update HomeDashboard.tsx to use useAuth() to get the user's real full_name
-  // Make sure these are wrapped in the same useRef guards we used in the Academy to prevent any new loops
+  // Connect Auth: Import useAuth and extract the user object
+  // Personalize Greeting: Replace the hardcoded 'Member' text with {user?.fullName || 'Golfer'}
+  // Safety: Keep the existing useRef guards to ensure this doesn't trigger a re-fetch loop
   const displayName = useMemo(() => {
-    if (!user) return 'Member';
-    // Use Profile Data: Use user.fullName from useAuth(), with fallback to email username
-    const name = user.fullName || (user.email ? user.email.split('@')[0] : 'Member');
+    if (!user) return 'Golfer';
+    // Personalize Greeting: Use user.fullName from useAuth(), with fallback to 'Golfer' instead of 'Member'
+    const name = user.fullName || (user.email ? user.email.split('@')[0] : 'Golfer');
     console.log('HomeDashboard: displayName calculated:', { fullName: user.fullName, email: user.email, result: name });
     return name;
   }, [user?.fullName, user?.email, user]);
@@ -605,8 +605,9 @@ export default function HomeDashboard() {
             <div className="flex-1">
               <p className="text-gray-400 text-xs">Welcome back,</p>
               <p className="text-gray-900 font-bold text-xl mt-1">
-                {/* Use useAuth() to get the user.full_name and replace the 'Member' text */}
-                {/* Use useMemo to safely calculate display name with useRef guards to prevent loops */}
+                {/* Connect Auth: Import useAuth and extract the user object */}
+                {/* Personalize Greeting: Replace the hardcoded 'Member' text with {user?.fullName || 'Golfer'} */}
+                {/* Safety: Keep the existing useRef guards to ensure this doesn't trigger a re-fetch loop */}
                 <span>{displayName}</span>
               </p>
             </div>
