@@ -403,7 +403,10 @@ export default function HomeDashboard() {
   // Fix Mapping: Ensure the map looks like rounds.map((round) => ...) and that all variables inside use round.score, round.handicap, etc.
   // Initialization Guard: Initialize the rounds variable as an empty array [] at the top of the component to ensure it exists before the code tries to access it.
   // Safety: Add optional chaining to the name lookup: round?.full_name || 'Golfer'.
+  // Fix the Map: Look for Array.map functions using ec. Rename ec to round and ensure no calculations happen before the variable is defined.
+  // Add Safety Guards: Wrap the community rounds logic in a check: if (!rounds || rounds.length === 0) return null;
   const communityRounds = useMemo(() => {
+    // Add Safety Guards: Wrap the community rounds logic in a check: if (!rounds || rounds.length === 0) return [];
     // Initialization Guard: Initialize the rounds variable as an empty array [] at the top of the component to ensure it exists before the code tries to access it
     // Use safeRoundsArray instead of rounds directly
     if (!safeRoundsArray || !Array.isArray(safeRoundsArray) || safeRoundsArray.length === 0) {
@@ -451,6 +454,7 @@ export default function HomeDashboard() {
     return allRounds
       .filter((round: any) => round && typeof round === 'object') // Filter out null/undefined rounds first
       .map((round: any) => {
+        // Fix the Map: Look for Array.map functions using ec. Rename ec to round and ensure no calculations happen before the variable is defined.
         // Hunt for 'ec': Ensure we use 'round' not 'ec' in map functions
         // Fix the Scope: Ensure the variable is fully initialized before it's used to calculate score - handicap
         // Use Robust Names: Use 'round' to make the code clearer and prevent these scoping errors
@@ -461,19 +465,23 @@ export default function HomeDashboard() {
         // Display Nett Scores: Calculate as round.score - round.handicap
         // Add Optional Chaining: Ensure all round properties use the ?. operator
         // Fix Mapping: Use round.score, round.handicap (not ed or ec)
-        // Fix the Nett Calculation: Ensure the calculation looks like const nett = (round.score || 0) - (round.handicap || 0)
+        // Calculate Nett: Ensure the nett score calculation uses (round.score || 0) - (round.handicap || 0) to avoid crashing on empty data
         let nettScore: number = 0;
         if (round?.nett !== null && round?.nett !== undefined) {
           nettScore = round.nett;
-        } else if (round?.score !== null && round?.score !== undefined && round?.handicap !== null && round?.handicap !== undefined) {
+        } else {
+          // Calculate Nett: Ensure the nett score calculation uses (round.score || 0) - (round.handicap || 0) to avoid crashing on empty data
           // Fix the Scope: Ensure the variable is fully initialized before it's used to calculate score - handicap
           // Use Robust Names: Use round.score and round.handicap (not ec)
-          // Fix the Nett Calculation: const nett = (round.score || 0) - (round.handicap || 0)
-          const roundScore = round.score || 0;
-          const roundHandicap = round.handicap || 0;
+          // Initialize variables before calculation to prevent ReferenceError
+          const roundScore = round?.score || 0;
+          const roundHandicap = round?.handicap || 0;
+          // Calculate Nett: Ensure the nett score calculation uses (round.score || 0) - (round.handicap || 0) to avoid crashing on empty data
           nettScore = roundScore - roundHandicap;
-        } else if (round?.score !== null && round?.score !== undefined) {
-          nettScore = round.score; // Fallback to gross score if no handicap
+          // If calculation results in invalid score, fallback to gross score
+          if (nettScore < 0 || !isFinite(nettScore)) {
+            nettScore = roundScore;
+          }
         }
         
         // The User Name (lookup from profile or round metadata)
