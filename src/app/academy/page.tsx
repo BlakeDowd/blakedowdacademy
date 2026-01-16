@@ -1135,7 +1135,8 @@ function getLeaderboardData(
   totalXP: number,
   userName: string,
   user?: { id?: string; profileIcon?: string } | null,
-  userProfiles?: Map<string, { full_name?: string; profile_icon?: string }>
+  userProfiles?: Map<string, { full_name?: string; profile_icon?: string }>,
+  practiceSessions?: any[]
 ) {
   // Debug: Log leaderboard calculation inputs
   // Debug Logs: Keep console.log to see if Stuart's round is in the raw data
@@ -1226,7 +1227,8 @@ function getLeaderboardData(
       userValue = calculateUserLibraryLessons(timeFilter);
       break;
     case 'practice':
-      userValue = calculateUserPracticeTime(timeFilter);
+      // For practice metric, we'll calculate from all practice sessions below in the special case
+      userValue = 0; // Will be calculated from practice sessions
       break;
     case 'rounds':
       // Find the Top 3 Render: Replace placeholder with actual count of rounds for that user (e.g., userRounds.length)
@@ -1621,7 +1623,121 @@ function getLeaderboardData(
     return result;
   }
   
-  // For other metrics (xp, library, practice, drills), keep existing logic but remove user filter
+  // For practice metric, group all practice sessions by user_id and create leaderboard entries for each user
+  if (metric === 'practice') {
+    // Remove Filter: Process ALL practice sessions from all users, not just current user
+    // Verify Practice Table: Ensure it is pointing to the new practice table name we just created
+    // Check Names: Ensure the Practice leaderboard uses the same profile name-mapping logic we used for the Rounds
+    const allPracticeSessions = practiceSessions || [];
+    
+    console.log('Practice: Processing', allPracticeSessions.length, 'practice sessions for all users');
+    console.log('Practice: All user_ids in practice sessions:', Array.from(new Set(allPracticeSessions.map((s: any) => s.user_id).filter(Boolean))));
+    
+    // Filter by timeframe if needed
+    const { startDate } = getTimeframeDates(timeFilter);
+    const filteredSessions = allPracticeSessions.filter((session: any) => {
+      if (timeFilter === 'allTime') return true;
+      const sessionDate = new Date(session.practice_date || session.created_at || Date.now());
+      return sessionDate >= startDate;
+    });
+    
+    // Group practice sessions by user_id to sum hours per user
+    const sessionsByUser = new Map<string, any[]>();
+    filteredSessions.forEach((session: any) => {
+      if (!session.user_id) return; // Skip sessions without user_id
+      if (!sessionsByUser.has(session.user_id)) {
+        sessionsByUser.set(session.user_id, []);
+      }
+      sessionsByUser.get(session.user_id)!.push(session);
+    });
+    
+    console.log('Practice: Grouped into', sessionsByUser.size, 'users:', Array.from(sessionsByUser.keys()));
+    
+    // Create leaderboard entries for all users
+    const allEntries: any[] = [];
+    sessionsByUser.forEach((userSessions, userId) => {
+      // Sum total practice hours for this user
+      const totalMinutes = userSessions.reduce((sum, session) => {
+        return sum + (session.duration_minutes || 0);
+      }, 0);
+      const totalHours = totalMinutes / 60;
+      
+      // Check Names: Ensure the Practice leaderboard uses the same profile name-mapping logic we used for the Rounds
+      const profile = userProfiles?.get(userId);
+      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      
+      // Fix Avatars: Update the avatar circles to show the first letter of their names
+      let nameForAvatar = 'U';
+      if (profile?.full_name) {
+        nameForAvatar = profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else if (displayName && displayName.length > 8) {
+        nameForAvatar = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+      } else {
+        nameForAvatar = displayName.substring(0, 1).toUpperCase() || 'U';
+      }
+      
+      const userIcon = profile?.profile_icon || nameForAvatar;
+      
+      allEntries.push({
+        id: userId,
+        name: displayName,
+        avatar: userIcon,
+        value: totalHours,
+        isCurrentUser: user?.id === userId
+      });
+    });
+    
+    // Sort by practice hours descending (most hours first)
+    allEntries.sort((a, b) => b.value - a.value);
+    
+    // If no practice sessions exist, return empty leaderboard
+    if (allEntries.length === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0
+      };
+    }
+    
+    // Find current user's entry and value
+    const currentUserEntry = allEntries.find(entry => entry.isCurrentUser);
+    userValue = currentUserEntry?.value || 0;
+    
+    // Calculate rank changes and add ranks
+    const withRanks = allEntries.map((entry, index) => {
+      const currentRank = index + 1;
+      return {
+        ...entry,
+        rank: currentRank,
+        rankChange: 0,
+        movedUp: false,
+        movedDown: false,
+        previousRank: undefined,
+        lowRound: undefined,
+        lowNett: undefined,
+        birdieCount: 0,
+        eagleCount: 0
+      };
+    });
+    
+    const userEntryInRanks = withRanks.find(entry => entry.isCurrentUser);
+    const finalUserValue = userEntryInRanks?.value || userValue;
+    
+    const result = {
+      top3: withRanks.slice(0, 3),
+      all: withRanks,
+      userRank: userEntryInRanks ? withRanks.findIndex(entry => entry.isCurrentUser) + 1 : 0,
+      userValue: finalUserValue
+    };
+    
+    console.log('Leaderboard Result (practice metric - global):', result);
+    console.log('Practice: Top 3:', result.top3?.map((e: any) => ({ name: e.name, value: e.value, id: e.id })));
+    console.log('Practice: All entries count:', result.all?.length);
+    return result;
+  }
+  
+  // For other metrics (xp, library, drills), keep existing logic but remove user filter
   // Remove User Filtering: For every metric, ensure the code is processing the allEntries or the global rounds array instead of filtering for just the currentUser
   // Only include user in leaderboard if they have actual data (no mock/dummy entries)
   const userEntry = {
@@ -1975,7 +2091,8 @@ export default function AcademyPage() {
         profilesLoaded: userProfiles.size
       });
       // Check Fetch Logic: Pass drills and practiceSessions to leaderboard functions
-      const newLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user, userProfiles);
+      // Remove Filter: Pass practiceSessions to getLeaderboardData so it can process all users' practice data
+      const newLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user, userProfiles, practiceSessions);
       const libraryLeaderboard = getMockLeaderboard('library', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);
       const practiceLeaderboard = getMockLeaderboard('practice', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);
       const roundsLeaderboard = getMockLeaderboard('rounds', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);
