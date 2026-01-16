@@ -244,8 +244,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   };
 
   // The Practice sync is working perfectly! Now apply the same logic to Drills
-  // Global Fetch: Ensure the loadDrills function fetches all records from the drills table without a user_id filter
-  // Table Verification: Confirm the code is hitting the correct table name in Supabase—using 'drills' table
+  // Global Fetch: Ensure the loadDrills function fetches all records from the drill_scores (or drills) table without a user_id filter
+  // Table Verification: Confirm the code is hitting the correct table name in Supabase—try 'drill_scores' first, then 'drills'
   const loadDrills = async () => {
     if (drillsFetched.current) return;
     
@@ -253,20 +253,51 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
-      // Global Fetch: Fetch all records from the drills table without a user_id filter
+      // Global Fetch: Fetch all records from the drill_scores or drills table without a user_id filter
       console.log('StatsContext: Fetching ALL drills for leaderboard (not filtering by user_id)');
       
-      // Table Verification: Using 'drills' table (not 'drill_scores')
+      // Table Verification: Try 'drill_scores' table first (as user specified), then 'drills' as fallback
       // Global Fetch: Select ALL rows - no user_id filter
-      const { data, error } = await supabase
-        .from('drills')
+      let data: any[] = [];
+      let error: any = null;
+      
+      // Try drill_scores table first
+      const { data: scoreData, error: scoreError } = await supabase
+        .from('drill_scores')
         .select('*')
         .order('created_at', { ascending: false });
+
+      if (scoreError) {
+        // If drill_scores doesn't exist, try drills table
+        if (scoreError.code === '42P01' || scoreError.message?.includes('does not exist')) {
+          console.warn('StatsContext: drill_scores table not found, trying drills table...');
+          const drillsResult = await supabase
+            .from('drills')
+            .select('*')
+            .order('created_at', { ascending: false });
+          
+          data = drillsResult.data || [];
+          error = drillsResult.error;
+        } else {
+          data = scoreData || [];
+          error = scoreError;
+        }
+      } else {
+        data = scoreData || [];
+      }
+      
+      // Transform drill_scores data to match DrillData interface if needed
+      if (data.length > 0 && data[0].drill_name && !data[0].drill_title) {
+        data = data.map((item: any) => ({
+          ...item,
+          drill_title: item.drill_name, // Map drill_name to drill_title for compatibility
+        }));
+      }
 
       if (error) {
         // Verify Row-Level Security: Log RLS errors specifically
         if (error.code === 'PGRST116' || error.message?.includes('permission denied') || error.message?.includes('RLS')) {
-          console.warn('StatsContext: RLS may be blocking drills access. You may need to run SQL to enable RLS for the drills table.');
+          console.warn('StatsContext: RLS may be blocking drills/drill_scores access. You may need to run SQL to enable RLS for the table.');
           console.warn('StatsContext: Error details:', { code: error.code, message: error.message });
         } else {
           console.error('StatsContext: Error loading drills from database:', error);
@@ -276,10 +307,23 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      // Fix the 0 Count: Ensure the leaderboard component is listening for this specific data so it doesn't stay at zero
       console.log('StatsContext: Loaded drills from database:', data?.length || 0);
       if (data && data.length > 0) {
-        console.log('StatsContext: Sample drills:', data.slice(0, 3).map((d: any) => ({ id: d.id, user_id: d.user_id, drill_title: d.drill_title })));
+        console.log('StatsContext: Sample drills:', data.slice(0, 3).map((d: any) => ({ 
+          id: d.id, 
+          user_id: d.user_id, 
+          drill_title: d.drill_title || d.drill_name,
+          score: d.score 
+        })));
+        console.log('StatsContext: All drill user_ids:', Array.from(new Set(data.map((d: any) => d.user_id).filter(Boolean))));
+      } else {
+        console.warn('StatsContext: No drills found. This could mean:');
+        console.warn('  1. No drills have been logged yet');
+        console.warn('  2. The drill_scores or drills table doesn\'t exist');
+        console.warn('  3. RLS policies are blocking access');
       }
+      
       setDrills((data || []) as DrillData[]);
       drillsFetched.current = true;
     } catch (error) {

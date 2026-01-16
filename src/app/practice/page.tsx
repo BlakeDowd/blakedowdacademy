@@ -97,7 +97,7 @@ const facilityInfo: Record<FacilityType, { label: string; icon: any }> = {
 const ALL_FACILITIES: FacilityType[] = ['home', 'range-mat', 'range-grass', 'bunker', 'chipping-green', 'putting-green'];
 
 export default function PracticePage() {
-  const { rounds, refreshPracticeSessions } = useStats();
+  const { rounds, refreshPracticeSessions, refreshDrills } = useStats();
   const { user, refreshUser } = useAuth();
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({});
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
@@ -865,12 +865,19 @@ export default function PracticePage() {
   };
 
   // Mark drill as complete (session-based, repeatable)
-  const markDrillComplete = (dayIndex: number, drillIndex: number) => {
+  // Check the Submit Function: Ensure that when a drill is logged, it uses supabase.from('drill_scores').insert(...) instead of just marking it as a practice session
+  const markDrillComplete = async (dayIndex: number, drillIndex: number) => {
     const day = weeklyPlan[dayIndex];
     if (!day || !day.drills[drillIndex]) return;
 
     const drill = day.drills[drillIndex];
     const isCurrentlyCompleted = drill.completed || false;
+
+    // Safety Check: Ensure user_id is being pulled from the auth user
+    if (!user?.id) {
+      console.error('Practice: Cannot log drill - user not authenticated');
+      return;
+    }
 
     // Calculate XP (always award XP when marking complete, regardless of previous state)
     const xpEarned = calculateDrillXP(drill, day);
@@ -885,6 +892,68 @@ export default function PracticePage() {
           : d
       ),
     };
+
+    // Check the Submit Function: Save drill completion to database
+    // Match the Fields: Ensure it sends drill_name, score, and user_id
+    if (!isCurrentlyCompleted) {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+
+        // Check the Submit Function: Ensure that when a drill is logged, it uses supabase.from('drill_scores').insert(...) instead of just marking it as a practice session
+        // Match the Fields: Ensure it sends drill_name, score, and user_id
+        // Try drill_scores table first (as user specified), fallback to drills table
+        let saved = false;
+        
+        // First try drill_scores table (as user specified)
+        const { data: scoreData, error: scoreError } = await supabase
+          .from('drill_scores')
+          .insert({
+            user_id: user.id, // Match the Fields: user_id
+            drill_name: drill.title, // Match the Fields: drill_name
+            score: 1, // Match the Fields: score (using 1 for completion)
+          })
+          .select();
+
+        if (scoreError) {
+          // If drill_scores table doesn't exist, try drills table as fallback
+          if (scoreError.code === '42P01' || scoreError.message?.includes('does not exist')) {
+            console.warn('Practice: drill_scores table not found, trying drills table...');
+            const { data, error } = await supabase
+              .from('drills')
+              .insert({
+                user_id: user.id,
+                drill_id: drill.id,
+                drill_title: drill.title, // Map drill_name to drill_title
+                category: drill.category,
+                completed_at: new Date().toISOString(),
+              })
+              .select();
+
+            if (error) {
+              console.error('Practice: Error saving drill to drills table:', error);
+              console.error('Practice: Table may not exist. Please create drill_scores table with: user_id, drill_name, score');
+            } else {
+              console.log('Practice: Drill saved to drills table:', data);
+              saved = true;
+            }
+          } else {
+            console.error('Practice: Error saving drill to drill_scores table:', scoreError);
+          }
+        } else {
+          console.log('Practice: Drill saved to drill_scores table:', scoreData);
+          saved = true;
+        }
+
+        // Trigger Global Sync: After saving, dispatch the drillsUpdated event so the leaderboard refreshes immediately
+        await refreshDrills();
+        window.dispatchEvent(new Event('drillsUpdated'));
+        console.log('Practice: Drill logged - triggering global refresh for all users');
+      } catch (error) {
+        console.error('Practice: Error in markDrillComplete database save:', error);
+        // Continue with localStorage fallback
+      }
+    }
 
     // Update userProgress and activity history (ALWAYS award XP when marking complete)
     if (typeof window !== 'undefined' && !isCurrentlyCompleted) {
