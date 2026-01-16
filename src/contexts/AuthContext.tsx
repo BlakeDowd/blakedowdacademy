@@ -32,13 +32,34 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // State Sync: Ensure setProfile is called with the updated streak value so the banner changes from '0 days' to '1 day' without needing a manual refresh
 async function checkAndUpdateStreak(supabase: ReturnType<typeof createClient>, userId: string, profile: any): Promise<number | null> {
   try {
+    // Add a Loading Guard: In the streak calculation function, add an if (!profileLoaded) return; guard so it doesn't run with empty data
+    if (!profile || !profile.id) {
+      console.warn('AuthContext: checkAndUpdateStreak - Profile not loaded, returning null');
+      return null;
+    }
+    
+    // Console Log: Add console.log('Streak from DB:', profile.current_streak) so I can see if the app is actually reading the '1' during the refresh
+    console.log('AuthContext: Streak from DB:', profile.current_streak, 'last_login_date:', profile.last_login_date);
+    
+    // Compare Dates Only: Ensure the logic compares only the Date strings (YYYY-MM-DD), not the full timestamps, to avoid resets caused by time differences
     // Timezone Fix: Use new Date().toLocaleDateString('en-CA') (YYYY-MM-DD) to ensure the date format in the database matches the date format in the app exactly
     const today = new Date();
     const todayString = today.toLocaleDateString('en-CA'); // YYYY-MM-DD format (en-CA locale)
     
+    // Compare Dates Only: Extract only the date part (YYYY-MM-DD) from last_login_date, ignoring any time component
     // Handle First Login: If last_login_date is empty or null, the code must automatically set current_streak to 1 and save today's date
     // Check the Variable: Ensure we check for null, undefined, and empty string
-    const lastLoginDateString = profile.last_login_date;
+    let lastLoginDateString = profile.last_login_date;
+    
+    // Compare Dates Only: If last_login_date contains a timestamp, extract only the date part (YYYY-MM-DD)
+    if (lastLoginDateString && typeof lastLoginDateString === 'string') {
+      // If it's a full timestamp (contains 'T' or space), extract just the date part
+      if (lastLoginDateString.includes('T') || lastLoginDateString.includes(' ')) {
+        lastLoginDateString = lastLoginDateString.split('T')[0].split(' ')[0]; // Get YYYY-MM-DD only
+        console.log('AuthContext: Extracted date from timestamp:', lastLoginDateString);
+      }
+    }
+    
     const isFirstLogin = !lastLoginDateString || lastLoginDateString === null || lastLoginDateString === '' || lastLoginDateString.trim() === '';
     
     const currentStreak = profile.current_streak || 0;
@@ -54,22 +75,38 @@ async function checkAndUpdateStreak(supabase: ReturnType<typeof createClient>, u
       streakMessage = 'Streak Started: 1 day!';
       console.log('AuthContext: First time login - initializing streak to 1 day (last_login_date is empty/null):', lastLoginDateString);
     } else {
+      // Compare Dates Only: Ensure the logic compares only the Date strings (YYYY-MM-DD), not the full timestamps, to avoid resets caused by time differences
       // Timezone Fix: Use toLocaleDateString('en-CA') for comparison to match database format
-      const lastLoginDate = new Date(lastLoginDateString);
-      const lastLoginDateFormatted = lastLoginDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+      // Compare Dates Only: lastLoginDateString should already be YYYY-MM-DD format, but ensure it's formatted correctly
+      let lastLoginDateFormatted = lastLoginDateString;
       
+      // Compare Dates Only: If it's not already in YYYY-MM-DD format, convert it
+      if (lastLoginDateString && typeof lastLoginDateString === 'string') {
+        // If it contains a timestamp, extract just the date
+        if (lastLoginDateString.includes('T') || lastLoginDateString.includes(' ')) {
+          lastLoginDateFormatted = lastLoginDateString.split('T')[0].split(' ')[0];
+        } else {
+          // Try to parse and reformat to ensure YYYY-MM-DD
+          const parsedDate = new Date(lastLoginDateString);
+          if (!isNaN(parsedDate.getTime())) {
+            lastLoginDateFormatted = parsedDate.toLocaleDateString('en-CA');
+          }
+        }
+      }
+      
+      // Compare Dates Only: Compare only the date strings (YYYY-MM-DD), not timestamps
       if (todayString === lastLoginDateFormatted) {
         // Fix Calculation Loop: If the last_login_date is 'Today', do not run any reset logic. Just display the number from the database.
-        console.log('AuthContext: Fix Calculation Loop - Same day login detected, returning database streak without calculation:', currentStreak, 'last_login_date:', lastLoginDateFormatted);
+        console.log('AuthContext: Compare Dates Only - Same day login detected (today:', todayString, 'last:', lastLoginDateFormatted, '), returning database streak without calculation:', currentStreak);
         return currentStreak; // Return current streak from database without any calculation
       }
       
-      // Calculate days difference using locale date strings
+      // Calculate days difference using date strings only (YYYY-MM-DD)
       const todayDate = new Date(todayString);
       const lastDate = new Date(lastLoginDateFormatted);
       const daysDiff = Math.floor((todayDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
       
-      console.log('AuthContext: Days difference:', daysDiff, 'today:', todayString, 'last:', lastLoginDateFormatted);
+      console.log('AuthContext: Compare Dates Only - Days difference:', daysDiff, 'today:', todayString, 'last:', lastLoginDateFormatted);
       
       if (daysDiff === 1) {
         // If the dates are exactly 1 day apart, increase current_streak by 1 and reward 50 XP
@@ -320,19 +357,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
 
             // Implement a Daily Streak system
-            // Priority Check: Ensure the app reads the current_streak from the database first before trying to calculate a new one
-            // State Hydration: Make sure setProfile is called immediately after the profile is fetched so the UI banner gets the data right away
-            // Check the Variable: Ensure the banner in the UI is actually looking at profile.current_streak and not a local variable that resets on refresh
-            let updatedStreak = profile?.current_streak || 0;
-            console.log('AuthContext: Priority Check - Initial streak from database:', updatedStreak, 'last_login_date:', profile?.last_login_date);
+            // Add a Loading Guard: In the streak calculation function, add an if (!profileLoaded) return; guard so it doesn't run with empty data
+            // Sync the State: When the profile is fetched, immediately set the current_streak in the local state to match the database value exactly
+            // Console Log: Add console.log('Streak from DB:', profile.current_streak) so I can see if the app is actually reading the '1' during the refresh
             
+            // Add a Loading Guard: Don't proceed if profile is not loaded
+            if (!profile || !profile.id) {
+              console.warn('AuthContext: Profile not loaded, skipping streak check');
+              // Still set user state with default values
+              setUser({
+                id: supabaseUser.id,
+                email: supabaseUser.email || '',
+                fullName: 'Blake (Bypassed)',
+                profileIcon: undefined,
+                initialHandicap: 0,
+                createdAt: supabaseUser.created_at,
+                currentStreak: 0,
+              });
+              return;
+            }
+            
+            // Console Log: Add console.log('Streak from DB:', profile.current_streak) so I can see if the app is actually reading the '1' during the refresh
+            console.log('AuthContext: Streak from DB:', profile.current_streak, 'last_login_date:', profile.last_login_date);
+            
+            // Sync the State: When the profile is fetched, immediately set the current_streak in the local state to match the database value exactly
+            // Priority Check: Ensure the app reads the current_streak from the database first before trying to calculate a new one
+            let updatedStreak = profile.current_streak || 0;
+            console.log('AuthContext: Priority Check - Initial streak from database:', updatedStreak, 'last_login_date:', profile.last_login_date);
+            
+            // Sync the State: When the profile is fetched, immediately set the current_streak in the local state to match the database value exactly
             // State Hydration: Set user state immediately with database value so UI shows correct streak right away
             // This prevents the banner from showing 0 while the streak check runs
             if (profile && supabaseUser.id) {
-              // Priority Check: Read current_streak from database first - use it as the initial value
+              // Sync the State: Read current_streak from database first - use it as the initial value
               const dbStreak = profile.current_streak || 0;
-              console.log('AuthContext: State Hydration - Setting user state immediately with database streak:', dbStreak);
+              console.log('AuthContext: Sync the State - Setting user state immediately with database streak:', dbStreak);
               
+              // Sync the State: When the profile is fetched, immediately set the current_streak in the local state to match the database value exactly
               // State Hydration: Set user state immediately after profile fetch
               setUser({
                 id: supabaseUser.id,
@@ -341,27 +402,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 profileIcon: profile?.profile_icon || undefined,
                 initialHandicap: 0,
                 createdAt: profile?.created_at || supabaseUser.created_at,
-                currentStreak: dbStreak, // State Hydration: Use database value immediately
+                currentStreak: dbStreak, // Sync the State: Use database value exactly as stored
               });
               
+              // Compare Dates Only: Ensure the logic compares only the Date strings (YYYY-MM-DD), not the full timestamps, to avoid resets caused by time differences
               // Fix Calculation Loop: If the last_login_date is 'Today', do not run any reset logic. Just display the number from the database.
               const today = new Date();
               const todayString = today.toLocaleDateString('en-CA');
-              const lastLoginDateString = profile.last_login_date;
+              let lastLoginDateString = profile.last_login_date;
+              
+              // Compare Dates Only: Extract only the date part (YYYY-MM-DD) from last_login_date, ignoring any time component
+              if (lastLoginDateString && typeof lastLoginDateString === 'string') {
+                // If it's a full timestamp (contains 'T' or space), extract just the date part
+                if (lastLoginDateString.includes('T') || lastLoginDateString.includes(' ')) {
+                  lastLoginDateString = lastLoginDateString.split('T')[0].split(' ')[0]; // Get YYYY-MM-DD only
+                  console.log('AuthContext: Compare Dates Only - Extracted date from timestamp:', lastLoginDateString);
+                }
+              }
               
               // Fix Calculation Loop: Check if last_login_date is today BEFORE calling checkAndUpdateStreak
               if (lastLoginDateString && lastLoginDateString.trim() !== '') {
-                const lastLoginDate = new Date(lastLoginDateString);
-                const lastLoginDateFormatted = lastLoginDate.toLocaleDateString('en-CA');
+                // Compare Dates Only: Ensure we're comparing only date strings (YYYY-MM-DD), not timestamps
+                let lastLoginDateFormatted = lastLoginDateString;
+                if (lastLoginDateString.includes('T') || lastLoginDateString.includes(' ')) {
+                  lastLoginDateFormatted = lastLoginDateString.split('T')[0].split(' ')[0];
+                } else {
+                  // Try to parse and reformat to ensure YYYY-MM-DD
+                  const parsedDate = new Date(lastLoginDateString);
+                  if (!isNaN(parsedDate.getTime())) {
+                    lastLoginDateFormatted = parsedDate.toLocaleDateString('en-CA');
+                  }
+                }
                 
+                // Compare Dates Only: Compare only the date strings (YYYY-MM-DD), not timestamps
                 if (todayString === lastLoginDateFormatted) {
                   // Fix Calculation Loop: If last_login_date is 'Today', do not run any reset logic. Just display the number from the database.
-                  console.log('AuthContext: Fix Calculation Loop - last_login_date is today, skipping streak calculation, using database value:', dbStreak);
+                  console.log('AuthContext: Compare Dates Only - last_login_date is today (today:', todayString, 'last:', lastLoginDateFormatted, '), skipping streak calculation, using database value:', dbStreak);
                   updatedStreak = dbStreak;
+                  // Sync the State: Update profile object to match database value
+                  profile.current_streak = dbStreak;
                   // Don't call checkAndUpdateStreak - just use the database value
                 } else {
                   // Only run streak calculation if last_login_date is NOT today
-                  console.log('AuthContext: last_login_date is not today, running streak calculation...');
+                  console.log('AuthContext: Compare Dates Only - last_login_date is not today (today:', todayString, 'last:', lastLoginDateFormatted, '), running streak calculation...');
                   const streakResult = await checkAndUpdateStreak(supabase, supabaseUser.id, profile);
                   if (streakResult !== null) {
                     updatedStreak = streakResult;
