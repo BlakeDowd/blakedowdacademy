@@ -820,9 +820,10 @@ function getMockLeaderboard(
     drillsByUser.forEach((userDrills, userId) => {
       const drillCount = userDrills.length;
       
-      // Name Mapping: Match the user_id in the drill data to the full_name in the profiles table
+      // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
+      // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       const profile = userProfiles?.get(userId);
-      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      const displayName = profile?.full_name || 'Academy Member';
       
       // Fix Avatars: Update the avatar circles to show the first letter of their names
       let nameForAvatar = 'U';
@@ -913,9 +914,10 @@ function getMockLeaderboard(
       }, 0);
       const totalHours = totalMinutes / 60;
       
-      // Create a Name Lookup: Get profile data from userProfiles map
+      // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
+      // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       const profile = userProfiles?.get(userId);
-      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      const displayName = profile?.full_name || 'Academy Member';
       
       // Fix Avatars: Update the avatar circles to show the first letter of their names
       let nameForAvatar = 'U';
@@ -1001,9 +1003,10 @@ function getMockLeaderboard(
     roundsByUser.forEach((userRounds, userId) => {
       const roundCount = userRounds.length;
       
-      // Create a Name Lookup: Get profile data from userProfiles map
+      // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
+      // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       const profile = userProfiles?.get(userId);
-      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      const displayName = profile?.full_name || 'Academy Member';
       
       // Fix Avatars: Update the avatar circles to show the first letter of their names (e.g., 'B') instead of the first letter of the ID
       let nameForAvatar = 'U';
@@ -1300,9 +1303,10 @@ function getLeaderboardData(
       
       console.log(`Birdies/Eagles: User ${userId} - ${userRounds.length} rounds, ${totalBirdies} birdies, ${totalEagles} eagles`);
       
-      // Create a Name Lookup: Get profile data from userProfiles map
+      // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
+      // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       const profile = userProfiles?.get(userId);
-      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      const displayName = profile?.full_name || 'Academy Member';
       
       // Fix Avatars: Update the avatar circles to show the first letter of their names
       let nameForAvatar = 'U';
@@ -1436,9 +1440,10 @@ function getLeaderboardData(
       if (metric === 'lowGross' && userLowGross === null) return;
       if (metric === 'lowNett' && userLowNett === null) return;
       
-      // Create a Name Lookup: Get profile data from userProfiles map
+      // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
+      // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       const profile = userProfiles?.get(userId);
-      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      const displayName = profile?.full_name || 'Academy Member';
       
       // Fix Avatars: Update the avatar circles to show the first letter of their names
       let nameForAvatar = 'U';
@@ -1538,9 +1543,10 @@ function getLeaderboardData(
     roundsByUser.forEach((userRounds, userId) => {
       const roundCount = userRounds.length;
       
-      // Create a Name Lookup: Get profile data from userProfiles map
+      // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
+      // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       const profile = userProfiles?.get(userId);
-      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      const displayName = profile?.full_name || 'Academy Member';
       
       // Fix Avatars: Update the avatar circles to show the first letter of their names (e.g., 'B') instead of the first letter of the ID
       let nameForAvatar = 'U';
