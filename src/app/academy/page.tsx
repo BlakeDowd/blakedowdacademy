@@ -2054,13 +2054,34 @@ export default function AcademyPage() {
         return;
       }
       
-      console.log('Academy: Fetching profiles for', uniqueUserIds.length, 'users:', uniqueUserIds);
-      console.log('Academy: User IDs from rounds:', roundUserIds.length, 'drills:', drillUserIds.length, 'practice:', practiceUserIds.length);
+      // Check the Mapping: Log drill user_ids to verify mapping
+      if (drillUserIds.length > 0) {
+        console.log('Academy: Drill user_ids found for profile mapping:', drillUserIds);
+        console.log('Academy: Sample drill data for mapping:', (drills || []).slice(0, 3).map((d: any) => ({ 
+          user_id: d.user_id, 
+          drill_name: d.drill_name || d.drill_title 
+        })));
+      }
+      
+      console.log('Academy: Fetching profiles for', uniqueUserIds.length, 'unique user IDs:', uniqueUserIds);
+      console.log('Academy: Breakdown - Rounds:', roundUserIds.length, 'Drills:', drillUserIds.length, 'Practice:', practiceUserIds.length);
       
       // Auto-Map Names: For every row fetched, look at the profiles table to find the matching full_name
-      // Name Mapping: Match user_id from practice table to id in profiles table
+      // Check the Mapping: Ensure it is correctly mapping the user_id to the full_name from my profile
+      // Name Mapping: Match user_id from drill_scores table to id in profiles table
       const profiles = await fetchUserProfiles(uniqueUserIds);
       setUserProfiles(profiles);
+      
+      // Check the Mapping: Log the mapping results for drills specifically
+      const drillProfileMappings = drillUserIds.map((userId) => ({
+        user_id: userId,
+        full_name: profiles.get(userId)?.full_name || 'NOT FOUND',
+        profile_icon: profiles.get(userId)?.profile_icon || 'NOT FOUND'
+      }));
+      if (drillProfileMappings.length > 0) {
+        console.log('Academy: Drill user_id to full_name mappings:', drillProfileMappings);
+      }
+      
       console.log('Academy: Loaded profiles:', Array.from(profiles.entries()).map(([id, data]) => ({ id, name: data.full_name })));
     };
     

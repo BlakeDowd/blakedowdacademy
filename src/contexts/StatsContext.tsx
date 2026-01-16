@@ -244,8 +244,9 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   };
 
   // The Practice sync is working perfectly! Now apply the same logic to Drills
-  // Global Fetch: Ensure the loadDrills function fetches all records from the drill_scores (or drills) table without a user_id filter
-  // Table Verification: Confirm the code is hitting the correct table name in Supabase—try 'drill_scores' first, then 'drills'
+  // Check the Fetch: Ensure loadDrills is definitely fetching from drill_scores
+  // Global Fetch: Ensure the loadDrills function fetches all records from the drill_scores table without a user_id filter
+  // Table Verification: The SQL policy already exists, so the table is ready - fetch from drill_scores
   const loadDrills = async () => {
     if (drillsFetched.current) return;
     
@@ -253,78 +254,104 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
-      // Global Fetch: Fetch all records from the drill_scores or drills table without a user_id filter
-      console.log('StatsContext: Fetching ALL drills for leaderboard (not filtering by user_id)');
+      // Check the Fetch: Ensure loadDrills is definitely fetching from drill_scores
+      // Global Fetch: Fetch all records from the drill_scores table without a user_id filter
+      console.log('StatsContext: Fetching ALL drills from drill_scores table (not filtering by user_id)');
       
-      // Table Verification: Try 'drill_scores' table first (as user specified), then 'drills' as fallback
-      // Global Fetch: Select ALL rows - no user_id filter
-      let data: any[] = [];
-      let error: any = null;
-      
-      // Try drill_scores table first
+      // Check the Fetch: Explicitly fetch from drill_scores table (table is ready with SQL policy)
       const { data: scoreData, error: scoreError } = await supabase
         .from('drill_scores')
         .select('*')
         .order('created_at', { ascending: false });
 
+      // Console Log: Add console.log('Drill Score Found:', data) so I can see if the row I just logged is actually being downloaded by the app
+      if (scoreData && scoreData.length > 0) {
+        console.log('Drill Score Found:', scoreData);
+        console.log('StatsContext: Successfully fetched', scoreData.length, 'drill scores from drill_scores table');
+      }
+
       if (scoreError) {
-        // If drill_scores doesn't exist, try drills table
+        // If drill_scores doesn't exist or has an error, try drills table as fallback
         if (scoreError.code === '42P01' || scoreError.message?.includes('does not exist')) {
-          console.warn('StatsContext: drill_scores table not found, trying drills table...');
+          console.warn('StatsContext: drill_scores table not found, trying drills table as fallback...');
           const drillsResult = await supabase
             .from('drills')
             .select('*')
             .order('created_at', { ascending: false });
           
-          data = drillsResult.data || [];
-          error = drillsResult.error;
+          if (drillsResult.data && drillsResult.data.length > 0) {
+            console.log('Drill Score Found (from drills table):', drillsResult.data);
+          }
+          
+          if (drillsResult.error) {
+            // Verify Row-Level Security: Log RLS errors specifically
+            if (drillsResult.error.code === 'PGRST116' || drillsResult.error.message?.includes('permission denied') || drillsResult.error.message?.includes('RLS')) {
+              console.warn('StatsContext: RLS may be blocking drills access. You may need to run SQL to enable RLS for the drills table.');
+              console.warn('StatsContext: Error details:', { code: drillsResult.error.code, message: drillsResult.error.message });
+            } else {
+              console.error('StatsContext: Error loading drills from drills table:', drillsResult.error);
+            }
+            setDrills([]);
+            drillsFetched.current = true;
+            return;
+          }
+          
+          const transformedData = (drillsResult.data || []).map((item: any) => ({
+            ...item,
+            drill_title: item.drill_title || item.drill_name, // Ensure drill_title exists
+          }));
+          
+          setDrills(transformedData as DrillData[]);
+          drillsFetched.current = true;
+          return;
         } else {
-          data = scoreData || [];
-          error = scoreError;
+          // Other error (not table missing)
+          console.error('StatsContext: Error loading drill_scores from database:', scoreError);
+          // Verify Row-Level Security: Log RLS errors specifically
+          if (scoreError.code === 'PGRST116' || scoreError.message?.includes('permission denied') || scoreError.message?.includes('RLS')) {
+            console.warn('StatsContext: RLS may be blocking drill_scores access. Check SQL policies.');
+            console.warn('StatsContext: Error details:', { code: scoreError.code, message: scoreError.message });
+          }
+          setDrills([]);
+          drillsFetched.current = true;
+          return;
         }
-      } else {
-        data = scoreData || [];
       }
-      
+
       // Transform drill_scores data to match DrillData interface if needed
-      if (data.length > 0 && data[0].drill_name && !data[0].drill_title) {
-        data = data.map((item: any) => ({
+      let transformedData = scoreData || [];
+      if (transformedData.length > 0 && transformedData[0].drill_name && !transformedData[0].drill_title) {
+        transformedData = transformedData.map((item: any) => ({
           ...item,
           drill_title: item.drill_name, // Map drill_name to drill_title for compatibility
         }));
       }
 
-      if (error) {
-        // Verify Row-Level Security: Log RLS errors specifically
-        if (error.code === 'PGRST116' || error.message?.includes('permission denied') || error.message?.includes('RLS')) {
-          console.warn('StatsContext: RLS may be blocking drills/drill_scores access. You may need to run SQL to enable RLS for the table.');
-          console.warn('StatsContext: Error details:', { code: error.code, message: error.message });
-        } else {
-          console.error('StatsContext: Error loading drills from database:', error);
-        }
-        setDrills([]);
-        drillsFetched.current = true;
-        return;
-      }
-
       // Fix the 0 Count: Ensure the leaderboard component is listening for this specific data so it doesn't stay at zero
-      console.log('StatsContext: Loaded drills from database:', data?.length || 0);
-      if (data && data.length > 0) {
-        console.log('StatsContext: Sample drills:', data.slice(0, 3).map((d: any) => ({ 
+      console.log('StatsContext: Loaded drills from database:', transformedData?.length || 0);
+      if (transformedData && transformedData.length > 0) {
+        console.log('StatsContext: Sample drills:', transformedData.slice(0, 3).map((d: any) => ({ 
           id: d.id, 
           user_id: d.user_id, 
           drill_title: d.drill_title || d.drill_name,
-          score: d.score 
+          drill_name: d.drill_name,
+          score: d.score,
+          created_at: d.created_at
         })));
-        console.log('StatsContext: All drill user_ids:', Array.from(new Set(data.map((d: any) => d.user_id).filter(Boolean))));
+        console.log('StatsContext: All drill user_ids:', Array.from(new Set(transformedData.map((d: any) => d.user_id).filter(Boolean))));
+        // Check the Mapping: Log user_ids to verify mapping will work
+        console.log('StatsContext: Drill user_ids for profile mapping:', transformedData.map((d: any) => ({ 
+          user_id: d.user_id, 
+          drill_name: d.drill_name || d.drill_title 
+        })));
       } else {
         console.warn('StatsContext: No drills found. This could mean:');
         console.warn('  1. No drills have been logged yet');
-        console.warn('  2. The drill_scores or drills table doesn\'t exist');
+        console.warn('  2. The drill_scores table is empty');
         console.warn('  3. RLS policies are blocking access');
       }
       
-      setDrills((data || []) as DrillData[]);
+      setDrills(transformedData as DrillData[]);
       drillsFetched.current = true;
     } catch (error) {
       console.error('StatsContext: Error loading drills:', error);
