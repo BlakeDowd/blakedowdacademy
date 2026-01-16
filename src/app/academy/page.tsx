@@ -729,61 +729,84 @@ async function fetchUserProfiles(userIds: string[]): Promise<Map<string, { full_
     
     // Verify Name Fetching: Also fetch ALL profiles to verify we're getting everything
     // This helps debug if we're missing profiles
-    const { data: allProfilesData } = await supabase
-      .from('profiles')
-      .select('id, full_name, profile_icon, xp');
+    // Column Safety: Ensure the query only asks for columns we know exist: id, full_name, and xp
+    // Prevent Crashes: If allProfilesData comes back as undefined or empty, initialize it as an empty array [] so the .map() function doesn't break the app
+    let allProfilesData: any[] = [];
+    try {
+      const { data: allProfiles, error: allProfilesError } = await supabase
+        .from('profiles')
+        .select('id, full_name, xp');
+      
+      if (allProfilesError) {
+        console.error('Error fetching all profiles:', allProfilesError);
+        // Error Catching: In the catch block for the profile fetch, add console.log('SQL Query Error:', error.message)
+        console.log('SQL Query Error (all profiles):', allProfilesError.message);
+      } else {
+        allProfilesData = allProfiles || [];
+      }
+    } catch (allProfilesErr: any) {
+      console.error('Exception fetching all profiles:', allProfilesErr);
+      console.log('SQL Query Error (all profiles exception):', allProfilesErr?.message || 'Unknown error');
+      allProfilesData = [];
+    }
     
-    console.log('fetchUserProfiles: ALL profiles in database:', allProfilesData?.map((p: any) => ({ 
+    // Prevent Crashes: Initialize as empty array if undefined
+    const safeAllProfiles = allProfilesData || [];
+    console.log('fetchUserProfiles: ALL profiles in database:', safeAllProfiles.map((p: any) => ({ 
       id: p.id, 
       full_name: p.full_name || 'NO NAME',
       xp: p.xp 
     })));
-    console.log('fetchUserProfiles: Total profiles in database:', allProfilesData?.length || 0);
+    console.log('fetchUserProfiles: Total profiles in database:', safeAllProfiles.length);
     
     // Name Mapping: Match user_id from practice/rounds/drills tables to id in profiles table
-    // Update fetchUserProfiles to include XP column from profiles table
+    // Column Safety: Ensure the query only asks for columns we know exist: id, full_name, and xp
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, full_name, profile_icon, xp')
+      .select('id, full_name, xp')
       .in('id', userIds);
     
     if (error) {
       console.error('Error fetching user profiles:', error);
       console.error('Error details:', { code: error.code, message: error.message, details: error.details });
+      // Error Catching: In the catch block for the profile fetch, add console.log('SQL Query Error:', error.message)
+      console.log('SQL Query Error:', error.message);
       return profileMap;
     }
     
+    // Prevent Crashes: Initialize as empty array if undefined
+    const safeData = data || [];
+    
     // Debug Log: Add console.log('Available Profiles:', profiles) to the load function
-    console.log('Available Profiles:', data);
-    console.log('fetchUserProfiles: Raw data from Supabase:', data?.map((p: any) => ({ id: p.id, full_name: p.full_name, xp: p.xp })));
+    console.log('Available Profiles:', safeData);
+    console.log('fetchUserProfiles: Raw data from Supabase:', safeData.map((p: any) => ({ id: p.id, full_name: p.full_name, xp: p.xp })));
     
     // Map IDs to Names: Create a map of user_id -> { full_name, profile_icon, xp }
     // The key is the user_id from practice/rounds/drills, which matches the id in profiles table
     // Update fetchUserProfiles to include XP column from profiles table
-    if (data) {
-      data.forEach((profile: any) => {
-        // Name Mapping: user_id from practice table matches id in profiles table
-        profileMap.set(profile.id, {
-          full_name: profile.full_name,
-          profile_icon: profile.profile_icon,
-          xp: profile.xp || 0 // Include XP from profiles table
-        });
-        console.log(`fetchUserProfiles: Mapped ${profile.id} -> ${profile.full_name || 'NO NAME'}`);
+    safeData.forEach((profile: any) => {
+      // Name Mapping: user_id from practice table matches id in profiles table
+      profileMap.set(profile.id, {
+        full_name: profile.full_name,
+        profile_icon: undefined, // profile_icon column may not exist, so don't include it
+        xp: profile.xp || 0 // Include XP from profiles table
       });
-      
-      // Check for missing profiles
-      const missingIds = userIds.filter(id => !profileMap.has(id));
-      if (missingIds.length > 0) {
-        console.warn('fetchUserProfiles: Missing profiles for user IDs:', missingIds);
-        console.warn('These user IDs were requested but not found in the profiles table');
-      }
-    } else {
-      console.warn('fetchUserProfiles: No data returned from Supabase query');
+      console.log(`fetchUserProfiles: Mapped ${profile.id} -> ${profile.full_name || 'NO NAME'}`);
+    });
+    
+    // Check for missing profiles
+    const missingIds = userIds.filter(id => !profileMap.has(id));
+    if (missingIds.length > 0) {
+      console.warn('fetchUserProfiles: Missing profiles for user IDs:', missingIds);
+      console.warn('These user IDs were requested but not found in the profiles table');
     }
     
     console.log('Fetched profiles for', profileMap.size, 'users:', Array.from(profileMap.entries()).map(([id, data]) => ({ id, name: data.full_name || 'NO NAME', xp: data.xp })));
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in fetchUserProfiles:', error);
+    // Error Catching: In the catch block for the profile fetch, add console.log('SQL Query Error:', error.message)
+    console.log('SQL Query Error (catch block):', error?.message || 'Unknown error');
+    console.log('SQL Query Error (full error):', error);
   }
   
   return profileMap;
