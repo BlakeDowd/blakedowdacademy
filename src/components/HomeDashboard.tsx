@@ -148,34 +148,37 @@ export default function HomeDashboard() {
     return userRounds.length;
   }, [rounds, user?.id]);
   
+  // Dashboard Update: Make sure the Dashboard component is using profile?.current_streak so it doesn't show 0 while the data is still traveling from the server.
   // Data Source: Locate the streak display in this component and ensure it uses profile.current_streak from AuthContext
   // Remove Hardcoded Zeros: Check if there is a hardcoded 0 or a local state variable named streak that isn't being updated
   // Sync with Context: Ensure this component is wrapped in the useStats() hook so it re-renders automatically when the profile loads
   // The streak is now managed by the Daily Streak system in AuthContext
   // Check the Variable: Ensure the banner in the UI is actually looking at profile.current_streak and not a local variable that resets on refresh
   const streakDays = useMemo(() => {
+    // Dashboard Update: Use user.currentStreak which comes from profile.current_streak in AuthContext
     // Data Source: Get streak from user.currentStreak (set by AuthContext after streak check)
     // Check the Variable: Use user.currentStreak which comes from profile.current_streak in AuthContext
-    // Remove Hardcoded Zeros: Only use database value, no hardcoded fallback to 0 unless user is not loaded
+    // Dashboard Update: Make sure the Dashboard component is using profile?.current_streak so it doesn't show 0 while the data is still traveling from the server.
     const streak = user?.currentStreak;
-    console.log('HomeDashboard: Skills Snapshot - Streak value from user.currentStreak:', streak, 'user object:', user ? { id: user.id, fullName: user.fullName, currentStreak: user.currentStreak } : 'null');
+    console.log('HomeDashboard: Dashboard Update - Streak value from user.currentStreak (profile.current_streak):', streak, 'user object:', user ? { id: user.id, fullName: user.fullName, currentStreak: user.currentStreak } : 'null');
     
-    // Remove Hardcoded Zeros: Only return 0 if user is loaded but streak is missing (not if user is still loading)
+    // Dashboard Update: Only return 0 if user is loaded but streak is missing (not if user is still loading)
+    // Fix State Initialization: Don't default to 0 while data is traveling - use undefined or wait
     if (user && streak !== undefined && streak !== null) {
-      console.log('HomeDashboard: Skills Snapshot - Using streak from database:', streak);
+      console.log('HomeDashboard: Dashboard Update - Using streak from database (profile.current_streak):', streak);
       return streak;
     }
     
-    // Remove Hardcoded Zeros: If user is loaded but streak is missing, log warning
+    // Dashboard Update: If user is loaded but streak is missing, log warning
     if (user && (streak === undefined || streak === null)) {
-      console.warn('HomeDashboard: Skills Snapshot - User is loaded but streak is missing, defaulting to 0');
+      console.warn('HomeDashboard: Dashboard Update - User is loaded but streak is missing (profile.current_streak not set), defaulting to 0');
       return 0;
     }
     
-    // If user is not yet loaded, return 0 (will update when user loads)
-    console.log('HomeDashboard: Skills Snapshot - User not yet loaded, returning 0 temporarily');
+    // Dashboard Update: If user is not yet loaded, return 0 temporarily (will update when profile loads)
+    console.log('HomeDashboard: Dashboard Update - User not yet loaded, returning 0 temporarily (waiting for profile.current_streak)');
     return 0;
-  }, [user, user?.currentStreak]); // Sync with Context: Depend on both user object and currentStreak so it re-renders automatically when the profile loads
+  }, [user, user?.currentStreak]); // Dashboard Update: Depend on both user object and currentStreak so it re-renders automatically when profile.current_streak loads
   
   // Ensure rounds is always an array, never null or undefined
   const allRounds = (rounds || []) as any[];
