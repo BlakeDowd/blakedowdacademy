@@ -97,7 +97,7 @@ const facilityInfo: Record<FacilityType, { label: string; icon: any }> = {
 const ALL_FACILITIES: FacilityType[] = ['home', 'range-mat', 'range-grass', 'bunker', 'chipping-green', 'putting-green'];
 
 export default function PracticePage() {
-  const { rounds } = useStats();
+  const { rounds, refreshPracticeSessions } = useStats();
   const { user, refreshUser } = useAuth();
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({});
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
@@ -395,8 +395,15 @@ export default function PracticePage() {
   };
 
   // Log freestyle practice session
-  const logFreestylePractice = (facility: FacilityType, duration: number) => {
+  const logFreestylePractice = async (facility: FacilityType, duration: number) => {
     if (typeof window === 'undefined') return;
+
+    // Safety Check: Ensure user_id is being pulled from the auth user so it knows it's me logging the session
+    if (!user?.id) {
+      alert('Please log in to log practice sessions.');
+      setDurationModal({ open: false, facility: null });
+      return;
+    }
 
     // Get today's date for daily XP cap tracking
     const today = new Date().toISOString().split('T')[0];
@@ -418,57 +425,99 @@ export default function PracticePage() {
       return;
     }
 
-    // Update daily XP cap
-    localStorage.setItem(dailyXPKey, (currentDailyXP + xpEarned).toString());
+    // Update the Target Table: Ensure the handleSubmit function is pointing to the practice table
+    // Check the Fields: Make sure the data being sent matches the table we just made: user_id, type, duration_minutes, and notes
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
 
-    // Update total practice minutes
-    const newTotalMinutes = totalPracticeMinutes + duration;
-    setTotalPracticeMinutes(newTotalMinutes);
-    localStorage.setItem('totalPracticeMinutes', newTotalMinutes.toString());
+      const facilityLabel = facilityInfo[facility].label;
+      const timestamp = new Date().toISOString();
+      const practiceDate = timestamp.split('T')[0];
 
-    // Update userProgress
-    const savedProgress = localStorage.getItem('userProgress');
-    const userProgress = savedProgress ? JSON.parse(savedProgress) : { 
-      completedDrills: [], 
-      totalXP: 0, 
-      totalMinutes: 0,
-      drillCompletions: {}
-    };
-    
-    userProgress.totalXP = (userProgress.totalXP || 0) + xpEarned;
-    userProgress.totalMinutes = (userProgress.totalMinutes || 0) + duration;
-    
-    localStorage.setItem('userProgress', JSON.stringify(userProgress));
+      // Target Table: In the handleSubmit or savePractice function, change the table name to practice
+      // Match Columns: Ensure it is sending exactly these fields: user_id, type, duration_minutes, and notes
+      const { data, error } = await supabase
+        .from('practice')
+        .insert({
+          user_id: user.id, // Safety Check: user_id from auth user
+          type: facility, // Match Columns: type field (e.g., 'home', 'range-mat', 'putting-green')
+          duration_minutes: duration, // Match Columns: duration_minutes field
+          notes: `${facilityLabel} Practice - ${duration} minutes`, // Match Columns: notes field
+        })
+        .select();
 
-    // Log to activity history
-    const activityHistory = JSON.parse(localStorage.getItem('practiceActivityHistory') || '[]');
-    const timestamp = new Date().toISOString();
-    const facilityLabel = facilityInfo[facility].label;
-    activityHistory.push({
-      id: `freestyle-${facility}-${Date.now()}-${Math.random()}`,
-      type: 'practice',
-      title: `${facilityLabel} Practice`,
-      date: timestamp.split('T')[0],
-      timestamp: timestamp,
-      xp: xpEarned,
-      duration: duration,
-      facility: facility,
-    });
-    const recentHistory = activityHistory.slice(-100);
-    localStorage.setItem('practiceActivityHistory', JSON.stringify(recentHistory));
+      if (error) {
+        console.error('Error saving practice session:', error);
+        alert('Failed to save practice session. Please try again.');
+        setDurationModal({ open: false, facility: null });
+        return;
+      }
 
-    // Dispatch events
-    window.dispatchEvent(new Event('userProgressUpdated'));
-    window.dispatchEvent(new Event('practiceActivityUpdated'));
+      // Success Log: Add console.log('Practice saved successfully') and an alert('Logged!') so I can see if the button is actually finishing the job
+      console.log('Practice saved successfully:', data);
+      alert('Logged!');
 
-    // Show XP notification
-    setXpNotification({ show: true, amount: xpEarned });
-    setTimeout(() => {
-      setXpNotification({ show: false, amount: 0 });
-    }, 3000);
+      // Update daily XP cap
+      localStorage.setItem(dailyXPKey, (currentDailyXP + xpEarned).toString());
 
-    // Close modal
-    setDurationModal({ open: false, facility: null });
+      // Update total practice minutes
+      const newTotalMinutes = totalPracticeMinutes + duration;
+      setTotalPracticeMinutes(newTotalMinutes);
+      localStorage.setItem('totalPracticeMinutes', newTotalMinutes.toString());
+
+      // Update userProgress
+      const savedProgress = localStorage.getItem('userProgress');
+      const userProgress = savedProgress ? JSON.parse(savedProgress) : { 
+        completedDrills: [], 
+        totalXP: 0, 
+        totalMinutes: 0,
+        drillCompletions: {}
+      };
+      
+      userProgress.totalXP = (userProgress.totalXP || 0) + xpEarned;
+      userProgress.totalMinutes = (userProgress.totalMinutes || 0) + duration;
+      
+      localStorage.setItem('userProgress', JSON.stringify(userProgress));
+
+      // Log to activity history (for backward compatibility)
+      const activityHistory = JSON.parse(localStorage.getItem('practiceActivityHistory') || '[]');
+      activityHistory.push({
+        id: `freestyle-${facility}-${Date.now()}-${Math.random()}`,
+        type: 'practice',
+        title: `${facilityLabel} Practice`,
+        date: practiceDate,
+        timestamp: timestamp,
+        xp: xpEarned,
+        duration: duration,
+        facility: facility,
+      });
+      const recentHistory = activityHistory.slice(-100);
+      localStorage.setItem('practiceActivityHistory', JSON.stringify(recentHistory));
+
+      // Dispatch events
+      window.dispatchEvent(new Event('userProgressUpdated'));
+      window.dispatchEvent(new Event('practiceActivityUpdated'));
+
+      // Force Refresh: After the supabase.from('practice').insert(...) call, add await loadStats() or await refreshStats() to make the new session appear on the leaderboard immediately
+      await refreshPracticeSessions();
+      
+      // Also dispatch the practiceSessionsUpdated event to trigger refresh in StatsContext
+      window.dispatchEvent(new Event('practiceSessionsUpdated'));
+
+      // Show XP notification
+      setXpNotification({ show: true, amount: xpEarned });
+      setTimeout(() => {
+        setXpNotification({ show: false, amount: 0 });
+      }, 3000);
+
+      // Close modal
+      setDurationModal({ open: false, facility: null });
+    } catch (error) {
+      console.error('Error in logFreestylePractice:', error);
+      alert('Failed to save practice session. Please try again.');
+      setDurationModal({ open: false, facility: null });
+    }
   };
 
   const setRoundType = (dayIndex: number, roundType: RoundType) => {
