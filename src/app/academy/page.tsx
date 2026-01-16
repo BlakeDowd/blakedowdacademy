@@ -710,14 +710,22 @@ function formatMetricValue(value: number, metric: 'library' | 'practice' | 'roun
 // Create a Name Lookup: Fetch full_name, profile_icon, and xp for each user_id
 // Name Mapping: Match the user_id from the practice table (or rounds/drills) to the id in the profiles table to display their real names
 // Update fetchUserProfiles to include XP column from profiles table
+// Verify Name Fetching: Ensure loadProfiles is fetching every single row from the profiles table
+// Debug Log: Add console.log('Available Profiles:', profiles) to the load function so I can see in the browser if Stuart and Sean's names are actually being loaded
 async function fetchUserProfiles(userIds: string[]): Promise<Map<string, { full_name?: string; profile_icon?: string; xp?: number }>> {
   const profileMap = new Map<string, { full_name?: string; profile_icon?: string; xp?: number }>();
   
-  if (userIds.length === 0) return profileMap;
+  if (userIds.length === 0) {
+    console.warn('fetchUserProfiles: No user IDs provided, returning empty map');
+    return profileMap;
+  }
   
   try {
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
+    
+    // Verify Name Fetching: Log the user IDs we're looking for
+    console.log('fetchUserProfiles: Looking for profiles for', userIds.length, 'user IDs:', userIds);
     
     // Name Mapping: Match user_id from practice/rounds/drills tables to id in profiles table
     // Update fetchUserProfiles to include XP column from profiles table
@@ -728,8 +736,13 @@ async function fetchUserProfiles(userIds: string[]): Promise<Map<string, { full_
     
     if (error) {
       console.error('Error fetching user profiles:', error);
+      console.error('Error details:', { code: error.code, message: error.message, details: error.details });
       return profileMap;
     }
+    
+    // Debug Log: Add console.log('Available Profiles:', profiles) to the load function
+    console.log('Available Profiles:', data);
+    console.log('fetchUserProfiles: Raw data from Supabase:', data?.map((p: any) => ({ id: p.id, full_name: p.full_name, xp: p.xp })));
     
     // Map IDs to Names: Create a map of user_id -> { full_name, profile_icon, xp }
     // The key is the user_id from practice/rounds/drills, which matches the id in profiles table
@@ -742,10 +755,20 @@ async function fetchUserProfiles(userIds: string[]): Promise<Map<string, { full_
           profile_icon: profile.profile_icon,
           xp: profile.xp || 0 // Include XP from profiles table
         });
+        console.log(`fetchUserProfiles: Mapped ${profile.id} -> ${profile.full_name || 'NO NAME'}`);
       });
+      
+      // Check for missing profiles
+      const missingIds = userIds.filter(id => !profileMap.has(id));
+      if (missingIds.length > 0) {
+        console.warn('fetchUserProfiles: Missing profiles for user IDs:', missingIds);
+        console.warn('These user IDs were requested but not found in the profiles table');
+      }
+    } else {
+      console.warn('fetchUserProfiles: No data returned from Supabase query');
     }
     
-    console.log('Fetched profiles for', profileMap.size, 'users:', Array.from(profileMap.entries()).map(([id, data]) => ({ id, name: data.full_name })));
+    console.log('Fetched profiles for', profileMap.size, 'users:', Array.from(profileMap.entries()).map(([id, data]) => ({ id, name: data.full_name || 'NO NAME', xp: data.xp })));
   } catch (error) {
     console.error('Error in fetchUserProfiles:', error);
   }
@@ -2126,14 +2149,30 @@ export default function AcademyPage() {
         })));
       }
       
+      // Verify Name Fetching: Log all user IDs found in data
+      console.log('Academy: User IDs found in data:');
+      console.log('  - Rounds:', roundUserIds);
+      console.log('  - Drills:', drillUserIds);
+      console.log('  - Practice:', practiceUserIds);
+      console.log('  - Unique total:', uniqueUserIds);
+      
       console.log('Academy: Fetching profiles for', uniqueUserIds.length, 'unique user IDs:', uniqueUserIds);
       console.log('Academy: Breakdown - Rounds:', roundUserIds.length, 'Drills:', drillUserIds.length, 'Practice:', practiceUserIds.length);
       
       // Auto-Map Names: For every row fetched, look at the profiles table to find the matching full_name
       // Check the Mapping: Ensure it is correctly mapping the user_id to the full_name from my profile
       // Name Mapping: Match user_id from drill_scores table to id in profiles table
+      // Verify Name Fetching: Ensure loadProfiles is fetching every single row from the profiles table
       const profiles = await fetchUserProfiles(uniqueUserIds);
       setUserProfiles(profiles);
+      
+      // Debug Log: Add console.log('Available Profiles:', profiles) to the load function
+      console.log('Academy: Available Profiles Map:', Array.from(profiles.entries()).map(([id, data]) => ({ 
+        id, 
+        full_name: data.full_name || 'NO NAME', 
+        profile_icon: data.profile_icon,
+        xp: data.xp 
+      })));
       
       // Check the Mapping: Log the mapping results for drills specifically
       const drillProfileMappings = drillUserIds.map((userId) => ({
@@ -2145,7 +2184,24 @@ export default function AcademyPage() {
         console.log('Academy: Drill user_id to full_name mappings:', drillProfileMappings);
       }
       
-      console.log('Academy: Loaded profiles:', Array.from(profiles.entries()).map(([id, data]) => ({ id, name: data.full_name })));
+      // Map IDs to Names: Double-check that the practice, rounds, and drills leaderboards are correctly looking up the full_name
+      const roundProfileMappings = roundUserIds.map((userId) => ({
+        user_id: userId,
+        full_name: profiles.get(userId)?.full_name || 'NOT FOUND'
+      }));
+      if (roundProfileMappings.length > 0) {
+        console.log('Academy: Round user_id to full_name mappings:', roundProfileMappings);
+      }
+      
+      const practiceProfileMappings = practiceUserIds.map((userId) => ({
+        user_id: userId,
+        full_name: profiles.get(userId)?.full_name || 'NOT FOUND'
+      }));
+      if (practiceProfileMappings.length > 0) {
+        console.log('Academy: Practice user_id to full_name mappings:', practiceProfileMappings);
+      }
+      
+      console.log('Academy: Loaded profiles:', Array.from(profiles.entries()).map(([id, data]) => ({ id, name: data.full_name || 'NO NAME' })));
     };
     
     fetchProfiles();
