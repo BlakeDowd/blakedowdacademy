@@ -2033,6 +2033,7 @@ export default function AcademyPage() {
   }, [loading]);
   
   // Create a Name Lookup: Fetch profiles for all unique user IDs in rounds, drills, and practice sessions
+  // Auto-Map Names: Ensure that for every row fetched, the app looks at the profiles table to find the matching full_name
   // Name Mapping: Match the user_id from the practice table to the id in the profiles table to display their real names on the leaderboard
   useEffect(() => {
     const fetchProfiles = async () => {
@@ -2053,6 +2054,7 @@ export default function AcademyPage() {
       console.log('Academy: Fetching profiles for', uniqueUserIds.length, 'users:', uniqueUserIds);
       console.log('Academy: User IDs from rounds:', roundUserIds.length, 'drills:', drillUserIds.length, 'practice:', practiceUserIds.length);
       
+      // Auto-Map Names: For every row fetched, look at the profiles table to find the matching full_name
       // Name Mapping: Match user_id from practice table to id in profiles table
       const profiles = await fetchUserProfiles(uniqueUserIds);
       setUserProfiles(profiles);

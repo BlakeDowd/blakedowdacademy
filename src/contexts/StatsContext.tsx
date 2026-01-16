@@ -297,10 +297,12 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
-      // Global Fetch: Remove any .eq('user_id', user.id) from the practice fetch call so we can see Stuart and Sean's practice stats on the leaderboard
+      // Fetch Everything: In the loadStats function, change the fetch for practice so it selects ALL rows from the table, not just rows where user_id === user.id
+      // Stop filtering the practice data!
       console.log('StatsContext: Fetching ALL practice sessions for leaderboard (not filtering by user_id)');
       
       // Update Table Name: Ensure the loadStats function fetches from the practice table (not practice_sessions)
+      // Fetch Everything: Select ALL rows - no user_id filter
       const { data, error } = await supabase
         .from('practice')
         .select('*')

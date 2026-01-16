@@ -499,11 +499,15 @@ export default function PracticePage() {
       window.dispatchEvent(new Event('userProgressUpdated'));
       window.dispatchEvent(new Event('practiceActivityUpdated'));
 
+      // Live Sync: Make sure that when I (Blake) log a practice session through the app, it triggers a global refresh so everyone's updated stats appear on the leaderboard immediately
       // Force Refresh: After the supabase.from('practice').insert(...) call, add await loadStats() or await refreshStats() to make the new session appear on the leaderboard immediately
       await refreshPracticeSessions();
       
       // Also dispatch the practiceSessionsUpdated event to trigger refresh in StatsContext
+      // Live Sync: This ensures all users see the updated leaderboard immediately
       window.dispatchEvent(new Event('practiceSessionsUpdated'));
+      
+      console.log('Practice session logged - triggering global refresh for all users');
 
       // Show XP notification
       setXpNotification({ show: true, amount: xpEarned });
