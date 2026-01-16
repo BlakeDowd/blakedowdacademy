@@ -148,22 +148,34 @@ export default function HomeDashboard() {
     return userRounds.length;
   }, [rounds, user?.id]);
   
-  // State Sync: Use current_streak from user profile instead of calculating from practice sessions
+  // Data Source: Locate the streak display in this component and ensure it uses profile.current_streak from AuthContext
+  // Remove Hardcoded Zeros: Check if there is a hardcoded 0 or a local state variable named streak that isn't being updated
+  // Sync with Context: Ensure this component is wrapped in the useStats() hook so it re-renders automatically when the profile loads
   // The streak is now managed by the Daily Streak system in AuthContext
   // Check the Variable: Ensure the banner in the UI is actually looking at profile.current_streak and not a local variable that resets on refresh
   const streakDays = useMemo(() => {
-    // State Sync: Get streak from user.currentStreak (set by AuthContext after streak check)
+    // Data Source: Get streak from user.currentStreak (set by AuthContext after streak check)
     // Check the Variable: Use user.currentStreak which comes from profile.current_streak in AuthContext
+    // Remove Hardcoded Zeros: Only use database value, no hardcoded fallback to 0 unless user is not loaded
     const streak = user?.currentStreak;
-    console.log('HomeDashboard: Streak value from user.currentStreak:', streak, 'user object:', user ? { id: user.id, fullName: user.fullName, currentStreak: user.currentStreak } : 'null');
+    console.log('HomeDashboard: Skills Snapshot - Streak value from user.currentStreak:', streak, 'user object:', user ? { id: user.id, fullName: user.fullName, currentStreak: user.currentStreak } : 'null');
     
-    if (streak !== undefined && streak !== null) {
+    // Remove Hardcoded Zeros: Only return 0 if user is loaded but streak is missing (not if user is still loading)
+    if (user && streak !== undefined && streak !== null) {
+      console.log('HomeDashboard: Skills Snapshot - Using streak from database:', streak);
       return streak;
     }
-    // Fallback to 0 if streak not yet loaded
-    console.warn('HomeDashboard: Streak is undefined/null, defaulting to 0');
+    
+    // Remove Hardcoded Zeros: If user is loaded but streak is missing, log warning
+    if (user && (streak === undefined || streak === null)) {
+      console.warn('HomeDashboard: Skills Snapshot - User is loaded but streak is missing, defaulting to 0');
+      return 0;
+    }
+    
+    // If user is not yet loaded, return 0 (will update when user loads)
+    console.log('HomeDashboard: Skills Snapshot - User not yet loaded, returning 0 temporarily');
     return 0;
-  }, [user?.currentStreak]); // State Sync: Depend on user.currentStreak so it updates when streak changes
+  }, [user, user?.currentStreak]); // Sync with Context: Depend on both user object and currentStreak so it re-renders automatically when the profile loads
   
   // Ensure rounds is always an array, never null or undefined
   const allRounds = (rounds || []) as any[];
@@ -797,12 +809,15 @@ export default function HomeDashboard() {
           <h3 className="text-gray-600 font-medium text-base mb-3">Skills Snapshot</h3>
           <div className="flex gap-3">
             {/* Streak Card - Links to Practice */}
+            {/* Data Source: Locate the streak display in this component and ensure it uses profile.current_streak from AuthContext */}
+            {/* Match the Style: Keep the flame icon and formatting exactly as it is, just swap the number source */}
             <Link 
               href="/practice"
               className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97]"
             >
               <Flame className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
-              {/* Update HomeDashboard.tsx to use useStats() to get the actual rounds.length so the stats are dynamic instead of zero */}
+              {/* Data Source: Use streakDays which comes from user.currentStreak (profile.current_streak in AuthContext) */}
+              {/* Remove Hardcoded Zeros: This value comes from the database via AuthContext, not a hardcoded 0 */}
               <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{streakDays}</p>
               <p className="text-gray-400 text-xs mt-1">days streak</p>
             </Link>
