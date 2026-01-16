@@ -26,6 +26,111 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Implement a Daily Streak system
+// Check on Load: Every time the app loads and the user is logged in, compare today's date with last_login_date in their profile
+async function checkAndUpdateStreak(supabase: ReturnType<typeof createClient>, userId: string, profile: any): Promise<void> {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Set to start of day for accurate comparison
+    
+    const lastLoginDate = profile.last_login_date 
+      ? new Date(profile.last_login_date)
+      : null;
+    
+    if (lastLoginDate) {
+      lastLoginDate.setHours(0, 0, 0, 0); // Set to start of day
+    }
+    
+    const currentStreak = profile.current_streak || 0;
+    let newStreak = currentStreak;
+    let xpReward = 0;
+    let streakMessage = '';
+    
+    // Increment Logic:
+    if (!lastLoginDate) {
+      // First time login - start streak at 1
+      newStreak = 1;
+      streakMessage = 'Streak Started: 1 day!';
+    } else {
+      const daysDiff = Math.floor((today.getTime() - lastLoginDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysDiff === 0) {
+        // If it's the same day, do nothing
+        console.log('AuthContext: Same day login - streak unchanged:', currentStreak);
+        return;
+      } else if (daysDiff === 1) {
+        // If the dates are exactly 1 day apart, increase current_streak by 1 and reward 50 XP
+        newStreak = currentStreak + 1;
+        xpReward = 50;
+        streakMessage = `Streak Updated: ${newStreak} days!`;
+      } else {
+        // If it's more than 1 day apart, reset the streak to 1
+        newStreak = 1;
+        streakMessage = 'Streak Reset: 1 day (missed login)';
+      }
+    }
+    
+    // Update Database: Save the new streak and update last_login_date to today
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({
+        current_streak: newStreak,
+        last_login_date: today.toISOString().split('T')[0] // Store as YYYY-MM-DD
+      })
+      .eq('id', userId);
+    
+    if (updateError) {
+      console.error('AuthContext: Error updating streak:', updateError);
+      return;
+    }
+    
+    // Increment Logic: If the dates are exactly 1 day apart, increase current_streak by 1 and reward 50 XP
+    if (xpReward > 0) {
+      // Use the updateUserXP function logic (inline here since it's in a different file)
+      try {
+        const { data: currentProfile } = await supabase
+          .from('profiles')
+          .select('xp')
+          .eq('id', userId)
+          .single();
+        
+        const currentXP = currentProfile?.xp || 0;
+        const newXP = currentXP + xpReward;
+        
+        const { error: xpError } = await supabase
+          .from('profiles')
+          .update({ xp: newXP })
+          .eq('id', userId);
+        
+        if (xpError) {
+          console.error('AuthContext: Error updating XP for streak:', xpError);
+        } else {
+          console.log(`AuthContext: Added ${xpReward} XP for streak (${currentXP} + ${xpReward} = ${newXP})`);
+          // Dispatch event to refresh XP leaderboard
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('xpUpdated'));
+          }
+        }
+      } catch (xpErr) {
+        console.error('AuthContext: Exception updating XP for streak:', xpErr);
+      }
+    }
+    
+    // Visual Feedback: Add a console.log or a small toast notification that says 'Streak Updated: X days!' so I can verify it's working
+    console.log(`AuthContext: ${streakMessage}`);
+    
+    // Visual Feedback: Also dispatch event for potential toast notification
+    if (typeof window !== 'undefined' && streakMessage) {
+      window.dispatchEvent(new CustomEvent('streakUpdated', { 
+        detail: { streak: newStreak, message: streakMessage } 
+      }));
+    }
+    
+  } catch (error) {
+    console.error('AuthContext: Error in checkAndUpdateStreak:', error);
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -108,9 +213,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             // Kill the Loop: Wrap entire profile fetch section in try/finally to guarantee setLoading(false)
             try {
+              // Check on Load: Fetch last_login_date and current_streak for Daily Streak system
               const { data, error } = await supabase
                 .from('profiles')
-                .select('full_name, profile_icon, created_at')
+                .select('full_name, profile_icon, created_at, last_login_date, current_streak')
                 .eq('id', supabaseUser.id)
                 .single();
               
@@ -186,6 +292,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 profile = newProfile;
                 console.log('AuthContext: Profile created successfully (fallback)');
               }
+            }
+
+            // Implement a Daily Streak system
+            // Check on Load: Every time the app loads and the user is logged in, compare today's date with last_login_date in their profile
+            if (profile && supabaseUser.id) {
+              await checkAndUpdateStreak(supabase, supabaseUser.id, profile);
             }
 
             // Verify Data Source: Force it to display profile?.full_name || user.email
