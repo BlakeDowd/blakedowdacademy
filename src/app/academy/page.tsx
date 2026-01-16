@@ -708,7 +708,8 @@ function formatMetricValue(value: number, metric: 'library' | 'practice' | 'roun
 }
 
 // Create a Name Lookup: Fetch full_name and profile_icon for each user_id
-// Map IDs to Names: Match user IDs to their full_name from profiles table
+// Name Mapping: Match the user_id from the practice table (or rounds/drills) to the id in the profiles table to display their real names
+// Note: The profiles table only has id and full_name (no email column)
 async function fetchUserProfiles(userIds: string[]): Promise<Map<string, { full_name?: string; profile_icon?: string }>> {
   const profileMap = new Map<string, { full_name?: string; profile_icon?: string }>();
   
@@ -718,7 +719,8 @@ async function fetchUserProfiles(userIds: string[]): Promise<Map<string, { full_
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
     
-    // Fetch profiles for all unique user IDs
+    // Name Mapping: Match user_id from practice/rounds/drills tables to id in profiles table
+    // The profiles table only has id and full_name (no email column)
     const { data, error } = await supabase
       .from('profiles')
       .select('id, full_name, profile_icon')
@@ -730,8 +732,10 @@ async function fetchUserProfiles(userIds: string[]): Promise<Map<string, { full_
     }
     
     // Map IDs to Names: Create a map of user_id -> { full_name, profile_icon }
+    // The key is the user_id from practice/rounds/drills, which matches the id in profiles table
     if (data) {
       data.forEach((profile: any) => {
+        // Name Mapping: user_id from practice table matches id in profiles table
         profileMap.set(profile.id, {
           full_name: profile.full_name,
           profile_icon: profile.profile_icon
@@ -2028,25 +2032,35 @@ export default function AcademyPage() {
     return () => clearTimeout(timeout);
   }, [loading]);
   
-  // Create a Name Lookup: Fetch profiles for all unique user IDs in rounds
-  // Map IDs to Names: Match user IDs to their full_name from profiles table
+  // Create a Name Lookup: Fetch profiles for all unique user IDs in rounds, drills, and practice sessions
+  // Name Mapping: Match the user_id from the practice table to the id in the profiles table to display their real names on the leaderboard
   useEffect(() => {
-    if (!rounds || rounds.length === 0) return;
-    
     const fetchProfiles = async () => {
-      // Get all unique user IDs from rounds
-      const uniqueUserIds = Array.from(new Set(rounds.map((r: any) => r.user_id).filter(Boolean)));
+      // Get all unique user IDs from rounds, drills, and practice sessions
+      const roundUserIds = (rounds || []).map((r: any) => r.user_id).filter(Boolean);
+      const drillUserIds = (drills || []).map((d: any) => d.user_id).filter(Boolean);
+      const practiceUserIds = (practiceSessions || []).map((p: any) => p.user_id).filter(Boolean);
       
-      if (uniqueUserIds.length === 0) return;
+      // Combine all user IDs and get unique set
+      const allUserIds = [...roundUserIds, ...drillUserIds, ...practiceUserIds];
+      const uniqueUserIds = Array.from(new Set(allUserIds));
+      
+      if (uniqueUserIds.length === 0) {
+        console.log('Academy: No user IDs found in rounds, drills, or practice sessions');
+        return;
+      }
       
       console.log('Academy: Fetching profiles for', uniqueUserIds.length, 'users:', uniqueUserIds);
+      console.log('Academy: User IDs from rounds:', roundUserIds.length, 'drills:', drillUserIds.length, 'practice:', practiceUserIds.length);
+      
+      // Name Mapping: Match user_id from practice table to id in profiles table
       const profiles = await fetchUserProfiles(uniqueUserIds);
       setUserProfiles(profiles);
       console.log('Academy: Loaded profiles:', Array.from(profiles.entries()).map(([id, data]) => ({ id, name: data.full_name })));
     };
     
     fetchProfiles();
-  }, [rounds?.length]); // Re-fetch profiles when rounds change
+  }, [rounds?.length, drills?.length, practiceSessions?.length]); // Re-fetch profiles when rounds, drills, or practice sessions change
   
   // Fix the React Error #310 infinite loop on the Academy page
   // Consolidate Calculations: All leaderboard calculations in single useEffect
