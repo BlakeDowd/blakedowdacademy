@@ -707,11 +707,11 @@ function formatMetricValue(value: number, metric: 'library' | 'practice' | 'roun
   }
 }
 
-// Create a Name Lookup: Fetch full_name and profile_icon for each user_id
+// Create a Name Lookup: Fetch full_name, profile_icon, and xp for each user_id
 // Name Mapping: Match the user_id from the practice table (or rounds/drills) to the id in the profiles table to display their real names
-// Note: The profiles table only has id and full_name (no email column)
-async function fetchUserProfiles(userIds: string[]): Promise<Map<string, { full_name?: string; profile_icon?: string }>> {
-  const profileMap = new Map<string, { full_name?: string; profile_icon?: string }>();
+// Update fetchUserProfiles to include XP column from profiles table
+async function fetchUserProfiles(userIds: string[]): Promise<Map<string, { full_name?: string; profile_icon?: string; xp?: number }>> {
+  const profileMap = new Map<string, { full_name?: string; profile_icon?: string; xp?: number }>();
   
   if (userIds.length === 0) return profileMap;
   
@@ -720,10 +720,10 @@ async function fetchUserProfiles(userIds: string[]): Promise<Map<string, { full_
     const supabase = createClient();
     
     // Name Mapping: Match user_id from practice/rounds/drills tables to id in profiles table
-    // The profiles table only has id and full_name (no email column)
+    // Update fetchUserProfiles to include XP column from profiles table
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, full_name, profile_icon')
+      .select('id, full_name, profile_icon, xp')
       .in('id', userIds);
     
     if (error) {
@@ -731,14 +731,16 @@ async function fetchUserProfiles(userIds: string[]): Promise<Map<string, { full_
       return profileMap;
     }
     
-    // Map IDs to Names: Create a map of user_id -> { full_name, profile_icon }
+    // Map IDs to Names: Create a map of user_id -> { full_name, profile_icon, xp }
     // The key is the user_id from practice/rounds/drills, which matches the id in profiles table
+    // Update fetchUserProfiles to include XP column from profiles table
     if (data) {
       data.forEach((profile: any) => {
         // Name Mapping: user_id from practice table matches id in profiles table
         profileMap.set(profile.id, {
           full_name: profile.full_name,
-          profile_icon: profile.profile_icon
+          profile_icon: profile.profile_icon,
+          xp: profile.xp || 0 // Include XP from profiles table
         });
       });
     }
@@ -758,7 +760,7 @@ function getMockLeaderboard(
   rounds: any[],
   userName: string,
   user?: { id?: string; initialHandicap?: number; profileIcon?: string } | null,
-  userProfiles?: Map<string, { full_name?: string; profile_icon?: string }>,
+  userProfiles?: Map<string, { full_name?: string; profile_icon?: string; xp?: number }>,
   drills?: any[],
   practiceSessions?: any[]
 ) {
@@ -1144,8 +1146,9 @@ function getLeaderboardData(
   totalXP: number,
   userName: string,
   user?: { id?: string; profileIcon?: string } | null,
-  userProfiles?: Map<string, { full_name?: string; profile_icon?: string }>,
-  practiceSessions?: any[]
+  userProfiles?: Map<string, { full_name?: string; profile_icon?: string; xp?: number }>,
+  practiceSessions?: any[],
+  drills?: any[]
 ) {
   // Debug: Log leaderboard calculation inputs
   // Debug Logs: Keep console.log to see if Stuart's round is in the raw data
@@ -1751,7 +1754,58 @@ function getLeaderboardData(
     return result;
   }
   
-  // For other metrics (xp, library, drills), keep existing logic but remove user filter
+  // Update XP Leaderboard: Use XP from profiles instead of localStorage
+  // For XP metric, create leaderboard entries from all user profiles
+  if (metric === 'xp') {
+    // Update XP Leaderboard: Use XP from profiles instead of localStorage
+    const allEntries: any[] = [];
+    
+    // Get all user IDs from rounds, drills, and practice sessions to ensure we have all users
+    const roundUserIds = (rounds || []).map((r: any) => r.user_id).filter(Boolean);
+    const drillUserIds = (drills || []).map((d: any) => d.user_id).filter(Boolean);
+    const practiceUserIds = (practiceSessions || []).map((p: any) => p.user_id).filter(Boolean);
+    const allUserIds = Array.from(new Set([...roundUserIds, ...drillUserIds, ...practiceUserIds]));
+    
+    // Create entries from userProfiles map (which includes XP)
+    if (userProfiles) {
+      userProfiles.forEach((profile, userId) => {
+        const xpValue = profile.xp || 0;
+        const displayName = profile.full_name || 'Academy Member';
+        
+        // Fix Avatars: Update the avatar circles to show the first letter of their names
+        let nameForAvatar = 'A';
+        if (profile.full_name) {
+          nameForAvatar = profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'A';
+        }
+        
+        const userIcon = profile.profile_icon || nameForAvatar;
+        
+        allEntries.push({
+          id: userId,
+          name: displayName,
+          avatar: userIcon,
+          value: xpValue,
+          isCurrentUser: user?.id === userId
+        });
+      });
+    }
+    
+    // Sort by XP descending (highest XP first)
+    allEntries.sort((a, b) => b.value - a.value);
+    
+    // Find current user's entry
+    const userEntryInSorted = allEntries.find(entry => entry.isCurrentUser);
+    const finalUserValue = userEntryInSorted?.value || userValue;
+    
+    return {
+      top3: allEntries.slice(0, 3),
+      all: allEntries,
+      userRank: userEntryInSorted ? allEntries.findIndex(entry => entry.isCurrentUser) + 1 : 0,
+      userValue: finalUserValue
+    };
+  }
+  
+  // For other metrics (library, drills), keep existing logic but remove user filter
   // Remove User Filtering: For every metric, ensure the code is processing the allEntries or the global rounds array instead of filtering for just the currentUser
   // Only include user in leaderboard if they have actual data (no mock/dummy entries)
   const userEntry = {
@@ -1768,7 +1822,7 @@ function getLeaderboardData(
   
   // Sort by value - descending for most metrics (higher is better)
   const sorted = [userEntry].sort((a, b) => {
-    // For all metrics here (xp, library, practice, drills), higher is better, so sort descending
+    // For all metrics here (library, drills), higher is better, so sort descending
     return b.value - a.value;
   });
   
@@ -1860,7 +1914,8 @@ export default function AcademyPage() {
   
   // Create a Name Lookup: Store profile data for all users in the leaderboard
   // Map IDs to Names: Match user IDs to their full_name from profiles table
-  const [userProfiles, setUserProfiles] = useState<Map<string, { full_name?: string; profile_icon?: string }>>(new Map());
+  // Update fetchUserProfiles to include XP column from profiles table
+  const [userProfiles, setUserProfiles] = useState<Map<string, { full_name?: string; profile_icon?: string; xp?: number }>>(new Map());
   
   // Add Fetch Guard: Create refs to ensure effects run exactly once
   const hasFetchedProgress = useRef(false);
@@ -2096,6 +2151,34 @@ export default function AcademyPage() {
     fetchProfiles();
   }, [rounds?.length, drills?.length, practiceSessions?.length]); // Re-fetch profiles when rounds, drills, or practice sessions change
   
+  // Global Refresh: Ensure the XP Leaderboard refreshes immediately after the points are added
+  // Add event listener for xpUpdated event to refresh profiles
+  useEffect(() => {
+    const handleXPUpdate = () => {
+      console.log('Academy: Received xpUpdated event, refreshing profiles...');
+      // Re-fetch profiles to get updated XP values
+      const fetchProfiles = async () => {
+        const roundUserIds = (rounds || []).map((r: any) => r.user_id).filter(Boolean);
+        const drillUserIds = (drills || []).map((d: any) => d.user_id).filter(Boolean);
+        const practiceUserIds = (practiceSessions || []).map((p: any) => p.user_id).filter(Boolean);
+        const allUserIds = [...roundUserIds, ...drillUserIds, ...practiceUserIds];
+        const uniqueUserIds = Array.from(new Set(allUserIds));
+        
+        if (uniqueUserIds.length > 0) {
+          const profiles = await fetchUserProfiles(uniqueUserIds);
+          setUserProfiles(profiles);
+          console.log('Academy: Profiles refreshed after XP update');
+        }
+      };
+      fetchProfiles();
+    };
+    
+    window.addEventListener('xpUpdated', handleXPUpdate);
+    return () => {
+      window.removeEventListener('xpUpdated', handleXPUpdate);
+    };
+  }, [rounds?.length, drills?.length, practiceSessions?.length]);
+  
   // Fix the React Error #310 infinite loop on the Academy page
   // Consolidate Calculations: All leaderboard calculations in single useEffect
   // Find the top3 calculation: Ensure it recalculates when rounds change
@@ -2140,7 +2223,7 @@ export default function AcademyPage() {
       });
       // Check Fetch Logic: Pass drills and practiceSessions to leaderboard functions
       // Remove Filter: Pass practiceSessions to getLeaderboardData so it can process all users' practice data
-      const newLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user, userProfiles, practiceSessions);
+      const newLeaderboard = getLeaderboardData(leaderboardMetric, timeFilter, rounds, totalXP, userName, user, userProfiles, practiceSessions, drills);
       const libraryLeaderboard = getMockLeaderboard('library', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);
       const practiceLeaderboard = getMockLeaderboard('practice', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);
       const roundsLeaderboard = getMockLeaderboard('rounds', timeFilter, rounds, userName, user, userProfiles, drills, practiceSessions);

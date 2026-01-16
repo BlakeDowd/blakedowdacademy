@@ -96,6 +96,60 @@ const facilityInfo: Record<FacilityType, { label: string; icon: any }> = {
 // All facility types
 const ALL_FACILITIES: FacilityType[] = ['home', 'range-mat', 'range-grass', 'bunker', 'chipping-green', 'putting-green'];
 
+// XP Logic: Create a function updateUserXP(points) that adds a specific amount of XP to the user's profiles record in Supabase
+async function updateUserXP(userId: string, points: number): Promise<void> {
+  try {
+    const { createClient } = await import("@/lib/supabase/client");
+    const supabase = createClient();
+
+    // Get current XP from profile
+    const { data: currentProfile, error: fetchError } = await supabase
+      .from('profiles')
+      .select('xp')
+      .eq('id', userId)
+      .single();
+
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      console.error('Error fetching current XP:', fetchError);
+      // If XP column doesn't exist, initialize it to 0
+      const currentXP = 0;
+      const newXP = currentXP + points;
+
+      // Update or insert XP
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ xp: newXP })
+        .eq('id', userId);
+
+      if (updateError) {
+        console.error('Error updating XP:', updateError);
+      } else {
+        console.log(`XP updated: ${currentXP} + ${points} = ${newXP}`);
+      }
+      return;
+    }
+
+    const currentXP = currentProfile?.xp || 0;
+    const newXP = currentXP + points;
+
+    // Update XP in profiles table
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ xp: newXP })
+      .eq('id', userId);
+
+    if (updateError) {
+      console.error('Error updating XP:', updateError);
+    } else {
+      console.log(`XP updated: ${currentXP} + ${points} = ${newXP}`);
+      // Global Refresh: Dispatch event to refresh XP leaderboard
+      window.dispatchEvent(new Event('xpUpdated'));
+    }
+  } catch (error) {
+    console.error('Error in updateUserXP:', error);
+  }
+}
+
 export default function PracticePage() {
   const { rounds, refreshPracticeSessions, refreshDrills } = useStats();
   const { user, refreshUser } = useAuth();
@@ -457,6 +511,14 @@ export default function PracticePage() {
       // Success Log: Add console.log('Practice saved successfully') so I can see if the button is actually finishing the job
       // Remove the Alert: Delete the alert('Logged!') line - replaced with subtle XP notification toast
       console.log('Practice saved successfully:', data);
+
+      // Trigger on Practice: In the savePractice function, add 10 XP for every 10 minutes of practice logged
+      // Calculate XP: 10 XP per 10 minutes (e.g., 30 minutes = 30 XP)
+      const practiceXP = Math.floor(duration / 10) * 10;
+      if (practiceXP > 0) {
+        await updateUserXP(user.id, practiceXP);
+        console.log(`Practice: Added ${practiceXP} XP for ${duration} minutes of practice`);
+      }
 
       // Update daily XP cap
       localStorage.setItem(dailyXPKey, (currentDailyXP + xpEarned).toString());
@@ -944,6 +1006,10 @@ export default function PracticePage() {
           console.log('Practice: Drill saved to drill_scores table:', scoreData);
           saved = true;
         }
+
+        // Trigger on Drill: In the markDrillComplete function, add 100 XP to the user whenever a drill is logged
+        await updateUserXP(user.id, 100);
+        console.log('Practice: Added 100 XP for drill completion');
 
         // Trigger Global Sync: After saving, dispatch the drillsUpdated event so the leaderboard refreshes immediately
         await refreshDrills();
