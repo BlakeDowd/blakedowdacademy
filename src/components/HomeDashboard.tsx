@@ -150,12 +150,18 @@ export default function HomeDashboard() {
   
   // State Sync: Use current_streak from user profile instead of calculating from practice sessions
   // The streak is now managed by the Daily Streak system in AuthContext
+  // Check the Variable: Ensure the banner in the UI is actually looking at profile.current_streak and not a local variable that resets on refresh
   const streakDays = useMemo(() => {
     // State Sync: Get streak from user.currentStreak (set by AuthContext after streak check)
-    if (user?.currentStreak !== undefined) {
-      return user.currentStreak;
+    // Check the Variable: Use user.currentStreak which comes from profile.current_streak in AuthContext
+    const streak = user?.currentStreak;
+    console.log('HomeDashboard: Streak value from user.currentStreak:', streak, 'user object:', user ? { id: user.id, fullName: user.fullName, currentStreak: user.currentStreak } : 'null');
+    
+    if (streak !== undefined && streak !== null) {
+      return streak;
     }
     // Fallback to 0 if streak not yet loaded
+    console.warn('HomeDashboard: Streak is undefined/null, defaulting to 0');
     return 0;
   }, [user?.currentStreak]); // State Sync: Depend on user.currentStreak so it updates when streak changes
   

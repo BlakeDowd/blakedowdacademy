@@ -32,40 +32,44 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // State Sync: Ensure setProfile is called with the updated streak value so the banner changes from '0 days' to '1 day' without needing a manual refresh
 async function checkAndUpdateStreak(supabase: ReturnType<typeof createClient>, userId: string, profile: any): Promise<number | null> {
   try {
-    // Date Formatting: Use .toISOString().split('T')[0] for the date comparison to avoid timezone issues that might prevent the streak from updating
+    // Timezone Fix: Use new Date().toLocaleDateString('en-CA') (YYYY-MM-DD) to ensure the date format in the database matches the date format in the app exactly
     const today = new Date();
-    const todayString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
+    const todayString = today.toLocaleDateString('en-CA'); // YYYY-MM-DD format (en-CA locale)
     
-    // Date Formatting: Use ISO string for comparison
-    const lastLoginDateString = profile.last_login_date || null;
+    // Handle First Login: If last_login_date is empty or null, the code must automatically set current_streak to 1 and save today's date
+    // Check the Variable: Ensure we check for null, undefined, and empty string
+    const lastLoginDateString = profile.last_login_date;
+    const isFirstLogin = !lastLoginDateString || lastLoginDateString === null || lastLoginDateString === '' || lastLoginDateString.trim() === '';
     
     const currentStreak = profile.current_streak || 0;
     let newStreak = currentStreak;
     let xpReward = 0;
     let streakMessage = '';
     
-    // Initialize Streak: In the streak check function, if last_login_date is NULL (first time use), immediately set the streak to 1 day and save today's date to last_login_date
-    if (!lastLoginDateString || lastLoginDateString === null) {
+    // Handle First Login: If last_login_date is empty or null, the code must automatically set current_streak to 1 and save today's date
+    if (isFirstLogin) {
       // First time login - start streak at 1
       newStreak = 1;
       xpReward = 50; // XP Reward: Give the user 50 XP the moment that 1-day streak starts
       streakMessage = 'Streak Started: 1 day!';
-      console.log('AuthContext: First time login - initializing streak to 1 day (last_login_date is NULL)');
+      console.log('AuthContext: First time login - initializing streak to 1 day (last_login_date is empty/null):', lastLoginDateString);
     } else {
-      // Date Formatting: Use ISO string for comparison
+      // Timezone Fix: Use toLocaleDateString('en-CA') for comparison to match database format
       const lastLoginDate = new Date(lastLoginDateString);
-      const lastLoginDateFormatted = lastLoginDate.toISOString().split('T')[0];
+      const lastLoginDateFormatted = lastLoginDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
       
       if (todayString === lastLoginDateFormatted) {
         // If it's the same day, do nothing
-        console.log('AuthContext: Same day login - streak unchanged:', currentStreak);
+        console.log('AuthContext: Same day login - streak unchanged:', currentStreak, 'last_login_date:', lastLoginDateFormatted);
         return currentStreak; // Return current streak for state sync
       }
       
-      // Calculate days difference using ISO strings
+      // Calculate days difference using locale date strings
       const todayDate = new Date(todayString);
       const lastDate = new Date(lastLoginDateFormatted);
       const daysDiff = Math.floor((todayDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      console.log('AuthContext: Days difference:', daysDiff, 'today:', todayString, 'last:', lastLoginDateFormatted);
       
       if (daysDiff === 1) {
         // If the dates are exactly 1 day apart, increase current_streak by 1 and reward 50 XP
@@ -80,17 +84,23 @@ async function checkAndUpdateStreak(supabase: ReturnType<typeof createClient>, u
     }
     
     // Update Database: Save the new streak and update last_login_date to today
-    // Date Formatting: Use .toISOString().split('T')[0] for the date comparison to avoid timezone issues
+    // Timezone Fix: Use toLocaleDateString('en-CA') to ensure the date format in the database matches the date format in the app exactly
+    console.log('AuthContext: Updating streak to', newStreak, 'with last_login_date:', todayString);
     const { error: updateError } = await supabase
       .from('profiles')
       .update({
         current_streak: newStreak,
-        last_login_date: todayString // Store as YYYY-MM-DD
+        last_login_date: todayString // Store as YYYY-MM-DD using en-CA locale
       })
       .eq('id', userId);
     
     if (updateError) {
       console.error('AuthContext: Error updating streak:', updateError);
+      // Handle First Login: Even on error, if it was first login, we should still return 1 to update the UI
+      if (isFirstLogin) {
+        console.warn('AuthContext: Database update failed but returning 1 for first login UI update');
+        return 1;
+      }
       return currentStreak; // Return current streak on error
     }
     
@@ -312,15 +322,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Implement a Daily Streak system
             // Check on Load: Every time the app loads and the user is logged in, compare today's date with last_login_date in their profile
             // State Sync: Ensure setProfile is called with the updated streak value so the banner changes from '0 days' to '1 day' without needing a manual refresh
+            // Handle First Login: If last_login_date is empty or null, the code must automatically set current_streak to 1 and save today's date
+            // Check the Variable: Ensure the banner in the UI is actually looking at profile.current_streak and not a local variable that resets on refresh
             let updatedStreak = profile?.current_streak || 0;
+            console.log('AuthContext: Initial streak from profile:', updatedStreak, 'last_login_date:', profile?.last_login_date);
+            
             if (profile && supabaseUser.id) {
               const streakResult = await checkAndUpdateStreak(supabase, supabaseUser.id, profile);
               if (streakResult !== null) {
                 updatedStreak = streakResult;
-                // State Sync: Update profile object with new streak value
+                // State Sync: Update profile object with new streak value so it persists
                 profile.current_streak = updatedStreak;
-                profile.last_login_date = new Date().toISOString().split('T')[0];
+                // Timezone Fix: Use toLocaleDateString('en-CA') to match database format
+                profile.last_login_date = new Date().toLocaleDateString('en-CA');
+                console.log('AuthContext: Streak updated to', updatedStreak, 'profile.current_streak set to:', profile.current_streak);
+              } else {
+                console.warn('AuthContext: checkAndUpdateStreak returned null, keeping current streak:', updatedStreak);
               }
+            } else {
+              console.warn('AuthContext: Cannot check streak - profile:', !!profile, 'supabaseUser.id:', !!supabaseUser.id);
             }
 
             // Verify Data Source: Force it to display profile?.full_name || user.email
@@ -329,7 +349,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // ONLY use full_name column, no fallbacks to email or other columns
             // Hard-Code Profile: If profile fetch fails, use hard-coded values
             // State Sync: Include updated streak in user state so banner changes from '0 days' to '1 day' without needing a manual refresh
-            console.log('AuthContext: Setting user with full_name:', profile?.full_name, 'streak:', updatedStreak);
+            // Check the Variable: Ensure the banner in the UI is actually looking at profile.current_streak and not a local variable that resets on refresh
+            // Use profile.current_streak (updated by checkAndUpdateStreak) as the source of truth
+            const finalStreak = profile?.current_streak !== undefined ? profile.current_streak : updatedStreak;
+            console.log('AuthContext: Setting user with full_name:', profile?.full_name, 'streak (from profile.current_streak):', finalStreak, 'updatedStreak:', updatedStreak);
             setUser({
               id: supabaseUser.id,
               email: supabaseUser.email || '',
@@ -337,7 +360,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               profileIcon: profile?.profile_icon || undefined, // Golf icon selected by student
               initialHandicap: 0, // Hard-Code Defaults: Manually set to 0 instead of getting from database
               createdAt: profile?.created_at || supabaseUser.created_at,
-              currentStreak: updatedStreak, // State Sync: Include streak in user state
+              currentStreak: finalStreak, // Check the Variable: Use profile.current_streak as source of truth
             });
             console.log('AuthContext: Initial check complete, user loaded (even if profile fetch had errors)');
           } finally {
