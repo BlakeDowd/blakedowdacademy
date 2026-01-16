@@ -104,7 +104,8 @@ export default function HomeDashboard() {
   const { user, refreshUser } = useAuth();
   
   // Re-initialize simply: Define const { rounds = [] } = useStats();
-  const { rounds = [] } = useStats();
+  // Sync Dashboard: Ensure the dashboard 'Practice' cards are pulling from this real data instead of mock numbers
+  const { rounds = [], practiceSessions = [] } = useStats();
   
   // Verify User Object: Log user object to verify it's correctly identifying the user
   useEffect(() => {
@@ -148,47 +149,87 @@ export default function HomeDashboard() {
   }, [rounds, user?.id]);
   
   // Calculate streak days from practice activity history
-  // Update HomeDashboard.tsx to use useStats() to get the actual rounds.length so the stats are dynamic instead of zero
+  // Sync Dashboard: Ensure the dashboard 'Practice' cards are pulling from this real data instead of mock numbers
+  // Use practiceSessions from StatsContext for real practice data
   const streakDays = useMemo(() => {
-    if (typeof window === 'undefined') return 0;
-    try {
-      const practiceHistory = JSON.parse(localStorage.getItem('practiceActivityHistory') || '[]');
-      if (!practiceHistory || practiceHistory.length === 0) return 0;
-      
-      // Sort by date descending
-      const sortedHistory = practiceHistory
-        .map((entry: any) => ({
-          date: new Date(entry.timestamp || entry.date),
-          entry
-        }))
-        .sort((a: any, b: any) => b.date.getTime() - a.date.getTime());
-      
-      if (sortedHistory.length === 0) return 0;
-      
-      // Calculate consecutive days from today backwards
-      let streak = 0;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      for (let i = 0; i < sortedHistory.length; i++) {
-        const entryDate = new Date(sortedHistory[i].date);
-        entryDate.setHours(0, 0, 0, 0);
+    // Sync Dashboard: Calculate streak from practiceSessions from database
+    if (!practiceSessions || practiceSessions.length === 0) {
+      // Fallback to localStorage if no database practice sessions
+      if (typeof window === 'undefined') return 0;
+      try {
+        const practiceHistory = JSON.parse(localStorage.getItem('practiceActivityHistory') || '[]');
+        if (!practiceHistory || practiceHistory.length === 0) return 0;
         
-        const daysDiff = Math.floor((today.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24));
+        const sortedHistory = practiceHistory
+          .map((entry: any) => ({
+            date: new Date(entry.timestamp || entry.date),
+            entry
+          }))
+          .sort((a: any, b: any) => b.date.getTime() - a.date.getTime());
         
-        if (daysDiff === streak) {
-          streak++;
-        } else if (daysDiff > streak) {
-          break; // Gap in streak
+        if (sortedHistory.length === 0) return 0;
+        
+        let streak = 0;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        for (let i = 0; i < sortedHistory.length; i++) {
+          const entryDate = new Date(sortedHistory[i].date);
+          entryDate.setHours(0, 0, 0, 0);
+          
+          const daysDiff = Math.floor((today.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24));
+          
+          if (daysDiff === streak) {
+            streak++;
+          } else if (daysDiff > streak) {
+            break;
+          }
         }
+        
+        return streak;
+      } catch (error) {
+        console.error('Error calculating streak from localStorage:', error);
+        return 0;
       }
-      
-      return streak;
-    } catch (error) {
-      console.error('Error calculating streak:', error);
-      return 0;
     }
-  }, [rounds?.length]); // Recalculate when rounds change (practice activities are in localStorage)
+    
+    // Sync Dashboard: Use practiceSessions from database
+    if (!user?.id) return 0;
+    
+    // Filter practice sessions for current user
+    const userPracticeSessions = practiceSessions.filter((session: any) => session?.user_id === user.id);
+    if (userPracticeSessions.length === 0) return 0;
+    
+    // Sort by date descending
+    const sortedSessions = [...userPracticeSessions]
+      .map((session: any) => ({
+        date: new Date(session?.practice_date || session?.created_at || 0),
+        session
+      }))
+      .sort((a: any, b: any) => b.date.getTime() - a.date.getTime());
+    
+    if (sortedSessions.length === 0) return 0;
+    
+    // Calculate consecutive days from today backwards
+    let streak = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    for (let i = 0; i < sortedSessions.length; i++) {
+      const entryDate = new Date(sortedSessions[i].date);
+      entryDate.setHours(0, 0, 0, 0);
+      
+      const daysDiff = Math.floor((today.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysDiff === streak) {
+        streak++;
+      } else if (daysDiff > streak) {
+        break; // Gap in streak
+      }
+    }
+    
+    return streak;
+  }, [practiceSessions, user?.id, rounds?.length]); // Sync Dashboard: Add practiceSessions to dependencies
   
   // Ensure rounds is always an array, never null or undefined
   const allRounds = (rounds || []) as any[];

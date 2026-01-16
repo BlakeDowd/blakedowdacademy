@@ -289,51 +289,47 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   };
 
   const loadPracticeSessions = async () => {
-    // Silence the 404: In StatsContext.tsx, completely comment out the fetch call for practice or practice_sessions until I create the table in Supabase tomorrow.
+    // Update Table Name: Ensure the loadStats function fetches from the practice table (not practice_sessions)
+    // The practice table is now created in Supabase
     if (practiceSessionsFetched.current) return;
     
-    // COMMENTED OUT: Practice sessions table doesn't exist yet - will be created tomorrow
-    // TODO: Uncomment when practice/practice_sessions table is created in Supabase
-    /*
     try {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
+      // Global Fetch: Remove any .eq('user_id', user.id) from the practice fetch call so we can see Stuart and Sean's practice stats on the leaderboard
       console.log('StatsContext: Fetching ALL practice sessions for leaderboard (not filtering by user_id)');
       
+      // Update Table Name: Ensure the loadStats function fetches from the practice table (not practice_sessions)
       const { data, error } = await supabase
         .from('practice')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {
+        // Verify Row-Level Security: Log RLS errors specifically
         if (error.code === 'PGRST116' || error.message?.includes('permission denied') || error.message?.includes('RLS')) {
-          console.warn('StatsContext: RLS may be blocking practice_sessions access. You may need to run SQL to enable RLS for the practice_sessions table.');
+          console.warn('StatsContext: RLS may be blocking practice access. You may need to run SQL to enable RLS for the practice table.');
           console.warn('StatsContext: Error details:', { code: error.code, message: error.message });
         } else {
-          console.error('StatsContext: Error loading practice_sessions from database:', error);
+          console.error('StatsContext: Error loading practice from database:', error);
         }
         setPracticeSessions([]);
         practiceSessionsFetched.current = true;
         return;
       }
 
-      console.log('StatsContext: Loaded practice_sessions from database:', data?.length || 0);
+      console.log('StatsContext: Loaded practice sessions from database:', data?.length || 0);
       if (data && data.length > 0) {
-        console.log('StatsContext: Sample practice_sessions:', data.slice(0, 3).map((p: any) => ({ id: p.id, user_id: p.user_id, duration_minutes: p.duration_minutes })));
+        console.log('StatsContext: Sample practice sessions:', data.slice(0, 3).map((p: any) => ({ id: p.id, user_id: p.user_id, duration_minutes: p.duration_minutes })));
       }
       setPracticeSessions((data || []) as PracticeSessionData[]);
       practiceSessionsFetched.current = true;
     } catch (error) {
-      console.error('StatsContext: Error loading practice_sessions:', error);
+      console.error('StatsContext: Error loading practice sessions:', error);
       setPracticeSessions([]);
       practiceSessionsFetched.current = true;
     }
-    */
-    
-    // Set empty array and mark as fetched to prevent retries
-    setPracticeSessions([]);
-    practiceSessionsFetched.current = true;
   };
 
   const refreshRounds = () => {
@@ -364,9 +360,9 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     loadRounds();
     
     // Check Fetch Logic: Fetch drills and practice_sessions from database tables
+    // Update Table Name: Practice table is now created - fetch from it
     loadDrills();
-    // Silence the 404: Commented out until practice table is created
-    // loadPracticeSessions();
+    loadPracticeSessions();
 
     // Listen for roundsUpdated event
     const handleRoundsUpdate = () => {
@@ -382,25 +378,21 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       loadDrills();
     };
     
-    // Silence the 404: Commented out until practice table is created
-    /*
+    // Update Table Name: Practice table is now created - enable event listeners
     const handlePracticeSessionsUpdate = () => {
       console.log('StatsContext: Received practiceSessionsUpdated event, refreshing from database...');
       practiceSessionsFetched.current = false;
       loadPracticeSessions();
     };
-    */
 
     window.addEventListener('roundsUpdated', handleRoundsUpdate);
     window.addEventListener('drillsUpdated', handleDrillsUpdate);
-    // Silence the 404: Commented out until practice table is created
-    // window.addEventListener('practiceSessionsUpdated', handlePracticeSessionsUpdate);
+    window.addEventListener('practiceSessionsUpdated', handlePracticeSessionsUpdate);
 
     return () => {
       window.removeEventListener('roundsUpdated', handleRoundsUpdate);
       window.removeEventListener('drillsUpdated', handleDrillsUpdate);
-      // Silence the 404: Commented out until practice table is created
-      // window.removeEventListener('practiceSessionsUpdated', handlePracticeSessionsUpdate);
+      window.removeEventListener('practiceSessionsUpdated', handlePracticeSessionsUpdate);
     };
   }, []); // Empty dependency array - fetch once on mount, then listen for updates
 
