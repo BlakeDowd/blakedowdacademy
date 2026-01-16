@@ -1674,9 +1674,11 @@ function getLeaderboardData(
       }, 0);
       const totalHours = totalMinutes / 60;
       
+      // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
+      // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       // Check Names: Ensure the Practice leaderboard uses the same profile name-mapping logic we used for the Rounds
       const profile = userProfiles?.get(userId);
-      const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
+      const displayName = profile?.full_name || 'Academy Member';
       
       // Fix Avatars: Update the avatar circles to show the first letter of their names
       let nameForAvatar = 'U';
