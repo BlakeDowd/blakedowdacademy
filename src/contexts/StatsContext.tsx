@@ -243,9 +243,9 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Check Fetch Logic: Ensure the loadStats function is fetching data from the drills and practice_sessions tables as well as rounds
-  // Remove User Filters: Just like we did for Rounds, remove any .eq('user_id', user.id) from the Drills and Practice fetch calls so the leaderboard can see everyone's progress
-  // Verify Row-Level Security: If Drills aren't saving, I may need to run the SQL 'Enable RLS' command for the drills table specifically
+  // The Practice sync is working perfectly! Now apply the same logic to Drills
+  // Global Fetch: Ensure the loadDrills function fetches all records from the drills table without a user_id filter
+  // Table Verification: Confirm the code is hitting the correct table name in Supabase—using 'drills' table
   const loadDrills = async () => {
     if (drillsFetched.current) return;
     
@@ -253,10 +253,11 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
+      // Global Fetch: Fetch all records from the drills table without a user_id filter
       console.log('StatsContext: Fetching ALL drills for leaderboard (not filtering by user_id)');
       
-      // Remove User Filters: Remove any .eq('user_id', user.id) from the Drills fetch calls
-      // Verify Row-Level Security: Check if RLS is blocking access - error will indicate this
+      // Table Verification: Using 'drills' table (not 'drill_scores')
+      // Global Fetch: Select ALL rows - no user_id filter
       const { data, error } = await supabase
         .from('drills')
         .select('*')
@@ -373,7 +374,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       loadRounds();
     };
     
-    // Listen for drills and practice_sessions updates
+    // Live Sync: Set up the same event listener (drillsUpdated) so when someone logs a new drill score, the leaderboard refreshes for everyone immediately
     const handleDrillsUpdate = () => {
       console.log('StatsContext: Received drillsUpdated event, refreshing from database...');
       drillsFetched.current = false;

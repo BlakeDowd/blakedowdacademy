@@ -789,9 +789,10 @@ function getMockLeaderboard(
   // Check Fetch Logic: Ensure the loadStats function is fetching data from the drills and practice_sessions tables as well as rounds
   // Remove User Filters: Just like we did for Rounds, remove any .eq('user_id', user.id) from the Drills and Practice fetch calls so the leaderboard can see everyone's progress
   
+  // The Practice sync is working perfectly! Now apply the same logic to Drills
   // For drills metric, group all drills by user_id and create leaderboard entries for each user
   if (metric === 'drills') {
-    // Check Fetch Logic: Use drills from database (StatsContext) instead of localStorage
+    // Global Fetch: Use drills from database (StatsContext) - already fetching all records without user_id filter
     // Remove User Filters: Process ALL drills from all users, not just current user
     const allDrills = drills || [];
     
@@ -814,11 +815,12 @@ function getMockLeaderboard(
     });
     
     // Create leaderboard entries for all users
+    // Name Mapping: Match the user_id in the drill data to the full_name in the profiles table so we see 'Stuart' instead of a code
     const allEntries: any[] = [];
     drillsByUser.forEach((userDrills, userId) => {
       const drillCount = userDrills.length;
       
-      // Create a Name Lookup: Get profile data from userProfiles map
+      // Name Mapping: Match the user_id in the drill data to the full_name in the profiles table
       const profile = userProfiles?.get(userId);
       const displayName = profile?.full_name || userId.substring(0, 8) || 'Unknown User';
       
@@ -2033,8 +2035,9 @@ export default function AcademyPage() {
   }, [loading]);
   
   // Create a Name Lookup: Fetch profiles for all unique user IDs in rounds, drills, and practice sessions
+  // The Practice sync is working perfectly! Now apply the same logic to Drills
+  // Name Mapping: Match the user_id in the drill data to the full_name in the profiles table so we see 'Stuart' instead of a code
   // Auto-Map Names: Ensure that for every row fetched, the app looks at the profiles table to find the matching full_name
-  // Name Mapping: Match the user_id from the practice table to the id in the profiles table to display their real names on the leaderboard
   useEffect(() => {
     const fetchProfiles = async () => {
       // Get all unique user IDs from rounds, drills, and practice sessions
