@@ -454,9 +454,9 @@ export default function PracticePage() {
         return;
       }
 
-      // Success Log: Add console.log('Practice saved successfully') and an alert('Logged!') so I can see if the button is actually finishing the job
+      // Success Log: Add console.log('Practice saved successfully') so I can see if the button is actually finishing the job
+      // Remove the Alert: Delete the alert('Logged!') line - replaced with subtle XP notification toast
       console.log('Practice saved successfully:', data);
-      alert('Logged!');
 
       // Update daily XP cap
       localStorage.setItem(dailyXPKey, (currentDailyXP + xpEarned).toString());
