@@ -727,6 +727,19 @@ async function fetchUserProfiles(userIds: string[]): Promise<Map<string, { full_
     // Verify Name Fetching: Log the user IDs we're looking for
     console.log('fetchUserProfiles: Looking for profiles for', userIds.length, 'user IDs:', userIds);
     
+    // Verify Name Fetching: Also fetch ALL profiles to verify we're getting everything
+    // This helps debug if we're missing profiles
+    const { data: allProfilesData } = await supabase
+      .from('profiles')
+      .select('id, full_name, profile_icon, xp');
+    
+    console.log('fetchUserProfiles: ALL profiles in database:', allProfilesData?.map((p: any) => ({ 
+      id: p.id, 
+      full_name: p.full_name || 'NO NAME',
+      xp: p.xp 
+    })));
+    console.log('fetchUserProfiles: Total profiles in database:', allProfilesData?.length || 0);
+    
     // Name Mapping: Match user_id from practice/rounds/drills tables to id in profiles table
     // Update fetchUserProfiles to include XP column from profiles table
     const { data, error } = await supabase
