@@ -104,6 +104,9 @@ export default function HomeDashboard() {
   // Verify User Object: Make sure the user object from useAuth() is correctly identifying me so it can find my rounds in the database
   const { user, refreshUser } = useAuth();
   
+  // Fetch Trophies: State for trophies from database
+  const [trophies, setTrophies] = useState<Array<{ id: string; trophy_id: string; earned_at?: string }>>([]);
+  
   // Re-initialize simply: Define const { rounds = [] } = useStats();
   // Sync Dashboard: Ensure the dashboard 'Practice' cards are pulling from this real data instead of mock numbers
   // Direct Context Access: Ensure this component is using currentStreak from useStats() to get the user data
@@ -346,11 +349,31 @@ export default function HomeDashboard() {
   const totalXP = profile?.totalXP || user?.totalXP || 0;
   // Add Log: Add console.log('XP SYNC CHECK:', profile?.totalXP) to confirm the value is being received from the database
   console.log('XP SYNC CHECK:', profile?.totalXP, 'user?.totalXP:', user?.totalXP, 'calculated totalXP:', totalXP);
-  const currentLevel = totalXP === 0 ? 1 : Math.floor(totalXP / 100) + 1;
-  const xpForCurrentLevel = totalXP % 100;
-  const xpNeededForNextLevel = 100;
+  
+  // Exponential Growth: Level thresholds - Level 2 = 500 XP, Level 3 = 1500 XP, Level 4 = 3000 XP
+  const getLevelInfo = (xp: number) => {
+    if (xp < 500) {
+      return { level: 1, xpForCurrentLevel: xp, xpNeededForNextLevel: 500, xpRemaining: 500 - xp };
+    } else if (xp < 1500) {
+      return { level: 2, xpForCurrentLevel: xp - 500, xpNeededForNextLevel: 1000, xpRemaining: 1500 - xp };
+    } else if (xp < 3000) {
+      return { level: 3, xpForCurrentLevel: xp - 1500, xpNeededForNextLevel: 1500, xpRemaining: 3000 - xp };
+    } else {
+      // Level 4+ (every 2000 XP after 3000)
+      const level4XP = xp - 3000;
+      const additionalLevels = Math.floor(level4XP / 2000);
+      const level = 4 + additionalLevels;
+      const xpInCurrentLevel = level4XP % 2000;
+      return { level, xpForCurrentLevel: xpInCurrentLevel, xpNeededForNextLevel: 2000, xpRemaining: 2000 - xpInCurrentLevel };
+    }
+  };
+  
+  const levelInfo = getLevelInfo(totalXP);
+  const currentLevel = levelInfo.level;
+  const xpForCurrentLevel = levelInfo.xpForCurrentLevel;
+  const xpNeededForNextLevel = levelInfo.xpNeededForNextLevel;
+  const xpRemaining = levelInfo.xpRemaining;
   const levelProgress = (xpForCurrentLevel / xpNeededForNextLevel) * 100;
-  const xpRemaining = xpNeededForNextLevel - xpForCurrentLevel;
   
   // Replace Mock Data: Use real rounds from useStats() instead of hardcoded users like 'Alex Chen'
   // Map Real Rounds: Use the rounds array from useStats(). Filter it to show the most recent 5-10 rounds from all users.
@@ -563,6 +586,71 @@ export default function HomeDashboard() {
       window.removeEventListener('roundsUpdated', handleRoundsUpdate);
     };
   }, [user?.id, rounds?.length]); // Cleanup Dependencies: Ensure the useEffect dependency array only contains stable values like [user?.id] and not the recentActivities state itself
+
+  // Map Icons: Ensure the dashboard uses the same icon logic as the Academy page
+  const getTrophyIcon = (trophyId: string) => {
+    // Map trophy_id to icon components (same logic as Academy page)
+    const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+      'first-steps': Clock,
+      'dedicated': Clock,
+      'practice-master': Target,
+      'practice-legend': Flame,
+      'student': BookOpen,
+      'scholar': BookOpen,
+      'expert': BookOpen,
+      'first-round': Trophy,
+      'consistent': Trophy,
+      'tracker': Trophy,
+      'rising-star': Star,
+      'champion': Zap,
+      'elite': Trophy, // Using Trophy as fallback for Crown
+      'goal-achiever': Trophy, // Using Trophy as fallback for Medal
+      'birdie-hunter': Target,
+      'breaking-90': Trophy,
+      'breaking-80': Trophy,
+      'breaking-70': Trophy,
+      'eagle-eye': Star,
+      'birdie-machine': Zap,
+      'par-train': Trophy,
+      'week-warrior': Flame,
+      'monthly-legend': Trophy, // Using Trophy as fallback for Crown
+      'putting-professor': BookOpen,
+      'wedge-wizard': BookOpen,
+      'coachs-pet': Trophy, // Using Trophy as fallback for Award
+    };
+    return iconMap[trophyId] || Trophy;
+  };
+
+  // Fetch Trophies: Use Supabase call to fetch rows from trophies table where user_id matches current profile
+  useEffect(() => {
+    const fetchTrophies = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        
+        const { data, error } = await supabase
+          .from('trophies')
+          .select('id, trophy_id, earned_at')
+          .eq('user_id', user.id)
+          .order('earned_at', { ascending: false });
+        
+        if (error) {
+          console.error('Error fetching trophies:', error);
+          return;
+        }
+        
+        if (data) {
+          setTrophies(data);
+        }
+      } catch (err) {
+        console.error('Error fetching trophies:', err);
+      }
+    };
+    
+    fetchTrophies();
+  }, [user?.id]);
   // Update HomeDashboard.tsx: Add rounds?.length to dependencies so streak recalculates when rounds change
 
   // Add Verification: Add a simple console.log to confirm it's no longer undefined
@@ -804,6 +892,7 @@ export default function HomeDashboard() {
             </Link>
             
             {/* XP Card - Opens Level Up Modal */}
+            {/* Sync Display: Update to show progress bar toward the next level (e.g., '1,000 XP to Level 3') */}
             <button
               onClick={() => setShowLevelModal(true)}
               className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97] text-left"
@@ -811,6 +900,7 @@ export default function HomeDashboard() {
               <Zap className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
               <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{totalXP.toLocaleString()}</p>
               <p className="text-gray-400 text-xs mt-1">Total XP</p>
+              <p className="text-gray-500 text-[10px] mt-0.5">{xpRemaining.toLocaleString()} XP to Level {currentLevel + 1}</p>
             </button>
             
             {/* Handicap Card - Links to Stats */}
@@ -866,8 +956,9 @@ export default function HomeDashboard() {
                   <Trophy className="w-8 h-8 text-white" />
                 </div>
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Level {currentLevel}</h3>
+                {/* Sync Display: Update to show progress bar toward the next level (e.g., '1,000 XP to Level 3') */}
                 <p className="text-gray-600 text-sm mb-4">
-                  {xpRemaining} XP until Level {currentLevel + 1}
+                  {xpRemaining.toLocaleString()} XP to Level {currentLevel + 1}
                 </p>
                 
                 {/* Progress Bar */}
@@ -1155,13 +1246,36 @@ export default function HomeDashboard() {
         </div>
 
         {/* Trophy Case Section - Moved to Bottom */}
+        {/* Fetch Trophies: Use StatsContext or Supabase call to fetch rows from trophies table where user_id matches current profile */}
+        {/* Horizontal Scroll: Display multiple trophies in a neat horizontal row */}
+        {/* Empty State: Show subtle 'Empty Case' placeholder if no trophies earned yet */}
         <div className="px-5 mb-6">
           <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Trophy Case</h2>
-            <div className="text-center py-8">
-              <Trophy className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p className="text-sm text-gray-500">No trophies yet. Keep practicing!</p>
-            </div>
+            {trophies && trophies.length > 0 ? (
+              <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: 'thin' }}>
+                {trophies.map((trophy) => {
+                  const IconComponent = getTrophyIcon(trophy.trophy_id);
+                  return (
+                    <div
+                      key={trophy.id}
+                      className="flex-shrink-0 flex flex-col items-center justify-center rounded-lg p-3 border-2 border-[#FFA500] bg-white shadow-sm transition-all hover:scale-105 cursor-pointer"
+                      style={{ minWidth: '80px' }}
+                    >
+                      <IconComponent className="w-8 h-8 mb-1" style={{ color: '#FFA500' }} />
+                      <span className="text-xs text-gray-600 text-center mt-1 truncate w-full">
+                        {trophy.trophy_id.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Trophy className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p className="text-sm text-gray-500">No trophies yet. Keep practicing!</p>
+              </div>
+            )}
           </div>
         </div>
 

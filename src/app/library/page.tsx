@@ -340,12 +340,32 @@ function LibraryPageContent() {
 
   const isCompleted = (drillId: string) => userProgress.completedDrills.includes(drillId);
 
-  // Calculate level - Level 1 starts at 0 XP, Level 2 requires 100 XP
+  // Exponential Growth: Level thresholds - Level 2 = 500 XP, Level 3 = 1500 XP, Level 4 = 3000 XP
   // Update Display: Use profile?.totalXP || 0 to match the Home Dashboard (synchronized from database)
   const totalXP = profile?.totalXP || 0;
-  const currentLevel = totalXP === 0 ? 1 : Math.floor(totalXP / 100) + 1;
-  const xpForCurrentLevel = totalXP % 100;
-  const xpNeededForNextLevel = 100;
+  
+  // Exponential Growth: Calculate level based on exponential thresholds
+  const getLevelInfo = (xp: number) => {
+    if (xp < 500) {
+      return { level: 1, xpForCurrentLevel: xp, xpNeededForNextLevel: 500, xpRemaining: 500 - xp };
+    } else if (xp < 1500) {
+      return { level: 2, xpForCurrentLevel: xp - 500, xpNeededForNextLevel: 1000, xpRemaining: 1500 - xp };
+    } else if (xp < 3000) {
+      return { level: 3, xpForCurrentLevel: xp - 1500, xpNeededForNextLevel: 1500, xpRemaining: 3000 - xp };
+    } else {
+      // Level 4+ (every 2000 XP after 3000)
+      const level4XP = xp - 3000;
+      const additionalLevels = Math.floor(level4XP / 2000);
+      const level = 4 + additionalLevels;
+      const xpInCurrentLevel = level4XP % 2000;
+      return { level, xpForCurrentLevel: xpInCurrentLevel, xpNeededForNextLevel: 2000, xpRemaining: 2000 - xpInCurrentLevel };
+    }
+  };
+  
+  const levelInfo = getLevelInfo(totalXP);
+  const currentLevel = levelInfo.level;
+  const xpForCurrentLevel = levelInfo.xpForCurrentLevel;
+  const xpNeededForNextLevel = levelInfo.xpNeededForNextLevel;
   const levelProgress = (xpForCurrentLevel / xpNeededForNextLevel) * 100;
 
   const filteredDrills = DRILLS.filter(drill => {
