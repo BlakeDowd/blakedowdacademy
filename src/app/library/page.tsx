@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search, ExternalLink, Play, FileText, File, Check, ChevronDown, X, Lock, Star } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 type DrillType = 'video' | 'text' | 'pdf';
 type SkillLevel = 'Foundation' | 'Performance' | 'Elite';
@@ -203,6 +204,8 @@ Remember: Consistency is more important than perfection. Practice daily, even if
 ];
 
 function LibraryPageContent() {
+  // Access Context: Ensure the page is using the useAuth() hook to get the user or profile object
+  const { user } = useAuth();
   const searchParams = useSearchParams();
   const [selectedDrill, setSelectedDrill] = useState<Drill | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -243,7 +246,16 @@ function LibraryPageContent() {
     }
   }, [searchParams]);
   
+  // Access Context: Create profile object with totalXP from useAuth
+  // Map Property: Point the display to profile?.totalXP || 0 to match the Home Dashboard
+  const profile = useMemo(() => {
+    return {
+      totalXP: user?.totalXP // Use synchronized totalXP from user object (mapped from database xp column)
+    };
+  }, [user?.totalXP]);
+
   // Load from localStorage on mount
+  // Remove Hardcoding: Keep userProgress for drill tracking, but use profile.totalXP for display
   const [userProgress, setUserProgress] = useState<UserProgress>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('userProgress');
@@ -257,7 +269,7 @@ function LibraryPageContent() {
     }
     return {
       completedDrills: [],
-      totalXP: 0,
+      totalXP: 0, // This is used for drill tracking only, display uses profile.totalXP
       totalMinutes: 0,
       drillCompletions: {}
     };
@@ -329,8 +341,10 @@ function LibraryPageContent() {
   const isCompleted = (drillId: string) => userProgress.completedDrills.includes(drillId);
 
   // Calculate level - Level 1 starts at 0 XP, Level 2 requires 100 XP
-  const currentLevel = userProgress.totalXP === 0 ? 1 : Math.floor(userProgress.totalXP / 100) + 1;
-  const xpForCurrentLevel = userProgress.totalXP % 100;
+  // Update Display: Use profile?.totalXP || 0 to match the Home Dashboard (synchronized from database)
+  const totalXP = profile?.totalXP || 0;
+  const currentLevel = totalXP === 0 ? 1 : Math.floor(totalXP / 100) + 1;
+  const xpForCurrentLevel = totalXP % 100;
   const xpNeededForNextLevel = 100;
   const levelProgress = (xpForCurrentLevel / xpNeededForNextLevel) * 100;
 
@@ -440,8 +454,9 @@ function LibraryPageContent() {
                         Level {currentLevel}
                       </span>
                       {/* Micro-Stats XP Counter */}
+                      {/* Update Display: Use profile?.totalXP || 0 to match the Home Dashboard (synchronized from database) */}
                       <span className="tracking-widest text-[10px] text-gray-400 uppercase font-mono">
-                        {userProgress.totalXP} XP
+                        {totalXP} XP
                       </span>
                     </div>
                     {/* Ultra-Thin Floating Progress Bar with Neon Glow - Matched Width */}
@@ -777,8 +792,9 @@ function LibraryPageContent() {
                         Level {currentLevel}
                       </span>
                       {/* Micro-Stats XP Counter */}
+                      {/* Update Display: Use profile?.totalXP || 0 to match the Home Dashboard (synchronized from database) */}
                       <span className="tracking-widest text-[10px] text-gray-400 uppercase font-mono">
-                        {userProgress.totalXP} XP
+                        {totalXP} XP
                       </span>
                     </div>
                     {/* Ultra-Thin Floating Progress Bar with Neon Glow - Matched Width */}
