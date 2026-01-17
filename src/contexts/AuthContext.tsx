@@ -38,8 +38,8 @@ async function checkAndUpdateStreak(supabase: ReturnType<typeof createClient>, u
       return null;
     }
     
-    // Console Log: Add console.log('Streak from DB:', profile.current_streak) so I can see if the app is actually reading the '1' during the refresh
-    console.log('AuthContext: Streak from DB:', profile.current_streak, 'last_login_date:', profile.last_login_date);
+    // Console Log: Use profile.currentStreak (camelCase) since the database column is "currentStreak"
+    console.log('AuthContext: Streak from DB:', profile.currentStreak, 'last_login_date:', profile.last_login_date);
     
     // Compare Dates Only: Ensure the logic compares only the Date strings (YYYY-MM-DD), not the full timestamps, to avoid resets caused by time differences
     // Timezone Fix: Use new Date().toLocaleDateString('en-CA') (YYYY-MM-DD) to ensure the date format in the database matches the date format in the app exactly
@@ -62,7 +62,8 @@ async function checkAndUpdateStreak(supabase: ReturnType<typeof createClient>, u
     
     const isFirstLogin = !lastLoginDateString || lastLoginDateString === null || lastLoginDateString === '' || lastLoginDateString.trim() === '';
     
-    const currentStreak = profile.current_streak || 0;
+    // Update Mapping: Use profile.currentStreak (camelCase) since the database column is "currentStreak"
+    const currentStreak = profile.currentStreak || 0;
     let newStreak = currentStreak;
     let xpReward = 0;
     let streakMessage = '';
@@ -121,12 +122,13 @@ async function checkAndUpdateStreak(supabase: ReturnType<typeof createClient>, u
     }
     
     // Update Database: Save the new streak and update last_login_date to today
+    // Update Query: Use "currentStreak" (with double quotes) since the database column is camelCase
     // Timezone Fix: Use toLocaleDateString('en-CA') to ensure the date format in the database matches the date format in the app exactly
     console.log('AuthContext: Updating streak to', newStreak, 'with last_login_date:', todayString);
     const { error: updateError } = await supabase
       .from('profiles')
       .update({
-        current_streak: newStreak,
+        "currentStreak": newStreak, // Use double quotes for camelCase column name
         last_login_date: todayString // Store as YYYY-MM-DD using en-CA locale
       })
       .eq('id', userId);
@@ -225,7 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Wrap in setTimeout to prevent deadlocks (Supabase recommendation)
       setTimeout(async () => {
-        // Bypass Profile Errors: Declare supabaseUser outside try block so we can use it in catch
+        // Declare supabaseUser outside try block so we can use it in catch
         let supabaseUser: any = null;
         let session: any = null;
         
@@ -275,63 +277,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             // Kill the Loop: Wrap entire profile fetch section in try/finally to guarantee setLoading(false)
             try {
-              // Check on Load: Fetch last_login_date and current_streak for Daily Streak system
-              // The Sync Rule: In the useEffect where you fetch the profile, make sure you call setProfile(data) only after you've verified the data is not null
+              // Check the ID: Log the user.id right before the fetch to ensure we are actually looking for a valid UUID
+              console.log('AuthContext: Fetching profile for user ID:', supabaseUser.id, '(Type:', typeof supabaseUser.id, ')');
+              
+              // Force the Column Name: Wrap the column in double quotes exactly like this: "currentStreak". This prevents the Supabase client or Postgres from automatically lower-casing it.
               const { data, error } = await supabase
                 .from('profiles')
-                .select('full_name, profile_icon, created_at, last_login_date, current_streak')
+                .select('id, full_name, profile_icon, created_at, last_login_date, "currentStreak"')
                 .eq('id', supabaseUser.id)
                 .single();
               
-              // The Sync Rule: Only set profile after verifying data is not null
-              // Fix State Initialization: Ensure the profile state is not being pre-filled with a default object containing current_streak: 0. It should be null until the database responds.
-              if (data) {
-                profile = data;
-                console.log('AuthContext: Profile data verified and set:', { 
-                  full_name: data.full_name, 
-                  current_streak: data.current_streak,
-                  last_login_date: data.last_login_date 
-                });
-                // The 'Force Sync' Rule: In the fetchProfile function, after you get the data from Supabase, call setProfile(data) and then immediately log console.log('UI Syncing Streak:', data.current_streak).
-                console.log('AuthContext: UI Syncing Streak:', data.current_streak);
-              } else {
-                // Fix State Initialization: Keep profile as null until database responds
-                profile = null;
-                console.log('AuthContext: No profile data from database, keeping profile as null');
-              }
-              profileError = error;
+              // Add Log: Add console.log right after the Supabase call to see if the 1 is actually leaving the database
+              console.log('FETCH DATA CHECK:', data);
               
-              if (profile) {
+              // Update Mapping: Ensure the code that sets the user state uses data.currentStreak instead of data.current_streak
+              // The database column is "currentStreak" (camelCase), not current_streak (snake_case)
+              // Fix the 'null' Profile: Set profile from data if it exists, even if there's an error (data takes precedence)
+              if (data) {
+                const profileData = { 
+                  ...data, 
+                  currentStreak: data?.currentStreak || 0 
+                };
+                console.log('Verify Mapping - profileData:', profileData, 'currentStreak value:', profileData.currentStreak, 'raw data.currentStreak:', data?.currentStreak);
+                
+                // Fix the 'null' Profile: Set profile from data to ensure profile is not null when data exists
+                profile = profileData;
+                console.log('AuthContext: Profile data verified and set:', { 
+                  full_name: profileData.full_name, 
+                  currentStreak: profileData.currentStreak,
+                  'data.currentStreak (raw)': data?.currentStreak
+                });
+                console.log('AuthContext: Profile fetched - currentStreak value:', profileData.currentStreak);
                 console.log('AuthContext: Profile found - full_name:', profile.full_name);
                 console.log('AuthContext: Profile found - profile_icon:', profile.profile_icon);
               } else {
-                console.log('AuthContext: No profile found for user ID:', supabaseUser.id);
+                // Kill the Fallback: Temporarily comment out the line that says keeping profile as null so the app is forced to wait for the real data.
+                // profile = null;
+                console.log('AuthContext: No profile data from database - waiting for real data');
               }
               
-            if (profileError) {
-              console.error('AuthContext: Profile fetch error:', profileError);
-              console.error('AuthContext: Error code:', profileError.code);
-              console.error('AuthContext: Error message:', profileError.message);
-              // Clear Storage on Failure: If profile fetch fails, clear localStorage and sessionStorage to wipe any poisoned session data
-              if (typeof window !== 'undefined') {
-                console.warn('AuthContext: Clearing localStorage and sessionStorage due to profile fetch failure');
-                localStorage.clear();
-                sessionStorage.clear();
+              // Fix the 'null' Profile: Only set profileError if there's an error AND no data
+              // If data exists, we can still use it even if there's a warning error
+              if (error && !data) {
+                profileError = error;
+                // Stop Partial Loading: Change the logic so that if the profile fetch fails, it logs the actual error to the console
+                console.error('❌ AuthContext: PROFILE FETCH FAILED - Full Error Details:');
+                console.error('   Error Code:', profileError.code);
+                console.error('   Error Message:', profileError.message);
+                console.error('   Error Details:', profileError.details);
+                console.error('   Error Hint:', profileError.hint);
+                console.error('   User ID:', supabaseUser?.id);
+                console.error('   This could be a permissions error (RLS policy), missing column, or query syntax issue');
+                
+                // Stop Partial Loading: Don't continue with partial data - log the actual error and investigate
+                // The error above will show why the fetch is failing (e.g., permissions error or missing column)
+                throw new Error(`Profile fetch failed: ${profileError.message} (Code: ${profileError.code}). Check RLS policies and column names.`);
+              } else if (error && data) {
+                // Log warning but don't throw - we have data so we can proceed
+                console.warn('AuthContext: Profile fetch returned data but also had an error:', error.message);
+                profileError = null; // Clear error since we have data
+              } else {
+                profileError = null; // No error
               }
-              // Make Handicap Optional: If profile fetch fails, continue anyway - don't block app load
-              console.warn('AuthContext: Profile fetch failed, but continuing to load app with partial data');
-            }
             } catch (fetchError) {
-              // Make Handicap Optional: Catch any errors and continue - don't block app load
-              // Clear Storage on Failure: If profile fetch fails, clear localStorage and sessionStorage to wipe any poisoned session data
-              console.error('AuthContext: Exception during profile fetch:', fetchError);
-              if (typeof window !== 'undefined') {
-                console.warn('AuthContext: Clearing localStorage and sessionStorage due to profile fetch exception');
-                localStorage.clear();
-                sessionStorage.clear();
-              }
-              console.warn('AuthContext: Continuing to load app despite profile fetch error');
+              // Stop Partial Loading: Log the actual exception so we can see what's failing
+              console.error('❌ AuthContext: EXCEPTION during profile fetch:');
+              console.error('   Exception:', fetchError);
+              console.error('   Exception Type:', typeof fetchError);
+              console.error('   Exception Message:', (fetchError as Error)?.message);
+              console.error('   User ID:', supabaseUser?.id);
+              
+              // Stop Partial Loading: Don't silently continue - log the error details for debugging
               profileError = fetchError;
+              // Don't throw here - let the calling code handle the error
             }
 
             // Auto-create profile if it doesn't exist (id matches auth.uid())
@@ -344,10 +362,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   id: supabaseUser.id, // This matches auth.uid() - ensures profile belongs to the right student
                   full_name: supabaseUser.email?.split('@')[0] || 'User',
                   created_at: new Date().toISOString(),
-                  current_streak: 0, // Initialize streak to 0 for new profiles
+                  "currentStreak": 0, // Initialize streak to 0 for new profiles (use double quotes for camelCase column)
                   last_login_date: null, // Initialize last_login_date to null for new profiles
                 })
-                .select('full_name, profile_icon, created_at, current_streak, last_login_date')
+                .select('full_name, profile_icon, created_at, "currentStreak", last_login_date')
                 .single();
               
               if (createError) {
@@ -366,10 +384,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   id: supabaseUser.id,
                   full_name: supabaseUser.email?.split('@')[0] || 'User',
                   created_at: new Date().toISOString(),
-                  current_streak: 0, // Initialize streak to 0 for new profiles
+                  "currentStreak": 0, // Initialize streak to 0 for new profiles (use double quotes for camelCase column)
                   last_login_date: null, // Initialize last_login_date to null for new profiles
                 })
-                .select('full_name, profile_icon, created_at, current_streak, last_login_date')
+                .select('full_name, profile_icon, created_at, "currentStreak", last_login_date')
                 .single();
               
               // The Sync Rule: Only set profile after verifying data is not null
@@ -393,28 +411,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               return;
             }
             
-            // Remove the Bypass: Delete any code that mentions '(Bypassed)' or hardcodes the name 'Blake'.
-            // Fix State Initialization: Ensure the profile state is not being pre-filled with a default object containing current_streak: 0. It should be null until the database responds.
-            // The Sync Rule: Only call setUser after verifying the data is not null
-            // Console Log: Add console.log('Streak from DB:', profile.current_streak) so I can see if the app is actually reading the '1' during the refresh
-            console.log('AuthContext: Streak from DB:', profile.current_streak, 'last_login_date:', profile.last_login_date);
+            // Fix Race Condition: Ensure streak calculation only runs after fetchProfile has successfully returned data
+            // Sync the State: Update profile state with exact currentStreak from database
+            // Debug the Row: Log the profile object to see what we have
+            console.log('AuthContext: Profile object before calculation:', profile);
+            // Verify Mapping: Profile now has currentStreak (camelCase) instead of current_streak (snake_case)
+            console.log('AuthContext: Streak from DB (before calculation):', profile.currentStreak, 'last_login_date:', (profile as any).last_login_date);
             
-            // Fix State Initialization: Use the actual database value, not a default 0
-            // Sync the State: When the profile is fetched, immediately set the current_streak in the local state to match the database value exactly
-            // Priority Check: Ensure the app reads the current_streak from the database first before trying to calculate a new one
-            // Fix State Initialization: Don't default to 0 - use the actual value from database (could be null, undefined, or a number)
-            const dbStreak = profile.current_streak; // Use actual value from database, don't default to 0
-            console.log('AuthContext: Priority Check - Initial streak from database (raw):', dbStreak, 'type:', typeof dbStreak, 'last_login_date:', profile.last_login_date);
+            // Sync the State: Use the exact database value - don't default to 0
+            // This ensures the UI shows the correct streak value from the database
+            // Verify Mapping: Use currentStreak (camelCase) from profile object
+            const dbStreak = profile.currentStreak; // Use currentStreak (camelCase) from profile object
+            console.log('AuthContext: Database streak value (raw):', dbStreak, 'type:', typeof dbStreak);
             
-            // The Sync Rule: Only call setUser after verifying the data is not null
-            // Sync the State: When the profile is fetched, immediately set the current_streak in the local state to match the database value exactly
-            // State Hydration: Set user state immediately with database value so UI shows correct streak right away
-            // This prevents the banner from showing 0 while the streak check runs
-            if (profile && supabaseUser.id) {
-              // Fix State Initialization: Use database value directly, don't default to 0
-              // Sync the State: Read current_streak from database first - use it as the initial value
-              let finalStreak = dbStreak ?? 0; // Will be updated if streak calculation runs, but use ?? 0 only for display
-              console.log('AuthContext: Sync the State - Setting user state immediately with database streak:', finalStreak, '(raw DB value:', dbStreak, ')');
+            // Fix Race Condition: Only proceed if profile data has been successfully fetched
+            if (profile && profile.id && supabaseUser.id) {
+              // Sync the State: Start with exact database value - no defaulting to 0
+              // The database value will be preserved unless streak calculation runs and returns a different value
+              let finalStreak: number | null | undefined = dbStreak; // Preserve exact database value (could be 1, 0, null, undefined)
+              console.log('AuthContext: Sync the State - Using database streak value:', finalStreak, '(raw DB:', dbStreak, ')');
               
               // Compare Dates Only: Ensure the logic compares only the Date strings (YYYY-MM-DD), not the full timestamps, to avoid resets caused by time differences
               // Fix Calculation Loop: If the last_login_date is 'Today', do not run any reset logic. Just display the number from the database.
@@ -448,53 +463,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // Compare Dates Only: Compare only the date strings (YYYY-MM-DD), not timestamps
                 if (todayString === lastLoginDateFormatted) {
                   // Fix Calculation Loop: If last_login_date is 'Today', do not run any reset logic. Just display the number from the database.
-                  console.log('AuthContext: Compare Dates Only - last_login_date is today (today:', todayString, 'last:', lastLoginDateFormatted, '), skipping streak calculation, using database value:', finalStreak);
-                  // Sync the State: Update profile object to match database value
-                  profile.current_streak = finalStreak;
-                  // Don't call checkAndUpdateStreak - just use the database value
+                  console.log('AuthContext: last_login_date is today - skipping streak calculation, using exact database value:', finalStreak);
+                  // Sync the State: Keep exact database value - update currentStreak (camelCase)
+                  profile.currentStreak = finalStreak; // Update camelCase property (database column is "currentStreak")
+                  // Don't call checkAndUpdateStreak - just use the database value as-is
                 } else {
-                  // Only run streak calculation if last_login_date is NOT today
-                  console.log('AuthContext: Compare Dates Only - last_login_date is not today (today:', todayString, 'last:', lastLoginDateFormatted, '), running streak calculation...');
+                  // Fix Race Condition: Only run streak calculation if last_login_date is NOT today
+                  console.log('AuthContext: last_login_date is not today - running streak calculation...');
                   const streakResult = await checkAndUpdateStreak(supabase, supabaseUser.id, profile);
-                  if (streakResult !== null) {
+                  if (streakResult !== null && streakResult !== undefined) {
+                    // Only update if calculation returns a valid value
                     finalStreak = streakResult;
-                    // State Sync: Update profile object with new streak value so it persists
-                    profile.current_streak = finalStreak;
-                    // Timezone Fix: Use toLocaleDateString('en-CA') to match database format
-                    profile.last_login_date = todayString;
-                    console.log('AuthContext: Streak updated to', finalStreak, 'profile.current_streak set to:', profile.current_streak);
+                    profile.currentStreak = finalStreak; // Update camelCase property (database column is "currentStreak")
+                    (profile as any).last_login_date = todayString;
+                    console.log('AuthContext: Streak calculation result:', finalStreak);
                   } else {
-                    console.warn('AuthContext: checkAndUpdateStreak returned null, keeping current streak:', finalStreak);
+                    // If calculation fails, keep database value
+                    console.warn('AuthContext: Streak calculation returned null/undefined, keeping database value:', finalStreak);
                   }
                 }
               } else {
                 // Handle First Login: If last_login_date is empty or null, run streak initialization
                 console.log('AuthContext: last_login_date is empty/null, initializing streak...');
                 const streakResult = await checkAndUpdateStreak(supabase, supabaseUser.id, profile);
-                if (streakResult !== null) {
+                if (streakResult !== null && streakResult !== undefined) {
                   finalStreak = streakResult;
-                  profile.current_streak = finalStreak;
-                  profile.last_login_date = todayString;
+                  profile.currentStreak = finalStreak; // Update camelCase property (database column is "currentStreak")
+                  (profile as any).last_login_date = todayString;
                   console.log('AuthContext: Streak initialized to', finalStreak);
                 }
               }
               
-              // The Sync Rule: Call setUser only after verifying data is not null
-              // Remove the Bypass: Delete any code that mentions '(Bypassed)' or hardcodes the name 'Blake'.
-              // Dashboard Update: Make sure the Dashboard component is using profile?.current_streak so it doesn't show 0 while the data is still traveling from the server.
-              // The 'Force Sync' Rule: In the fetchProfile function, after you get the data from Supabase, call setProfile(data) and then immediately log console.log('UI Syncing Streak:', data.current_streak).
+              // Verify Mapping: Ensure the code says setUser with currentStreak (camelCase) from profile.currentStreak
+              // Fix Race Condition: Only call setUser after fetchProfile and streak calculation have completed
+              const streakForUI = finalStreak ?? 0; // Only default to 0 for UI display if value is null/undefined
+              console.log('AuthContext: Setting user state with streak:', streakForUI, '(raw value:', finalStreak, ', profile.currentStreak:', profile.currentStreak, ')');
+              
+              // Verify Mapping: Map profile.currentStreak (camelCase) to currentStreak (camelCase in user object)
               setUser({
                 id: supabaseUser.id,
                 email: supabaseUser.email || '',
-                fullName: profile.full_name || undefined, // Remove the Bypass: Use full_name from profiles table, no hardcoded names
+                fullName: profile.full_name || undefined,
                 profileIcon: profile.profile_icon || undefined,
                 initialHandicap: 0,
                 createdAt: profile.created_at || supabaseUser.created_at,
-                currentStreak: finalStreak, // Dashboard Update: Use profile.current_streak so Dashboard doesn't show 0 while data is traveling
+                currentStreak: streakForUI, // Verify Mapping: Use profile.currentStreak (camelCase) from profileData
               });
               
-              // The 'Force Sync' Rule: After setting user state, immediately log the streak value
-              console.log('AuthContext: UI Syncing Streak (after setUser):', finalStreak, 'profile.current_streak:', profile.current_streak);
+              // Sync the State: Log the final streak value for verification
+              console.log('AuthContext: UI Syncing Streak - Final value set in user state:', streakForUI, 'profile.currentStreak:', profile.currentStreak);
             } else {
               console.warn('AuthContext: Cannot check streak - profile:', !!profile, 'supabaseUser.id:', !!supabaseUser.id);
             }
@@ -505,19 +522,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setLoading(false);
           }
         } catch (error) {
-          // Bypass Profile Errors: Even if profile fetch fails, set user state so the rest of the app (like Navbar) can mount
+          // Even if profile fetch fails, set user state so the rest of the app (like Navbar) can mount
           console.error("AuthContext: Error checking auth:", error);
           console.warn("AuthContext: Continuing to load app despite auth error");
           
-          // Remove the Bypass: Delete any code that mentions '(Bypassed)' or hardcodes the name 'Blake'.
           // Fix State Initialization: Ensure the profile state is not being pre-filled with a default object containing current_streak: 0. It should be null until the database responds.
           if (supabaseUser) {
             console.warn('AuthContext: Profile fetch failed, but supabaseUser exists - setting minimal user state without streak');
-            // Remove the Bypass: Don't use hardcoded names - use undefined until profile loads
+            // Don't use hardcoded names - use undefined until profile loads
             setUser({
               id: supabaseUser.id,
               email: supabaseUser.email || '',
-              fullName: undefined, // Remove the Bypass: No hardcoded fallback, will be set when profile loads
+              fullName: undefined, // No hardcoded fallback, will be set when profile loads
               profileIcon: undefined,
               initialHandicap: 0,
               createdAt: supabaseUser.created_at,
@@ -560,13 +576,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log('AuthContext: Fetching user profile for:', session.user.id);
           
           try {
-            // Fetch user profile - standardized to use full_name only
-            // Remove Database Dependency: Removed initial_handicap from .select() to avoid database dependency
+            // Identify the Failure: Locate the fetchProfile call inside the Auth listener
+            // Check the ID: Log the user.id right before the fetch to ensure we are actually looking for a valid UUID
+            console.log('AuthContext: onAuthStateChange - Fetching profile for user ID:', session.user.id, '(Type:', typeof session.user.id, ')');
+            
+            // Force the Column Name: Wrap the column in double quotes exactly like this: "currentStreak". This prevents the Supabase client or Postgres from automatically lower-casing it.
             let { data: profile, error: profileError } = await supabase
               .from('profiles')
-              .select('full_name, profile_icon, created_at')
-              .eq('id', session.user.id)
+              .select('id, full_name, profile_icon, created_at, last_login_date, "currentStreak"')
+              .eq('id', session.user.id) // Fix the Query: Use session.user.id which matches auth.uid()
               .single();
+            
+            // Fix the 'null' Profile: If profile data exists, use it even if there's an error
+            // Update Mapping: Ensure we use profile.currentStreak (camelCase) from the data
+            if (profile) {
+              // Update Mapping: Map currentStreak from profile data
+              profile = {
+                ...profile,
+                currentStreak: profile.currentStreak || 0
+              };
+              console.log('AuthContext: onAuthStateChange - Profile data loaded:', {
+                full_name: profile.full_name,
+                currentStreak: profile.currentStreak
+              });
+              // Clear error if we have data - data takes precedence
+              if (profileError) {
+                console.warn('AuthContext: onAuthStateChange - Profile fetch returned data but also had an error:', profileError.message);
+                profileError = null;
+              }
+            } else if (profileError) {
+              // Add Detailed Error Logging: Log the full error object from Supabase, including error.message, error.hint, and error.details
+              console.error('❌ AuthContext: onAuthStateChange PROFILE FETCH ERROR:');
+              console.error('   Error Code:', profileError.code);
+              console.error('   Error Message:', profileError.message);
+              console.error('   Error Details:', profileError.details);
+              console.error('   Error Hint:', profileError.hint);
+              console.error('   Full Error Object:', profileError);
+              console.error('   User ID:', session.user.id);
+              console.error('   This could be: RLS policy blocking access, missing column, or query syntax issue');
+            }
 
             // Auto-create profile if it doesn't exist (id matches auth.uid())
             if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('No rows'))) {
@@ -606,26 +654,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               }
             }
 
-            // Set user with profile data from profiles table - standardized to use full_name only
-            // Hard-Code Defaults: Manually set initialHandicap: 0 instead of getting it from database
-            setUser({
-              id: session.user.id,
-              email: session.user.email || '',
-              fullName: profile?.full_name || undefined, // Force: ONLY use full_name from profiles table
-              profileIcon: profile?.profile_icon, // Golf icon selected by student
-              initialHandicap: 0, // Hard-Code Defaults: Manually set to 0 instead of getting from database
-              createdAt: profile?.created_at || session.user.created_at,
-            });
-            setIsAuthenticated(true);
-            console.log('AuthContext: User authenticated and profile loaded');
+            // Retry Logic: Ensure that setUser isn't called with null data - verify profile exists before setting user state
+            // Verify Mapping: Map profile data with currentStreak property
+            if (profile) {
+              // Update Mapping: Ensure the code that sets the user state uses data.currentStreak instead of data.current_streak
+              // The database column is "currentStreak" (camelCase), not current_streak (snake_case)
+              const profileData = { 
+                ...profile, 
+                currentStreak: profile.currentStreak || 0 
+              };
+              
+              // Retry Logic: Only set user state if profile data is successfully loaded
+              setUser({
+                id: session.user.id,
+                email: session.user.email || '',
+                fullName: profileData.full_name || undefined,
+                profileIcon: profileData.profile_icon,
+                initialHandicap: 0,
+                createdAt: profileData.created_at || session.user.created_at,
+                currentStreak: profileData.currentStreak, // Verify Mapping: Include currentStreak from profile
+              });
+              setIsAuthenticated(true);
+              console.log('AuthContext: User authenticated and profile loaded with currentStreak:', profileData.currentStreak);
+            } else if (profileError) {
+              // Stop Partial Loading: If profile fetch fails, don't set user state with partial data
+              console.error('❌ AuthContext: Profile fetch failed in onAuthStateChange - NOT setting user state with partial data');
+              console.error('   Error details logged above - investigate the actual error');
+              // Don't set user state if profile fetch failed - this prevents loading with partial data
+            }
           } catch (error) {
-            console.error('AuthContext: Error fetching profile:', error);
-            // Set user with minimal data if profile fetch fails
-            setUser({
-              id: session.user.id,
-              email: session.user.email || '',
-            });
-            setIsAuthenticated(true);
+            // Stop Partial Loading: Log the actual error instead of silently continuing
+            console.error('❌ AuthContext: EXCEPTION in onAuthStateChange profile fetch:');
+            console.error('   Error:', error);
+            console.error('   Error Message:', (error as Error)?.message);
+            console.error('   User ID:', session.user.id);
+            // Don't set user state with partial data - let the error propagate or retry
           }
         } else {
           console.log('AuthContext: No session, clearing user');

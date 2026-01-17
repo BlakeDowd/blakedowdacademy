@@ -66,6 +66,7 @@ interface StatsContextType {
   refreshDrills: () => void;
   refreshPracticeSessions: () => void;
   calculateStats: () => { handicap: string; totalRounds: number };
+  currentStreak?: number; // Export the Value: Ensure currentStreak is included in the StatsContext.Provider value
 }
 
 const StatsContext = createContext<StatsContextType | undefined>(undefined);
@@ -79,6 +80,9 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   // Set loading to true initially
   const [loading, setLoading] = useState<boolean>(true);
   const { user } = useAuth();
+  
+  // Export the Value: Get currentStreak from AuthContext user object
+  const currentStreak = user?.currentStreak;
   
   // Add Fetch Guard: At the top of the StatsProvider component, add const hasAttemptedFetch = useRef(false);
   const hasAttemptedFetch = useRef(false);
@@ -471,7 +475,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   }, []); // Empty dependency array - fetch once on mount, then listen for updates
 
   return (
-    <StatsContext.Provider value={{ rounds, drills, practiceSessions, loading, refreshRounds, refreshDrills, refreshPracticeSessions, calculateStats }}>
+    <StatsContext.Provider value={{ rounds, drills, practiceSessions, loading, refreshRounds, refreshDrills, refreshPracticeSessions, calculateStats, currentStreak }}>
       {children}
     </StatsContext.Provider>
   );
@@ -490,7 +494,8 @@ export function useStats() {
       refreshRounds: () => {}, 
       refreshDrills: () => {}, 
       refreshPracticeSessions: () => {}, 
-      calculateStats: () => ({ handicap: 'N/A', totalRounds: 0 }) 
+      calculateStats: () => ({ handicap: 'N/A', totalRounds: 0 }),
+      currentStreak: undefined
     };
   }
   return context;

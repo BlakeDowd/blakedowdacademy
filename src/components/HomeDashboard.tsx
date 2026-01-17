@@ -105,7 +105,8 @@ export default function HomeDashboard() {
   
   // Re-initialize simply: Define const { rounds = [] } = useStats();
   // Sync Dashboard: Ensure the dashboard 'Practice' cards are pulling from this real data instead of mock numbers
-  const { rounds = [], practiceSessions = [] } = useStats();
+  // Direct Context Access: Ensure this component is using currentStreak from useStats() to get the user data
+  const { rounds = [], practiceSessions = [], currentStreak } = useStats();
   
   // Verify User Object: Log user object to verify it's correctly identifying the user
   useEffect(() => {
@@ -125,10 +126,10 @@ export default function HomeDashboard() {
   // Toast state for non-blocking notifications
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
   
-  // Sync Personal Greeting: Ensure the 'Member' greeting at the top also uses the logged-in user's full_name
-  // Note: AuthContext maps full_name from database to fullName property
+  // Map the User Object: Update to read name from user.full_name (or user.fullName if API transforms it)
+  // Note: AuthContext maps full_name from database to fullName property, but check both for compatibility
   // Safe Fallback: If a name isn't found, default to showing 'Golfer' instead of 'Member'
-  const displayName = user?.fullName || 'Golfer';
+  const displayName = user?.fullName || (user as any)?.full_name || 'Golfer';
   
   // Use useMemo to safely calculate rounds count from useStats()
   // Update HomeDashboard.tsx to use useStats() to get the actual rounds.length so the stats are dynamic instead of zero
@@ -148,37 +149,15 @@ export default function HomeDashboard() {
     return userRounds.length;
   }, [rounds, user?.id]);
   
-  // Dashboard Update: Make sure the Dashboard component is using profile?.current_streak so it doesn't show 0 while the data is still traveling from the server.
-  // Data Source: Locate the streak display in this component and ensure it uses profile.current_streak from AuthContext
-  // Remove Hardcoded Zeros: Check if there is a hardcoded 0 or a local state variable named streak that isn't being updated
-  // Sync with Context: Ensure this component is wrapped in the useStats() hook so it re-renders automatically when the profile loads
-  // The streak is now managed by the Daily Streak system in AuthContext
-  // Check the Variable: Ensure the banner in the UI is actually looking at profile.current_streak and not a local variable that resets on refresh
-  const streakDays = useMemo(() => {
-    // Dashboard Update: Use user.currentStreak which comes from profile.current_streak in AuthContext
-    // Data Source: Get streak from user.currentStreak (set by AuthContext after streak check)
-    // Check the Variable: Use user.currentStreak which comes from profile.current_streak in AuthContext
-    // Dashboard Update: Make sure the Dashboard component is using profile?.current_streak so it doesn't show 0 while the data is still traveling from the server.
-    const streak = user?.currentStreak;
-    console.log('HomeDashboard: Dashboard Update - Streak value from user.currentStreak (profile.current_streak):', streak, 'user object:', user ? { id: user.id, fullName: user.fullName, currentStreak: user.currentStreak } : 'null');
-    
-    // Dashboard Update: Only return 0 if user is loaded but streak is missing (not if user is still loading)
-    // Fix State Initialization: Don't default to 0 while data is traveling - use undefined or wait
-    if (user && streak !== undefined && streak !== null) {
-      console.log('HomeDashboard: Dashboard Update - Using streak from database (profile.current_streak):', streak);
-      return streak;
-    }
-    
-    // Dashboard Update: If user is loaded but streak is missing, log warning
-    if (user && (streak === undefined || streak === null)) {
-      console.warn('HomeDashboard: Dashboard Update - User is loaded but streak is missing (profile.current_streak not set), defaulting to 0');
-      return 0;
-    }
-    
-    // Dashboard Update: If user is not yet loaded, return 0 temporarily (will update when profile loads)
-    console.log('HomeDashboard: Dashboard Update - User not yet loaded, returning 0 temporarily (waiting for profile.current_streak)');
-    return 0;
-  }, [user, user?.currentStreak]); // Dashboard Update: Depend on both user object and currentStreak so it re-renders automatically when profile.current_streak loads
+  // Switch to camelCase: Create profile object with currentStreak (camelCase) to match the user object property name
+  // The console logs show currentStreak is available in the user object (camelCase)
+  // Remove Local State: No local state overrides - use the value directly from user.currentStreak
+  const profile = useMemo(() => {
+    // Update the Variable: Create profile object with currentStreak (camelCase) property to match user object
+    return {
+      currentStreak: user?.currentStreak // Use camelCase to match the user object property name
+    };
+  }, [user?.currentStreak]);
   
   // Ensure rounds is always an array, never null or undefined
   const allRounds = (rounds || []) as any[];
@@ -590,6 +569,10 @@ export default function HomeDashboard() {
   }, [user?.id, rounds?.length]); // Cleanup Dependencies: Ensure the useEffect dependency array only contains stable values like [user?.id] and not the recentActivities state itself
   // Update HomeDashboard.tsx: Add rounds?.length to dependencies so streak recalculates when rounds change
 
+  // Add Verification: Add a simple console.log to confirm it's no longer undefined
+  // Switch to camelCase: Log profile.currentStreak (camelCase) to verify it matches the user object property
+  console.log('Banner Displaying Streak:', profile?.currentStreak, 'user.currentStreak:', user?.currentStreak);
+  
   // Wrap return in try-catch to prevent crashes
   try {
     return (
@@ -700,8 +683,9 @@ export default function HomeDashboard() {
             <Flame className="w-4 h-4 text-white" />
             <div className="flex flex-col">
               <span className="text-xs font-medium text-white">Streak</span>
-              {/* Update HomeDashboard.tsx to use useStats() to get the actual rounds.length so the stats are dynamic instead of zero */}
-              <span className="text-white text-sm font-bold">{streakDays} day{streakDays !== 1 ? 's' : ''}</span>
+              {/* Update the Banner: In the orange streak banner, ensure the value is being pulled from profile.currentStreak || 0 */}
+              {/* Switch to camelCase: Using profile.currentStreak (camelCase) to match the user object property name */}
+              <span className="text-white text-sm font-bold">{(profile?.currentStreak || 0)} day{(profile?.currentStreak || 0) !== 1 ? 's' : ''}</span>
             </div>
           </div>
         </div>
@@ -812,16 +796,16 @@ export default function HomeDashboard() {
           <h3 className="text-gray-600 font-medium text-base mb-3">Skills Snapshot</h3>
           <div className="flex gap-3">
             {/* Streak Card - Links to Practice */}
-            {/* Data Source: Locate the streak display in this component and ensure it uses profile.current_streak from AuthContext */}
+            {/* Data Source: Locate the streak display in this component and ensure it uses profile.currentStreak from AuthContext */}
             {/* Match the Style: Keep the flame icon and formatting exactly as it is, just swap the number source */}
             <Link 
               href="/practice"
               className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97]"
             >
               <Flame className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
-              {/* Data Source: Use streakDays which comes from user.currentStreak (profile.current_streak in AuthContext) */}
-              {/* Remove Hardcoded Zeros: This value comes from the database via AuthContext, not a hardcoded 0 */}
-              <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{streakDays}</p>
+              {/* Consistency Check: Ensure the Skills Snapshot component is also updated to use profile.currentStreak */}
+              {/* Update the Variable: Use profile.currentStreak (camelCase) to match the user object property name */}
+              <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{profile?.currentStreak !== undefined ? profile.currentStreak : 0}</p>
               <p className="text-gray-400 text-xs mt-1">days streak</p>
             </Link>
             
