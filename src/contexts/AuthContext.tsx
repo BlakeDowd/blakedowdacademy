@@ -1,3 +1,4 @@
+// Production build sync: 01-18-2026 - v1.0.1
 "use client";
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
@@ -287,9 +288,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .eq('id', supabaseUser.id)
                 .single();
               
-              // Add Log: Add console.log right after the Supabase call to see if the 1 is actually leaving the database
-              console.log('FETCH DATA CHECK:', data);
-              
               // Update Mapping: Ensure the code that sets the user state uses data.currentStreak instead of data.current_streak
               // The database column is "currentStreak" (camelCase), not current_streak (snake_case)
               // Fix the 'null' Profile: Set profile from data if it exists, even if there's an error (data takes precedence)
@@ -334,7 +332,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 throw new Error(`Profile fetch failed: ${profileError.message} (Code: ${profileError.code}). Check RLS policies and column names.`);
               } else if (error && data) {
                 // Log warning but don't throw - we have data so we can proceed
-                console.warn('AuthContext: Profile fetch returned data but also had an error:', error.message);
+                // Fix TypeScript: Cast error to any to avoid 'never' type inference
+                console.warn('AuthContext: Profile fetch returned data but also had an error:', (error as any)?.message);
                 profileError = null; // Clear error since we have data
               } else {
                 profileError = null; // No error
@@ -631,8 +630,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               
               if (createError) {
                 console.error('AuthContext: Error creating profile:', createError);
-              } else {
-                profile = newProfile;
+              } else if (newProfile) {
+                // Fix TypeScript: Ensure profile includes all required properties (id, last_login_date, currentStreak)
+                profile = {
+                  ...newProfile,
+                  id: session.user.id,
+                  currentStreak: (newProfile as any)?.currentStreak || 0,
+                  last_login_date: (newProfile as any)?.last_login_date || null
+                };
                 console.log('AuthContext: Profile created successfully with id:', session.user.id);
               }
             } else if (!profile && !profileError) {
@@ -649,7 +654,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .single();
               
               if (!createError && newProfile) {
-                profile = newProfile;
+                // Fix TypeScript: Ensure profile includes all required properties (id, last_login_date, currentStreak)
+                profile = {
+                  ...newProfile,
+                  id: session.user.id,
+                  currentStreak: (newProfile as any)?.currentStreak || 0,
+                  last_login_date: (newProfile as any)?.last_login_date || null
+                };
                 console.log('AuthContext: Profile created successfully (fallback)');
               }
             }
@@ -982,4 +993,5 @@ export function useAuth() {
   }
   return context;
 }
+
 

@@ -1,3 +1,4 @@
+// Production Sync: Force Re-build 01-18-2026
 "use client";
 
 import { useRouter } from "next/navigation";
@@ -682,10 +683,14 @@ export default function HomeDashboard() {
           >
             <Flame className="w-4 h-4 text-white" />
             <div className="flex flex-col">
-              <span className="text-xs font-medium text-white">Streak</span>
+              <span className="text-xs font-medium text-white">Current Streak</span>
               {/* Update the Banner: In the orange streak banner, ensure the value is being pulled from profile.currentStreak || 0 */}
+              {/* Force Variable Sync: Double-check that this specific line is using profile.currentStreak (camelCase) so it matches our database fix */}
               {/* Switch to camelCase: Using profile.currentStreak (camelCase) to match the user object property name */}
-              <span className="text-white text-sm font-bold">{(profile?.currentStreak || 0)} day{(profile?.currentStreak || 0) !== 1 ? 's' : ''}</span>
+              <span className="text-white text-sm font-bold flex items-center gap-1">
+                {(profile?.currentStreak || 0)} day{(profile?.currentStreak || 0) !== 1 ? 's' : ''}
+                <Flame className="w-3 h-3 text-white" />
+              </span>
             </div>
           </div>
         </div>
