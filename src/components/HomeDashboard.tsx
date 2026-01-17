@@ -643,6 +643,7 @@ export default function HomeDashboard() {
         )}
         
         {/* Top Section - Premium Header */}
+        {/* Alignment: Use flexbox container (flex justify-between items-center) to ensure name is on left and streak is perfectly aligned on right */}
         <div className="px-5 pt-6 pb-4 flex items-center justify-between mb-4 bg-white">
           <div className="flex items-center gap-3">
             <button
@@ -665,28 +666,21 @@ export default function HomeDashboard() {
               </p>
             </div>
           </div>
-        </div>
-        
-        {/* Stats Cards Section - Streak */}
-        <div className="px-5 mb-4">
+          
+          {/* Relocate UI: Move the streak display to the right side of the Welcome Header */}
+          {/* Styling: Wrap the streak in a small, pill-shaped badge with a subtle orange background */}
           <div 
-            className="rounded-full px-4 py-2 flex items-center gap-2 shadow-md"
+            className="px-3 py-1.5 rounded-full flex items-center gap-1.5"
             style={{ 
               backgroundColor: '#FFA500',
-              boxShadow: '0 4px 12px rgba(255, 165, 0, 0.3)'
+              boxShadow: '0 2px 8px rgba(255, 165, 0, 0.2)'
             }}
           >
-            <Flame className="w-4 h-4 text-white" />
-            <div className="flex flex-col">
-              <span className="text-xs font-medium text-white">Current Streak</span>
-              {/* Update the Banner: In the orange streak banner, ensure the value is being pulled from profile.currentStreak || 0 */}
-              {/* Force Variable Sync: Double-check that this specific line is using profile.currentStreak (camelCase) so it matches our database fix */}
-              {/* Switch to camelCase: Using profile.currentStreak (camelCase) to match the user object property name */}
-              <span className="text-white text-sm font-bold flex items-center gap-1">
-                {(profile?.currentStreak || 0)} day{(profile?.currentStreak || 0) !== 1 ? 's' : ''}
-                <Flame className="w-3 h-3 text-white" />
-              </span>
-            </div>
+            <Flame className="w-3.5 h-3.5 text-white" />
+            {/* Force Variable Sync: Using profile.currentStreak (camelCase) to match our database fix */}
+            <span className="text-white text-sm font-semibold">
+              {(profile?.currentStreak || 0)} day{(profile?.currentStreak || 0) !== 1 ? 's' : ''}
+            </span>
           </div>
         </div>
 
