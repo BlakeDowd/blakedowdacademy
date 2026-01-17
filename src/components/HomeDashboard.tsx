@@ -153,12 +153,15 @@ export default function HomeDashboard() {
   // Switch to camelCase: Create profile object with currentStreak (camelCase) to match the user object property name
   // The console logs show currentStreak is available in the user object (camelCase)
   // Remove Local State: No local state overrides - use the value directly from user.currentStreak
+  // Map Property: Point the display to profile?.totalXP or user?.totalXP (using synchronized variable from AuthContext)
   const profile = useMemo(() => {
     // Update the Variable: Create profile object with currentStreak (camelCase) property to match user object
+    // Data Source: Use user?.totalXP which is now properly synchronized from database xp column in AuthContext
     return {
-      currentStreak: user?.currentStreak // Use camelCase to match the user object property name
+      currentStreak: user?.currentStreak, // Use camelCase to match the user object property name
+      totalXP: user?.totalXP // Use synchronized totalXP from user object (mapped from database xp column)
     };
-  }, [user?.currentStreak]);
+  }, [user?.currentStreak, user?.totalXP]);
   
   // Ensure rounds is always an array, never null or undefined
   const allRounds = (rounds || []) as any[];
@@ -305,7 +308,8 @@ export default function HomeDashboard() {
     }
   };
   
-  const [totalXP, setTotalXP] = useState(0);
+  // Remove Hardcoding: Delete any const totalXP = 0 placeholders that might be overriding the real data
+  // Data Source: Use profile?.totalXP from the profile object instead of hardcoded state
   const [dailyVideo, setDailyVideo] = useState(() => getDailyVideo());
   const [refreshKey, setRefreshKey] = useState(0);
   const [showLevelModal, setShowLevelModal] = useState(false);
@@ -338,6 +342,10 @@ export default function HomeDashboard() {
   const activitiesFetched = useRef(false);
   
   // Calculate level and progress - Level 1 starts at 0 XP, Level 2 requires 100 XP
+  // Locate the 'Total XP' display: Update the code to use the synchronized variable from profile or user
+  const totalXP = profile?.totalXP || user?.totalXP || 0;
+  // Add Log: Add console.log('XP SYNC CHECK:', profile?.totalXP) to confirm the value is being received from the database
+  console.log('XP SYNC CHECK:', profile?.totalXP, 'user?.totalXP:', user?.totalXP, 'calculated totalXP:', totalXP);
   const currentLevel = totalXP === 0 ? 1 : Math.floor(totalXP / 100) + 1;
   const xpForCurrentLevel = totalXP % 100;
   const xpNeededForNextLevel = 100;
@@ -531,20 +539,8 @@ export default function HomeDashboard() {
     // Wrap the Call: In the useEffect on line 411, add a check: if (activitiesFetched.current) return;
     if (activitiesFetched.current) return;
 
-    const loadXP = () => {
-      const savedProgress = localStorage.getItem('userProgress');
-      if (savedProgress) {
-        const progress = JSON.parse(savedProgress);
-        setTotalXP(progress.totalXP || 0);
-      }
-    };
-
-    loadXP();
+    // Remove Hardcoding: Remove loadXP function - XP is now synced from profile?.totalXP
     loadRecentActivities();
-
-    // Listen for XP updates
-    window.addEventListener('userProgressUpdated', loadXP);
-    window.addEventListener('storage', loadXP);
     
     // Listen for practice activity to refresh video
     const handlePracticeUpdate = () => {
@@ -562,8 +558,7 @@ export default function HomeDashboard() {
     window.addEventListener('roundsUpdated', handleRoundsUpdate);
 
     return () => {
-      window.removeEventListener('userProgressUpdated', loadXP);
-      window.removeEventListener('storage', loadXP);
+      // Remove Hardcoding: Removed XP event listeners - XP is now synced from profile?.totalXP
       window.removeEventListener('practiceActivityUpdated', handlePracticeUpdate);
       window.removeEventListener('roundsUpdated', handleRoundsUpdate);
     };

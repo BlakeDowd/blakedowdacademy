@@ -14,6 +14,7 @@ interface User {
   initialHandicap?: number;
   createdAt?: string;
   currentStreak?: number; // State Sync: Include streak in user state so banner updates
+  totalXP?: number; // Sync Interfaces: Include totalXP from database xp column
 }
 
 interface AuthContextType {
@@ -282,19 +283,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               console.log('AuthContext: Fetching profile for user ID:', supabaseUser.id, '(Type:', typeof supabaseUser.id, ')');
               
               // Force the Column Name: Wrap the column in double quotes exactly like this: "currentStreak". This prevents the Supabase client or Postgres from automatically lower-casing it.
+              // Update the Query: Add xp to the list of columns to fetch Total XP from database
               const { data, error } = await supabase
                 .from('profiles')
-                .select('id, full_name, profile_icon, created_at, last_login_date, "currentStreak"')
+                .select('id, full_name, profile_icon, created_at, last_login_date, "currentStreak", xp')
                 .eq('id', supabaseUser.id)
                 .single();
               
               // Update Mapping: Ensure the code that sets the user state uses data.currentStreak instead of data.current_streak
               // The database column is "currentStreak" (camelCase), not current_streak (snake_case)
+              // Map the Data: Map data.xp to totalXP for user state
               // Fix the 'null' Profile: Set profile from data if it exists, even if there's an error (data takes precedence)
               if (data) {
                 const profileData = { 
                   ...data, 
-                  currentStreak: data?.currentStreak || 0 
+                  currentStreak: data?.currentStreak || 0,
+                  totalXP: data?.xp || 0 // Map the Data: Assign xp from database to totalXP
                 };
                 console.log('Verify Mapping - profileData:', profileData, 'currentStreak value:', profileData.currentStreak, 'raw data.currentStreak:', data?.currentStreak);
                 
@@ -499,6 +503,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               console.log('AuthContext: Setting user state with streak:', streakForUI, '(raw value:', finalStreak, ', profile.currentStreak:', profile.currentStreak, ')');
               
               // Verify Mapping: Map profile.currentStreak (camelCase) to currentStreak (camelCase in user object)
+              // Map the Data: Assign totalXP from profile.xp (database column) to user state
               setUser({
                 id: supabaseUser.id,
                 email: supabaseUser.email || '',
@@ -507,6 +512,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 initialHandicap: 0,
                 createdAt: profile.created_at || supabaseUser.created_at,
                 currentStreak: streakForUI, // Verify Mapping: Use profile.currentStreak (camelCase) from profileData
+                totalXP: (profile as any)?.xp || (profile as any)?.totalXP || 0, // Map the Data: Assign data.xp to totalXP
               });
               
               // Sync the State: Log the final streak value for verification
@@ -580,23 +586,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.log('AuthContext: onAuthStateChange - Fetching profile for user ID:', session.user.id, '(Type:', typeof session.user.id, ')');
             
             // Force the Column Name: Wrap the column in double quotes exactly like this: "currentStreak". This prevents the Supabase client or Postgres from automatically lower-casing it.
+            // Update the Query: Add xp to the list of columns to fetch Total XP from database
             let { data: profile, error: profileError } = await supabase
               .from('profiles')
-              .select('id, full_name, profile_icon, created_at, last_login_date, "currentStreak"')
+              .select('id, full_name, profile_icon, created_at, last_login_date, "currentStreak", xp')
               .eq('id', session.user.id) // Fix the Query: Use session.user.id which matches auth.uid()
               .single();
             
             // Fix the 'null' Profile: If profile data exists, use it even if there's an error
             // Update Mapping: Ensure we use profile.currentStreak (camelCase) from the data
+            // Map the Data: Map profile.xp to totalXP
             if (profile) {
-              // Update Mapping: Map currentStreak from profile data
-              profile = {
+              // Update Mapping: Map currentStreak and totalXP from profile data
+              const profileWithXP = {
                 ...profile,
-                currentStreak: profile.currentStreak || 0
+                currentStreak: profile.currentStreak || 0,
+                totalXP: (profile as any)?.xp || 0, // Map the Data: Assign xp from database to totalXP
+                xp: (profile as any)?.xp || 0 // Keep xp property for TypeScript compatibility
               };
+              profile = profileWithXP as any;
               console.log('AuthContext: onAuthStateChange - Profile data loaded:', {
-                full_name: profile.full_name,
-                currentStreak: profile.currentStreak
+                full_name: profileWithXP.full_name,
+                currentStreak: profileWithXP.currentStreak,
+                totalXP: profileWithXP.totalXP
               });
               // Clear error if we have data - data takes precedence
               if (profileError) {
@@ -631,13 +643,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               if (createError) {
                 console.error('AuthContext: Error creating profile:', createError);
               } else if (newProfile) {
-                // Fix TypeScript: Ensure profile includes all required properties (id, last_login_date, currentStreak)
+                // Fix TypeScript: Ensure profile includes all required properties (id, last_login_date, currentStreak, xp)
                 profile = {
                   ...newProfile,
                   id: session.user.id,
                   currentStreak: (newProfile as any)?.currentStreak || 0,
-                  last_login_date: (newProfile as any)?.last_login_date || null
-                };
+                  last_login_date: (newProfile as any)?.last_login_date || null,
+                  xp: 0, // Initialize xp to 0 for new profiles
+                  totalXP: 0 // Map the Data: Initialize totalXP to 0 for new profiles
+                } as any;
                 console.log('AuthContext: Profile created successfully with id:', session.user.id);
               }
             } else if (!profile && !profileError) {
@@ -654,13 +668,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .single();
               
               if (!createError && newProfile) {
-                // Fix TypeScript: Ensure profile includes all required properties (id, last_login_date, currentStreak)
+                // Fix TypeScript: Ensure profile includes all required properties (id, last_login_date, currentStreak, xp)
                 profile = {
                   ...newProfile,
                   id: session.user.id,
                   currentStreak: (newProfile as any)?.currentStreak || 0,
-                  last_login_date: (newProfile as any)?.last_login_date || null
-                };
+                  last_login_date: (newProfile as any)?.last_login_date || null,
+                  xp: 0, // Initialize xp to 0 for new profiles
+                  totalXP: 0 // Map the Data: Initialize totalXP to 0 for new profiles
+                } as any;
                 console.log('AuthContext: Profile created successfully (fallback)');
               }
             }
@@ -676,6 +692,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               };
               
               // Retry Logic: Only set user state if profile data is successfully loaded
+              // Map the Data: Assign totalXP from profile.xp (database column) to user state
+              const profileDataWithXP = {
+                ...profileData,
+                totalXP: (profileData as any)?.xp || (profileData as any)?.totalXP || 0 // Map the Data: Assign data.xp to totalXP
+              };
               setUser({
                 id: session.user.id,
                 email: session.user.email || '',
@@ -684,6 +705,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 initialHandicap: 0,
                 createdAt: profileData.created_at || session.user.created_at,
                 currentStreak: profileData.currentStreak, // Verify Mapping: Include currentStreak from profile
+                totalXP: profileDataWithXP.totalXP, // Map the Data: Assign data.xp to totalXP
               });
               setIsAuthenticated(true);
               console.log('AuthContext: User authenticated and profile loaded with currentStreak:', profileData.currentStreak);
