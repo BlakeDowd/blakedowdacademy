@@ -40,6 +40,7 @@ interface RoundData {
 }
 
 interface RoundWithBadge extends RoundData {
+  id?: string | number; // FIX TYPE ERROR: Add id property to prevent build failure
   badge?: {
     text: string;
     type: 'best' | 'improved' | 'consistent';
@@ -210,7 +211,7 @@ export default function ScoresPage() {
               {sortedRounds.map((round, index) => {
                 // Update Key Logic: Change the key to use round.id if available, otherwise use date-index combination
                 const roundDate = round.date || new Date().toISOString().split('T')[0];
-                const uniqueKey = round?.id ? `round-${round.id}` : `round-${roundDate}-${index}`;
+                const uniqueKey = (round as any)?.id ? `round-${(round as any).id}` : `round-${roundDate}-${index}`;
                 
                 return (
                 <div

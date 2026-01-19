@@ -4771,8 +4771,8 @@ export default function AcademyPage() {
         </div>
 
         {/* Unified Leaderboard Card */}
-        <div className="mb-6 w-full">
-          <div className="rounded-2xl p-4 sm:p-6 bg-white border border-gray-200 shadow-sm w-full">
+        <div className="mb-6 w-full overflow-hidden" style={{ maxWidth: '100vw', flexWrap: 'wrap' }}>
+          <div className="rounded-2xl p-4 sm:p-6 bg-white border border-gray-200 shadow-sm w-full overflow-hidden" style={{ maxWidth: '100vw', flexWrap: 'wrap' }}>
             <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-4 text-center">
               Overall Leaderboard
             </h2>
