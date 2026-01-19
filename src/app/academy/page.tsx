@@ -4773,9 +4773,41 @@ export default function AcademyPage() {
         {/* Unified Leaderboard Card */}
         <div className="mb-6 w-full overflow-hidden" style={{ maxWidth: '100vw', flexWrap: 'wrap' }}>
           <div className="rounded-2xl p-4 sm:p-6 bg-white border border-gray-200 shadow-sm w-full overflow-hidden" style={{ maxWidth: '100vw', flexWrap: 'wrap' }}>
-            <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-4 text-center">
-              Overall Leaderboard
-            </h2>
+            {/* Title and Category Dropdown - Mobile Stacked */}
+            <div className="flex flex-col md:flex-row gap-2 md:items-center md:justify-between mb-4 w-full">
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900 text-center md:text-left">
+                Overall Leaderboard
+              </h2>
+              
+              {/* Category Dropdown */}
+              <div className="w-full md:w-auto" style={{ maxWidth: '100vw', overflow: 'hidden' }}>
+                <div className="flex items-center justify-center md:justify-end gap-2 sm:gap-4 flex-wrap w-full">
+                  <label htmlFor="category-select" className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">
+                    Category:
+                  </label>
+                  <select
+                    id="category-select"
+                    value={leaderboardMetric}
+                    onChange={(e) => {
+                      const selectedMetric = e.target.value as typeof leaderboardMetric;
+                      setLeaderboardMetric(selectedMetric);
+                    }}
+                    className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium text-gray-900 bg-white border border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#014421] focus:border-[#014421] transition-colors cursor-pointer w-full sm:w-auto"
+                    style={{ minWidth: '180px', maxWidth: '100vw', width: '100%' }}
+                  >
+                    <option value="library">Library</option>
+                    <option value="practice">Practice</option>
+                    <option value="drills">Drills</option>
+                    <option value="rounds">Rounds Entered</option>
+                    <option value="lowGross">Low Gross</option>
+                    <option value="lowNett">Low Nett</option>
+                    <option value="birdies">Birdies</option>
+                    <option value="eagles">Eagles</option>
+                    <option value="putts">Putts</option>
+                  </select>
+                </div>
+              </div>
+            </div>
 
             {/* Time Filter Buttons - Top Row */}
             <div className="mb-4 w-full">
@@ -4811,35 +4843,6 @@ export default function AcademyPage() {
                     </button>
                   );
                 })}
-              </div>
-            </div>
-
-            {/* Category Dropdown - Middle Row */}
-            <div className="mb-6 w-full" style={{ maxWidth: '100vw', overflow: 'hidden' }}>
-              <div className="flex items-center justify-center gap-2 sm:gap-4 flex-wrap w-full">
-                <label htmlFor="category-select" className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">
-                  Category:
-                </label>
-                <select
-                  id="category-select"
-                  value={leaderboardMetric}
-                  onChange={(e) => {
-                    const selectedMetric = e.target.value as typeof leaderboardMetric;
-                    setLeaderboardMetric(selectedMetric);
-                  }}
-                  className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium text-gray-900 bg-white border border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#014421] focus:border-[#014421] transition-colors cursor-pointer w-full sm:w-auto"
-                  style={{ minWidth: '180px', maxWidth: '100vw', width: '100%' }}
-                >
-                  <option value="library">Library</option>
-                  <option value="practice">Practice</option>
-                  <option value="drills">Drills</option>
-                  <option value="rounds">Rounds Entered</option>
-                  <option value="lowGross">Low Gross</option>
-                  <option value="lowNett">Low Nett</option>
-                  <option value="birdies">Birdies</option>
-                  <option value="eagles">Eagles</option>
-                  <option value="putts">Putts</option>
-                </select>
               </div>
             </div>
 

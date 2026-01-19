@@ -1575,7 +1575,7 @@ export default function HomeDashboard() {
                         {isEarned ? (
                           <>
                             {/* Shrink Everything: Reduce icon size so they look like small badges */}
-                            <IconComponent className="w-4 h-4" style={{ color: '#FFA500' }} />
+                            <IconComponent className="w-4 h-4 text-orange-400" />
                             <span className="text-[9px] text-gray-600 text-center mt-0.5 line-clamp-1 w-full leading-tight px-0.5">
                               {trophy.trophy_name}
                             </span>
