@@ -15,6 +15,7 @@ interface User {
   createdAt?: string;
   currentStreak?: number; // State Sync: Include streak in user state so banner updates
   totalXP?: number; // Sync Interfaces: Include totalXP from database xp column
+  trophies?: string[]; // Use Profile Data: Pull trophies directly from profile data (trophies or achievements column)
 }
 
 interface AuthContextType {
@@ -282,34 +283,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               // Check the ID: Log the user.id right before the fetch to ensure we are actually looking for a valid UUID
               console.log('AuthContext: Fetching profile for user ID:', supabaseUser.id, '(Type:', typeof supabaseUser.id, ')');
               
-              // Force the Column Name: Wrap the column in double quotes exactly like this: "currentStreak". This prevents the Supabase client or Postgres from automatically lower-casing it.
-              // Update the Query: Add xp to the list of columns to fetch Total XP from database
+              // Simplify Select: Change the .select() for the profiles table to strictly: .select('id, full_name, xp')
+              // We will add the other columns back once we confirm this works
+              console.log('Fetching profile for ID:', supabaseUser.id);
               const { data, error } = await supabase
                 .from('profiles')
-                .select('id, full_name, profile_icon, created_at, last_login_date, "currentStreak", xp')
+                .select('id, full_name, xp')
                 .eq('id', supabaseUser.id)
                 .single();
               
-              // Update Mapping: Ensure the code that sets the user state uses data.currentStreak instead of data.current_streak
-              // The database column is "currentStreak" (camelCase), not current_streak (snake_case)
-              // Map the Data: Map data.xp to totalXP for user state
-              // Fix the 'null' Profile: Set profile from data if it exists, even if there's an error (data takes precedence)
+              // Better Error Logging: Replace error logging with JSON.stringify for detailed error info
+              // Console Log Data: Add console.log after the error check so we can see what IS working
+              if (error && !data) {
+                console.error('Profile fetch error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+              }
+              
+              // Console Log Data: Add console.log right after the error check so we can see what IS working
+              console.log('DEBUG: Profile Data:', data);
+              
               if (data) {
+                console.log('✅ AuthContext: Profile loaded successfully', data);
+                // Strict State Updates: Direct overwrite - setXP(data.xp) instead of setXP(prev => prev + data.xp)
                 const profileData = { 
                   ...data, 
-                  currentStreak: data?.currentStreak || 0,
-                  totalXP: data?.xp || 0 // Map the Data: Assign xp from database to totalXP
+                  currentStreak: (data as any)?.currentStreak || (data as any)?.current_streak || 0,
+                  totalXP: data?.xp || 0 // Strict State Updates: Direct overwrite from database, not additive
                 };
-                console.log('Verify Mapping - profileData:', profileData, 'currentStreak value:', profileData.currentStreak, 'raw data.currentStreak:', data?.currentStreak);
+                console.log('Verify Mapping - profileData:', profileData, 'currentStreak value:', profileData.currentStreak, 'raw data.current_streak:', (data as any)?.current_streak);
                 
                 // Fix the 'null' Profile: Set profile from data to ensure profile is not null when data exists
                 profile = profileData;
                 console.log('AuthContext: Profile data verified and set:', { 
                   full_name: profileData.full_name, 
-                  currentStreak: profileData.currentStreak,
-                  'data.currentStreak (raw)': data?.currentStreak
+                  currentStreak: (profileData as any).currentStreak,
+                  'data.current_streak (raw)': (data as any)?.current_streak
                 });
-                console.log('AuthContext: Profile fetched - currentStreak value:', profileData.currentStreak);
+                console.log('AuthContext: Profile fetched - currentStreak value:', (profileData as any).currentStreak);
                 console.log('AuthContext: Profile found - full_name:', profile.full_name);
                 console.log('AuthContext: Profile found - profile_icon:', profile.profile_icon);
               } else {
@@ -504,15 +513,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               
               // Verify Mapping: Map profile.currentStreak (camelCase) to currentStreak (camelCase in user object)
               // Map the Data: Assign totalXP from profile.xp (database column) to user state
+              // Use Profile Data: Pull trophies directly from profile data (trophies or achievements column)
               setUser({
                 id: supabaseUser.id,
                 email: supabaseUser.email || '',
                 fullName: profile.full_name || undefined,
                 profileIcon: profile.profile_icon || undefined,
                 initialHandicap: 0,
-                createdAt: profile.created_at || supabaseUser.created_at,
+                createdAt: (profile as any)?.created_at || supabaseUser.created_at,
                 currentStreak: streakForUI, // Verify Mapping: Use profile.currentStreak (camelCase) from profileData
-                totalXP: (profile as any)?.xp || (profile as any)?.totalXP || 0, // Map the Data: Assign data.xp to totalXP
+                totalXP: (profile as any)?.xp || 0, // Strict State Updates: Direct overwrite from database, not additive
+                trophies: (profile as any)?.trophies || (profile as any)?.achievements || [], // Use Profile Data: Pull trophies from profile
               });
               
               // Sync the State: Log the final streak value for verification
@@ -585,22 +596,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Check the ID: Log the user.id right before the fetch to ensure we are actually looking for a valid UUID
             console.log('AuthContext: onAuthStateChange - Fetching profile for user ID:', session.user.id, '(Type:', typeof session.user.id, ')');
             
-            // Force the Column Name: Wrap the column in double quotes exactly like this: "currentStreak". This prevents the Supabase client or Postgres from automatically lower-casing it.
-            // Update the Query: Add xp to the list of columns to fetch Total XP from database
+            // Simplify Select: Change the .select() for the profiles table to strictly: .select('id, full_name, xp')
+            // We will add the other columns back once we confirm this works
+            console.log('Fetching profile for ID:', session.user.id);
             let { data: profile, error: profileError } = await supabase
               .from('profiles')
-              .select('id, full_name, profile_icon, created_at, last_login_date, "currentStreak", xp')
+              .select('id, full_name, xp')
               .eq('id', session.user.id) // Fix the Query: Use session.user.id which matches auth.uid()
               .single();
             
-            // Fix the 'null' Profile: If profile data exists, use it even if there's an error
-            // Update Mapping: Ensure we use profile.currentStreak (camelCase) from the data
-            // Map the Data: Map profile.xp to totalXP
+            // Better Error Logging: Replace line 613 with JSON.stringify for detailed error info
+            // Console Log Data: Add console.log right after the error check so we can see what IS working
+            if (profileError && !profile) {
+              console.error('Profile fetch error:', JSON.stringify(profileError, Object.getOwnPropertyNames(profileError), 2));
+            }
+            
+            // Console Log Data: Add console.log right after the error check so we can see what IS working
+            console.log('DEBUG: Profile Data:', profile);
+            
             if (profile) {
+              console.log('✅ AuthContext: Profile loaded successfully', profile);
               // Update Mapping: Map currentStreak and totalXP from profile data
               const profileWithXP = {
                 ...profile,
-                currentStreak: profile.currentStreak || 0,
+                currentStreak: (profile as any)?.currentStreak || (profile as any)?.current_streak || 0,
                 totalXP: (profile as any)?.xp || 0, // Map the Data: Assign xp from database to totalXP
                 xp: (profile as any)?.xp || 0 // Keep xp property for TypeScript compatibility
               };
@@ -688,24 +707,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               // The database column is "currentStreak" (camelCase), not current_streak (snake_case)
               const profileData = { 
                 ...profile, 
-                currentStreak: profile.currentStreak || 0 
+                currentStreak: (profile as any)?.currentStreak || (profile as any)?.current_streak || 0 
               };
               
               // Retry Logic: Only set user state if profile data is successfully loaded
-              // Map the Data: Assign totalXP from profile.xp (database column) to user state
+              // Strict State Updates: Direct overwrite - setXP(data.xp) instead of setXP(prev => prev + data.xp)
               const profileDataWithXP = {
                 ...profileData,
-                totalXP: (profileData as any)?.xp || (profileData as any)?.totalXP || 0 // Map the Data: Assign data.xp to totalXP
+                totalXP: (profileData as any)?.xp || 0 // Strict State Updates: Direct overwrite from database, not additive
               };
               setUser({
                 id: session.user.id,
                 email: session.user.email || '',
                 fullName: profileData.full_name || undefined,
-                profileIcon: profileData.profile_icon,
+                profileIcon: (profileData as any)?.profile_icon || undefined,
                 initialHandicap: 0,
-                createdAt: profileData.created_at || session.user.created_at,
+                createdAt: (profileData as any)?.created_at || session.user.created_at,
                 currentStreak: profileData.currentStreak, // Verify Mapping: Include currentStreak from profile
-                totalXP: profileDataWithXP.totalXP, // Map the Data: Assign data.xp to totalXP
+                totalXP: profileDataWithXP.totalXP, // Strict State Updates: Direct overwrite from database, not additive
+                trophies: (profileData as any)?.trophies || (profileData as any)?.achievements || [], // Use Profile Data: Pull trophies from profile
               });
               setIsAuthenticated(true);
               console.log('AuthContext: User authenticated and profile loaded with currentStreak:', profileData.currentStreak);

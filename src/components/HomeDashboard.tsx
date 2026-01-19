@@ -21,10 +21,16 @@ import {
   BookOpen,
   Users,
   Pencil,
-  Check
+  Check,
+  Crown,
+  Medal,
+  Award,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import IconPicker, { GOLF_ICONS } from "@/components/IconPicker";
 import Toast from "@/components/Toast";
+import TrophyCard from "@/components/TrophyCard";
 
 // Video drills for Daily Focus rotation
 const VIDEO_DRILLS = [
@@ -103,9 +109,6 @@ export default function HomeDashboard() {
   // Re-initialize simply: Define const { user } = useAuth();
   // Verify User Object: Make sure the user object from useAuth() is correctly identifying me so it can find my rounds in the database
   const { user, refreshUser } = useAuth();
-  
-  // Fetch Trophies: State for trophies from database
-  const [trophies, setTrophies] = useState<Array<{ id: string; trophy_id: string; earned_at?: string }>>([]);
   
   // Re-initialize simply: Define const { rounds = [] } = useStats();
   // Sync Dashboard: Ensure the dashboard 'Practice' cards are pulling from this real data instead of mock numbers
@@ -603,8 +606,8 @@ export default function HomeDashboard() {
       'tracker': Trophy,
       'rising-star': Star,
       'champion': Zap,
-      'elite': Trophy, // Using Trophy as fallback for Crown
-      'goal-achiever': Trophy, // Using Trophy as fallback for Medal
+      'elite': Crown,
+      'goal-achiever': Medal,
       'birdie-hunter': Target,
       'breaking-90': Trophy,
       'breaking-80': Trophy,
@@ -613,15 +616,119 @@ export default function HomeDashboard() {
       'birdie-machine': Zap,
       'par-train': Trophy,
       'week-warrior': Flame,
-      'monthly-legend': Trophy, // Using Trophy as fallback for Crown
+      'monthly-legend': Crown,
       'putting-professor': BookOpen,
       'wedge-wizard': BookOpen,
-      'coachs-pet': Trophy, // Using Trophy as fallback for Award
+      'coachs-pet': Award
     };
     return iconMap[trophyId] || Trophy;
   };
 
-  // Fetch Trophies: Use Supabase call to fetch rows from trophies table where user_id matches current profile
+  // Check Academy Logic: Calculate stats similar to Academy to determine unlocked trophies
+  // Calculate practice hours from practiceSessions
+  const calculatePracticeHours = () => {
+    if (!practiceSessions || practiceSessions.length === 0) return 0;
+    // Sum practice session durations (assuming duration is in minutes)
+    const totalMinutes = practiceSessions.reduce((sum: number, session: any) => {
+      return sum + (session.duration || session.estimatedMinutes || 0);
+    }, 0);
+    return totalMinutes / 60; // Convert to hours
+  };
+
+  // Calculate completed lessons from localStorage
+  const calculateCompletedLessons = () => {
+    if (typeof window === 'undefined') return 0;
+    try {
+      const savedProgress = localStorage.getItem('userProgress');
+      if (!savedProgress) return 0;
+      const progress = JSON.parse(savedProgress);
+      return (progress.completedDrills || []).length;
+    } catch {
+      return 0;
+    }
+  };
+
+  // Academy Trophy List - Match exact trophy definitions from Academy page with checkUnlocked functions
+  const ACADEMY_TROPHIES = [
+    { id: 'first-steps', name: 'First Steps', description: 'Complete 1 hour of practice', icon: Clock, checkUnlocked: (stats: any) => stats.practiceHours >= 1 },
+    { id: 'dedicated', name: 'Dedicated', description: 'Complete 10 hours of practice', icon: Clock, checkUnlocked: (stats: any) => stats.practiceHours >= 10 },
+    { id: 'practice-master', name: 'Practice Master', description: 'Complete 50 hours of practice', icon: Target, checkUnlocked: (stats: any) => stats.practiceHours >= 50 },
+    { id: 'practice-legend', name: 'Practice Legend', description: 'Complete 100 hours of practice', icon: Flame, checkUnlocked: (stats: any) => stats.practiceHours >= 100 },
+    { id: 'student', name: 'Student', description: 'Complete 5 lessons', icon: BookOpen, checkUnlocked: (stats: any) => stats.completedLessons >= 5 },
+    { id: 'scholar', name: 'Scholar', description: 'Complete 20 lessons', icon: BookOpen, checkUnlocked: (stats: any) => stats.completedLessons >= 20 },
+    { id: 'expert', name: 'Expert', description: 'Complete 50 lessons', icon: BookOpen, checkUnlocked: (stats: any) => stats.completedLessons >= 50 },
+    { id: 'first-round', name: 'First Round', description: 'Log your first round', icon: Trophy, checkUnlocked: (stats: any) => stats.rounds >= 1 },
+    { id: 'consistent', name: 'Consistent', description: 'Log 10 rounds', icon: Trophy, checkUnlocked: (stats: any) => stats.rounds >= 10 },
+    { id: 'tracker', name: 'Tracker', description: 'Log 25 rounds', icon: Trophy, checkUnlocked: (stats: any) => stats.rounds >= 25 },
+    { id: 'rising-star', name: 'Rising Star', description: 'Earn 1,000 XP', icon: Star, checkUnlocked: (stats: any) => stats.totalXP >= 1000 },
+    { id: 'champion', name: 'Champion', description: 'Earn 5,000 XP', icon: Zap, checkUnlocked: (stats: any) => stats.totalXP >= 5000 },
+    { id: 'elite', name: 'Elite', description: 'Earn 10,000 XP', icon: Crown, checkUnlocked: (stats: any) => stats.totalXP >= 10000 },
+    { id: 'goal-achiever', name: 'Goal Achiever', description: 'Reach 8.7 handicap', icon: Medal, checkUnlocked: (stats: any) => stats.handicap <= 8.7 },
+    { id: 'birdie-hunter', name: 'Birdie Hunter', description: 'Log 1 Birdie in a round', icon: Target, checkUnlocked: (stats: any) => stats.roundsData?.some((r: any) => (r.birdies || 0) >= 1) || false },
+    { id: 'breaking-90', name: 'Breaking 90', description: 'Score below 90 in a round', icon: Trophy, checkUnlocked: (stats: any) => stats.roundsData?.some((r: any) => r.score !== null && r.score < 90) || false },
+    { id: 'breaking-80', name: 'Breaking 80', description: 'Score below 80 in a round', icon: Trophy, checkUnlocked: (stats: any) => stats.roundsData?.some((r: any) => r.score !== null && r.score < 80) || false },
+    { id: 'breaking-70', name: 'Breaking 70', description: 'Score below 70 in a round', icon: Trophy, checkUnlocked: (stats: any) => stats.roundsData?.some((r: any) => r.score !== null && r.score < 70) || false },
+    { id: 'eagle-eye', name: 'Eagle Eye', description: 'Score an Eagle in a round', icon: Star, checkUnlocked: (stats: any) => stats.roundsData?.some((r: any) => (r.eagles || 0) >= 1) || false },
+    { id: 'birdie-machine', name: 'Birdie Machine', description: 'Score 5 Birdies in a single round', icon: Zap, checkUnlocked: (stats: any) => stats.roundsData?.some((r: any) => (r.birdies || 0) >= 5) || false },
+    { id: 'par-train', name: 'Par Train', description: 'Score 5 consecutive pars in a round', icon: Trophy, checkUnlocked: (stats: any) => stats.roundsData?.some((r: any) => (r.pars || 0) >= 5) || false },
+    { id: 'week-warrior', name: 'Week Warrior', description: 'Practice 3 days in a row', icon: Flame, checkUnlocked: (stats: any) => {
+      if (!stats.practiceHistory || stats.practiceHistory.length === 0) return false;
+      const practiceDates = [...new Set(stats.practiceHistory.map((entry: any) => {
+        const date = new Date(entry.timestamp || entry.date);
+        return date.toISOString().split('T')[0];
+      }))].sort();
+      for (let i = 0; i < practiceDates.length - 2; i++) {
+        const date1 = new Date(practiceDates[i]);
+        const date2 = new Date(practiceDates[i + 1]);
+        const date3 = new Date(practiceDates[i + 2]);
+        date1.setDate(date1.getDate() + 1);
+        date2.setDate(date2.getDate() + 1);
+        if (date1.toISOString().split('T')[0] === practiceDates[i + 1] &&
+            date2.toISOString().split('T')[0] === practiceDates[i + 2]) {
+          return true;
+        }
+      }
+      return false;
+    }},
+    { id: 'monthly-legend', name: 'Monthly Legend', description: 'Log 20 total hours in a month', icon: Crown, checkUnlocked: (stats: any) => {
+      if (!stats.practiceHistory || stats.practiceHistory.length === 0) return false;
+      const monthlyHours: Record<string, number> = {};
+      stats.practiceHistory.forEach((entry: any) => {
+        const date = new Date(entry.timestamp || entry.date);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        const minutes = entry.duration || entry.estimatedMinutes || (entry.xp / 10) || 0;
+        monthlyHours[monthKey] = (monthlyHours[monthKey] || 0) + (minutes / 60);
+      });
+      return Object.values(monthlyHours).some(hours => hours >= 20);
+    }},
+    { id: 'putting-professor', name: 'Putting Professor', description: 'Complete all Putting category lessons', icon: BookOpen, checkUnlocked: (stats: any) => (stats.libraryCategories?.['Putting'] || 0) >= 5 },
+    { id: 'wedge-wizard', name: 'Wedge Wizard', description: 'Complete all Wedge Play category lessons', icon: BookOpen, checkUnlocked: (stats: any) => (stats.libraryCategories?.['Wedge Play'] || 0) >= 5 },
+    { id: 'coachs-pet', name: "Coach's Pet", description: 'Complete a recommended drill from "Most Needed to Improve"', icon: Award, checkUnlocked: (stats: any) => {
+      if (typeof window === 'undefined') return false;
+      try {
+        const recommendedDrills = JSON.parse(localStorage.getItem('recommendedDrills') || '[]');
+        const userProgress = JSON.parse(localStorage.getItem('userProgress') || '{}');
+        const completedDrillIds = userProgress.completedDrills || [];
+        const drillCompletions = userProgress.drillCompletions || {};
+        return recommendedDrills.some((drillId: string) => 
+          completedDrillIds.includes(drillId) || (drillCompletions[drillId] && drillCompletions[drillId] > 0)
+        );
+      } catch (e) {
+        return false;
+      }
+    }},
+  ];
+
+  // Fetch Trophies: State for combined trophies (from user_trophies table + Academy unlocked checks)
+  const [trophies, setTrophies] = useState<Array<{ trophy_name: string; trophy_icon?: string; unlocked_at?: string; id?: string; description?: string; isEarned?: boolean; requirement?: string }>>([]);
+  
+  // Add State: Add a selectedTrophy state to handle the 'clicked' trophy
+  const [selectedTrophy, setSelectedTrophy] = useState<{ trophy_name: string; trophy_icon?: string; unlocked_at?: string; id?: string; description?: string; isEarned?: boolean; requirement?: string } | null>(null);
+  
+  // Toggle State: Add a showLocked boolean state (defaulting to true)
+  const [showLocked, setShowLocked] = useState<boolean>(true);
+  
+  // Combine Data: Update the fetchTrophies function to pull from user_trophies AND run Academy 'unlocked' checks
   useEffect(() => {
     const fetchTrophies = async () => {
       if (!user?.id) return;
@@ -630,27 +737,182 @@ export default function HomeDashboard() {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
         
-        const { data, error } = await supabase
-          .from('trophies')
-          .select('id, trophy_id, earned_at')
+        // Fetch Trophies: Pull from user_trophies table
+        // Detailed View: Include description from database for modal display
+        let { data: dbTrophies, error } = await supabase
+          .from('user_trophies')
+          .select('trophy_name, trophy_icon, unlocked_at, description')
           .eq('user_id', user.id)
-          .order('earned_at', { ascending: false });
+          .order('unlocked_at', { ascending: false });
         
         if (error) {
-          console.error('Error fetching trophies:', error);
-          return;
+          console.error('Trophy Error:', JSON.stringify(error, null, 2));
+          // Continue even if DB fetch fails - we'll still check Academy unlocks
         }
         
-        if (data) {
-          setTrophies(data);
+        // Combine Data: Calculate stats and run Academy unlocked checks (match Academy userStats structure)
+        const practiceHours = calculatePracticeHours();
+        const completedLessons = calculateCompletedLessons();
+        const userRounds = userRoundsCount;
+        
+        // Get practiceHistory and libraryCategories for complex trophy checks (match Academy logic)
+        let practiceHistory: any[] = [];
+        let libraryCategories: Record<string, number> = {};
+        
+        if (typeof window !== 'undefined') {
+          try {
+            practiceHistory = JSON.parse(localStorage.getItem('practiceActivityHistory') || '[]');
+            
+            // Calculate library categories from userProgress (match Academy logic exactly)
+            const userProgress = JSON.parse(localStorage.getItem('userProgress') || '{}');
+            const drillsData = JSON.parse(localStorage.getItem('drillsData') || '[]');
+            const completedDrillIds = userProgress.completedDrills || [];
+            
+            // Count completions by category
+            completedDrillIds.forEach((drillId: string) => {
+              const drill = drillsData.find((d: any) => d.id === drillId);
+              if (drill && drill.category) {
+                libraryCategories[drill.category] = (libraryCategories[drill.category] || 0) + 1;
+              }
+            });
+            
+            // Also check drillCompletions for repeatable drills
+            if (userProgress.drillCompletions) {
+              Object.keys(userProgress.drillCompletions).forEach((drillId: string) => {
+                const drill = drillsData.find((d: any) => d.id === drillId);
+                if (drill && drill.category) {
+                  libraryCategories[drill.category] = (libraryCategories[drill.category] || 0) + (userProgress.drillCompletions[drillId] || 0);
+                }
+              });
+            }
+          } catch (e) {
+            // Handle errors silently
+            libraryCategories = {};
+          }
         }
+        
+        // Calculate current handicap (simplified - would need from profile or rounds)
+        const currentHandicap = user?.initialHandicap || 12.0;
+        
+        const userStats = {
+          practiceHours,
+          completedLessons,
+          rounds: userRounds,
+          totalXP: profile?.totalXP || user?.totalXP || 0,
+          handicap: currentHandicap,
+          roundsData: safeRounds || [],
+          practiceHistory,
+          libraryCategories,
+        };
+        
+        // Check on Load: Every time the dashboard loads, compare current userStats against Academy milestone requirements
+        // Copy Academy Checks: Look at how the Academy page determines if trophies are unlocked
+        // Adopt Academy Logic: Run the same 'unlocked' checks used on the Academy page (like Target 🎯 or Lightning ⚡)
+        const unlockedAcademyTrophies = ACADEMY_TROPHIES
+          .filter(trophy => trophy.checkUnlocked(userStats))
+          .map(trophy => ({
+            trophy_name: trophy.name,
+            trophy_icon: undefined, // Academy uses icon components, not emojis
+            id: trophy.id,
+            // Clickable Detail: Since Academy trophies might not have database descriptions yet, add a fallback
+            description: trophy.description || 'Achievement earned in the Academy!',
+          }));
+        
+        // Auto-Insert: If a milestone is met but that trophy doesn't exist in user_trophies table yet, automatically INSERT to award it
+        const dbTrophyNamesSet = new Set((dbTrophies || []).map((t: any) => t.trophy_name));
+        const trophiesToInsert = unlockedAcademyTrophies.filter(trophy => !dbTrophyNamesSet.has(trophy.trophy_name));
+        
+        if (trophiesToInsert.length > 0) {
+          // Insert each missing trophy into the database
+          for (const trophy of trophiesToInsert) {
+            const { error: insertError } = await supabase
+              .from('user_trophies')
+              .insert({
+                user_id: user.id,
+                trophy_name: trophy.trophy_name,
+                description: trophy.description,
+                unlocked_at: new Date().toISOString()
+              });
+            
+            if (insertError) {
+              console.error(`Failed to insert trophy ${trophy.trophy_name}:`, insertError);
+            } else {
+              console.log(`✅ Auto-awarded trophy: ${trophy.trophy_name}`);
+            }
+          }
+          
+          // Refetch trophies after inserts to update the display
+          const { data: updatedDbTrophies } = await supabase
+            .from('user_trophies')
+            .select('trophy_name, trophy_icon, unlocked_at, description')
+            .eq('user_id', user.id)
+            .order('unlocked_at', { ascending: false });
+          
+          // Update dbTrophies with the newly inserted trophies
+          if (updatedDbTrophies) {
+            dbTrophies = updatedDbTrophies;
+          }
+        }
+        
+        // Filter DB Trophies: Update the rendering logic so it only displays a trophy if it exists in the database AND is marked as 'unlocked' or meets the Academy requirement
+        // Only include DB trophies that match unlocked Academy trophies (validates they meet requirements)
+        const unlockedDbTrophies = (dbTrophies || []).filter((dbTrophy: any) => {
+          // Check if this DB trophy matches an unlocked Academy trophy (meets Academy requirements)
+          return unlockedAcademyTrophies.some(acTrophy => acTrophy.trophy_name === dbTrophy.trophy_name);
+        }).map((dbTrophy: any) => {
+          // Remove Mismatched Icons: If a trophy icon in the database doesn't match the Academy icon, prioritize the Academy's visual
+          const academyTrophy = ACADEMY_TROPHIES.find(ac => ac.name === dbTrophy.trophy_name);
+          return {
+            ...dbTrophy,
+            id: academyTrophy?.id || dbTrophy.id,
+            // Use Academy icon (via id) instead of DB trophy_icon when Academy trophy exists
+            trophy_icon: academyTrophy ? undefined : dbTrophy.trophy_icon,
+            // Use Academy description if available, otherwise keep DB description
+            description: dbTrophy.description || academyTrophy?.description || 'Achievement earned in the Academy!'
+          };
+        });
+        
+        // Define the Collection: Create a constant list of all possible trophies (ACADEMY_TROPHIES)
+        // Compare & Render: Map through this full list. If a trophy name exists in user_trophies database, mark it as earned
+        const earnedTrophyNames = new Set((dbTrophies || []).map((t: any) => t.trophy_name));
+        
+        // Build complete trophy list with earned/locked status
+        const allTrophies = ACADEMY_TROPHIES.map(trophy => {
+          const isEarned = earnedTrophyNames.has(trophy.name);
+          const dbTrophy = dbTrophies?.find((t: any) => t.trophy_name === trophy.name);
+          
+          return {
+            trophy_name: trophy.name,
+            trophy_icon: undefined, // Use icon component via id
+            id: trophy.id,
+            description: trophy.description,
+            unlocked_at: dbTrophy?.unlocked_at,
+            isEarned: isEarned, // Track if trophy is earned (in database) or locked
+            requirement: trophy.description // Store requirement for locked trophy modal
+          };
+        });
+        
+        console.log('Dashboard Trophy Check - Full Collection:', {
+          totalTrophies: allTrophies.length,
+          earned: allTrophies.filter(t => t.isEarned).length,
+          locked: allTrophies.filter(t => !t.isEarned).length,
+          userStats: {
+            practiceHours,
+            completedLessons,
+            rounds: userRounds,
+            totalXP: profile?.totalXP || user?.totalXP || 0,
+          }
+        });
+        
+        setTrophies(allTrophies);
       } catch (err) {
         console.error('Error fetching trophies:', err);
       }
     };
     
     fetchTrophies();
-  }, [user?.id]);
+  }, [user?.id, userRoundsCount, profile?.totalXP, user?.totalXP, safeRounds, practiceSessions]);
+  
   // Update HomeDashboard.tsx: Add rounds?.length to dependencies so streak recalculates when rounds change
 
   // Add Verification: Add a simple console.log to confirm it's no longer undefined
@@ -1246,38 +1508,191 @@ export default function HomeDashboard() {
         </div>
 
         {/* Trophy Case Section - Moved to Bottom */}
-        {/* Fetch Trophies: Use StatsContext or Supabase call to fetch rows from trophies table where user_id matches current profile */}
+        {/* Fetch Trophies: Display trophies fetched from user_trophies table */}
+        {/* Display: Render trophy icons and names in the Trophy Case section */}
         {/* Horizontal Scroll: Display multiple trophies in a neat horizontal row */}
         {/* Empty State: Show subtle 'Empty Case' placeholder if no trophies earned yet */}
         <div className="px-5 mb-6">
           <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Trophy Case</h2>
-            {trophies && trophies.length > 0 ? (
-              <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: 'thin' }}>
-                {trophies.map((trophy) => {
-                  const IconComponent = getTrophyIcon(trophy.trophy_id);
-                  return (
-                    <div
-                      key={trophy.id}
-                      className="flex-shrink-0 flex flex-col items-center justify-center rounded-lg p-3 border-2 border-[#FFA500] bg-white shadow-sm transition-all hover:scale-105 cursor-pointer"
-                      style={{ minWidth: '80px' }}
-                    >
-                      <IconComponent className="w-8 h-8 mb-1" style={{ color: '#FFA500' }} />
-                      <span className="text-xs text-gray-600 text-center mt-1 truncate w-full">
-                        {trophy.trophy_id.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Trophy className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <p className="text-sm text-gray-500">No trophies yet. Keep practicing!</p>
-              </div>
-            )}
+            {/* Header with Toggle Button: Put a small 'Show Locked' button next to the 'Trophy Case' title */}
+            <div className="flex items-center gap-3 mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Trophy Case</h2>
+              <button
+                onClick={() => setShowLocked(!showLocked)}
+                className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 transition-colors rounded-md hover:bg-gray-50"
+                aria-label={showLocked ? 'Hide locked trophies' : 'Show locked trophies'}
+              >
+                {showLocked ? (
+                  <>
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Show Locked</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-3.5 h-3.5" />
+                    <span>Hide Locked</span>
+                  </>
+                )}
+              </button>
+            </div>
+            
+            {/* Merge the Lists: Create a displayTrophies array that combines database trophies with unlocked Academy milestones */}
+            {/* Grid Layout: Update the Trophy Case container to use grid-cols-5 or grid-cols-6 for a tighter, more compact grid */}
+            {/* Clickable Expansion: The setSelectedTrophy modal works for Academy trophies, showing their specific descriptions */}
+            {(() => {
+              // Define the Collection: Show ALL possible trophies from ACADEMY_TROPHIES
+              const allTrophies = trophies || [];
+              
+              // Filter Logic: If showLocked is false, filter the trophies list to only show items that are already unlocked
+              const displayTrophies = showLocked 
+                ? allTrophies 
+                : allTrophies.filter(trophy => trophy.isEarned !== false);
+              
+              // Shrink Everything: Change the grid to grid-cols-6 and reduce icon size so they look like small badges, not big cards
+              // Sync with Dashboard: Only color the icons if they are in my database; keep others gray
+              // Clickable: Make sure both colored and gray icons are clickable to see the description modal
+              return displayTrophies.length > 0 ? (
+                <div className="grid grid-cols-6 gap-1.5">
+                  {displayTrophies.map((trophy, index) => {
+                    const isEarned = trophy.isEarned !== false; // Sync with Dashboard: Only color if in database
+                    const trophyId = trophy.id || trophy.trophy_name?.toLowerCase().replace(/\s+/g, '-') || '';
+                    const IconComponent = getTrophyIcon(trophyId);
+                    
+                    return (
+                      <button
+                        key={trophy.trophy_name || `trophy-${index}`}
+                        onClick={() => setSelectedTrophy(trophy)}
+                        className={`flex flex-col items-center justify-center rounded-md p-0.5 border transition-all duration-200 hover:scale-110 cursor-pointer aspect-square ${
+                          isEarned 
+                            ? 'border-[#FFA500]/30 bg-white/50 hover:bg-white hover:border-[#FFA500]' 
+                            : 'border-gray-200 bg-gray-50/50 hover:bg-gray-100'
+                        }`}
+                        style={{
+                          filter: isEarned ? 'none' : 'grayscale(100%) brightness(60%)',
+                          opacity: isEarned ? 1 : 0.6
+                        }}
+                      >
+                        {isEarned ? (
+                          <>
+                            {/* Shrink Everything: Reduce icon size so they look like small badges */}
+                            <IconComponent className="w-4 h-4" style={{ color: '#FFA500' }} />
+                            <span className="text-[9px] text-gray-600 text-center mt-0.5 line-clamp-1 w-full leading-tight px-0.5">
+                              {trophy.trophy_name}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <div className="relative">
+                              {/* Shrink Everything: Reduce icon size so they look like small badges */}
+                              <IconComponent className="w-4 h-4 text-gray-400" />
+                              {/* Lock emoji overlay - smaller */}
+                              <span className="absolute -top-0.5 -right-0.5 text-[7px] leading-none">🔒</span>
+                            </div>
+                            <span className="text-[9px] text-gray-400 text-center mt-0.5 line-clamp-1 w-full leading-tight px-0.5">
+                              {trophy.trophy_name}
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Trophy className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p className="text-sm text-gray-500">
+                    {showLocked ? 'Loading trophies...' : 'No unlocked trophies yet. Keep practicing!'}
+                  </p>
+                </div>
+              );
+            })()}
           </div>
         </div>
+
+        {/* The Expansion Modal: Create a Modal that appears when a trophy is selected */}
+        {/* Styling: Ensure the modal looks premium, with a darkened background and a centered card */}
+        {selectedTrophy && (
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+            onClick={() => setSelectedTrophy(null)}
+          >
+            <div 
+              className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 relative animate-in zoom-in-95 duration-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* A 'Close' button to return to the dashboard */}
+              <button
+                onClick={() => setSelectedTrophy(null)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100"
+                aria-label="Close modal"
+              >
+                <X className="w-6 h-6" />
+              </button>
+
+              {/* The Expansion Modal: It must show A large version of the icon, The full title and the description field from the database */}
+              <div className="flex flex-col items-center text-center">
+                {/* A large version of the icon */}
+                {(() => {
+                  const trophyId = selectedTrophy.id || selectedTrophy.trophy_name.toLowerCase().replace(/\s+/g, '-');
+                  const IconComponent = selectedTrophy.trophy_icon ? Trophy : getTrophyIcon(trophyId);
+                  const displayIcon = selectedTrophy.trophy_icon || null;
+                  
+                  return displayIcon ? (
+                    <div className="mb-6">
+                      <span className="text-7xl">{displayIcon}</span>
+                    </div>
+                  ) : (
+                    <div 
+                      className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 shadow-lg ${
+                        selectedTrophy.isEarned !== false ? '' : 'opacity-50'
+                      }`}
+                      style={{ backgroundColor: selectedTrophy.isEarned !== false ? '#FFA500' : '#9CA3AF' }}
+                    >
+                      <IconComponent className="w-12 h-12 text-white" />
+                      {selectedTrophy.isEarned === false && (
+                        <span className="absolute text-2xl">🔒</span>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* The full title */}
+                <h3 className="text-3xl font-bold text-gray-900 mb-3">{selectedTrophy.trophy_name}</h3>
+
+                {/* Detailed Description: Ensure the modal displays the full description of why the trophy was earned */}
+                {/* Modal Connectivity: Ensure the selectedTrophy state works for both types. If a trophy from the Academy is clicked, use a fallback description */}
+                {/* Motivation Hint: When a user clicks a 'locked' trophy, show: 'Locked: Complete [Requirement] to unlock this trophy!' */}
+                {selectedTrophy.isEarned !== false ? (
+                  <p className="text-gray-600 mb-6 text-base leading-relaxed px-2">
+                    {selectedTrophy.description || 
+                     ACADEMY_TROPHIES.find(t => t.name === selectedTrophy.trophy_name)?.description || 
+                     (selectedTrophy.unlocked_at ? 'Achievement unlocked!' : 'Earned via Academy milestones')}
+                  </p>
+                ) : (
+                  <div className="bg-gray-100 rounded-lg p-4 mb-6">
+                    <p className="text-gray-800 mb-2 font-semibold">🔒 Locked</p>
+                    <p className="text-gray-600 text-base leading-relaxed">
+                      Complete <strong>{selectedTrophy.requirement || selectedTrophy.description || ACADEMY_TROPHIES.find(t => t.name === selectedTrophy.trophy_name)?.description || 'this requirement'}</strong> to unlock this trophy!
+                    </p>
+                  </div>
+                )}
+
+                {/* Date Display: Show the 'Unlocked on' date using the unlocked_at timestamp */}
+                {selectedTrophy.unlocked_at && (
+                  <div className="mt-2 pt-4 border-t border-gray-200 w-full">
+                    <p className="text-sm text-gray-500">
+                      Unlocked on {new Date(selectedTrophy.unlocked_at).toLocaleDateString('en-US', { 
+                        year: 'numeric', 
+                        month: 'long', 
+                        day: 'numeric' 
+                      })}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
           </div>
         </div>

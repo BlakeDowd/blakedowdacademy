@@ -207,9 +207,14 @@ export default function ScoresPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {sortedRounds.map((round, index) => (
+              {sortedRounds.map((round, index) => {
+                // Update Key Logic: Change the key to use round.id if available, otherwise use date-index combination
+                const roundDate = round.date || new Date().toISOString().split('T')[0];
+                const uniqueKey = round?.id ? `round-${round.id}` : `round-${roundDate}-${index}`;
+                
+                return (
                 <div
-                  key={`${round.date}-${round.course}-${index}`}
+                  key={uniqueKey}
                   className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md transition-all"
                 >
                   <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -270,7 +275,8 @@ export default function ScoresPage() {
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
