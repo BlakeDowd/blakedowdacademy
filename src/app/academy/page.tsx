@@ -4815,8 +4815,8 @@ export default function AcademyPage() {
             </div>
 
             {/* Category Dropdown - Middle Row */}
-            <div className="mb-6 w-full">
-              <div className="flex items-center justify-center gap-2 sm:gap-4 flex-wrap">
+            <div className="mb-6 w-full" style={{ maxWidth: '100vw', overflow: 'hidden' }}>
+              <div className="flex items-center justify-center gap-2 sm:gap-4 flex-wrap w-full">
                 <label htmlFor="category-select" className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">
                   Category:
                 </label>
@@ -4828,7 +4828,7 @@ export default function AcademyPage() {
                     setLeaderboardMetric(selectedMetric);
                   }}
                   className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium text-gray-900 bg-white border border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#014421] focus:border-[#014421] transition-colors cursor-pointer w-full sm:w-auto"
-                  style={{ minWidth: '180px', maxWidth: '100%' }}
+                  style={{ minWidth: '180px', maxWidth: '100vw', width: '100%' }}
                 >
                   <option value="library">Library</option>
                   <option value="practice">Practice</option>

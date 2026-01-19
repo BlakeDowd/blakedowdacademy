@@ -678,9 +678,9 @@ export default function HomeDashboard() {
         return date.toISOString().split('T')[0];
       }))].sort();
       for (let i = 0; i < practiceDates.length - 2; i++) {
-        const date1 = new Date(practiceDates[i]);
-        const date2 = new Date(practiceDates[i + 1]);
-        const date3 = new Date(practiceDates[i + 2]);
+        const date1 = new Date(practiceDates[i] as string);
+        const date2 = new Date(practiceDates[i + 1] as string);
+        const date3 = new Date(practiceDates[i + 2] as string);
         date1.setDate(date1.getDate() + 1);
         date2.setDate(date2.getDate() + 1);
         if (date1.toISOString().split('T')[0] === practiceDates[i + 1] &&
