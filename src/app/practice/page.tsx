@@ -1838,7 +1838,7 @@ export default function PracticePage() {
                     </p>
                     <div className="space-y-2">
                       {day.drills.map((drill: DayPlan['drills'][0], idx: number) => {
-                        const actualDrillIndex = day.drills.findIndex(d => d.id === drill.id);
+                        const actualDrillIndex = day.drills.findIndex((d: any) => d.id === drill.id);
                         const isSwapping = swappingDrill?.dayIndex === day.dayIndex && swappingDrill?.drillIndex === actualDrillIndex;
                         const justSwapped = swapSuccess?.dayIndex === day.dayIndex && swapSuccess?.drillIndex === actualDrillIndex;
                         const isExpanded = expandedScheduleDrill?.dayIndex === day.dayIndex && expandedScheduleDrill?.drillIndex === actualDrillIndex;
@@ -2111,7 +2111,7 @@ export default function PracticePage() {
                       
                       {/* Drill Cards - Full List, Vertical */}
                       {dayDrills.map((drill, drillIdx) => {
-                        const actualDrillIndex = day.drills.findIndex(d => d.id === drill.id);
+                        const actualDrillIndex = day.drills.findIndex((d: any) => d.id === drill.id);
                         const isSwapping = swappingDrill?.dayIndex === currentDayView && swappingDrill?.drillIndex === actualDrillIndex;
                         const justSwapped = swapSuccess?.dayIndex === currentDayView && swapSuccess?.drillIndex === actualDrillIndex;
                         // FORCE EXPAND: Keep expanded after swap or if explicitly set
