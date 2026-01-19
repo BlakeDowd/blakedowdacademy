@@ -2249,12 +2249,6 @@ function getLeaderboardData(
   // Hard-Code the Link: Use round.totalPutts (camelCase from RoundData interface)
   // Sort & Label: Sort Lowest (Ascending) and label 'X Putts'
   if (metric === "putts") {
-    console.log(
-      "Putts: Processing",
-      filteredRounds.length,
-      "rounds for all users",
-    );
-
     // Fetch entire row: filteredRounds contains all data from golf_rounds table
     const roundsByUser = new Map<string, any[]>();
     filteredRounds.forEach((round) => {
@@ -2353,7 +2347,6 @@ function getLeaderboardData(
       userValue: finalUserValue,
     };
 
-    console.log("Leaderboard Result (putts metric - global):", result);
     return result;
   }
 
@@ -4779,14 +4772,14 @@ export default function AcademyPage() {
 
         {/* Unified Leaderboard Card */}
         <div className="mb-6 w-full">
-          <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 text-center">
+          <div className="rounded-2xl p-4 sm:p-6 bg-white border border-gray-200 shadow-sm w-full">
+            <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-4 text-center">
               Overall Leaderboard
             </h2>
 
             {/* Time Filter Buttons - Top Row */}
             <div className="mb-4 w-full">
-              <div className="flex items-center justify-center gap-2.5 px-4">
+              <div className="flex items-center justify-center gap-2 sm:gap-2.5 px-2 sm:px-4 flex-wrap">
                 {(["week", "month", "year", "allTime"] as const).map((filter) => {
                   const labels = {
                     week: "This Week",
@@ -4823,8 +4816,8 @@ export default function AcademyPage() {
 
             {/* Category Dropdown - Middle Row */}
             <div className="mb-6 w-full">
-              <div className="flex items-center justify-center gap-4">
-                <label htmlFor="category-select" className="text-sm font-medium text-gray-700">
+              <div className="flex items-center justify-center gap-2 sm:gap-4 flex-wrap">
+                <label htmlFor="category-select" className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">
                   Category:
                 </label>
                 <select
@@ -4834,8 +4827,8 @@ export default function AcademyPage() {
                     const selectedMetric = e.target.value as typeof leaderboardMetric;
                     setLeaderboardMetric(selectedMetric);
                   }}
-                  className="px-4 py-2 rounded-lg text-sm font-medium text-gray-900 bg-white border border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#014421] focus:border-[#014421] transition-colors cursor-pointer"
-                  style={{ minWidth: '200px' }}
+                  className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium text-gray-900 bg-white border border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#014421] focus:border-[#014421] transition-colors cursor-pointer w-full sm:w-auto"
+                  style={{ minWidth: '180px', maxWidth: '100%' }}
                 >
                   <option value="library">Library</option>
                   <option value="practice">Practice</option>
@@ -4856,34 +4849,6 @@ export default function AcademyPage() {
                 Top 3 Leaders
               </h3>
             {(() => {
-              // Debug Logging: Add console.log('Academy: Current rounds count:', rounds.length) right before the leaderboard render to see if the data is actually reaching the page
-              // Find the top3 calculation: Locate where the leaderboard data is sliced to get the top 3 users
-              // Remove Mock Fallbacks: Search for any code that manually creates a user object with '4000' as the value and delete it
-              // Sync to Database: Ensure the Top3Leaders component is strictly using the values from the allEntries array we just built, which uses roundsByUser.get(userId).length
-              // Update Sub-label: Ensure the text below the name says {entry.value} Rounds instead of a static number
-              console.log(
-                "Academy: Current rounds count:",
-                rounds?.length || 0,
-              );
-              console.log(
-                "Academy: Leaderboard data exists:",
-                !!currentLeaderboard,
-              );
-              console.log("Academy: Top3 data:", top3);
-              console.log(
-                "Academy: Top3 values:",
-                top3?.map((e: any) => ({
-                  name: e.name,
-                  value: e.value,
-                  id: e.id,
-                })),
-              );
-              console.log(
-                "Academy: Sorted leaderboard length:",
-                sortedLeaderboard?.length || 0,
-              );
-              console.log("Academy: User ID:", user?.id);
-              console.log("Academy: Rounds from StatsContext:", rounds);
 
               // Register XP: Ensure the list rendering logic uses {profile.xp || 0} XP from database
 
