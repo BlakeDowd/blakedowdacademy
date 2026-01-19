@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ExternalLink, Download, X, RefreshCw, Pencil } from "lucide-react";
+import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File } from "lucide-react";
 import { DRILLS as LIBRARY_DRILLS, type Drill as LibraryDrill } from "@/data/drills";
+import DrillCard from "@/components/DrillCard";
 
 type FacilityType = 'home' | 'range-mat' | 'range-grass' | 'bunker' | 'chipping-green' | 'putting-green';
 type RoundType = '9-hole' | '18-hole' | null;
@@ -30,6 +31,9 @@ interface DayPlan {
     contentType?: 'video' | 'pdf' | 'text'; // Content type for display
     source?: string; // Source URL or content
     description?: string; // Description for text-based drills
+    pdf_url?: string; // PDF resource URL
+    youtube_url?: string; // YouTube video URL
+    levels?: Array<{ id: string; name: string; completed?: boolean }>; // Drill levels/checklist
   }>;
   date?: string; // Date this plan was generated
 }
@@ -47,6 +51,11 @@ interface Drill {
   contentType?: 'video' | 'pdf' | 'text'; // Content type for display
   source?: string; // Source URL or content
   description?: string; // Description for text-based drills
+  video_url?: string; // Video URL from database
+  pdf_url?: string; // PDF URL from database
+  youtube_url?: string; // YouTube URL (mapped from video_url)
+  drill_levels?: any; // Drill levels from database
+  levels?: Array<{ id: string; name: string; completed?: boolean }>; // Parsed drill levels
 }
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -163,9 +172,18 @@ export default function PracticePage() {
   const [durationModal, setDurationModal] = useState<{ open: boolean; facility: FacilityType | null }>({ open: false, facility: null });
   const [totalPracticeMinutes, setTotalPracticeMinutes] = useState<number>(0);
   const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(true); // Weekly schedule expanded state
+  // SINGLE DAY VIEW: Initialize to today's day index
+  const getTodayDayIndex = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    return dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Convert Sunday=0 to Monday=0
+  };
+  const [currentDayView, setCurrentDayView] = useState<number>(getTodayDayIndex()); // Current day index for single-day view (0-6, Monday-Sunday)
+  const [viewMode, setViewMode] = useState<'day' | 'weekly'>('day'); // Toggle between Day View and Weekly Summary
   const [swappingDrill, setSwappingDrill] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track which drill is being swapped
   const [swapSuccess, setSwapSuccess] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track successful swap for feedback
   const [expandedScheduleDrill, setExpandedScheduleDrill] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track expanded drill in schedule
+  const [youtubeModal, setYoutubeModal] = useState<{ open: boolean; url: string }>({ open: false, url: '' }); // YouTube modal state
   
   // Name editing state
   const [isEditingName, setIsEditingName] = useState(false);
@@ -271,74 +289,242 @@ export default function PracticePage() {
     'putting-green': 5,
   };
 
-  // Initialize weekly plan and load from localStorage
+  // Initialize weekly plan and load from database (DATA JOIN: practice table + drills table)
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    // Try to load saved plans
-    const savedPlans = localStorage.getItem('weeklyPracticePlans');
-    if (savedPlans) {
-      try {
-        const parsedPlans = JSON.parse(savedPlans);
-        // Reset all times to 0 and clear drills - wipe hardcoded data
-        const resetPlans: WeeklyPlan = {};
+    const loadWeeklySchedule = async () => {
+      if (typeof window === 'undefined' || !user?.id) {
+        // Initialize empty plan if no user
+        const initialPlan: WeeklyPlan = {};
         DAY_ABBREVIATIONS.forEach((_, index) => {
-          resetPlans[index] = {
+          initialPlan[index] = {
             dayIndex: index,
             dayName: DAY_NAMES[index],
-            selected: false, // Reset selection state
-            availableTime: 0, // Always start at 0 on refresh - wipe hardcoded data
+            selected: false,
+            availableTime: 0,
             selectedFacilities: [],
             roundType: null,
-            drills: [], // Clear drills on refresh - user must regenerate
+            drills: [],
             date: new Date().toISOString().split('T')[0],
           };
         });
-        setWeeklyPlan(resetPlans);
-        setGeneratedPlan(null); // Clear generated plan on refresh
+        setWeeklyPlan(initialPlan);
         return;
-      } catch (e) {
-        console.error('Error loading saved plans:', e);
       }
-    }
 
-    // Initialize empty plan with all days at 0
-    const initialPlan: WeeklyPlan = {};
-    DAY_ABBREVIATIONS.forEach((_, index) => {
-      initialPlan[index] = {
-        dayIndex: index,
-        dayName: DAY_NAMES[index],
-        selected: false,
-        availableTime: 0, // Start at 0 minutes
-        selectedFacilities: [],
-        roundType: null,
-        drills: [],
-        date: new Date().toISOString().split('T')[0],
-      };
-    });
-    setWeeklyPlan(initialPlan);
-    setGeneratedPlan(null); // No generated plan initially
-  }, []);
+      try {
+        // SIMPLIFY THE FETCH: Fetch from practice table first using .select('*')
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        
+        // Get current week's date range
+        const today = new Date();
+        const currentDay = today.getDay();
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+        monday.setHours(0, 0, 0, 0);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        sunday.setHours(23, 59, 59, 999);
 
-  // Load drills from drills.ts (library drills)
+        // SIMPLIFY THE FETCH: Fetch practice schedule from practice table
+        const { data: practiceData, error } = await supabase
+          .from('practice')
+          .select('*')
+          .eq('user_id', user.id)
+          .gte('completed_at', monday.toISOString())
+          .lte('completed_at', sunday.toISOString())
+          .order('completed_at', { ascending: true });
+
+        // FIX LINE 338: Handle error gracefully without crashing
+        if (error) {
+          console.warn('Practice schedule fetch warning:', error.message || 'Unknown error');
+          // Continue with empty schedule instead of crashing
+        }
+
+        // Initialize plan structure
+        const loadedPlan: WeeklyPlan = {};
+        DAY_ABBREVIATIONS.forEach((_, index) => {
+          loadedPlan[index] = {
+            dayIndex: index,
+            dayName: DAY_NAMES[index],
+            selected: false,
+            availableTime: 0,
+            selectedFacilities: [],
+            roundType: null,
+            drills: [],
+            date: new Date().toISOString().split('T')[0],
+          };
+        });
+
+        // CROSS-REFERENCE: Fetch drill details from drills table and match by title
+        if (practiceData && practiceData.length > 0) {
+          // Fetch all drills from drills table
+          const { data: allDrillsData, error: drillsError } = await supabase
+            .from('drills')
+            .select('id, video_url, pdf_url, drill_levels, title, category, estimatedMinutes');
+          
+          // Create a map of drills by title for matching (CROSS-REFERENCE: match by title)
+          const drillDetailsMap: Record<string, any> = {};
+          if (allDrillsData && !drillsError) {
+            allDrillsData.forEach((drill: any) => {
+              // Index by id
+              if (drill.id) {
+                drillDetailsMap[drill.id] = drill;
+              }
+              // Index by title (lowercase for case-insensitive matching)
+              if (drill.title) {
+                drillDetailsMap[drill.title.toLowerCase().trim()] = drill;
+              }
+            });
+          }
+
+          // MAP THE DATA: Map practice data to weekly plan with cross-referenced drill data
+          practiceData.forEach((practice: any) => {
+            const practiceDate = new Date(practice.completed_at);
+            const dayOfWeek = practiceDate.getDay();
+            const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Convert Sunday=0 to Monday=0
+
+            if (!loadedPlan[dayIndex]) return;
+
+            // CROSS-REFERENCE: Match drill by title (practice.type or drill_name matches drills.title)
+            let drillDetails: any = null;
+            const matchTitle = practice.type || practice.drill_name || practice.title || '';
+            
+            if (matchTitle) {
+              drillDetails = drillDetailsMap[matchTitle.toLowerCase().trim()];
+            }
+            
+            // Fallback: try drill_id if title match didn't work
+            if (!drillDetails && practice.drill_id) {
+              drillDetails = drillDetailsMap[practice.drill_id];
+            }
+
+            // MAP THE DATA: Parse drill_levels if it's a JSON string
+            let levels = null;
+            if (drillDetails?.drill_levels) {
+              try {
+                levels = typeof drillDetails.drill_levels === 'string' 
+                  ? JSON.parse(drillDetails.drill_levels)
+                  : drillDetails.drill_levels;
+                if (Array.isArray(levels)) {
+                  levels = levels.map((level: any, idx: number) => ({
+                    id: level.id || `level-${idx}`,
+                    name: level.name || level,
+                    completed: level.completed || false
+                  }));
+                }
+              } catch (e) {
+                console.warn('Error parsing drill_levels:', e);
+              }
+            }
+
+            // MAP THE DATA: Attach video_url, pdf_url, and drill_levels to drill object
+            loadedPlan[dayIndex].drills.push({
+              id: drillDetails?.id || practice.drill_id || `practice-${practice.id}`,
+              title: drillDetails?.title || practice.drill_name || practice.type || practice.title || 'Practice Session',
+              category: drillDetails?.category || practice.category || 'Practice',
+              estimatedMinutes: drillDetails?.estimatedMinutes || practice.estimatedMinutes || 30,
+              completed: practice.completed || false,
+              // MAP THE DATA: video_url, pdf_url, drill_levels attached here
+              pdf_url: drillDetails?.pdf_url || practice.pdf_url || undefined,
+              youtube_url: drillDetails?.video_url || practice.youtube_url || practice.video_url || undefined,
+              levels: levels || undefined,
+            });
+          });
+        }
+
+        setWeeklyPlan(loadedPlan);
+      } catch (error) {
+        console.error('Error loading weekly schedule:', error);
+        // Fallback to localStorage
+        const savedPlans = localStorage.getItem('weeklyPracticePlans');
+        if (savedPlans) {
+          try {
+            const parsedPlans = JSON.parse(savedPlans);
+            setWeeklyPlan(parsedPlans);
+          } catch (e) {
+            console.error('Error loading saved plans:', e);
+          }
+        }
+      }
+    };
+
+    loadWeeklySchedule();
+  }, [user?.id]);
+
+  // Load drills from drills.ts (library drills) and merge with database data
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // Use drills from the library data file
-      const libraryDrills: Drill[] = LIBRARY_DRILLS.map((d: LibraryDrill) => ({
-        id: d.id,
-        title: d.title,
-        category: d.category,
-        estimatedMinutes: d.estimatedMinutes,
-        xpValue: d.xpValue,
-        contentType: d.contentType,
-        source: d.source,
-        description: d.description,
-      }));
-      setDrills(libraryDrills);
-      
-      // Also save to localStorage for backward compatibility
-      localStorage.setItem('drillsData', JSON.stringify(libraryDrills));
-    }
+    const loadDrills = async () => {
+      if (typeof window !== 'undefined') {
+        // Use drills from the library data file
+        let libraryDrills: Drill[] = LIBRARY_DRILLS.map((d: LibraryDrill) => ({
+          id: d.id,
+          title: d.title,
+          category: d.category,
+          estimatedMinutes: d.estimatedMinutes,
+          xpValue: d.xpValue,
+          contentType: d.contentType,
+          source: d.source,
+          description: d.description,
+        }));
+
+        // DATA MAPPING: Fetch video_url, pdf_url, and drill_levels from drills table
+        try {
+          const { createClient } = await import("@/lib/supabase/client");
+          const supabase = createClient();
+          
+          const { data: dbDrills, error } = await supabase
+            .from('drills')
+            .select('id, video_url, pdf_url, drill_levels');
+          
+          if (!error && dbDrills) {
+            // Merge database data with library drills
+            libraryDrills = libraryDrills.map(libDrill => {
+              const dbDrill = dbDrills.find(db => db.id === libDrill.id);
+              if (dbDrill) {
+                // Parse drill_levels if it's a JSON string
+                let levels = null;
+                if (dbDrill.drill_levels) {
+                  try {
+                    levels = typeof dbDrill.drill_levels === 'string' 
+                      ? JSON.parse(dbDrill.drill_levels)
+                      : dbDrill.drill_levels;
+                    // Ensure levels have id and name properties
+                    if (Array.isArray(levels)) {
+                      levels = levels.map((level, idx) => ({
+                        id: level.id || `level-${idx}`,
+                        name: level.name || level,
+                        completed: level.completed || false
+                      }));
+                    }
+                  } catch (e) {
+                    console.error('Error parsing drill_levels:', e);
+                  }
+                }
+                
+                return {
+                  ...libDrill,
+                  // Map video_url to youtube_url for consistency
+                  youtube_url: dbDrill.video_url || undefined,
+                  pdf_url: dbDrill.pdf_url || undefined,
+                  levels: levels || undefined,
+                };
+              }
+              return libDrill;
+            });
+          }
+        } catch (error) {
+          console.error('Error fetching drills from database:', error);
+        }
+
+        setDrills(libraryDrills);
+        
+        // Also save to localStorage for backward compatibility
+        localStorage.setItem('drillsData', JSON.stringify(libraryDrills));
+      }
+    };
+
+    loadDrills();
   }, []);
 
   // Calculate most needed improvement (similar to Stats page)
@@ -944,16 +1130,30 @@ export default function PracticePage() {
     // Calculate XP (always award XP when marking complete, regardless of previous state)
     const xpEarned = calculateDrillXP(drill, day);
 
-    // Update plan (toggle completion state)
+    // Update plan - PERSISTENT PLANNING: Keep drills visible, just mark as completed
     const updatedPlan = { ...weeklyPlan };
-    updatedPlan[dayIndex] = {
-      ...day,
-      drills: day.drills.map((d, idx) => 
-        idx === drillIndex
-          ? { ...d, completed: !isCurrentlyCompleted, xpEarned: !isCurrentlyCompleted ? xpEarned : 0 }
-          : d
-      ),
-    };
+    
+    if (!isCurrentlyCompleted) {
+      // Mark as completed but keep in the list
+      updatedPlan[dayIndex] = {
+        ...day,
+        drills: day.drills.map((d, idx) => 
+          idx === drillIndex
+            ? { ...d, completed: true, xpEarned: xpEarned }
+            : d
+        ),
+      };
+    } else {
+      // If unmarking (toggle off)
+      updatedPlan[dayIndex] = {
+        ...day,
+        drills: day.drills.map((d, idx) => 
+          idx === drillIndex
+            ? { ...d, completed: false, xpEarned: 0 }
+            : d
+        ),
+      };
+    }
 
     // Check the Submit Function: Save drill completion to database
     // Match the Fields: Ensure it sends drill_name, score, and user_id
@@ -967,43 +1167,28 @@ export default function PracticePage() {
         // Try drill_scores table first (as user specified), fallback to drills table
         let saved = false;
         
-        // First try drill_scores table (as user specified)
-        const { data: scoreData, error: scoreError } = await supabase
-          .from('drill_scores')
+        // TEMPORARY BYPASS: Save to practice table without drill_id/drill_name
+        // Use only columns that definitely exist: user_id, completed, completed_at
+        const { data: practiceData, error: practiceError } = await supabase
+          .from('practice')
           .insert({
-            user_id: user.id, // Match the Fields: user_id
-            drill_name: drill.title, // Match the Fields: drill_name
-            score: 1, // Match the Fields: score (using 1 for completion)
+            user_id: user.id,
+            // TEMPORARY BYPASS: Remove drill_id and drill_name - add back when columns exist
+            // drill_id: drill.id,
+            // drill_name: drill.title,
+            completed: true,
+            completed_at: new Date().toISOString(),
+            // Include optional fields if they exist in the table
+            pdf_url: drill.pdf_url || null,
+            youtube_url: drill.youtube_url || null,
+            completed_levels: drill.levels ? JSON.stringify(drill.levels.filter(l => l.completed).map(l => l.id)) : null,
           })
           .select();
 
-        if (scoreError) {
-          // If drill_scores table doesn't exist, try drills table as fallback
-          if (scoreError.code === '42P01' || scoreError.message?.includes('does not exist')) {
-            console.warn('Practice: drill_scores table not found, trying drills table...');
-            const { data, error } = await supabase
-              .from('drills')
-              .insert({
-                user_id: user.id,
-                drill_id: drill.id,
-                drill_title: drill.title, // Map drill_name to drill_title
-                category: drill.category,
-                completed_at: new Date().toISOString(),
-              })
-              .select();
-
-            if (error) {
-              console.error('Practice: Error saving drill to drills table:', error);
-              console.error('Practice: Table may not exist. Please create drill_scores table with: user_id, drill_name, score');
-            } else {
-              console.log('Practice: Drill saved to drills table:', data);
-              saved = true;
-            }
-          } else {
-            console.error('Practice: Error saving drill to drill_scores table:', scoreError);
-          }
+        if (practiceError) {
+          console.error('Practice: Error saving to practice table:', practiceError);
         } else {
-          console.log('Practice: Drill saved to drill_scores table:', scoreData);
+          console.log('Practice: Drill saved to practice table:', practiceData);
           saved = true;
         }
 
@@ -1084,6 +1269,61 @@ export default function PracticePage() {
     setGeneratedPlan(updatedPlan);
   };
 
+  // Update level completion and save to database
+  const updateLevelCompletion = async (dayIndex: number, drillIndex: number, levelId: string, completed: boolean) => {
+    const day = weeklyPlan[dayIndex];
+    if (!day || !day.drills[drillIndex]) return;
+
+    const drill = day.drills[drillIndex];
+    if (!drill.levels) return;
+
+    // Update level in local state
+    const updatedLevels = drill.levels.map(level =>
+      level.id === levelId ? { ...level, completed } : level
+    );
+
+    const updatedPlan = { ...weeklyPlan };
+    updatedPlan[dayIndex] = {
+      ...day,
+      drills: day.drills.map((d, idx) =>
+        idx === drillIndex
+          ? { ...d, levels: updatedLevels }
+          : d
+      ),
+    };
+
+    setWeeklyPlan(updatedPlan);
+    setGeneratedPlan(updatedPlan);
+
+    // Save to database - TABLE SYNC: Save completed_levels to practice table
+    if (user?.id) {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+
+        // Get completed level IDs
+        const completedLevelIds = updatedLevels
+          .filter(level => level.completed)
+          .map(level => level.id);
+
+        // Update completed_levels in practice table
+        const { error } = await supabase
+          .from('practice')
+          .update({
+            completed_levels: JSON.stringify(completedLevelIds),
+          })
+          .eq('user_id', user.id)
+          .eq('drill_id', drill.id);
+
+        if (error) {
+          console.error('Error updating completed levels:', error);
+        }
+      } catch (error) {
+        console.error('Error in updateLevelCompletion:', error);
+      }
+    }
+  };
+
   // Check if all drills for a day are complete
   const isDayComplete = (day: DayPlan): boolean => {
     if (!day.drills || day.drills.length === 0) return false;
@@ -1133,7 +1373,7 @@ export default function PracticePage() {
       
       if (similarTimeDrills.length > 0) {
         const randomDrill = similarTimeDrills[Math.floor(Math.random() * similarTimeDrills.length)];
-        replaceDrill(dayIndex, drillIndex, randomDrill);
+        await replaceDrill(dayIndex, drillIndex, randomDrill);
       } else {
         // No suitable replacement found
         alert('No suitable replacement drill found.');
@@ -1148,7 +1388,11 @@ export default function PracticePage() {
     // Small delay to show loading state
     await new Promise(resolve => setTimeout(resolve, 300));
     
-    replaceDrill(dayIndex, drillIndex, randomDrill);
+    // DATA SYNC: Replace drill and fetch fresh data from database
+    await replaceDrill(dayIndex, drillIndex, randomDrill);
+    
+    // FORCE EXPAND: Automatically expand the card after swap
+    setExpandedScheduleDrill({ dayIndex, drillIndex });
     
     // Show success feedback
     setSwapSuccess({ dayIndex, drillIndex });
@@ -1158,18 +1402,63 @@ export default function PracticePage() {
   };
 
   // Replace a drill in the plan
-  const replaceDrill = (dayIndex: number, drillIndex: number, newDrill: Drill) => {
+  const replaceDrill = async (dayIndex: number, drillIndex: number, newDrill: Drill) => {
     const day = weeklyPlan[dayIndex];
     if (!day || !day.drills[drillIndex]) return;
 
     const currentDrill = day.drills[drillIndex];
     
+    // DATA SYNC: Fetch fresh drill data from database to get video_url and drill_levels
+    let drillData = { ...newDrill };
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      
+      const { data: dbDrill } = await supabase
+        .from('drills')
+        .select('video_url, pdf_url, drill_levels, title, category, estimatedMinutes')
+        .eq('id', newDrill.id)
+        .single();
+
+      if (dbDrill) {
+        // Parse drill_levels if it's a JSON string
+        let levels = null;
+        if (dbDrill.drill_levels) {
+          try {
+            levels = typeof dbDrill.drill_levels === 'string' 
+              ? JSON.parse(dbDrill.drill_levels)
+              : dbDrill.drill_levels;
+            if (Array.isArray(levels)) {
+              levels = levels.map((level: any, idx: number) => ({
+                id: level.id || `level-${idx}`,
+                name: level.name || level,
+                completed: false
+              }));
+            }
+          } catch (e) {
+            console.warn('Error parsing drill_levels:', e);
+          }
+        }
+
+        // DATA SYNC: Attach video_url, pdf_url, and drill_levels
+        drillData = {
+          ...newDrill,
+          pdf_url: dbDrill.pdf_url || newDrill.pdf_url,
+          youtube_url: dbDrill.video_url || newDrill.youtube_url || newDrill.video_url,
+          levels: levels || newDrill.levels,
+        };
+      }
+    } catch (error) {
+      console.warn('Error fetching drill data after swap:', error);
+      // Continue with existing drill data
+    }
+    
     // Apply XP tiering based on pillar
     const pillar = Object.keys(pillarXPTiering).find(p => 
-      newDrill.category.toLowerCase().includes(p.toLowerCase()) ||
-      p.toLowerCase().includes(newDrill.category.toLowerCase())
+      drillData.category.toLowerCase().includes(p.toLowerCase()) ||
+      p.toLowerCase().includes(drillData.category.toLowerCase())
     );
-    const xpValue = pillar ? pillarXPTiering[pillar] : newDrill.xpValue;
+    const xpValue = pillar ? pillarXPTiering[pillar] : drillData.xpValue;
 
     const updatedPlan = { ...weeklyPlan };
     updatedPlan[dayIndex] = {
@@ -1177,18 +1466,18 @@ export default function PracticePage() {
       drills: day.drills.map((d, idx) => 
         idx === drillIndex
           ? {
-              ...newDrill,
-              id: `swapped-${dayIndex}-${drillIndex}-${Date.now()}-${newDrill.id}`,
-              category: newDrill.category,
-              estimatedMinutes: newDrill.estimatedMinutes,
+              ...drillData,
+              id: `swapped-${dayIndex}-${drillIndex}-${Date.now()}-${drillData.id}`,
+              category: drillData.category,
+              estimatedMinutes: drillData.estimatedMinutes,
               xpValue: xpValue,
               completed: false, // Reset completion status
               xpEarned: 0,
               facility: currentDrill.facility, // Preserve facility assignment
               isRound: currentDrill.isRound, // Preserve round flag
-              contentType: newDrill.contentType,
-              source: newDrill.source,
-              description: newDrill.description,
+              contentType: drillData.contentType,
+              source: drillData.source,
+              description: drillData.description,
             }
           : d
       ),
@@ -1549,199 +1838,37 @@ export default function PracticePage() {
                     </p>
                     <div className="space-y-2">
                       {day.drills.map((drill: DayPlan['drills'][0], idx: number) => {
-                        const isCompleted = drill.completed || false;
-                        const xpEarned = drill.xpEarned || 0;
-                        const isRound = drill.isRound || false;
-                        
-                        // Get total completion count for this drill
-                        const getCompletionCount = () => {
-                          if (typeof window === 'undefined') return 0;
-                          const savedProgress = localStorage.getItem('userProgress');
-                          if (savedProgress) {
-                            try {
-                              const userProgress = JSON.parse(savedProgress);
-                              return userProgress.drillCompletions?.[drill.id] || 0;
-                            } catch (e) {
-                              return 0;
-                            }
-                          }
-                          return 0;
-                        };
-                        const completionCount = getCompletionCount();
-                        
-                        const drillKey = `${drill.id}-${day.dayIndex}-${idx}`;
-                        const isExpanded = expandedDrill === drillKey;
+                        const actualDrillIndex = day.drills.findIndex(d => d.id === drill.id);
+                        const isSwapping = swappingDrill?.dayIndex === day.dayIndex && swappingDrill?.drillIndex === actualDrillIndex;
+                        const justSwapped = swapSuccess?.dayIndex === day.dayIndex && swapSuccess?.drillIndex === actualDrillIndex;
+                        const isExpanded = expandedScheduleDrill?.dayIndex === day.dayIndex && expandedScheduleDrill?.drillIndex === actualDrillIndex;
                         
                         return (
-                          <div
-                            key={drillKey}
-                            className={`rounded-lg transition-all ${
-                              isRound
-                                ? isCompleted
-                                  ? 'bg-[#FFA500]/20 border-2 border-[#FFA500]'
-                                  : 'bg-gray-50 border-2 border-[#FFA500]'
-                                : isCompleted
-                                  ? 'bg-[#FFA500]/20 border-2 border-[#FFA500]'
-                                  : 'bg-gray-50 border border-gray-200'
-                            }`}
-                          >
-                            {/* Drill Card Header - Clickable */}
-                            <div
-                              className="flex items-center justify-between p-3 cursor-pointer"
-                              onClick={() => setExpandedDrill(isExpanded ? null : drillKey)}
-                            >
-                            <div className="flex items-center gap-3 flex-1 min-w-0">
-                              {/* Completion Checkbox */}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation(); // Prevent card expansion when clicking checkbox
-                                  markDrillComplete(day.dayIndex, idx);
-                                }}
-                                className={`flex-shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
-                                  isCompleted
-                                    ? 'bg-[#FFA500] border-[#014421]'
-                                    : 'bg-white border-gray-300 hover:border-[#FFA500]'
-                                }`}
-                              >
-                                {isCompleted && (
-                                  <Check className="w-4 h-4" style={{ color: '#014421' }} />
-                                )}
-                              </button>
-                              
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  {/* Content Type Icon */}
-                                  {drill.contentType && (
-                                    <span className="flex-shrink-0">
-                                      {drill.contentType === 'video' && (
-                                        <PlayCircle className="w-4 h-4 text-gray-500" />
-                                      )}
-                                      {drill.contentType === 'pdf' && (
-                                        <FileText className="w-4 h-4 text-gray-500" />
-                                      )}
-                                      {drill.contentType === 'text' && (
-                                        <BookOpen className="w-4 h-4 text-gray-500" />
-                                      )}
-                                    </span>
-                                  )}
-                                  <span className={`text-sm font-medium ${
-                                    isCompleted ? 'text-[#014421] line-through' : isRound ? 'text-[#014421] font-semibold' : 'text-gray-800'
-                                  }`}>
-                                    {drill.title}
-                                  </span>
-                                  {/* Show +500 XP badge for rounds, even when not completed */}
-                                  {isRound && !isCompleted && (
-                                    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ 
-                                      backgroundColor: '#FFA500', 
-                                      color: '#014421' 
-                                    }}>
-                                      +500 XP
-                                    </span>
-                                  )}
-                                  {isCompleted && xpEarned > 0 && (
-                                    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ 
-                                      backgroundColor: '#FFA500', 
-                                      color: '#014421' 
-                                    }}>
-                                      +{xpEarned} XP
-                                    </span>
-                                  )}
-                                </div>
-                                {/* Times Completed Counter */}
-                                {completionCount > 0 && (
-                                  <div className="text-xs text-gray-500 mt-1">
-                                    Completed {completionCount} {completionCount === 1 ? 'time' : 'times'}
-                                  </div>
-                                )}
-                                {drill.isSet && drill.setCount && (
-                                  <span className="text-xs text-gray-500 ml-0">
-                                    ({drill.setCount}x set)
-                                  </span>
-                                )}
-                                {drill.facility && (
-                                  <div className="text-xs text-gray-500 mt-0.5">
-                                    @ {facilityInfo[drill.facility].label}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xs font-medium ${
-                                isCompleted ? 'text-[#014421]' : 'text-gray-600'
-                              }`}>
-                                {formatTime(drill.estimatedMinutes)}
-                              </span>
-                              {/* Expand/Collapse Icon */}
-                              {isExpanded ? (
-                                <ChevronUp className="w-4 h-4 text-gray-500" />
-                              ) : (
-                                <ChevronDown className="w-4 h-4 text-gray-500" />
-                              )}
-                            </div>
-                            </div>
-                            
-                            {/* Expandable Content */}
-                            {isExpanded && (
-                              <div className="px-3 pb-3 border-t border-gray-200 pt-3">
-                                {drill.contentType === 'video' && drill.source && (
-                                  <div className="mb-3">
-                                    <a
-                                      href={drill.source}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="flex items-center gap-2 px-4 py-2 text-white rounded-lg transition-all font-medium text-sm"
-                                      style={{ backgroundColor: '#dc2626' }}
-                                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#b91c1c'}
-                                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <PlayCircle className="w-4 h-4" />
-                                      Watch on YouTube
-                                      <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                  </div>
-                                )}
-                                
-                                {drill.contentType === 'pdf' && drill.source && (
-                                  <div className="mb-3">
-                                    <a
-                                      href={drill.source}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="flex items-center gap-2 px-4 py-2 bg-[#014421] hover:bg-[#014421]/90 text-white rounded-lg transition-all font-medium text-sm"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <Download className="w-4 h-4" />
-                                      View PDF Guide
-                                      <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                  </div>
-                                )}
-                                
-                                {drill.contentType === 'text' && drill.description && (
-                                  <div className="mb-3">
-                                    <div className="bg-white rounded-lg p-4 border border-gray-200 max-h-96 overflow-y-auto">
-                                      <div className="prose prose-sm max-w-none">
-                                        <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans">
-                                          {drill.description}
-                                        </pre>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-                                
-                                {/* Description fallback for drills without specific content type */}
-                                {!drill.contentType && drill.description && (
-                                  <div className="mb-3">
-                                    <div className="bg-white rounded-lg p-4 border border-gray-200 max-h-96 overflow-y-auto">
-                                      <p className="text-sm text-gray-700">{drill.description}</p>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
+                          <DrillCard
+                            key={`${day.dayIndex}-${drill.id}-${idx}`}
+                            drill={drill}
+                            dayIndex={day.dayIndex}
+                            drillIndex={idx}
+                            actualDrillIndex={actualDrillIndex}
+                            isSwapping={isSwapping}
+                            justSwapped={justSwapped}
+                            facilityInfo={facilityInfo}
+                            onComplete={(dayIdx, drillIdx) => {
+                              markDrillComplete(dayIdx, drillIdx);
+                              setExpandedScheduleDrill(null);
+                            }}
+                            onSwap={swapDrill}
+                            onLevelToggle={updateLevelCompletion}
+                            onYoutubeOpen={(url) => setYoutubeModal({ open: true, url })}
+                            onExpandToggle={(dayIdx, drillIdx) => {
+                              if (isExpanded) {
+                                setExpandedScheduleDrill(null);
+                              } else {
+                                setExpandedScheduleDrill({ dayIndex: dayIdx, drillIndex: drillIdx });
+                              }
+                            }}
+                            defaultExpanded={true} // AUTO-OPEN: Force expanded so buttons are always visible
+                          />
                         );
                       })}
                     </div>
@@ -1875,186 +2002,282 @@ export default function PracticePage() {
               )}
             </div>
 
-            {/* Schedule Content - Collapsible */}
+            {/* Schedule Content - Collapsible - Single Day View */}
             {scheduleExpanded && (
-              <div className="px-4 pb-4">
-                {/* Horizontal 7-Day Calendar Row - Responsive */}
-                <div className="grid grid-cols-7 gap-1 sm:gap-2 overflow-x-auto">
-                  {DAY_NAMES.map((dayName, dayIndex) => {
-                    const day = weeklyPlan[dayIndex];
-                    const dayDrills = day?.drills || [];
-                    const completedCount = dayDrills.filter(d => d.completed).length;
-                    const totalCount = dayDrills.length;
-                    
-                    // Get current week's Monday
-                    const today = new Date();
-                    const currentDay = today.getDay();
-                    const monday = new Date(today);
-                    monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-                    const dayDate = new Date(monday);
-                    dayDate.setDate(monday.getDate() + dayIndex);
-                    const isToday = dayDate.toDateString() === today.toDateString();
-                    
+              <div className="px-4 pb-4 w-full overflow-hidden" style={{ maxWidth: '100vw' }}>
+                {/* View Mode Toggle */}
+                <div className="flex items-center justify-center gap-2 mb-4">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setViewMode('day');
+                    }}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      viewMode === 'day'
+                        ? 'bg-[#014421] text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Day View
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setViewMode('weekly');
+                    }}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      viewMode === 'weekly'
+                        ? 'bg-[#014421] text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Weekly Summary
+                  </button>
+                </div>
+
+                {/* Day View - Single Day Focus */}
+                {viewMode === 'day' && (
+                  <>
+                    {/* Navigation Header */}
+                    <div className="flex items-center justify-between mb-6 w-full">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentDayView((prev) => (prev > 0 ? prev - 1 : 6));
+                    }}
+                    className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                    aria-label="Previous day"
+                  >
+                    <ChevronLeft className="w-6 h-6 text-gray-700" />
+                  </button>
+                  
+                  <div className="flex-1 text-center">
+                    <h3 className="text-xl font-bold text-gray-900">{DAY_NAMES[currentDayView]}</h3>
+                    {/* Get current week's date for this day */}
+                    {(() => {
+                      const today = new Date();
+                      const currentDay = today.getDay();
+                      const monday = new Date(today);
+                      monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+                      const dayDate = new Date(monday);
+                      dayDate.setDate(monday.getDate() + currentDayView);
+                      return (
+                        <p className="text-sm text-gray-600 mt-1">
+                          {dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </p>
+                      );
+                    })()}
+                  </div>
+                  
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentDayView((prev) => (prev < 6 ? prev + 1 : 0));
+                    }}
+                    className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                    aria-label="Next day"
+                  >
+                    <ChevronRight className="w-6 h-6 text-gray-700" />
+                  </button>
+                </div>
+
+                {/* Single Day Drill List - Vertical */}
+                {(() => {
+                  const day = weeklyPlan[currentDayView];
+                  const dayDrills = day?.drills || [];
+                  const completedCount = dayDrills.filter(d => d.completed).length;
+                  const totalCount = dayDrills.length;
+                  
+                  if (dayDrills.length === 0) {
                     return (
-                      <div key={dayIndex} className="flex flex-col min-w-[173px] sm:min-w-[195px]" style={{ transform: 'scale(2.3328)' }}>
-                        {/* Day Header - Larger font for better readability on mobile */}
-                        <div className={`text-center mb-1.5 sm:mb-2 ${isToday ? 'font-bold' : 'font-medium'}`}>
-                          <div className={`text-base sm:text-lg ${isToday ? 'text-[#014421]' : 'text-gray-600'}`}>
-                            {dayName.substring(0, 3)}
-                          </div>
-                          <div className={`text-base sm:text-lg ${isToday ? 'text-[#FFA500]' : 'text-gray-500'}`}>
-                            {dayDate.getDate()}
-                          </div>
-                        </div>
-                        
-                        {/* Drill Blocks */}
-                        <div className="space-y-1.5 sm:space-y-2 min-h-[72px] sm:min-h-[86px]">
-                          {dayDrills.length === 0 ? (
-                            <div className="text-center py-2">
-                              <span className="text-base sm:text-lg text-gray-400">—</span>
-                            </div>
-                          ) : (
-                            dayDrills.slice(0, 3).map((drill, drillIdx) => {
-                              const isCompleted = drill.completed || false;
-                              const actualDrillIndex = day.drills.findIndex(d => d.id === drill.id);
-                              const isSwapping = swappingDrill?.dayIndex === dayIndex && swappingDrill?.drillIndex === actualDrillIndex;
-                              const justSwapped = swapSuccess?.dayIndex === dayIndex && swapSuccess?.drillIndex === actualDrillIndex;
-                              const isExpanded = expandedScheduleDrill?.dayIndex === dayIndex && expandedScheduleDrill?.drillIndex === actualDrillIndex;
-                              
-                              return (
-                                <div key={`${dayIndex}-${drill.id}-${drillIdx}`} className="relative group">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      // Expand/collapse instead of auto-complete
-                                      if (actualDrillIndex !== -1) {
-                                        if (isExpanded) {
-                                          setExpandedScheduleDrill(null);
-                                        } else {
-                                          setExpandedScheduleDrill({ dayIndex, drillIndex: actualDrillIndex });
-                                        }
-                                      }
-                                    }}
-                                    className={`w-full p-2.5 sm:p-3 rounded text-left transition-all hover:scale-105 relative ${
-                                      isCompleted
-                                        ? 'bg-green-500 text-white border-2 border-green-600'
-                                        : 'bg-[#FFA500] text-[#014421] border-2 border-[#FFA500] hover:bg-[#FFA500]/90'
-                                    } ${justSwapped ? 'ring-2 ring-green-400 ring-offset-1' : ''} ${isExpanded ? 'ring-2 ring-[#014421]' : ''}`}
-                                    title={drill.title}
-                                  >
-                                    <div className="text-lg sm:text-xl font-semibold truncate pr-6">
-                                      {drill.title.length > 12 ? drill.title.substring(0, 12) + '...' : drill.title}
-                                    </div>
-                                    {isCompleted && (
-                                      <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 mt-0.5" />
-                                    )}
-                                    {justSwapped && (
-                                      <div className="absolute top-0 right-0 bg-green-400 text-white text-[9px] sm:text-[10px] px-1 rounded animate-pulse">
-                                        Swapped!
-                                      </div>
-                                    )}
-                                    {isSwapping && (
-                                      <div className="absolute inset-0 flex items-center justify-center bg-white/80 rounded">
-                                        <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-[#014421]" />
-                                      </div>
-                                    )}
-                                    {isExpanded && (
-                                      <ChevronUp className="absolute top-1 right-1 w-3 h-3 text-[#014421]" />
-                                    )}
-                                  </button>
-                                  
-                                  {/* Expanded Drill View */}
-                                  {isExpanded && (
-                                    <div className="absolute z-10 mt-1 w-full bg-white border-2 border-[#014421] rounded-lg shadow-lg p-3 sm:p-4">
-                                      <div className="space-y-2.5">
-                                        <div className="font-semibold text-sm sm:text-base text-gray-900">{drill.title}</div>
-                                        {drill.description && (
-                                          <div className="text-xs sm:text-sm text-gray-600 max-h-32 overflow-y-auto">
-                                            {drill.description}
-                                          </div>
-                                        )}
-                                        <div className="flex items-center justify-between text-xs sm:text-sm text-gray-500">
-                                          <span>{drill.estimatedMinutes} min</span>
-                                          {drill.facility && (
-                                            <span>@ {facilityInfo[drill.facility].label}</span>
-                                          )}
-                                        </div>
-                                        {/* Mark as Done Button */}
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (actualDrillIndex !== -1) {
-                                              markDrillComplete(dayIndex, actualDrillIndex);
-                                              setExpandedScheduleDrill(null);
-                                            }
-                                          }}
-                                          disabled={isCompleted}
-                                          className={`w-full py-2 sm:py-2.5 px-4 rounded-lg font-semibold text-sm sm:text-base transition-all ${
-                                            isCompleted
-                                              ? 'bg-green-500 text-white cursor-not-allowed'
-                                              : 'bg-[#014421] text-white hover:bg-[#014421]/90'
-                                          }`}
-                                        >
-                                          {isCompleted ? (
-                                            <span className="flex items-center justify-center gap-1.5">
-                                              <CheckCircle2 className="w-4 h-4" />
-                                              Completed
-                                            </span>
-                                          ) : (
-                                            'Mark as Done'
-                                          )}
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
-                                  
-                                  {/* Swap Button */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (actualDrillIndex !== -1) {
-                                        swapDrill(dayIndex, actualDrillIndex);
-                                      }
-                                    }}
-                                    disabled={isSwapping || drill.isRound}
-                                    className={`absolute top-0 right-0 p-0.5 sm:p-1 rounded-bl rounded-tr transition-all ${
-                                      drill.isRound
-                                        ? 'opacity-30 cursor-not-allowed'
-                                        : 'opacity-0 group-hover:opacity-100 hover:bg-gray-200/80'
-                                    } ${isSwapping ? 'opacity-100' : ''}`}
-                                    title="Swap Drill"
-                                  >
-                                    <RefreshCw className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isSwapping ? 'animate-spin text-[#014421]' : 'text-gray-600'}`} />
-                                  </button>
-                                </div>
-                              );
-                            })
-                          )}
-                          {dayDrills.length > 3 && (
-                            <div className="text-center">
-                              <span className="text-xs sm:text-sm text-gray-500">+{dayDrills.length - 3} more</span>
-                            </div>
-                          )}
-                        </div>
-                        
-                        {/* Completion Indicator */}
-                        {totalCount > 0 && (
-                          <div className="mt-1.5 sm:mt-2 text-center">
-                            <span className={`text-xs sm:text-sm font-semibold ${
-                              completedCount === totalCount ? 'text-green-600' : 'text-gray-600'
-                            }`}>
-                              {completedCount}/{totalCount}
-                            </span>
-                          </div>
-                        )}
+                      <div className="text-center py-12 w-full">
+                        <p className="text-gray-500 text-lg">No drills scheduled for today</p>
                       </div>
                     );
-                  })}
-                </div>
+                  }
+                  
+                  return (
+                    <div className="space-y-4 w-full">
+                      {/* Completion Status */}
+                      {totalCount > 0 && (
+                        <div className="text-center mb-4">
+                          <span className={`text-base font-semibold ${
+                            completedCount === totalCount ? 'text-green-600' : 'text-gray-600'
+                          }`}>
+                            {completedCount}/{totalCount} drills completed
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* Drill Cards - Full List, Vertical */}
+                      {dayDrills.map((drill, drillIdx) => {
+                        const actualDrillIndex = day.drills.findIndex(d => d.id === drill.id);
+                        const isSwapping = swappingDrill?.dayIndex === currentDayView && swappingDrill?.drillIndex === actualDrillIndex;
+                        const justSwapped = swapSuccess?.dayIndex === currentDayView && swapSuccess?.drillIndex === actualDrillIndex;
+                        // FORCE EXPAND: Keep expanded after swap or if explicitly set
+                        const isExpanded = expandedScheduleDrill?.dayIndex === currentDayView && expandedScheduleDrill?.drillIndex === actualDrillIndex;
+                        
+                        return (
+                          <DrillCard
+                            key={`${currentDayView}-${drill.id}-${drillIdx}`}
+                            drill={drill}
+                            dayIndex={currentDayView}
+                            drillIndex={drillIdx}
+                            actualDrillIndex={actualDrillIndex}
+                            isSwapping={isSwapping}
+                            justSwapped={justSwapped}
+                            facilityInfo={facilityInfo}
+                            onComplete={(dayIdx, drillIdx) => {
+                              markDrillComplete(dayIdx, drillIdx);
+                              setExpandedScheduleDrill(null);
+                            }}
+                            onSwap={swapDrill}
+                            onLevelToggle={updateLevelCompletion}
+                            onYoutubeOpen={(url) => setYoutubeModal({ open: true, url })}
+                            onExpandToggle={(dayIdx, drillIdx) => {
+                              if (isExpanded) {
+                                setExpandedScheduleDrill(null);
+                              } else {
+                                setExpandedScheduleDrill({ dayIndex: dayIdx, drillIndex: drillIdx });
+                              }
+                            }}
+                            defaultExpanded={true} // AUTO-OPEN: Force expanded so buttons are always visible
+                          />
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+                  </>
+                )}
+
+                {/* Weekly Summary View */}
+                {viewMode === 'weekly' && (
+                  <div className="space-y-4 w-full">
+                    {DAY_NAMES.map((dayName, dayIndex) => {
+                      const day = weeklyPlan[dayIndex];
+                      const dayDrills = day?.drills || [];
+                      const completedCount = dayDrills.filter(d => d.completed).length;
+                      const totalCount = dayDrills.length;
+                      
+                      if (dayDrills.length === 0) return null;
+                      
+                      return (
+                        <div key={dayIndex} className="border border-gray-200 rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-lg font-semibold text-gray-900">{dayName}</h3>
+                            {totalCount > 0 && (
+                              <span className={`text-sm font-medium ${
+                                completedCount === totalCount ? 'text-green-600' : 'text-gray-600'
+                              }`}>
+                                {completedCount}/{totalCount}
+                              </span>
+                            )}
+                          </div>
+                          <div className="space-y-2">
+                            {dayDrills.map((drill, idx) => (
+                              <div
+                                key={`weekly-${dayIndex}-${drill.id}-${idx}`}
+                                className={`flex items-center justify-between p-2 rounded ${
+                                  drill.completed ? 'bg-green-50 border border-green-200' : 'bg-gray-50'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  {drill.completed && (
+                                    <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                                  )}
+                                  <span className={`text-sm flex-1 truncate ${
+                                    drill.completed ? 'text-green-700 line-through' : 'text-gray-700'
+                                  }`}>
+                                    {drill.title}
+                                  </span>
+                                  {/* Media Icons - Small in Weekly View */}
+                                  <div className="flex items-center gap-1 flex-shrink-0">
+                                    {drill.pdf_url && (
+                                      <a
+                                        href={drill.pdf_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="p-1 rounded hover:bg-gray-200 transition-colors"
+                                        title="View PDF"
+                                      >
+                                        <File className="w-3 h-3 text-gray-600" />
+                                      </a>
+                                    )}
+                                    {drill.youtube_url && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setYoutubeModal({ open: true, url: drill.youtube_url || '' });
+                                        }}
+                                        className="p-1 rounded hover:bg-gray-200 transition-colors"
+                                        title="Watch Video"
+                                      >
+                                        <PlayCircle className="w-3 h-3 text-red-600" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
+        
+        {/* YouTube Modal */}
+        {youtubeModal.open && (
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+            onClick={() => setYoutubeModal({ open: false, url: '' })}
+          >
+            <div 
+              className="bg-white rounded-2xl p-4 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Video</h3>
+                <button
+                  onClick={() => setYoutubeModal({ open: false, url: '' })}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5 text-gray-600" />
+                </button>
+              </div>
+              <div className="aspect-video w-full">
+                {(() => {
+                  // Convert YouTube URL to embed format
+                  const embedUrl = youtubeModal.url.includes('youtube.com/watch?v=')
+                    ? youtubeModal.url.replace('youtube.com/watch?v=', 'youtube.com/embed/')
+                    : youtubeModal.url.includes('youtu.be/')
+                    ? youtubeModal.url.replace('youtu.be/', 'youtube.com/embed/')
+                    : youtubeModal.url;
+                  
+                  const cleanUrl = embedUrl.split('&')[0]; // Remove extra parameters
+                  
+                  return (
+                    <iframe
+                      src={cleanUrl}
+                      className="w-full h-full rounded-lg"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                      title="YouTube video player"
+                    />
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
