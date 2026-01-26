@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -5119,3 +5119,7 @@ export default function AcademyPage() {
     </div>
   );
 }
+
+
+
+
