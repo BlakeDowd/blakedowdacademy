@@ -288,7 +288,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               console.log('Fetching profile for ID:', supabaseUser.id);
               const { data, error } = await supabase
                 .from('profiles')
-                .select('id, full_name, xp')
+                .select('id, full_name, xp, "currentStreak", last_login_date, profile_icon, initial_handicap')
                 .eq('id', supabaseUser.id)
                 .single();
               

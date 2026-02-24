@@ -1337,26 +1337,25 @@ export default function PracticePage() {
         // Try drill_scores table first (as user specified), fallback to drills table
         let saved = false;
         
-        // TEMPORARY BYPASS: Save to practice table without drill_id/drill_name
-        // Use only columns that definitely exist: user_id, completed, completed_at
+        // Safe insert: Only use columns known to exist in 'practice' table based on logFreestylePractice
         const { data: practiceData, error: practiceError } = await supabase
           .from('practice')
           .insert({
             user_id: user.id,
-            // TEMPORARY BYPASS: Remove drill_id and drill_name - add back when columns exist
-            // drill_id: drill.id,
-            // drill_name: drill.title,
-            completed: true,
-            completed_at: new Date().toISOString(),
-            // Include optional fields if they exist in the table
-            pdf_url: drill.pdf_url || null,
-            youtube_url: drill.youtube_url || null,
-            completed_levels: drill.levels ? JSON.stringify(drill.levels.filter(l => l.completed).map(l => l.id)) : null,
+            type: drill.title, // Map the drill title to 'type'
+            duration_minutes: drill.estimatedMinutes, // Use standard duration_minutes column
+            notes: `Completed Drill: ${drill.category}`, // Use notes for extra context
+            // Let the database handle the timestamp via its default created_at/completed_at column
           })
           .select();
 
         if (practiceError) {
-          console.error('Practice: Error saving to practice table:', practiceError);
+          console.error('Practice: Error saving to practice table:', {
+            message: practiceError.message,
+            code: practiceError.code,
+            details: practiceError.details,
+            hint: practiceError.hint
+          });
         } else {
           console.log('Practice: Drill saved to practice table:', practiceData);
           saved = true;
