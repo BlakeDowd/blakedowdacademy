@@ -391,15 +391,30 @@ export default function PracticePage() {
           
           // Create a map of drills by title for matching (CROSS-REFERENCE: match by title)
           const drillDetailsMap: Record<string, any> = {};
+          
+          // Add library drills first
+          if (typeof LIBRARY_DRILLS !== 'undefined') {
+            LIBRARY_DRILLS.forEach((drill: any) => {
+              if (drill.id) drillDetailsMap[drill.id] = drill;
+              if (drill.title) drillDetailsMap[drill.title.toLowerCase().trim()] = drill;
+            });
+          }
+
+          // Merge database drills
           if (allDrillsData && !drillsError) {
             allDrillsData.forEach((drill: any) => {
               // Index by id
               if (drill.id) {
-                drillDetailsMap[drill.id] = drill;
+                drillDetailsMap[drill.id] = drillDetailsMap[drill.id] 
+                  ? { ...drillDetailsMap[drill.id], ...drill } 
+                  : drill;
               }
               // Index by title (lowercase for case-insensitive matching)
               if (drill.title) {
-                drillDetailsMap[drill.title.toLowerCase().trim()] = drill;
+                const normalizedTitle = drill.title.toLowerCase().trim();
+                drillDetailsMap[normalizedTitle] = drillDetailsMap[normalizedTitle]
+                  ? { ...drillDetailsMap[normalizedTitle], ...drill }
+                  : drill;
               }
             });
           }
@@ -1231,9 +1246,9 @@ export default function PracticePage() {
           });
           
           if (drillsToInsert.length > 0) {
-            const { error } = await supabase.from('user_drills').upsert(drillsToInsert);
+            const { error } = await supabase.from('user_drills').insert(drillsToInsert);
             if (error) {
-              console.error('Error upserting to user_drills:', error);
+              console.error('Error inserting to user_drills:', error);
             }
           }
         }
