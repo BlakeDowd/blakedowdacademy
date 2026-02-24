@@ -14,7 +14,8 @@ interface User {
   initialHandicap?: number;
   createdAt?: string;
   currentStreak?: number; // State Sync: Include streak in user state so banner updates
-  totalXP?: number; // Sync Interfaces: Include totalXP from database xp column
+  totalXP?: number; // Sync Interfaces: Include totalXP from database total_xp column
+  currentLevel?: number; // Pull current level from database
   trophies?: string[]; // Use Profile Data: Pull trophies directly from profile data (trophies or achievements column)
 }
 
@@ -153,16 +154,23 @@ async function checkAndUpdateStreak(supabase: ReturnType<typeof createClient>, u
       try {
         const { data: currentProfile } = await supabase
           .from('profiles')
-          .select('xp')
+          .select('total_xp')
           .eq('id', userId)
           .single();
         
-        const currentXP = currentProfile?.xp || 0;
+        const currentXP = currentProfile?.total_xp || 0;
         const newXP = currentXP + xpReward;
+        
+        // Calculate level based on XP
+        let newLevel = 1;
+        if (newXP < 500) newLevel = 1;
+        else if (newXP < 1500) newLevel = 2;
+        else if (newXP < 3000) newLevel = 3;
+        else newLevel = 4 + Math.floor((newXP - 3000) / 2000);
         
         const { error: xpError } = await supabase
           .from('profiles')
-          .update({ xp: newXP })
+          .update({ total_xp: newXP, current_level: newLevel })
           .eq('id', userId);
         
         if (xpError) {
@@ -283,12 +291,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               // Check the ID: Log the user.id right before the fetch to ensure we are actually looking for a valid UUID
               console.log('AuthContext: Fetching profile for user ID:', supabaseUser.id, '(Type:', typeof supabaseUser.id, ')');
               
-              // Simplify Select: Change the .select() for the profiles table to strictly: .select('id, full_name, xp')
+              // Simplify Select: Change the .select() for the profiles table to strictly: .select('id, full_name, total_xp')
               // We will add the other columns back once we confirm this works
               console.log('Fetching profile for ID:', supabaseUser.id);
               const { data, error } = await supabase
                 .from('profiles')
-                .select('id, full_name, xp, "currentStreak", last_login_date, profile_icon, initial_handicap')
+                .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, profile_icon, initial_handicap')
                 .eq('id', supabaseUser.id)
                 .single();
               
@@ -303,11 +311,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               
               if (data) {
                 console.log('✅ AuthContext: Profile loaded successfully', data);
-                // Strict State Updates: Direct overwrite - setXP(data.xp) instead of setXP(prev => prev + data.xp)
+                // Strict State Updates: Direct overwrite - setXP(data.total_xp) instead of setXP(prev => prev + data.total_xp)
                 const profileData = { 
                   ...data, 
                   currentStreak: (data as any)?.currentStreak || (data as any)?.current_streak || 0,
-                  totalXP: data?.xp || 0 // Strict State Updates: Direct overwrite from database, not additive
+                  totalXP: data?.total_xp || 0, // Strict State Updates: Direct overwrite from database, not additive
+                  currentLevel: data?.current_level || 1
                 };
                 console.log('Verify Mapping - profileData:', profileData, 'currentStreak value:', profileData.currentStreak, 'raw data.current_streak:', (data as any)?.current_streak);
                 
@@ -512,7 +521,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               console.log('AuthContext: Setting user state with streak:', streakForUI, '(raw value:', finalStreak, ', profile.currentStreak:', profile.currentStreak, ')');
               
               // Verify Mapping: Map profile.currentStreak (camelCase) to currentStreak (camelCase in user object)
-              // Map the Data: Assign totalXP from profile.xp (database column) to user state
+              // Map the Data: Assign totalXP from profile.total_xp (database column) to user state
               // Use Profile Data: Pull trophies directly from profile data (trophies or achievements column)
               setUser({
                 id: supabaseUser.id,
@@ -522,7 +531,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 initialHandicap: 0,
                 createdAt: (profile as any)?.created_at || supabaseUser.created_at,
                 currentStreak: streakForUI, // Verify Mapping: Use profile.currentStreak (camelCase) from profileData
-                totalXP: (profile as any)?.xp || 0, // Strict State Updates: Direct overwrite from database, not additive
+                totalXP: (profile as any)?.total_xp || 0, // Strict State Updates: Direct overwrite from database, not additive
+                currentLevel: (profile as any)?.current_level || 1,
                 trophies: (profile as any)?.trophies || (profile as any)?.achievements || [], // Use Profile Data: Pull trophies from profile
               });
               
@@ -596,12 +606,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Check the ID: Log the user.id right before the fetch to ensure we are actually looking for a valid UUID
             console.log('AuthContext: onAuthStateChange - Fetching profile for user ID:', session.user.id, '(Type:', typeof session.user.id, ')');
             
-            // Simplify Select: Change the .select() for the profiles table to strictly: .select('id, full_name, xp')
+            // Simplify Select: Change the .select() for the profiles table to strictly: .select('id, full_name, total_xp')
             // We will add the other columns back once we confirm this works
             console.log('Fetching profile for ID:', session.user.id);
             let { data: profile, error: profileError } = await supabase
               .from('profiles')
-              .select('id, full_name, xp')
+              .select('id, full_name, total_xp, current_level')
               .eq('id', session.user.id) // Fix the Query: Use session.user.id which matches auth.uid()
               .single();
             
@@ -620,8 +630,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               const profileWithXP = {
                 ...profile,
                 currentStreak: (profile as any)?.currentStreak || (profile as any)?.current_streak || 0,
-                totalXP: (profile as any)?.xp || 0, // Map the Data: Assign xp from database to totalXP
-                xp: (profile as any)?.xp || 0 // Keep xp property for TypeScript compatibility
+                totalXP: (profile as any)?.total_xp || 0, // Map the Data: Assign xp from database to totalXP
+                currentLevel: (profile as any)?.current_level || 1
               };
               profile = profileWithXP as any;
               console.log('AuthContext: onAuthStateChange - Profile data loaded:', {
@@ -662,13 +672,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               if (createError) {
                 console.error('AuthContext: Error creating profile:', createError);
               } else if (newProfile) {
-                // Fix TypeScript: Ensure profile includes all required properties (id, last_login_date, currentStreak, xp)
+                // Fix TypeScript: Ensure profile includes all required properties (id, last_login_date, currentStreak, total_xp)
                 profile = {
                   ...newProfile,
                   id: session.user.id,
                   currentStreak: (newProfile as any)?.currentStreak || 0,
                   last_login_date: (newProfile as any)?.last_login_date || null,
-                  xp: 0, // Initialize xp to 0 for new profiles
+                  total_xp: 0, // Initialize total_xp to 0 for new profiles
+                  current_level: 1, // Initialize current_level to 1 for new profiles
                   totalXP: 0 // Map the Data: Initialize totalXP to 0 for new profiles
                 } as any;
                 console.log('AuthContext: Profile created successfully with id:', session.user.id);
@@ -687,13 +698,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .single();
               
               if (!createError && newProfile) {
-                // Fix TypeScript: Ensure profile includes all required properties (id, last_login_date, currentStreak, xp)
+                // Fix TypeScript: Ensure profile includes all required properties (id, last_login_date, currentStreak, total_xp)
                 profile = {
                   ...newProfile,
                   id: session.user.id,
                   currentStreak: (newProfile as any)?.currentStreak || 0,
                   last_login_date: (newProfile as any)?.last_login_date || null,
-                  xp: 0, // Initialize xp to 0 for new profiles
+                  total_xp: 0, // Initialize total_xp to 0 for new profiles
+                  current_level: 1, // Initialize current_level to 1 for new profiles
                   totalXP: 0 // Map the Data: Initialize totalXP to 0 for new profiles
                 } as any;
                 console.log('AuthContext: Profile created successfully (fallback)');
@@ -711,10 +723,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               };
               
               // Retry Logic: Only set user state if profile data is successfully loaded
-              // Strict State Updates: Direct overwrite - setXP(data.xp) instead of setXP(prev => prev + data.xp)
+              // Strict State Updates: Direct overwrite - setXP(data.total_xp) instead of setXP(prev => prev + data.total_xp)
               const profileDataWithXP = {
                 ...profileData,
-                totalXP: (profileData as any)?.xp || 0 // Strict State Updates: Direct overwrite from database, not additive
+                totalXP: (profileData as any)?.total_xp || 0, // Strict State Updates: Direct overwrite from database, not additive
+                currentLevel: (profileData as any)?.current_level || 1
               };
               setUser({
                 id: session.user.id,
@@ -725,6 +738,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 createdAt: (profileData as any)?.created_at || session.user.created_at,
                 currentStreak: profileData.currentStreak, // Verify Mapping: Include currentStreak from profile
                 totalXP: profileDataWithXP.totalXP, // Strict State Updates: Direct overwrite from database, not additive
+                currentLevel: profileDataWithXP.currentLevel,
                 trophies: (profileData as any)?.trophies || (profileData as any)?.achievements || [], // Use Profile Data: Pull trophies from profile
               });
               setIsAuthenticated(true);

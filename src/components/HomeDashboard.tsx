@@ -165,9 +165,10 @@ export default function HomeDashboard() {
     // Data Source: Use user?.totalXP which is now properly synchronized from database xp column in AuthContext
     return {
       currentStreak: user?.currentStreak, // Use camelCase to match the user object property name
-      totalXP: user?.totalXP // Use synchronized totalXP from user object (mapped from database xp column)
+      totalXP: user?.totalXP, // Use synchronized totalXP from user object (mapped from database xp column)
+      currentLevel: user?.currentLevel // Use synchronized currentLevel from user object
     };
-  }, [user?.currentStreak, user?.totalXP]);
+  }, [user?.currentStreak, user?.totalXP, user?.currentLevel]);
   
   // Ensure rounds is always an array, never null or undefined
   const allRounds = (rounds || []) as any[];
@@ -191,6 +192,42 @@ export default function HomeDashboard() {
   const [selectedIcon, setSelectedIcon] = useState<string | null>(user?.profileIcon || null);
   const [isSavingIcon, setIsSavingIcon] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  
+  // Real-time streak state from RPC
+  const [streak, setStreak] = useState<number>(0);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchStreak = async () => {
+      if (!user?.id) return;
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const { data, error } = await supabase.rpc('get_user_streak', { user_id: user.id });
+        if (error) {
+          console.error('Error fetching streak via RPC:', {
+            message: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint
+          });
+          // Fall back to the context streak if RPC fails
+          if (mounted) setStreak(user?.currentStreak || 0);
+          return;
+        }
+        if (mounted && data !== null && data !== undefined) {
+          setStreak(Number(data));
+        } else if (mounted && (data === null || data === undefined)) {
+          // If RPC returns null, fall back to context streak
+          setStreak(user?.currentStreak || 0);
+        }
+      } catch (err) {
+        console.error('Failed to fetch streak:', err);
+      }
+    };
+    fetchStreak();
+    return () => { mounted = false; };
+  }, [user?.id]);
   
   // Initialize editedName when modal opens
   // Use Profile Data: Use user.fullName instead of hardcoded 'Member'
@@ -372,7 +409,8 @@ export default function HomeDashboard() {
   };
   
   const levelInfo = getLevelInfo(totalXP);
-  const currentLevel = levelInfo.level;
+  // Database Sync: Pull level directly from database columns
+  const currentLevel = profile?.currentLevel || user?.currentLevel || levelInfo.level;
   const xpForCurrentLevel = levelInfo.xpForCurrentLevel;
   const xpNeededForNextLevel = levelInfo.xpNeededForNextLevel;
   const xpRemaining = levelInfo.xpRemaining;
@@ -1148,8 +1186,8 @@ export default function HomeDashboard() {
             >
               <Flame className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
               {/* Consistency Check: Ensure the Skills Snapshot component is also updated to use profile.currentStreak */}
-              {/* Update the Variable: Use profile.currentStreak (camelCase) to match the user object property name */}
-              <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{profile?.currentStreak !== undefined ? profile.currentStreak : 0}</p>
+              {/* Sync Display: Use realtime streak from Supabase RPC */}
+              <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{streak}</p>
               <p className="text-gray-400 text-xs mt-1">days streak</p>
             </Link>
             
@@ -1456,7 +1494,7 @@ export default function HomeDashboard() {
                     return dateB.getTime() - dateA.getTime();
                   })
                   .slice(0, 5)
-                  .map((round: any) => {
+                  .map((round: any, index: number) => {
                   // Fix the 'ec' Crash: Use rounds.map((round) => { ... }) and use (round?.score || 0) - (round?.handicap || 0) for the Nett calculation
                   const nett = (round?.score || 0) - (round?.handicap || 0);
                   
@@ -1478,7 +1516,7 @@ export default function HomeDashboard() {
                   const timeAgo = formatTimeAgo(roundDate);
                   
                   return (
-                    <div key={round?.id || `round-${roundDate}`} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
+                    <div key={round?.id || `round-${roundDate}-${index}`} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
                       <div className="flex items-center gap-3 flex-1">
                         <Star className="w-5 h-5" style={{ color: '#014421' }} />
                         <div className="flex-1">

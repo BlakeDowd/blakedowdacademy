@@ -114,43 +114,34 @@ async function updateUserXP(userId: string, points: number): Promise<void> {
     // Get current XP from profile
     const { data: currentProfile, error: fetchError } = await supabase
       .from('profiles')
-      .select('xp')
+      .select('total_xp')
       .eq('id', userId)
       .single();
 
     if (fetchError && fetchError.code !== 'PGRST116') {
       console.error('Error fetching current XP:', fetchError);
-      // If XP column doesn't exist, initialize it to 0
-      const currentXP = 0;
-      const newXP = currentXP + points;
-
-      // Update or insert XP
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ xp: newXP })
-        .eq('id', userId);
-
-      if (updateError) {
-        console.error('Error updating XP:', updateError);
-      } else {
-        console.log(`XP updated: ${currentXP} + ${points} = ${newXP}`);
-      }
-      return;
     }
 
-    const currentXP = currentProfile?.xp || 0;
+    const currentXP = currentProfile?.total_xp || 0;
     const newXP = currentXP + points;
 
-    // Update XP in profiles table
+    // Calculate level based on XP
+    let newLevel = 1;
+    if (newXP < 500) newLevel = 1;
+    else if (newXP < 1500) newLevel = 2;
+    else if (newXP < 3000) newLevel = 3;
+    else newLevel = 4 + Math.floor((newXP - 3000) / 2000);
+
+    // Update XP and level in profiles table
     const { error: updateError } = await supabase
       .from('profiles')
-      .update({ xp: newXP })
+      .update({ total_xp: newXP, current_level: newLevel })
       .eq('id', userId);
 
     if (updateError) {
       console.error('Error updating XP:', updateError);
     } else {
-      console.log(`XP updated: ${currentXP} + ${points} = ${newXP}`);
+      console.log(`XP updated: ${currentXP} + ${points} = ${newXP} (Level ${newLevel})`);
       // Global Refresh: Dispatch event to refresh XP leaderboard
       window.dispatchEvent(new Event('xpUpdated'));
     }
@@ -834,7 +825,7 @@ export default function PracticePage() {
         drillCompletions: {}
       };
       
-      userProgress.totalXP = (userProgress.totalXP || 0) + xpEarned;
+      // Removed: userProgress.totalXP = (userProgress.totalXP || 0) + xpEarned;
       userProgress.totalMinutes = (userProgress.totalMinutes || 0) + duration;
       
       localStorage.setItem('userProgress', JSON.stringify(userProgress));
@@ -1332,50 +1323,55 @@ export default function PracticePage() {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
 
-        // Check the Submit Function: Ensure that when a drill is logged, it uses supabase.from('drill_scores').insert(...) instead of just marking it as a practice session
-        // Match the Fields: Ensure it sends drill_name, score, and user_id
-        // Try drill_scores table first (as user specified), fallback to drills table
-        let saved = false;
+        // Check if already completed today to prevent duplicates
+        const startOfDay = new Date(day.date + 'T00:00:00').toISOString();
+        const endOfDay = new Date(day.date + 'T23:59:59').toISOString();
         
-        // Safe insert: Only use columns known to exist in 'practice' table based on logFreestylePractice
-        const { data: practiceData, error: practiceError } = await supabase
+        const { data: existing } = await supabase
           .from('practice')
-          .insert({
-            user_id: user.id,
-            type: drill.title, // Map the drill title to 'type'
-            duration_minutes: drill.estimatedMinutes, // Use standard duration_minutes column
-            notes: `Completed Drill: ${drill.category}`, // Use notes for extra context
-            // Let the database handle the timestamp via its default created_at/completed_at column
-          })
-          .select();
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('type', drill.title)
+          .gte('completed_at', startOfDay)
+          .lte('completed_at', endOfDay)
+          .limit(1)
+          .maybeSingle();
 
-        if (practiceError) {
-          console.error('Practice: Error saving to practice table:', {
-            message: practiceError.message,
-            code: practiceError.code,
-            details: practiceError.details,
-            hint: practiceError.hint
-          });
+        if (existing) {
+          console.log('Practice: Drill already completed today, skipping duplicate insert and XP.');
         } else {
-          console.log('Practice: Drill saved to practice table:', practiceData);
-          saved = true;
+          // Safe insert: Only use columns known to exist in 'practice' table based on logFreestylePractice
+          const { data: practiceData, error: practiceError } = await supabase
+            .from('practice')
+            .insert({
+              user_id: user.id,
+              type: drill.title, // Map the drill title to 'type'
+              duration_minutes: drill.estimatedMinutes, // Use standard duration_minutes column
+              notes: `Completed Drill: ${drill.category}`, // Use notes for extra context
+              // Let the database handle the timestamp via its default created_at/completed_at column
+            })
+            .select();
+
+          if (practiceError) {
+            console.error('Practice: Error saving to practice table:', practiceError);
+          } else {
+            console.log('Practice: Drill saved to practice table:', practiceData);
+            
+            // Trigger on Drill: Add XP to the user ONLY ONCE per drill per day
+            await updateUserXP(user.id, xpEarned);
+            console.log(`Practice: Added ${xpEarned} XP for drill completion`);
+            
+            // Trigger Global Sync
+            await refreshDrills();
+            window.dispatchEvent(new Event('drillsUpdated'));
+          }
         }
-
-        // Trigger on Drill: In the markDrillComplete function, add 100 XP to the user whenever a drill is logged
-        await updateUserXP(user.id, 100);
-        console.log('Practice: Added 100 XP for drill completion');
-
-        // Trigger Global Sync: After saving, dispatch the drillsUpdated event so the leaderboard refreshes immediately
-        await refreshDrills();
-        window.dispatchEvent(new Event('drillsUpdated'));
-        console.log('Practice: Drill logged - triggering global refresh for all users');
       } catch (error) {
         console.error('Practice: Error in markDrillComplete database save:', error);
-        // Continue with localStorage fallback
       }
     }
 
-    // Update userProgress and activity history (ALWAYS award XP when marking complete)
+    // Update activity history (but DO NOT locally add XP to prevent ghosting)
     if (typeof window !== 'undefined' && !isCurrentlyCompleted) {
       const savedProgress = localStorage.getItem('userProgress');
       const userProgress = savedProgress ? JSON.parse(savedProgress) : { 
@@ -1385,8 +1381,7 @@ export default function PracticePage() {
         drillCompletions: {} // Track total completions per drill
       };
       
-      // ALWAYS add XP and minutes when marking complete (repeatable - every click awards XP)
-      userProgress.totalXP = (userProgress.totalXP || 0) + xpEarned;
+      // Removed: userProgress.totalXP = (userProgress.totalXP || 0) + xpEarned;
       userProgress.totalMinutes = (userProgress.totalMinutes || 0) + drill.estimatedMinutes;
       
       // Track total completions per drill
