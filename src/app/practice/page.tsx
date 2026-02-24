@@ -341,20 +341,38 @@ export default function PracticePage() {
           // Continue with empty schedule instead of crashing
         }
 
-        // Initialize plan structure
+        // Initialize plan structure from localStorage
         const loadedPlan: WeeklyPlan = {};
-        DAY_ABBREVIATIONS.forEach((_, index) => {
-          loadedPlan[index] = {
-            dayIndex: index,
-            dayName: DAY_NAMES[index],
-            selected: false,
-            availableTime: 0,
-            selectedFacilities: [],
-            roundType: null,
-            drills: [],
-            date: new Date().toISOString().split('T')[0],
-          };
-        });
+        let hasLocalPlan = false;
+        if (typeof window !== 'undefined') {
+          const savedPlans = localStorage.getItem('weeklyPracticePlans');
+          if (savedPlans) {
+            try {
+              const parsedPlans = JSON.parse(savedPlans);
+              if (Object.keys(parsedPlans).length > 0) {
+                Object.assign(loadedPlan, parsedPlans);
+                hasLocalPlan = true;
+              }
+            } catch (e) {
+              console.error('Error parsing localStorage plans:', e);
+            }
+          }
+        }
+        
+        if (!hasLocalPlan) {
+          DAY_ABBREVIATIONS.forEach((_, index) => {
+            loadedPlan[index] = {
+              dayIndex: index,
+              dayName: DAY_NAMES[index],
+              selected: false,
+              availableTime: 0,
+              selectedFacilities: [],
+              roundType: null,
+              drills: [],
+              date: new Date().toISOString().split('T')[0],
+            };
+          });
+        }
 
         // CROSS-REFERENCE: Fetch drill details from drills table and match by title
         if (practiceData && practiceData.length > 0) {
@@ -419,17 +437,35 @@ export default function PracticePage() {
             }
 
             // MAP THE DATA: Attach video_url, pdf_url, and drill_levels to drill object
-            loadedPlan[dayIndex].drills.push({
-              id: drillDetails?.id || practice.drill_id || `practice-${practice.id}`,
-              title: drillDetails?.title || practice.drill_name || practice.type || practice.title || 'Practice Session',
-              category: drillDetails?.category || practice.category || 'Practice',
-              estimatedMinutes: drillDetails?.estimatedMinutes || practice.estimatedMinutes || 30,
-              completed: practice.completed || false,
-              // MAP THE DATA: video_url, pdf_url, drill_levels attached here
-              pdf_url: drillDetails?.pdf_url || practice.pdf_url || undefined,
-              youtube_url: drillDetails?.video_url || practice.youtube_url || practice.video_url || undefined,
-              levels: levels || undefined,
-            });
+            const generatedDrillId = drillDetails?.id || practice.drill_id || `practice-${practice.id}`;
+            const drillTitle = drillDetails?.title || practice.drill_name || practice.type || practice.title || 'Practice Session';
+            const isCompleted = practice.completed || false;
+            
+            // Check if this drill is already in our local plan
+            const existingDrillIndex = loadedPlan[dayIndex].drills.findIndex(d => 
+              d.id === generatedDrillId || d.title === drillTitle
+            );
+
+            if (existingDrillIndex >= 0) {
+              // Update existing drill from localStorage with database completion status
+              loadedPlan[dayIndex].drills[existingDrillIndex].completed = isCompleted;
+              if (levels) loadedPlan[dayIndex].drills[existingDrillIndex].levels = levels;
+              if (drillDetails?.pdf_url || practice.pdf_url) loadedPlan[dayIndex].drills[existingDrillIndex].pdf_url = drillDetails?.pdf_url || practice.pdf_url;
+              if (drillDetails?.video_url || practice.youtube_url || practice.video_url) loadedPlan[dayIndex].drills[existingDrillIndex].youtube_url = drillDetails?.video_url || practice.youtube_url || practice.video_url;
+            } else {
+              // Add new drill from database
+              loadedPlan[dayIndex].drills.push({
+                id: generatedDrillId,
+                title: drillTitle,
+                category: drillDetails?.category || practice.category || 'Practice',
+                estimatedMinutes: drillDetails?.estimatedMinutes || practice.estimatedMinutes || 30,
+                completed: isCompleted,
+                // MAP THE DATA: video_url, pdf_url, drill_levels attached here
+                pdf_url: drillDetails?.pdf_url || practice.pdf_url || undefined,
+                youtube_url: drillDetails?.video_url || practice.youtube_url || practice.video_url || undefined,
+                levels: levels || undefined,
+              });
+            }
           });
         }
 
@@ -1069,10 +1105,20 @@ export default function PracticePage() {
       
       // Only update the plan if there are drills or if it's a round (rounds are always added)
       if (allSelectedDrills.length > 0 || roundType) {
+        // Calculate the actual date for this dayIndex
+        const today = new Date();
+        const currentDay = today.getDay();
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+        const targetDate = new Date(monday);
+        targetDate.setDate(monday.getDate() + day.dayIndex);
+        targetDate.setHours(12, 0, 0, 0); // Avoid timezone boundary issues
+        const formattedDate = targetDate.toISOString().split('T')[0];
+
         // Reset all completion states when generating a new plan (session-based)
         newPlan[day.dayIndex] = {
           ...day,
-          date: new Date().toISOString().split('T')[0],
+          date: formattedDate,
           drills: allSelectedDrills.map(d => ({
             id: d.id,
             title: d.title,
