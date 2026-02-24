@@ -326,7 +326,7 @@ export default function PracticePage() {
         sunday.setDate(monday.getDate() + 6);
         sunday.setHours(23, 59, 59, 999);
 
-        // SIMPLIFY THE FETCH: Fetch practice schedule from practice table
+        // SIMPLIFY THE FETCH: Fetch practice schedule from practice table (completed drills)
         const { data: practiceData, error } = await supabase
           .from('practice')
           .select('*')
@@ -334,6 +334,14 @@ export default function PracticePage() {
           .gte('completed_at', monday.toISOString())
           .lte('completed_at', sunday.toISOString())
           .order('completed_at', { ascending: true });
+
+        // FETCH PLANNED DRILLS from user_drills
+        const { data: userDrillsData } = await supabase
+          .from('user_drills')
+          .select('*')
+          .eq('user_id', user.id)
+          .gte('selected_date', monday.toISOString().split('T')[0])
+          .lte('selected_date', sunday.toISOString().split('T')[0]);
 
         // FIX LINE 338: Handle error gracefully without crashing
         if (error) {
@@ -375,7 +383,7 @@ export default function PracticePage() {
         }
 
         // CROSS-REFERENCE: Fetch drill details from drills table and match by title
-        if (practiceData && practiceData.length > 0) {
+        if ((practiceData && practiceData.length > 0) || (userDrillsData && userDrillsData.length > 0)) {
           // Fetch all drills from drills table
           const { data: allDrillsData, error: drillsError } = await supabase
             .from('drills')
@@ -396,8 +404,59 @@ export default function PracticePage() {
             });
           }
 
+          // Add planned drills from user_drills to loadedPlan
+          if (userDrillsData && userDrillsData.length > 0) {
+            userDrillsData.forEach((plannedDrill: any) => {
+              const targetDate = new Date(plannedDrill.selected_date + 'T12:00:00');
+              const dayOfWeek = targetDate.getDay();
+              const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+              
+              if (!loadedPlan[dayIndex]) return;
+              
+              const drillDetails = drillDetailsMap[plannedDrill.drill_id];
+              
+              if (drillDetails) {
+                // Parse drill_levels
+                let levels = null;
+                if (drillDetails.drill_levels) {
+                  try {
+                    levels = typeof drillDetails.drill_levels === 'string' 
+                      ? JSON.parse(drillDetails.drill_levels)
+                      : drillDetails.drill_levels;
+                    if (Array.isArray(levels)) {
+                      levels = levels.map((level: any, idx: number) => ({
+                        id: level.id || `level-${idx}`,
+                        name: level.name || level,
+                        completed: false
+                      }));
+                    }
+                  } catch (e) {
+                    console.warn('Error parsing drill_levels:', e);
+                  }
+                }
+
+                // Check if drill already exists from localStorage to avoid duplicates
+                const existingIndex = loadedPlan[dayIndex].drills.findIndex((d: any) => d.id === plannedDrill.drill_id);
+                if (existingIndex === -1) {
+                  loadedPlan[dayIndex].selected = true; // Mark day as selected
+                  loadedPlan[dayIndex].drills.push({
+                    id: plannedDrill.drill_id,
+                    title: drillDetails.title,
+                    category: drillDetails.category,
+                    estimatedMinutes: drillDetails.estimatedMinutes || 30,
+                    completed: false,
+                    pdf_url: drillDetails.pdf_url,
+                    youtube_url: drillDetails.video_url,
+                    levels: levels || undefined,
+                  });
+                }
+              }
+            });
+          }
+
           // MAP THE DATA: Map practice data to weekly plan with cross-referenced drill data
-          practiceData.forEach((practice: any) => {
+          if (practiceData) {
+            practiceData.forEach((practice: any) => {
             const practiceDate = new Date(practice.completed_at);
             const dayOfWeek = practiceDate.getDay();
             const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Convert Sunday=0 to Monday=0
@@ -467,6 +526,7 @@ export default function PracticePage() {
               });
             }
           });
+        }
         }
 
         setWeeklyPlan(loadedPlan);
@@ -1138,6 +1198,48 @@ export default function PracticePage() {
       }
     });
 
+    // Save to user_drills table in database
+    if (user?.id) {
+      import("@/lib/supabase/client").then(async ({ createClient }) => {
+        const supabase = createClient();
+        
+        // Find which dates we are updating
+        const datesToUpdate = Object.values(newPlan)
+          .filter(day => day.selected)
+          .map(day => day.date);
+          
+        if (datesToUpdate.length > 0) {
+          // Delete old drills for these dates to avoid duplicates
+          await supabase
+            .from('user_drills')
+            .delete()
+            .eq('user_id', user.id)
+            .in('selected_date', datesToUpdate);
+            
+          // Insert new drills
+          const drillsToInsert: any[] = [];
+          Object.values(newPlan).forEach(day => {
+            if (day.selected && day.drills && day.drills.length > 0) {
+              day.drills.forEach((drill: any) => {
+                drillsToInsert.push({
+                  user_id: user.id,
+                  drill_id: drill.id,
+                  selected_date: day.date,
+                });
+              });
+            }
+          });
+          
+          if (drillsToInsert.length > 0) {
+            const { error } = await supabase.from('user_drills').upsert(drillsToInsert);
+            if (error) {
+              console.error('Error upserting to user_drills:', error);
+            }
+          }
+        }
+      });
+    }
+
     // Save to localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem('weeklyPracticePlans', JSON.stringify(newPlan));
@@ -1528,6 +1630,34 @@ export default function PracticePage() {
           : d
       ),
     };
+
+    // Save to user_drills table in database
+    if (user?.id) {
+      import("@/lib/supabase/client").then(async ({ createClient }) => {
+        const supabase = createClient();
+        
+        // Delete old swapped drill
+        await supabase
+          .from('user_drills')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('selected_date', day.date)
+          .eq('drill_id', currentDrill.id);
+
+        // Insert new swapped drill
+        const { error } = await supabase
+          .from('user_drills')
+          .insert({
+            user_id: user.id,
+            drill_id: drillData.id,
+            selected_date: day.date,
+          });
+          
+        if (error) {
+          console.error('Error saving swapped drill to user_drills:', error);
+        }
+      });
+    }
 
     // Save to localStorage
     if (typeof window !== 'undefined') {
