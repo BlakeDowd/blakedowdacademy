@@ -908,7 +908,7 @@ export default function PracticePage() {
     }
   };
 
-  const generatePlan = () => {
+  const generatePlan = async () => {
     const newPlan: WeeklyPlan = { ...weeklyPlan };
     
     // Get all selected days
@@ -1215,7 +1215,8 @@ export default function PracticePage() {
 
     // Save to user_drills table in database
     if (user?.id) {
-      import("@/lib/supabase/client").then(async ({ createClient }) => {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
         
         // Find which dates we are updating
@@ -1249,13 +1250,19 @@ export default function PracticePage() {
             const { error } = await supabase.from('user_drills').insert(drillsToInsert);
             if (error) {
               console.error('Error inserting to user_drills:', error);
+              alert('Failed to save drills to database. Please try again.');
+              return; // Do not update local state on error
             }
           }
         }
-      });
+      } catch (error) {
+        console.error('Database connection error:', error);
+        alert('Failed to connect to database. Please try again.');
+        return; // Do not update local state on error
+      }
     }
 
-    // Save to localStorage
+    // Save to localStorage (only after successful DB operation)
     if (typeof window !== 'undefined') {
       localStorage.setItem('weeklyPracticePlans', JSON.stringify(newPlan));
     }
@@ -1648,7 +1655,8 @@ export default function PracticePage() {
 
     // Save to user_drills table in database
     if (user?.id) {
-      import("@/lib/supabase/client").then(async ({ createClient }) => {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
         
         // Delete old swapped drill
@@ -1670,11 +1678,19 @@ export default function PracticePage() {
           
         if (error) {
           console.error('Error saving swapped drill to user_drills:', error);
+          alert('Failed to save swap to database.');
+          setSwappingDrill(null);
+          return; // Do not update state on error
         }
-      });
+      } catch (error) {
+        console.error('Database connection error:', error);
+        alert('Failed to connect to database.');
+        setSwappingDrill(null);
+        return; // Do not update state on error
+      }
     }
 
-    // Save to localStorage
+    // Save to localStorage (only after successful DB operation)
     if (typeof window !== 'undefined') {
       localStorage.setItem('weeklyPracticePlans', JSON.stringify(updatedPlan));
     }

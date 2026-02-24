@@ -70,6 +70,10 @@ export default function AdminPage() {
         .single();
 
       if (insertError) {
+        // Log the full error to console for debugging
+        console.error("Supabase insert error:", insertError);
+        
+        // Pass the error message or code to the catch block
         throw new Error(insertError.message || "Failed to save drill");
       }
 
@@ -79,7 +83,19 @@ export default function AdminPage() {
       // Clear success message after 3 seconds
       setTimeout(() => setSuccess(false), 3000);
     } catch (err: any) {
-      setError(err.message || "An error occurred while saving");
+      console.error("Error in handleSubmit:", err);
+      // Gracefully handle RLS and permission errors
+      const errorMessage = err.message?.toLowerCase() || "";
+      if (
+        errorMessage.includes('row-level security') || 
+        errorMessage.includes('permission denied') ||
+        errorMessage.includes('rls') ||
+        errorMessage.includes('policy')
+      ) {
+        setError("Permission Denied: You are not authorized to save drills. Ensure your user_id matches or you have admin privileges.");
+      } else {
+        setError(err.message || "An unexpected error occurred while saving the drill.");
+      }
     } finally {
       setSaving(false);
     }
