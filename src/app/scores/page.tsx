@@ -35,7 +35,7 @@ interface RoundData {
   doubleChips: number;
   totalPutts: number;
   threePutts: number;
-  missed6ftAndIn: number;
+  made6ftAndIn: number;
   puttsUnder6ftAttempts: number;
 }
 

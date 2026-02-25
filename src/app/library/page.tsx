@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search, ExternalLink, Play, FileText, File, Check, ChevronDown, X, Lock, Star } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { logActivity } from "@/lib/activity";
 
 type DrillType = 'video' | 'text' | 'pdf';
 type SkillLevel = 'Foundation' | 'Performance' | 'Elite';
@@ -323,6 +324,13 @@ function LibraryPageContent() {
         // Dispatch event to update Academy trophies
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('userProgressUpdated'));
+        }
+        
+        // Log video/lesson completion
+        if (user?.id) {
+          const actionText = drill.type === 'video' ? 'Watched' : 'Completed';
+          const actionType = drill.type === 'video' ? 'video' : 'drill';
+          logActivity(user.id, actionType as any, `${actionText} ${drill.title}`);
         }
         
         return {

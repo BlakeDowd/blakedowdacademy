@@ -20,17 +20,20 @@ import {
   X,
   BookOpen,
   Users,
+  User,
   Pencil,
   Check,
   Crown,
   Medal,
   Award,
   Eye,
-  EyeOff
+  EyeOff,
+  Flag
 } from "lucide-react";
 import IconPicker, { GOLF_ICONS } from "@/components/IconPicker";
 import Toast from "@/components/Toast";
 import TrophyCard from "@/components/TrophyCard";
+import { logActivity } from "@/lib/activity";
 
 // Video drills for Daily Focus rotation
 const VIDEO_DRILLS = [
@@ -86,12 +89,10 @@ const getDailyVideo = (refreshKey: number = 0) => {
 
 interface ActivityItem {
   id: string;
-  type: 'practice' | 'round';
+  type: 'drill' | 'video' | 'achievement' | 'round' | 'practice';
   title: string;
   date: string;
   xp?: number;
-  category?: string;
-  drillTitle?: string;
 }
 
 interface CommunityRound {
@@ -103,12 +104,122 @@ interface CommunityRound {
   timeAgo: string;
 }
 
+function SkillsSnapshot({ 
+  totalXP, 
+  currentLevel, 
+  streak, 
+  currentHandicap,
+  startingHandicap,
+  preferredIconId,
+  isLoading,
+  onOpenLevelModal
+}: { 
+  totalXP: number | null;
+  currentLevel: number | null;
+  streak: number | null;
+  currentHandicap: number | null;
+  startingHandicap: number | null;
+  preferredIconId: string | null;
+  isLoading: boolean;
+  onOpenLevelModal: () => void;
+}) {
+  const getLevelInfo = (xp: number) => {
+    if (xp < 500) {
+      return { level: 1, xpForCurrentLevel: xp, xpNeededForNextLevel: 500, xpRemaining: 500 - xp };
+    } else if (xp < 1500) {
+      return { level: 2, xpForCurrentLevel: xp - 500, xpNeededForNextLevel: 1000, xpRemaining: 1500 - xp };
+    } else if (xp < 3000) {
+      return { level: 3, xpForCurrentLevel: xp - 1500, xpNeededForNextLevel: 1500, xpRemaining: 3000 - xp };
+    } else {
+      const level4XP = xp - 3000;
+      const additionalLevels = Math.floor(level4XP / 2000);
+      const level = 4 + additionalLevels;
+      const xpInCurrentLevel = level4XP % 2000;
+      return { level, xpForCurrentLevel: xpInCurrentLevel, xpNeededForNextLevel: 2000, xpRemaining: 2000 - xpInCurrentLevel };
+    }
+  };
+
+  const levelInfo = totalXP !== null ? getLevelInfo(totalXP) : null;
+  const displayLevel = currentLevel ?? levelInfo?.level ?? 1;
+  const xpRemaining = levelInfo?.xpRemaining ?? 500;
+
+  return (
+    <div className="px-5 mb-6">
+      <h3 className="text-gray-600 font-medium text-base mb-3">Skills Snapshot</h3>
+      {isLoading || totalXP === null ? (
+        <div className="flex gap-3">
+          <div className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start h-[104px]">
+            <div className="w-6 h-6 mb-2 rounded-full bg-gray-200 animate-pulse"></div>
+            <div className="w-16 h-8 bg-gray-200 rounded animate-pulse mb-1"></div>
+            <div className="w-20 h-3 bg-gray-200 rounded animate-pulse"></div>
+          </div>
+          <div className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start h-[104px]">
+            <div className="w-6 h-6 mb-2 rounded-full bg-gray-200 animate-pulse"></div>
+            <div className="w-16 h-8 bg-gray-200 rounded animate-pulse mb-1"></div>
+            <div className="w-20 h-3 bg-gray-200 rounded animate-pulse mb-1"></div>
+            <div className="w-24 h-2 bg-gray-200 rounded animate-pulse"></div>
+          </div>
+          <div className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start h-[104px]">
+            <div className="w-6 h-6 mb-2 rounded-full bg-gray-200 animate-pulse"></div>
+            <div className="w-16 h-8 bg-gray-200 rounded animate-pulse mb-1"></div>
+            <div className="w-20 h-3 bg-gray-200 rounded animate-pulse"></div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-3">
+          <Link 
+            href="/practice"
+            className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97]"
+          >
+            <Flame className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
+            <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{streak ?? 0}</p>
+            <p className="text-gray-400 text-xs mt-1">days streak</p>
+          </Link>
+          
+          <button
+            onClick={onOpenLevelModal}
+            className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97] text-left"
+          >
+            <Zap className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
+            <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{(totalXP ?? 0).toLocaleString()}</p>
+            <p className="text-gray-400 text-xs mt-1">Total XP</p>
+            <p className="text-gray-500 text-[10px] mt-0.5">{xpRemaining.toLocaleString()} XP to Level {displayLevel + 1}</p>
+          </button>
+          
+          <Link
+            href="/handicap-history"
+            className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97]"
+          >
+            <TrendingDown className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
+            <p 
+              className="text-2xl font-bold mt-0"
+              style={{ 
+                color: '#FFA500',
+                fontWeight: 700,
+                fontFamily: 'system-ui, -apple-system, sans-serif'
+              }}
+            >
+              {(() => {
+                const displayHandicap = currentHandicap ?? startingHandicap;
+                return displayHandicap !== null && displayHandicap !== undefined
+                  ? Number(displayHandicap).toFixed(1)
+                  : '--';
+              })()}
+            </p>
+            <p className="text-gray-400 text-xs mt-1">Handicap</p>
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function HomeDashboard() {
   const router = useRouter();
   
   // Re-initialize simply: Define const { user } = useAuth();
   // Verify User Object: Make sure the user object from useAuth() is correctly identifying me so it can find my rounds in the database
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, profileLoading } = useAuth();
   
   // Re-initialize simply: Define const { rounds = [] } = useStats();
   // Sync Dashboard: Ensure the dashboard 'Practice' cards are pulling from this real data instead of mock numbers
@@ -189,45 +300,54 @@ export default function HomeDashboard() {
   // Profile modal state
   const [editedName, setEditedName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
-  const [selectedIcon, setSelectedIcon] = useState<string | null>(user?.profileIcon || null);
+  const [selectedIcon, setSelectedIcon] = useState<string | null>(user?.preferredIconId || null);
   const [isSavingIcon, setIsSavingIcon] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   
-  // Real-time streak state from RPC
-  const [streak, setStreak] = useState<number>(0);
+  // Snapshot Data Fetching State
+  const [snapshotData, setSnapshotData] = useState<{
+    total_xp: number | null;
+    current_level: number | null;
+    currentStreak: number | null;
+    preferred_icon_id: string | null;
+    starting_handicap: number | null;
+    handicap: number | null;
+  } | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(true);
 
+  // Fetch real snapshot data directly from profiles
   useEffect(() => {
     let mounted = true;
-    const fetchStreak = async () => {
+    const fetchSnapshot = async () => {
       if (!user?.id) return;
       try {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
-        const { data, error } = await supabase.rpc('get_user_streak', { user_id: user.id });
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('total_xp, current_level, "currentStreak", preferred_icon_id, starting_handicap, handicap')
+          .eq('id', user.id)
+          .single();
+          
         if (error) {
-          console.error('Error fetching streak via RPC:', {
-            message: error.message,
-            code: error.code,
-            details: error.details,
-            hint: error.hint
-          });
-          // Fall back to the context streak if RPC fails
-          if (mounted) setStreak(user?.currentStreak || 0);
-          return;
-        }
-        if (mounted && data !== null && data !== undefined) {
-          setStreak(Number(data));
-        } else if (mounted && (data === null || data === undefined)) {
-          // If RPC returns null, fall back to context streak
-          setStreak(user?.currentStreak || 0);
+          console.error("Error fetching snapshot data:", error);
+        } else if (mounted && data) {
+          setSnapshotData(data);
+          if (data.preferred_icon_id) {
+            setSelectedIcon(data.preferred_icon_id);
+          }
         }
       } catch (err) {
-        console.error('Failed to fetch streak:', err);
+        console.error("Failed to fetch snapshot:", err);
+      } finally {
+        if (mounted) setSnapshotLoading(false);
       }
     };
-    fetchStreak();
+    fetchSnapshot();
     return () => { mounted = false; };
   }, [user?.id]);
+  
+  // Removed unused streak RPC fetch since AuthContext manages streak
   
   // Initialize editedName when modal opens
   // Use Profile Data: Use user.fullName instead of hardcoded 'Member'
@@ -237,12 +357,16 @@ export default function HomeDashboard() {
     }
   }, [showProfileModal, user?.fullName, user?.email]);
   
-  // Update selectedIcon when user.profileIcon changes
+  // Update selectedIcon when snapshot preferred_icon_id changes
   useEffect(() => {
-    if (user?.profileIcon) {
-      setSelectedIcon(user.profileIcon);
+    if (snapshotData?.preferred_icon_id) {
+      setSelectedIcon(snapshotData.preferred_icon_id);
+    } else if (user?.preferredIconId) {
+      setSelectedIcon(user.preferredIconId);
+    } else {
+      setSelectedIcon(null); // Fallback to null
     }
-  }, [user?.profileIcon]);
+  }, [snapshotData?.preferred_icon_id, user?.preferredIconId]);
   
   // Removed inline name editing - all editing happens in modal
 
@@ -259,16 +383,18 @@ export default function HomeDashboard() {
       
       const { error } = await supabase
         .from('profiles')
-        .update({ profile_icon: iconId })
+        .update({ preferred_icon_id: iconId })
         .eq('id', user.id);
 
       if (error) {
-        console.error('Error updating profile_icon:', error);
+        console.error('Error updating preferred_icon_id:', error);
         // Revert on error
-        setSelectedIcon(user?.profileIcon || null);
+        setSelectedIcon(snapshotData?.preferred_icon_id || user?.preferredIconId || null);
         // Remove Browser Alerts: Use non-blocking Toast instead of alert()
         setToast({ message: 'Failed to update icon. Please try again.', type: 'error' });
       } else {
+        // Optimistically update snapshotData
+        setSnapshotData(prev => ({ ...(prev || ({} as any)), preferred_icon_id: iconId }));
         // Refresh user context to sync
         if (refreshUser) {
           await refreshUser();
@@ -276,7 +402,7 @@ export default function HomeDashboard() {
       }
     } catch (error) {
       console.error('Error saving icon:', error);
-      setSelectedIcon(user?.profileIcon || null);
+      setSelectedIcon(snapshotData?.preferred_icon_id || user?.preferredIconId || null);
       // Remove Browser Alerts: Use non-blocking Toast instead of alert()
       setToast({ message: 'Failed to update icon. Please try again.', type: 'error' });
     } finally {
@@ -311,7 +437,7 @@ export default function HomeDashboard() {
         .from('profiles')
         .update({ 
           full_name: newName,
-          profile_icon: selectedIcon || null
+          preferred_icon_id: selectedIcon || null
         })
         .eq('id', user.id);
 
@@ -381,14 +507,13 @@ export default function HomeDashboard() {
     }
   }, [allRounds, user?.id, scoreTab]); // Add scoreTab to dependencies to re-run when tab changes
   
-  // Add Fetch Guard: At the top of the HomeDashboard component, add const activitiesFetched = useRef(false);
-  const activitiesFetched = useRef(false);
+  // Fetch Guard removed
   
   // Calculate level and progress - Level 1 starts at 0 XP, Level 2 requires 100 XP
   // Locate the 'Total XP' display: Update the code to use the synchronized variable from profile or user
-  const totalXP = profile?.totalXP || user?.totalXP || 0;
+  const totalXP = snapshotData?.total_xp ?? profile?.totalXP ?? user?.totalXP ?? 0;
   // Add Log: Add console.log('XP SYNC CHECK:', profile?.totalXP) to confirm the value is being received from the database
-  console.log('XP SYNC CHECK:', profile?.totalXP, 'user?.totalXP:', user?.totalXP, 'calculated totalXP:', totalXP);
+  console.log('XP SYNC CHECK:', profile?.totalXP, 'user?.totalXP:', user?.totalXP, 'snapshotData?.total_xp:', snapshotData?.total_xp, 'calculated totalXP:', totalXP);
   
   // Exponential Growth: Level thresholds - Level 2 = 500 XP, Level 3 = 1500 XP, Level 4 = 3000 XP
   const getLevelInfo = (xp: number) => {
@@ -410,7 +535,7 @@ export default function HomeDashboard() {
   
   const levelInfo = getLevelInfo(totalXP);
   // Database Sync: Pull level directly from database columns
-  const currentLevel = profile?.currentLevel || user?.currentLevel || levelInfo.level;
+  const currentLevel = snapshotData?.current_level ?? profile?.currentLevel ?? user?.currentLevel ?? levelInfo.level;
   const xpForCurrentLevel = levelInfo.xpForCurrentLevel;
   const xpNeededForNextLevel = levelInfo.xpNeededForNextLevel;
   const xpRemaining = levelInfo.xpRemaining;
@@ -423,7 +548,7 @@ export default function HomeDashboard() {
   
   // Fetch user profiles for name lookup (similar to Academy page)
   // Clear the Cache: Ensure that when the tab changes, the name-mapping logic re-runs so Luke's name doesn't stay stuck on my personal rounds
-  const [userProfiles, setUserProfiles] = useState<Map<string, { full_name?: string; profile_icon?: string }>>(new Map());
+  const [userProfiles, setUserProfiles] = useState<Map<string, { full_name?: string; preferred_icon_id?: string }>>(new Map());
   
   // Add Name Mapping: Create a way to fetch the full_name from the profiles table for every user_id found in the rounds
   // Clear the Cache: Re-fetch profiles when tab changes or rounds change
@@ -453,7 +578,7 @@ export default function HomeDashboard() {
         const supabase = createClient();
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, full_name, profile_icon')
+          .select('id, full_name, preferred_icon_id')
           .in('id', uniqueUserIds);
         
         if (error) {
@@ -464,10 +589,10 @@ export default function HomeDashboard() {
         
         // Add Name Mapping: Create a Map to store user_id -> full_name mappings
         // Clear the Cache: Reset and rebuild the map when tab changes
-        const profileMap = new Map<string, { full_name?: string; profile_icon?: string }>();
+        const profileMap = new Map<string, { full_name?: string; preferred_icon_id?: string }>();
         if (data) {
           data.forEach((profile: any) => {
-            profileMap.set(profile.id, { full_name: profile.full_name, profile_icon: profile.profile_icon });
+            profileMap.set(profile.id, { full_name: profile.full_name, preferred_icon_id: profile.preferred_icon_id });
             console.log('HomeDashboard: Mapped user', profile.id, 'to name:', profile.full_name);
           });
         }
@@ -491,92 +616,83 @@ export default function HomeDashboard() {
     const date = new Date(dateString);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
     
-    if (diffMins < 60) {
-      return `${diffMins}m ago`;
-    } else if (diffHours < 24) {
-      return `${diffHours}h ago`;
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const inputDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffDays = Math.floor((today.getTime() - inputDate.getTime()) / 86400000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    const timeString = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    
+    if (diffDays === 0) {
+      if (diffHours >= 1 && diffHours < 12) {
+        return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+      }
+      if (diffMins < 60 && diffMins > 0) {
+        return `${diffMins} min${diffMins === 1 ? '' : 's'} ago`;
+      }
+      if (diffMins === 0) {
+        return 'Just now';
+      }
+      return `Today at ${timeString}`;
     } else if (diffDays === 1) {
-      return 'Yesterday';
+      return `Yesterday at ${timeString}`;
     } else {
-      return `${diffDays}d ago`;
+      return `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} at ${timeString}`;
     }
   };
   
   // Get icon for activity type
   const getActivityIcon = (activity: ActivityItem) => {
-    if (activity.type === 'round') {
-      return Trophy;
-    }
-    // Practice activities
-    const category = activity.category?.toLowerCase() || '';
-    if (category.includes('putting')) return Target;
-    if (category.includes('driving')) return Zap;
-    if (category.includes('short') || category.includes('chipping')) return BookOpen;
-    return Activity;
+    if (activity.type === 'round') return Flag;
+    if (activity.type === 'drill') return Check;
+    if (activity.type === 'video') return Play;
+    if (activity.type === 'achievement') return Trophy;
+    return Clock; // default for practice
   };
   
   // Get icon color for activity
   const getActivityIconColor = (activity: ActivityItem) => {
-    if (activity.type === 'round') {
-      return '#014421';
-    }
-    return '#FFA500';
+    if (activity.type === 'round') return '#014421';
+    if (activity.type === 'drill' || activity.type === 'video') return '#FFA500';
+    if (activity.type === 'achievement') return '#FFD700';
+    return '#014421';
   };
   
   // Load recent activities
-  const loadRecentActivities = () => {
-    if (typeof window === 'undefined') return;
+  const loadRecentActivities = async () => {
+    if (typeof window === 'undefined' || !user?.id) return;
     
-    const allActivities: ActivityItem[] = [];
-    
-    // Load practice sessions
-    const practiceHistory = localStorage.getItem('practiceActivityHistory');
-    if (practiceHistory) {
-      try {
-        const history = JSON.parse(practiceHistory);
-        history.forEach((activity: any) => {
-          allActivities.push({
-            id: activity.id || `practice-${Date.now()}`,
-            type: 'practice',
-            title: activity.title || activity.drillTitle || 'Practice Session',
-            date: activity.timestamp || activity.date,
-            xp: activity.xp || 100,
-            drillTitle: activity.drillTitle || activity.title,
-            category: activity.category,
-          });
-        });
-      } catch (e) {
-        console.error('Error loading practice history:', e);
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      
+      const { data, error } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+        
+      if (error) {
+        console.error('Error loading recent activities:', error);
+        return;
       }
+      
+      if (data) {
+        const mappedActivities: ActivityItem[] = data.map(log => ({
+          id: log.id,
+          type: (log.activity_type ?? log.type) as any,
+          title: log.activity_title ?? log.title ?? '',
+          date: log.created_at
+        }));
+        
+        setRecentActivities(mappedActivities);
+      }
+    } catch (err) {
+      console.error('Failed to fetch activity logs:', err);
     }
-    
-    // Load rounds - use safeRounds with optional chaining
-    if (safeRounds && safeRounds.length > 0) {
-      safeRounds.forEach((round, index) => {
-        allActivities.push({
-          id: `round-${index}`,
-          type: 'round',
-          title: `${round.holes} Holes at ${round.course || 'Unknown Course'}`,
-          date: round.date,
-          xp: 500,
-          category: 'Round',
-        });
-      });
-    }
-    
-    // Sort by date (newest first) and take top 3
-    allActivities.sort((a, b) => {
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
-    
-    setRecentActivities(allActivities.slice(0, 3));
-    
-    // Set the Guard: Inside loadRecentActivities, after you call setRecentActivities on line 378, add activitiesFetched.current = true;
-    activitiesFetched.current = true;
   };
   
   // Check if round is personal best
@@ -599,11 +715,8 @@ export default function HomeDashboard() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    
-    // Wrap the Call: In the useEffect on line 411, add a check: if (activitiesFetched.current) return;
-    if (activitiesFetched.current) return;
 
-    // Remove Hardcoding: Remove loadXP function - XP is now synced from profile?.totalXP
+    // Fetch activities every time the component mounts or user ID changes
     loadRecentActivities();
     
     // Listen for practice activity to refresh video
@@ -622,11 +735,10 @@ export default function HomeDashboard() {
     window.addEventListener('roundsUpdated', handleRoundsUpdate);
 
     return () => {
-      // Remove Hardcoding: Removed XP event listeners - XP is now synced from profile?.totalXP
       window.removeEventListener('practiceActivityUpdated', handlePracticeUpdate);
       window.removeEventListener('roundsUpdated', handleRoundsUpdate);
     };
-  }, [user?.id, rounds?.length]); // Cleanup Dependencies: Ensure the useEffect dependency array only contains stable values like [user?.id] and not the recentActivities state itself
+  }, [user?.id, rounds?.length]);
 
   // Map Icons: Ensure the dashboard uses the same icon logic as the Academy page
   const getTrophyIcon = (trophyId: string) => {
@@ -876,6 +988,7 @@ export default function HomeDashboard() {
               console.error(`Failed to insert trophy ${trophy.trophy_name}:`, insertError);
             } else {
               console.log(`✅ Auto-awarded trophy: ${trophy.trophy_name}`);
+              await logActivity(user.id, 'achievement', `Unlocked the ${trophy.trophy_name} trophy`);
             }
           }
           
@@ -1007,7 +1120,7 @@ export default function HomeDashboard() {
                 <label className="block text-sm font-medium text-gray-700 mb-3">
                   Choose Your Icon
                 </label>
-                <IconPicker selectedIcon={selectedIcon} onSelectIcon={setSelectedIcon} />
+                <IconPicker selectedIcon={selectedIcon} onSelectIcon={handleIconSelect} />
               </div>
               
               {/* Action Buttons */}
@@ -1038,11 +1151,18 @@ export default function HomeDashboard() {
               onClick={() => setShowProfileModal(true)}
               className="w-14 h-14 rounded-full overflow-hidden ring-2 ring-gray-100 shadow-sm flex items-center justify-center text-3xl bg-white cursor-pointer hover:ring-[#014421] transition-all"
             >
-              {selectedIcon ? (
-                GOLF_ICONS.find(icon => icon.id === selectedIcon)?.emoji || '👤'
-              ) : (
-                '👤'
-              )}
+              <div className="flex items-center justify-center w-full h-full">
+                {(() => {
+                  // Fallback to null (not flame) if no valid icon exists
+                  let displayIcon = snapshotData?.preferred_icon_id ?? user?.preferredIconId ?? null;
+                  if (displayIcon === 'flame') displayIcon = null; // Strictly ignore old 'flame' database artifacts
+                  
+                  return displayIcon ? (() => {
+                    const SelectedIcon = GOLF_ICONS.find(icon => icon.id === displayIcon)?.icon;
+                    return SelectedIcon ? <SelectedIcon className="w-8 h-8 text-[#014421]" strokeWidth={2.5} /> : <User className="w-8 h-8 text-gray-400" strokeWidth={2.5} />;
+                  })() : <User className="w-8 h-8 text-gray-400" strokeWidth={2.5} />;
+                })()}
+              </div>
             </button>
             <div className="flex-1">
               <p className="text-gray-400 text-xs">Welcome back,</p>
@@ -1174,62 +1294,16 @@ export default function HomeDashboard() {
         </div>
 
         {/* Skills Snapshot - Equal Width Cards */}
-        <div className="px-5 mb-6">
-          <h3 className="text-gray-600 font-medium text-base mb-3">Skills Snapshot</h3>
-          <div className="flex gap-3">
-            {/* Streak Card - Links to Practice */}
-            {/* Data Source: Locate the streak display in this component and ensure it uses profile.currentStreak from AuthContext */}
-            {/* Match the Style: Keep the flame icon and formatting exactly as it is, just swap the number source */}
-            <Link 
-              href="/practice"
-              className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97]"
-            >
-              <Flame className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
-              {/* Consistency Check: Ensure the Skills Snapshot component is also updated to use profile.currentStreak */}
-              {/* Sync Display: Use realtime streak from Supabase RPC */}
-              <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{streak}</p>
-              <p className="text-gray-400 text-xs mt-1">days streak</p>
-            </Link>
-            
-            {/* XP Card - Opens Level Up Modal */}
-            {/* Sync Display: Update to show progress bar toward the next level (e.g., '1,000 XP to Level 3') */}
-            <button
-              onClick={() => setShowLevelModal(true)}
-              className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97] text-left"
-            >
-              <Zap className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
-              <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{totalXP.toLocaleString()}</p>
-              <p className="text-gray-400 text-xs mt-1">Total XP</p>
-              <p className="text-gray-500 text-[10px] mt-0.5">{xpRemaining.toLocaleString()} XP to Level {currentLevel + 1}</p>
-            </button>
-            
-            {/* Handicap Card - Links to Stats */}
-            <Link
-              href="/stats"
-              className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97]"
-            >
-              <TrendingDown className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
-              <p 
-                className="text-2xl font-bold mt-0"
-                style={{ 
-                  color: '#FFA500',
-                  fontWeight: 700,
-                  fontFamily: 'system-ui, -apple-system, sans-serif'
-                }}
-              >
-                {(() => {
-                  // Safeguard: if no rounds, return --
-                  if (!safeRounds || safeRounds.length === 0) return '--';
-                  const lastRound = safeRounds[safeRounds.length - 1];
-                  return lastRound?.handicap !== null && lastRound?.handicap !== undefined
-                    ? lastRound.handicap.toFixed(1)
-                    : '--';
-                })()}
-              </p>
-              <p className="text-gray-400 text-xs mt-1">Handicap</p>
-            </Link>
-          </div>
-        </div>
+        <SkillsSnapshot 
+          totalXP={snapshotData?.total_xp ?? null}
+          currentLevel={snapshotData?.current_level ?? null}
+          streak={snapshotData?.currentStreak ?? null}
+          currentHandicap={snapshotData?.handicap ?? null}
+          startingHandicap={snapshotData?.starting_handicap ?? null}
+          preferredIconId={snapshotData?.preferred_icon_id ?? user?.preferredIconId ?? null}
+          isLoading={snapshotLoading}
+          onOpenLevelModal={() => setShowLevelModal(true)}
+        />
         
         {/* Level Up Modal */}
         {/* Kill Invisible Overlays: Add pointer-events-auto to backdrop so it doesn't block Navbar */}
@@ -1313,15 +1387,15 @@ export default function HomeDashboard() {
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-gray-600 font-medium text-base">Recent Activity</h3>
             <Link 
-              href="/activity"
-              className="text-sm font-medium hover:underline transition-all"
-              style={{ color: '#FFA500' }}
-            >
-              View All
-            </Link>
+                href="/activity"
+                className="text-sm font-medium hover:underline transition-all"
+                style={{ color: '#FFA500' }}
+              >
+                View All
+              </Link>
           </div>
           {recentActivities.length > 0 ? (
-            <div className="space-y-3 mb-6">
+            <div className="space-y-3 mb-6 max-h-[400px] overflow-y-auto pr-2 pb-2 custom-scrollbar">
               {recentActivities.map((activity) => {
                 const IconComponent = getActivityIcon(activity);
                 const iconColor = getActivityIconColor(activity);

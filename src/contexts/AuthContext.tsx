@@ -10,12 +10,15 @@ interface User {
   id: string;
   email: string;
   fullName?: string; // Standardized: Only use full_name from profiles table
-  profileIcon?: string; // Golf icon selected by student
+  preferredIconId?: string; // Golf icon selected by student
   initialHandicap?: number;
   createdAt?: string;
-  currentStreak?: number; // State Sync: Include streak in user state so banner updates
+  streak?: number; // State Sync: Include streak in user state so banner updates
   totalXP?: number; // Sync Interfaces: Include totalXP from database total_xp column
   currentLevel?: number; // Pull current level from database
+  startingHandicap?: number; // Store starting_handicap
+  currentHandicap?: number; // Store current handicap
+  preferredIconId?: string; // Golf icon selected by student
   trophies?: string[]; // Use Profile Data: Pull trophies directly from profile data (trophies or achievements column)
 }
 
@@ -26,6 +29,7 @@ interface AuthContextType {
   signup: (email: string, password: string, fullName: string, initialHandicap: number, profileIcon?: string) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
+  profileLoading: boolean;
   refreshUser: () => Promise<void>;
 }
 
@@ -207,11 +211,38 @@ async function checkAndUpdateStreak(supabase: ReturnType<typeof createClient>, u
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('auth_user_cache');
+        if (cached) return JSON.parse(cached);
+      } catch (e) {
+        console.error('Failed to parse cached user:', e);
+      }
+    }
+    return null;
+  });
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return !!localStorage.getItem('auth_user_cache');
+    }
+    return false;
+  });
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
+  
+  // Persist user cache
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (user) {
+        localStorage.setItem('auth_user_cache', JSON.stringify(user));
+      } else {
+        localStorage.removeItem('auth_user_cache');
+      }
+    }
+  }, [user]);
   
   // Create Supabase client (credentials are hardcoded in client.ts)
   let supabase: ReturnType<typeof createClient> | null = null;
@@ -275,7 +306,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log('AuthContext: Fetching user profile...');
 
           // Kill the Loop: Wrap the entire profile fetch in a try/finally block that always sets setLoading(false)
-          // Fetch user profile with full_name and profile_icon from profiles table
+          // Fetch user profile with full_name and preferred_icon_id from profiles table
           // Remove Database Dependency: Removed initial_handicap from .select() to avoid database dependency
           // Force: ONLY use full_name column
           // Check Academy Fetch: Log exactly what full_name strings are being returned from the database
@@ -296,7 +327,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               console.log('Fetching profile for ID:', supabaseUser.id);
               const { data, error } = await supabase
                 .from('profiles')
-                .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, profile_icon, initial_handicap')
+                .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, preferred_icon_id, starting_handicap, handicap')
                 .eq('id', supabaseUser.id)
                 .single();
               
@@ -329,7 +360,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 });
                 console.log('AuthContext: Profile fetched - currentStreak value:', (profileData as any).currentStreak);
                 console.log('AuthContext: Profile found - full_name:', profile.full_name);
-                console.log('AuthContext: Profile found - profile_icon:', profile.profile_icon);
+                console.log('AuthContext: Profile found - preferred_icon_id:', profile.preferred_icon_id);
               } else {
                 // Kill the Fallback: Temporarily comment out the line that says keeping profile as null so the app is forced to wait for the real data.
                 // profile = null;
@@ -386,7 +417,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   "currentStreak": 0, // Initialize streak to 0 for new profiles (use double quotes for camelCase column)
                   last_login_date: null, // Initialize last_login_date to null for new profiles
                 })
-                .select('full_name, profile_icon, created_at, "currentStreak", last_login_date')
+                .select('full_name, preferred_icon_id, created_at, "currentStreak", last_login_date')
                 .single();
               
               if (createError) {
@@ -408,7 +439,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   "currentStreak": 0, // Initialize streak to 0 for new profiles (use double quotes for camelCase column)
                   last_login_date: null, // Initialize last_login_date to null for new profiles
                 })
-                .select('full_name, profile_icon, created_at, "currentStreak", last_login_date')
+                .select('full_name, preferred_icon_id, created_at, "currentStreak", last_login_date')
                 .single();
               
               // The Sync Rule: Only set profile after verifying data is not null
@@ -527,12 +558,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 id: supabaseUser.id,
                 email: supabaseUser.email || '',
                 fullName: profile.full_name || undefined,
-                profileIcon: profile.profile_icon || undefined,
+                preferredIconId: profile.preferred_icon_id || undefined,
                 initialHandicap: 0,
                 createdAt: (profile as any)?.created_at || supabaseUser.created_at,
                 currentStreak: streakForUI, // Verify Mapping: Use profile.currentStreak (camelCase) from profileData
                 totalXP: (profile as any)?.total_xp || 0, // Strict State Updates: Direct overwrite from database, not additive
                 currentLevel: (profile as any)?.current_level || 1,
+                startingHandicap: (profile as any)?.starting_handicap,
+                currentHandicap: (profile as any)?.handicap,
                 trophies: (profile as any)?.trophies || (profile as any)?.achievements || [], // Use Profile Data: Pull trophies from profile
               });
               
@@ -545,6 +578,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } finally {
             // Kill the Loop: Always set loading to false in finally block so app never stays stuck
             console.log('AuthContext: Profile fetch finally block - ensuring loading is false');
+            setProfileLoading(false);
             setLoading(false);
           }
         } catch (error) {
@@ -560,7 +594,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: supabaseUser.id,
               email: supabaseUser.email || '',
               fullName: undefined, // No hardcoded fallback, will be set when profile loads
-              profileIcon: undefined,
+              preferredIconId: undefined,
               initialHandicap: 0,
               createdAt: supabaseUser.created_at,
               currentStreak: undefined, // Fix State Initialization: Don't default to 0, use undefined until database responds
@@ -611,7 +645,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.log('Fetching profile for ID:', session.user.id);
             let { data: profile, error: profileError } = await supabase
               .from('profiles')
-              .select('id, full_name, total_xp, current_level')
+              .select('id, full_name, total_xp, current_level, starting_handicap, handicap, "currentStreak", preferred_icon_id')
               .eq('id', session.user.id) // Fix the Query: Use session.user.id which matches auth.uid()
               .single();
             
@@ -666,7 +700,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   full_name: session.user.email?.split('@')[0] || 'User',
                   created_at: new Date().toISOString(),
                 })
-                .select('full_name, profile_icon, created_at')
+                .select('full_name, preferred_icon_id, created_at')
                 .single();
               
               if (createError) {
@@ -694,7 +728,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   full_name: session.user.email?.split('@')[0] || 'User',
                   created_at: new Date().toISOString(),
                 })
-                .select('full_name, profile_icon, created_at')
+                .select('full_name, preferred_icon_id, created_at')
                 .single();
               
               if (!createError && newProfile) {
@@ -733,12 +767,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 id: session.user.id,
                 email: session.user.email || '',
                 fullName: profileData.full_name || undefined,
-                profileIcon: (profileData as any)?.profile_icon || undefined,
+                preferredIconId: (profileData as any)?.preferred_icon_id || undefined,
                 initialHandicap: 0,
                 createdAt: (profileData as any)?.created_at || session.user.created_at,
                 currentStreak: profileData.currentStreak, // Verify Mapping: Include currentStreak from profile
                 totalXP: profileDataWithXP.totalXP, // Strict State Updates: Direct overwrite from database, not additive
                 currentLevel: profileDataWithXP.currentLevel,
+                startingHandicap: (profileData as any)?.starting_handicap,
+                currentHandicap: (profileData as any)?.handicap,
                 trophies: (profileData as any)?.trophies || (profileData as any)?.achievements || [], // Use Profile Data: Pull trophies from profile
               });
               setIsAuthenticated(true);
@@ -781,7 +817,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Force: ONLY use full_name column
       // Remove Database Dependency: Removed initial_handicap from .select() to avoid database dependency
-      // Also fetch profile_icon for leaderboard display
+      // Also fetch preferred_icon_id for leaderboard display
       // Check Academy Fetch: Log exactly what full_name strings are being returned from the database
       console.log('refreshUser: Fetching profile for user ID:', supabaseUser.id);
       
@@ -801,7 +837,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         if (profile) {
           console.log('refreshUser: Profile found - full_name:', profile.full_name);
-          console.log('refreshUser: Profile found - profile_icon:', profile.profile_icon);
+          console.log('refreshUser: Profile found - preferred_icon_id:', profile.preferred_icon_id);
         } else {
           console.log('refreshUser: No profile found for user ID:', supabaseUser.id);
         }
@@ -868,7 +904,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return {
           ...prev,
           fullName: profile?.full_name || prev.fullName || undefined,
-          profileIcon: profile?.profile_icon || prev.profileIcon || undefined,
+          preferredIconId: profile?.preferred_icon_id || prev.preferredIconId || undefined,
           initialHandicap: 0, // Hard-Code Defaults: Manually set to 0 instead of getting from database
         };
       });
@@ -903,7 +939,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let profile = null;
       try {
         // Force: ONLY use full_name column
-        // Also fetch profile_icon for leaderboard display
+        // Also fetch preferred_icon_id for leaderboard display
         // Remove Database Dependency: Removed initial_handicap from .select() to avoid database dependency
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
@@ -961,7 +997,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: data.user.id,
         email: data.user.email || '',
         fullName: profile?.full_name, // Standardized: Only use full_name
-        profileIcon: profile?.profile_icon, // Golf icon selected by student
+        preferredIconId: profile?.preferred_icon_id, // Golf icon selected by student
         initialHandicap: 0, // Hard-Code Defaults: Manually set to 0 instead of getting from database
         createdAt: profile?.created_at || data.user.created_at,
       });
@@ -985,14 +1021,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
       if (data.user && supabase) {
-        // Create user profile with fullName, initialHandicap, and profile_icon
+        // Create user profile with fullName, initialHandicap, and preferred_icon_id
         // Force: ONLY use full_name column
         const { error: profileError } = await supabase
           .from('profiles')
           .insert({
             id: data.user.id,
             full_name: fullName, // Force: ONLY use full_name column
-            profile_icon: profileIcon || null, // Golf icon selected by student
+            preferred_icon_id: profileIcon || null, // Golf icon selected by student
             initial_handicap: initialHandicap,
             created_at: new Date().toISOString(),
           });
@@ -1006,7 +1042,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: data.user.id,
         email: data.user.email || '',
         fullName,
-        profileIcon: profileIcon || undefined,
+        preferredIconId: profileIcon || undefined,
         initialHandicap,
         createdAt: data.user.created_at,
       });
@@ -1034,6 +1070,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signup,
         logout,
         loading,
+        profileLoading,
         refreshUser,
       }}
     >

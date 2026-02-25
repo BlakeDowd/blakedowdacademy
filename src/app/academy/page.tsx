@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -749,11 +749,9 @@ function getTimeframeDates(timeFilter: "week" | "month" | "year" | "allTime") {
     startDate = new Date(now);
     startDate.setDate(now.getDate() - 7);
   } else if (timeFilter === "month") {
-    startDate = new Date(now);
-    startDate.setMonth(now.getMonth() - 1);
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
   } else if (timeFilter === "year") {
-    startDate = new Date(now);
-    startDate.setFullYear(now.getFullYear() - 1);
+    startDate = new Date(now.getFullYear(), 0, 1);
   } else {
     startDate = new Date(0); // All time
   }
@@ -956,14 +954,14 @@ function getDisplayName(
   return "Anonymous User";
 }
 
-// Helper function: Get avatar/icon with proper fallback (profile_icon from database, then first initial)
+// Helper function: Get avatar/icon with proper fallback (preferred_icon_id from database, then first initial)
 function getAvatarIcon(
-  profile?: { full_name?: string; profile_icon?: string },
+  profile?: { full_name?: string; preferred_icon_id?: string },
   displayName?: string,
 ): string {
-  // Show User Icons: Ensure avatars pull profile_icon from profiles table first
-  if (profile?.profile_icon) {
-    return profile.profile_icon;
+  // Show User Icons: Ensure avatars pull preferred_icon_id from profiles table first
+  if (profile?.preferred_icon_id) {
+    return profile.preferred_icon_id;
   }
   // Fallback: First initial in a colored circle
   if (profile?.full_name) {
@@ -987,7 +985,7 @@ function getAvatarIcon(
   return "U";
 }
 
-// Create a Name Lookup: Fetch full_name, profile_icon, and xp for each user_id
+// Create a Name Lookup: Fetch full_name, preferred_icon_id, and xp for each user_id
 // Name Mapping: Match the user_id from the practice table (or rounds/drills) to the id in the profiles table to display their real names
 // Update fetchUserProfiles to include XP column from profiles table
 // Verify Name Fetching: Ensure loadProfiles is fetching every single row from the profiles table
@@ -995,11 +993,11 @@ function getAvatarIcon(
 async function fetchUserProfiles(
   userIds: string[],
 ): Promise<
-  Map<string, { full_name?: string; profile_icon?: string; xp?: number }>
+  Map<string, { full_name?: string; preferred_icon_id?: string; xp?: number }>
 > {
   const profileMap = new Map<
     string,
-    { full_name?: string; profile_icon?: string; xp?: number }
+    { full_name?: string; preferred_icon_id?: string; xp?: number }
   >();
 
   if (userIds.length === 0) {
@@ -1030,9 +1028,9 @@ async function fetchUserProfiles(
       // Sanitize Column Names: Update the .select() to strictly use id, full_name, xp
       // Completely remove email, avatar_url, and total_xp to stop the 42703 SQL errors
       // Fix Registration: Fetch ALL profiles from Supabase (not just current user) for complete leaderboard
-      const { data: allProfiles, error: allProfilesError } = await supabase
-        .from("profiles")
-        .select("id, full_name, xp");
+    const { data: allProfiles, error: allProfilesError } = await supabase
+      .from("profiles")
+      .select("id, full_name, total_xp, preferred_icon_id");
 
       if (allProfilesError) {
         // Debug the Error: Full error object with JSON.stringify to see actual message
@@ -1045,7 +1043,7 @@ async function fetchUserProfiles(
           console.log("Restore Data: Sample XP values:", allProfilesData.slice(0, 3).map((p: any) => ({
             id: p.id,
             full_name: p.full_name,
-            xp: p.xp || 0 // Default Zero: Use profile.xp || 0 in the display so it registers a number even for new players
+            xp: p.total_xp || 0 // Default Zero: Use profile.total_xp || 0 in the display so it registers a number even for new players
           })));
         }
       }
@@ -1062,7 +1060,7 @@ async function fetchUserProfiles(
       safeAllProfiles.map((p: any) => ({
         id: p.id,
         full_name: p.full_name || "Anonymous User",
-        xp: p.xp,
+        xp: p.total_xp,
       })),
     );
     console.log(
@@ -1071,12 +1069,12 @@ async function fetchUserProfiles(
     );
 
     // Name Mapping: Match user_id from practice/rounds/drills tables to id in profiles table
-    // Show User Icons: Fetch profile_icon from profiles table for avatar display
+    // Show User Icons: Fetch preferred_icon_id from profiles table for avatar display
     // Sanitize Column Names: Update the .select() to strictly use id, full_name, xp
     // Completely remove email, avatar_url, and total_xp to stop the 42703 SQL errors
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, full_name, xp")
+      .select("id, full_name, total_xp, preferred_icon_id")
       .in("id", userIds);
 
     if (error) {
@@ -1095,22 +1093,22 @@ async function fetchUserProfiles(
       safeData.map((p: any) => ({
         id: p.id,
         full_name: p.full_name,
-        xp: p.xp,
+        xp: p.total_xp,
       })),
     );
 
-    // Map IDs to Names: Create a map of user_id -> { full_name, profile_icon, xp }
+    // Map IDs to Names: Create a map of user_id -> { full_name, preferred_icon_id, xp }
     // The key is the user_id from practice/rounds/drills, which matches the id in profiles table
     // Update fetchUserProfiles to include XP column from profiles table
     safeData.forEach((profile: any) => {
       // Name Mapping: user_id from practice table matches id in profiles table
-      // Show User Icons: Include profile_icon from database for avatar display
-      // Standardize Fallback: Use (profile.xp || 0) to ensure we aren't trying to add undefined or NaN to the state
-      const xpValue = profile.xp || 0;
+      // Show User Icons: Include preferred_icon_id from database for avatar display
+      // Standardize Fallback: Use (profile.total_xp || 0) to ensure we aren't trying to add undefined or NaN to the state
+      const xpValue = profile.total_xp || 0;
       profileMap.set(profile.id, {
         full_name: profile.full_name,
-        profile_icon: undefined, // Clean Data Fetch: Removed profile_icon from query - using fallback logic elsewhere
-        xp: xpValue, // Standardize Fallback: Use (profile.xp || 0) to ensure we aren't trying to add undefined or NaN to the state
+        preferred_icon_id: profile.preferred_icon_id, 
+        xp: xpValue, // Standardize Fallback: Use (profile.total_xp || 0) to ensure we aren't trying to add undefined or NaN to the state
       });
       console.log(
         `fetchUserProfiles: Mapped ${profile.id} -> ${profile.full_name || "Anonymous User"}`,
@@ -1158,10 +1156,10 @@ function getMockLeaderboard(
   timeFilter: "week" | "month" | "year" | "allTime",
   rounds: any[],
   userName: string,
-  user?: { id?: string; initialHandicap?: number; profileIcon?: string } | null,
+  user?: { id?: string; initialHandicap?: number; preferredIconId?: string } | null,
   userProfiles?: Map<
     string,
-    { full_name?: string; profile_icon?: string; xp?: number }
+    { full_name?: string; preferred_icon_id?: string; xp?: number }
   >,
   drills?: any[],
   practiceSessions?: any[],
@@ -1252,7 +1250,7 @@ function getMockLeaderboard(
         nameForAvatar = displayName.substring(0, 1).toUpperCase() || "U";
       }
 
-      const userIcon = profile?.profile_icon || nameForAvatar;
+      const userIcon = profile?.preferred_icon_id || nameForAvatar;
 
       allEntries.push({
         id: userId,
@@ -1363,7 +1361,7 @@ function getMockLeaderboard(
         nameForAvatar = displayName.substring(0, 1).toUpperCase() || "U";
       }
 
-      const userIcon = profile?.profile_icon || nameForAvatar;
+      const userIcon = profile?.preferred_icon_id || nameForAvatar;
 
       allEntries.push({
         id: userId,
@@ -1470,7 +1468,7 @@ function getMockLeaderboard(
         nameForAvatar = displayName.substring(0, 1).toUpperCase() || "U";
       }
 
-      const userIcon = profile?.profile_icon || nameForAvatar;
+      const userIcon = profile?.preferred_icon_id || nameForAvatar;
 
       allEntries.push({
         id: userId,
@@ -1563,7 +1561,7 @@ function getMockLeaderboard(
         nameForAvatar = displayName.substring(0, 1).toUpperCase() || "U";
       }
       
-      const userIcon = profile?.profile_icon || nameForAvatar;
+      const userIcon = profile?.preferred_icon_id || nameForAvatar;
       
       allEntries.push({
         id: user.id,
@@ -1593,7 +1591,7 @@ function getMockLeaderboard(
           nameForAvatar = displayName.substring(0, 1).toUpperCase() || "U";
         }
         
-        const userIcon = profile.profile_icon || nameForAvatar;
+        const userIcon = profile.preferred_icon_id || nameForAvatar;
         
         allEntries.push({
           id: userId,
@@ -1644,12 +1642,12 @@ function getMockLeaderboard(
     id: "user",
     name: userName, // Use actual full_name instead of 'You'
     avatar:
-      user?.profileIcon ||
+      user?.preferredIconId ||
       userName
         .split(" ")
         .map((n: string) => n[0])
         .join("") ||
-      "Y", // Use profile_icon if available, else initials
+      "Y", // Use preferred_icon_id if available, else initials
     value: userValue, // Use dynamic userValue from calculateUserRounds (which uses userRounds.length), not hardcoded
     handicap: user?.initialHandicap, // Include handicap for sorting rounds by skill level
   };
@@ -1709,7 +1707,7 @@ function formatLeaderboardValue(
     case "eagles":
       return `${value} Eagle${value !== 1 ? "s" : ""}`;
     case "putts":
-      return `${value} Putt${value !== 1 ? "s" : ""}`;
+      return `${value} Avg Putts`;
     default:
       return `${value}`;
   }
@@ -1732,10 +1730,10 @@ function getLeaderboardData(
   rounds: any[],
   totalXP: number,
   userName: string,
-  user?: { id?: string; profileIcon?: string } | null,
+  user?: { id?: string; preferredIconId?: string } | null,
   userProfiles?: Map<
     string,
-    { full_name?: string; profile_icon?: string; xp?: number }
+    { full_name?: string; preferred_icon_id?: string; xp?: number }
   >,
   practiceSessions?: any[],
   drills?: any[],
@@ -1986,7 +1984,7 @@ function getLeaderboardData(
         nameForAvatar = displayName.substring(0, 1).toUpperCase() || "U";
       }
 
-      const userIcon = profile?.profile_icon || nameForAvatar;
+      const userIcon = profile?.preferred_icon_id || nameForAvatar;
       const value = metric === "birdies" ? totalBirdies : totalEagles;
 
       // Group and Sum: Map to allEntries array so Stuart's name and total appear
@@ -2169,7 +2167,7 @@ function getLeaderboardData(
         nameForAvatar = displayName.substring(0, 1).toUpperCase() || "U";
       }
 
-      const userIcon = profile?.profile_icon || nameForAvatar;
+      const userIcon = profile?.preferred_icon_id || nameForAvatar;
       const value = metric === "lowGross" ? userLowGross! : userLowNett!;
 
       allEntries.push({
@@ -2274,7 +2272,8 @@ function getLeaderboardData(
         return;
       }
 
-      const userLowPutts = Math.min(...puttsValues);
+      const sumPutts = puttsValues.reduce((sum, val) => sum + val, 0);
+      const userAvgPutts = Number((sumPutts / puttsValues.length).toFixed(1));
 
       const profile = userProfiles?.get(userId);
       const displayName = profile?.full_name || "Anonymous User";
@@ -2298,13 +2297,13 @@ function getLeaderboardData(
         nameForAvatar = displayName.substring(0, 1).toUpperCase() || "U";
       }
 
-      const userIcon = profile?.profile_icon || nameForAvatar;
+      const userIcon = profile?.preferred_icon_id || nameForAvatar;
 
       allEntries.push({
         id: userId,
         name: displayName,
         avatar: userIcon,
-        value: Number(userLowPutts),
+        value: userAvgPutts,
         isCurrentUser: user?.id === userId,
       });
     });
@@ -2406,7 +2405,7 @@ function getLeaderboardData(
         nameForAvatar = displayName.substring(0, 1).toUpperCase() || "U";
       }
 
-      const userIcon = profile?.profile_icon || nameForAvatar;
+      const userIcon = profile?.preferred_icon_id || nameForAvatar;
 
       allEntries.push({
         id: userId,
@@ -2570,7 +2569,7 @@ function getLeaderboardData(
         nameForAvatar = displayName.substring(0, 1).toUpperCase() || "U";
       }
 
-      const userIcon = profile?.profile_icon || nameForAvatar;
+      const userIcon = profile?.preferred_icon_id || nameForAvatar;
 
       allEntries.push({
         id: userId,
@@ -2694,7 +2693,7 @@ function getLeaderboardData(
               .toUpperCase() || "A";
         }
 
-        const userIcon = profile.profile_icon || nameForAvatar;
+        const userIcon = profile.preferred_icon_id || nameForAvatar;
 
         allEntries.push({
           id: userId,
@@ -2739,12 +2738,12 @@ function getLeaderboardData(
     id: "user",
     name: userName, // Use actual full_name instead of 'You'
     avatar:
-      user?.profileIcon ||
+      user?.preferredIconId ||
       userName
         .split(" ")
         .map((n) => n[0])
         .join("") ||
-      "Y", // Use profile_icon if available, else initials
+      "Y", // Use preferred_icon_id if available, else initials
     value: userValue, // Use dynamic userValue, not hardcoded
     previousRank: undefined,
     lowRound: undefined,
@@ -2864,7 +2863,7 @@ export default function AcademyPage() {
   // Map IDs to Names: Match user IDs to their full_name from profiles table
   // Update fetchUserProfiles to include XP column from profiles table
   const [userProfiles, setUserProfiles] = useState<
-    Map<string, { full_name?: string; profile_icon?: string; xp?: number }>
+    Map<string, { full_name?: string; preferred_icon_id?: string; xp?: number }>
   >(new Map());
 
   // Add Fetch Guard: Create refs to ensure effects run exactly once
@@ -2900,6 +2899,7 @@ export default function AcademyPage() {
     | null
   >(null);
   const [leaderboardMetric, setLeaderboardMetric] = useState<
+    | "xp"
     | "library"
     | "practice"
     | "rounds"
@@ -2909,7 +2909,7 @@ export default function AcademyPage() {
     | "birdies"
     | "eagles"
     | "putts"
-  >("library");
+  >("xp");
 
   // Database-First Academy: Fetch trophies from user_trophies table instead of calculating from live scores
   const [dbTrophies, setDbTrophies] = useState<
@@ -3226,7 +3226,7 @@ export default function AcademyPage() {
         Array.from(profiles.entries()).map(([id, data]) => ({
           id,
           full_name: data.full_name || "Anonymous User",
-          profile_icon: data.profile_icon,
+          preferred_icon_id: data.preferred_icon_id,
           xp: data.xp,
         })),
       );
@@ -3235,7 +3235,7 @@ export default function AcademyPage() {
       const drillProfileMappings = drillUserIds.map((userId) => ({
         user_id: userId,
         full_name: profiles.get(userId)?.full_name || "NOT FOUND",
-        profile_icon: profiles.get(userId)?.profile_icon || "NOT FOUND",
+        preferred_icon_id: profiles.get(userId)?.preferred_icon_id || "NOT FOUND",
       }));
       if (drillProfileMappings.length > 0) {
         console.log(
@@ -3399,7 +3399,7 @@ export default function AcademyPage() {
     }
 
     try {
-      const totalXP = userProgress.totalXP || 0;
+      const totalXP = user?.totalXP || 0;
       
       // Calculate all score-based metrics and cache them
       const metrics = ["lowGross", "lowNett", "birdies", "eagles", "putts"] as const;
@@ -3442,7 +3442,7 @@ export default function AcademyPage() {
     drills?.length,
     practiceSessions?.length,
     timeFilter,
-    userProgress.totalXP,
+    user?.totalXP,
     userName,
     userProfiles,
     leaderboardMetric,
@@ -3451,15 +3451,16 @@ export default function AcademyPage() {
   // Stable Identity: Wrap calculated values in useMemo to prevent recreation
   // Safe Logic: Do the check inside the useMemo rather than skipping the Hook entirely
   const currentLeaderboard = useMemo(() => {
-    // Use getLeaderboardData for score-based metrics (lowGross, lowNett, birdies, eagles, putts)
-    if (leaderboardMetric === "lowGross" || leaderboardMetric === "lowNett" || 
+    // Use getLeaderboardData for score-based metrics and xp
+    if (leaderboardMetric === "xp" || leaderboardMetric === "lowGross" || leaderboardMetric === "lowNett" || 
         leaderboardMetric === "birdies" || leaderboardMetric === "eagles" || leaderboardMetric === "putts") {
-      if (cachedLeaderboard) {
+      // Don't use cache for xp as we need it to be live
+      if (cachedLeaderboard && leaderboardMetric !== "xp") {
         return cachedLeaderboard;
       }
       // Calculate on-demand if not cached yet
       if (user?.id && rounds) {
-        const totalXP = userProgress.totalXP || 0;
+        const totalXP = user?.totalXP || 0;
         return getLeaderboardData(
           leaderboardMetric,
           timeFilter,
@@ -3691,12 +3692,15 @@ export default function AcademyPage() {
         {isIconId ? (
           <div
             className="w-full h-full flex items-center justify-center p-2"
-            style={{ fontSize: size * 0.35 }}
           >
             {(() => {
               const { GOLF_ICONS } = require("@/components/IconPicker");
-              const icon = GOLF_ICONS.find((i: any) => i.id === iconId);
-              return icon ? icon.emoji : initial;
+              const iconData = GOLF_ICONS.find((i: any) => i.id === iconId);
+              if (iconData && iconData.icon) {
+                const IconComponent = iconData.icon;
+                return <IconComponent className="w-8 h-8 text-white" />;
+              }
+              return initial;
             })()}
           </div>
         ) : (
@@ -3725,7 +3729,7 @@ export default function AcademyPage() {
                   .map((n: string) => n[0])
                   .join("") || "J"
               }
-              iconId={user?.profileIcon}
+              iconId={user?.preferredIconId}
               size={64}
               bgColor="#FFA500"
             />
@@ -4039,750 +4043,17 @@ export default function AcademyPage() {
             );
           })()}
 
-        {/* Four-Pillar Leaderboards - 2x2 Grid (Desktop) / Vertical Stack (Mobile) */}
+        {/* Overall Academy Leaderboard */}
         <div className="mb-6 w-full">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-            {/* Library Lessons Leaderboard */}
-            {(() => {
-              const data = libraryLeaderboard;
-              return (
-                <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full">
-                  <h3 className="text-base font-semibold text-gray-900 mb-3 text-center">
-                    Library Lessons
-                  </h3>
-
-                  {/* Top 3 Podium or Empty State */}
-                  {data.all.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-sm text-gray-500">
-                        No rankings yet. Start logging to take the lead!
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Visual Cleanup: Pull the podium up by applying mt-[-25px] to the player circles to fix the gap under the titles */}
-                      <div className="mt-[-25px]">
-                        <div className="h-[160px] flex items-end justify-center gap-2 mb-4">
-                        {/* 2nd Place */}
-                        {data.top3[1] && (
-                        <div className="flex flex-col items-center justify-end">
-                          {/* Unified Names: Ensure every single name display uses the clean fallback */}
-                          {(() => {
-                            const entry = data.top3[1];
-                            const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                            return (
-                              <>
-                                <CircularAvatar
-                                  initial={displayName[0]}
-                                  iconId={
-                                    data.top3[1].avatar &&
-                                    GOLF_ICONS.some(
-                                      (icon: any) =>
-                                        icon.id === data.top3[1].avatar,
-                                    )
-                                      ? data.top3[1].avatar
-                                      : undefined
-                                  }
-                                  size={48}
-                                  bgColor="#C0C0C0"
-                                />
-                                {/* Center Text: Ensure the name text is centered under the user's icon circle */}
-                                <div className="text-center mt-1">
-                                  <div className="text-xs font-bold text-gray-900">
-                                    #{2}
-                                  </div>
-                                  <div className="text-xs font-semibold text-gray-900">
-                                    {displayName}
-                                  </div>
-                                  <div className="text-xs text-gray-600 mt-1">
-                                    {formatMetricValue(data.top3[1].value, "library")}
-                                  </div>
-                                </div>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      )}
-
-                      {/* 1st Place - Center, Higher */}
-                      {data.top3[0] && (
-                        <div className="flex flex-col items-center justify-end relative">
-                          <Crown
-                            className="w-4 h-4 absolute -top-2"
-                            style={{ color: "#FFA500" }}
-                          />
-                          {/* Unified Names: Ensure every single name display uses the clean fallback */}
-                          {(() => {
-                            const entry = data.top3[0];
-                            const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                            return (
-                              <>
-                                <CircularAvatar
-                                  initial={displayName[0]}
-                                  iconId={
-                                    data.top3[0].avatar &&
-                                    GOLF_ICONS.some(
-                                      (icon: any) =>
-                                        icon.id === data.top3[0].avatar,
-                                    )
-                                      ? data.top3[0].avatar
-                                      : undefined
-                                  }
-                                  size={64}
-                                  bgColor="#FFA500"
-                                />
-                                {/* Center Text: Ensure the name text is centered under the user's icon circle */}
-                                <div className="text-center mt-1">
-                                  <div className="text-sm font-bold text-gray-900">
-                                    #{1}
-                                  </div>
-                                  <div className="text-xs font-semibold text-gray-900">
-                                    {displayName}
-                                  </div>
-                                  <div className="text-xs text-gray-600 mt-1">
-                                    {formatMetricValue(data.top3[0].value, "library")}
-                                  </div>
-                                </div>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      )}
-
-                      {/* 3rd Place */}
-                      {data.top3[2] && (
-                        <div className="flex flex-col items-center justify-end">
-                          {/* Unified Names: Ensure every single name display uses the clean fallback */}
-                          {(() => {
-                            const entry = data.top3[2];
-                            const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                            return (
-                              <>
-                                <CircularAvatar
-                                  initial={displayName[0]}
-                                  iconId={
-                                    data.top3[2].avatar &&
-                                    GOLF_ICONS.some(
-                                      (icon: any) =>
-                                        icon.id === data.top3[2].avatar,
-                                    )
-                                      ? data.top3[2].avatar
-                                      : undefined
-                                  }
-                                  size={48}
-                                  bgColor="#CD7F32"
-                                />
-                                {/* Center Text: Ensure the name text is centered under the user's icon circle */}
-                                <div className="text-center mt-1">
-                                  <div className="text-xs font-bold text-gray-900">
-                                    #{3}
-                                  </div>
-                                  <div className="text-xs font-semibold text-gray-900">
-                                    {displayName}
-                                  </div>
-                                  <div className="text-xs text-gray-600 mt-1">
-                                    {formatMetricValue(data.top3[2].value, "library")}
-                                  </div>
-                                </div>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      )}
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  {/* User Rank or Empty State */}
-                  {data.all.length === 0 ? (
-                    <div className="text-center pt-3 border-t border-gray-200">
-                      <p className="text-sm text-gray-500">
-                        No rankings yet. Start logging to take the lead!
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="text-center pt-3 border-t border-gray-200">
-                      <p className="text-sm font-semibold text-gray-700">
-                        Your Rank:{" "}
-                        <span className="text-[#014421]">
-                          {data.userRank === 0
-                            ? "Unranked"
-                            : `#${data.userRank}`}
-                        </span>{" "}
-                        |{" "}
-                        <span className="text-[#FFA500]">
-                          {formatMetricValue(data.userValue, "library")}
-                        </span>
-                      </p>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* Practice Time Leaderboard */}
-            {(() => {
-              const data = practiceLeaderboard;
-              return (
-                <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full">
-                  <h3 className="text-base font-semibold text-gray-900 mb-3 text-center">
-                    Practice Time
-                  </h3>
-
-                  {/* Top 3 Podium */}
-                  {data.all.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-sm text-gray-500">
-                        No rankings yet. Start logging to take the lead!
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Visual Cleanup: Pull the podium up by applying mt-[-25px] to the player circles to fix the gap under the titles */}
-                      <div className="mt-[-25px]">
-                        <div className="h-[160px] flex items-end justify-center gap-2 mb-4">
-                          {data.top3[1] && (
-                            <div className="flex flex-col items-center justify-end">
-                              {/* Unified Names: Ensure every single name display uses the clean fallback */}
-                              {(() => {
-                                const entry = data.top3[1];
-                                const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                                return (
-                                  <>
-                                    <CircularAvatar
-                                      initial={displayName[0]}
-                                  iconId={
-                                    data.top3[1].avatar &&
-                                    GOLF_ICONS.some(
-                                      (icon: any) => icon.id === data.top3[1].avatar,
-                                    )
-                                      ? data.top3[1].avatar
-                                      : undefined
-                                  }
-                                  size={48}
-                                  bgColor="#C0C0C0"
-                                />
-                                {/* Center Text: Ensure the name text is centered under the user's icon circle */}
-                                <div className="text-center mt-1">
-                                  <div className="text-xs font-bold text-gray-900">
-                                    #{2}
-                                  </div>
-                                  <div className="text-xs font-semibold text-gray-900">
-                                    {displayName}
-                                  </div>
-                                  <div className="text-xs text-gray-600 mt-1">
-                                    {formatMetricValue(
-                                      data.top3[1].value,
-                                      "practice",
-                                    )}
-                                  </div>
-                                </div>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      )}
-                      {data.top3[0] && (
-                        <div className="flex flex-col items-center justify-end relative">
-                          <Crown
-                            className="w-4 h-4 absolute -top-2"
-                            style={{ color: "#FFA500" }}
-                          />
-                          {/* Unified Names: Ensure every single name display uses the clean fallback */}
-                          {(() => {
-                            const entry = data.top3[0];
-                            const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                            return (
-                              <>
-                                <CircularAvatar
-                                  initial={displayName[0]}
-                                  iconId={
-                                    data.top3[0].avatar &&
-                                    GOLF_ICONS.some(
-                                      (icon: any) => icon.id === data.top3[0].avatar,
-                                    )
-                                      ? data.top3[0].avatar
-                                      : undefined
-                                  }
-                                  size={64}
-                                  bgColor="#FFA500"
-                                />
-                                {/* Center Text: Ensure the name text is centered under the user's icon circle */}
-                                <div className="text-center mt-1">
-                                  <div className="text-sm font-bold text-gray-900">
-                                    #{1}
-                                  </div>
-                                  <div className="text-xs font-semibold text-gray-900">
-                                    {displayName}
-                                  </div>
-                                  <div className="text-xs text-gray-600 mt-1">
-                                    {formatMetricValue(
-                                      data.top3[0].value,
-                                      "practice",
-                                    )}
-                                  </div>
-                                </div>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      )}
-                      {data.top3[2] && (
-                        <div className="flex flex-col items-center justify-end">
-                          {/* Unified Names: Ensure every single name display uses the clean fallback */}
-                          {(() => {
-                            const entry = data.top3[2];
-                            const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                            return (
-                              <>
-                                <CircularAvatar
-                                  initial={displayName[0]}
-                                  iconId={
-                                    data.top3[2].avatar &&
-                                    GOLF_ICONS.some(
-                                      (icon: any) => icon.id === data.top3[2].avatar,
-                                    )
-                                      ? data.top3[2].avatar
-                                      : undefined
-                                  }
-                                  size={48}
-                                  bgColor="#CD7F32"
-                                />
-                                {/* Center Text: Ensure the name text is centered under the user's icon circle */}
-                                <div className="text-center mt-1">
-                                  <div className="text-xs font-bold text-gray-900">
-                                    #{3}
-                                  </div>
-                                  <div className="text-xs font-semibold text-gray-900">
-                                    {displayName}
-                                  </div>
-                                  <div className="text-xs text-gray-600 mt-1">
-                                    {formatMetricValue(
-                                      data.top3[2].value,
-                                      "practice",
-                                    )}
-                                  </div>
-                                </div>
-                              </>
-                            );
-                              })()}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  {data.all.length === 0 ? (
-                    <div className="text-center pt-3 border-t border-gray-200">
-                      <p className="text-sm text-gray-500">
-                        No rankings yet. Start logging to take the lead!
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="text-center pt-3 border-t border-gray-200">
-                      <p className="text-sm font-semibold text-gray-700">
-                        Your Rank:{" "}
-                        <span className="text-[#014421]">
-                          {data.userRank === 0
-                            ? "Unranked"
-                            : `#${data.userRank}`}
-                        </span>{" "}
-                        |{" "}
-                        <span className="text-[#FFA500]">
-                          {formatMetricValue(data.userValue, "practice")}
-                        </span>
-                      </p>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* Rounds Leaderboard */}
-            {(() => {
-              const data = roundsLeaderboard;
-              return (
-                <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full">
-                  {/* Header Alignment: Title at top with minimal padding */}
-                  <h3 className="text-base font-semibold text-gray-900 mb-0 text-center">
-                    Rounds
-                  </h3>
-
-                  {data.all.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-sm text-gray-500">
-                        No rankings yet. Start logging to take the lead!
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Kill the Gap: Apply mt-[-20px] to pull players up and remove massive white space under titles */}
-                      <div className="mt-[-20px]">
-                        {/* The Stage: Fixed 100px height for circles only */}
-                        <div className="h-[100px] flex items-end justify-center gap-3">
-                        {data.top3[1] && (
-                          <div className="flex flex-col items-center justify-end">
-                            <CircularAvatar
-                              initial={(data.top3[1].full_name || data.top3[1].name || "U")[0]}
-                              iconId={
-                                data.top3[1].avatar &&
-                                GOLF_ICONS.some(
-                                  (icon: any) => icon.id === data.top3[1].avatar,
-                                )
-                                  ? data.top3[1].avatar
-                                  : undefined
-                              }
-                              size={44}
-                              bgColor="#C0C0C0"
-                            />
-                          </div>
-                        )}
-                        {data.top3[0] && (
-                          <div className="flex flex-col items-center justify-end relative">
-                            {/* Crown Positioning: Absolute so it floats over the circle */}
-                            <Crown
-                              className="w-4 h-4 absolute -top-2"
-                              style={{ color: "#FFA500" }}
-                            />
-                            <CircularAvatar
-                              initial={(data.top3[0].full_name || data.top3[0].name || "U")[0]}
-                              iconId={
-                                data.top3[0].avatar &&
-                                GOLF_ICONS.some(
-                                  (icon: any) => icon.id === data.top3[0].avatar,
-                                )
-                                  ? data.top3[0].avatar
-                                  : undefined
-                              }
-                              size={56}
-                              bgColor="#FFA500"
-                            />
-                          </div>
-                        )}
-                        {data.top3[2] && (
-                          <div className="flex flex-col items-center justify-end">
-                            <CircularAvatar
-                              initial={(data.top3[2].full_name || data.top3[2].name || "U")[0]}
-                              iconId={
-                                data.top3[2].avatar &&
-                                GOLF_ICONS.some(
-                                  (icon: any) => icon.id === data.top3[2].avatar,
-                                )
-                                  ? data.top3[2].avatar
-                                  : undefined
-                              }
-                              size={44}
-                              bgColor="#CD7F32"
-                            />
-                          </div>
-                        )}
-                        </div>
-                        {/* Label Cleanup: Reduce gap between circle and name to mt-1 */}
-                        {/* Fixed Name Height: Wrap names in fixed height container to prevent layout shifts */}
-                        <div className="flex items-start justify-center gap-3 mb-4 mt-1">
-                          {data.top3[1] && (
-                            <div className="flex flex-col items-center">
-                              {(() => {
-                                const entry = data.top3[1];
-                                const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                                return (
-                                  <div className="text-center">
-                                    <div className="text-xs font-bold text-gray-900">
-                                      #{2}
-                                    </div>
-                                    {/* Fixed Name Height: Prevents long names from pushing layout */}
-                                    <div className="h-[40px] flex items-center justify-center text-center">
-                                      <div className="text-xs font-semibold text-gray-900">
-                                        {displayName}
-                                      </div>
-                                    </div>
-                                    <div className="text-xs text-gray-600 mt-1">
-                                      {formatMetricValue(data.top3[1].value, "rounds")}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          )}
-                          {data.top3[0] && (
-                            <div className="flex flex-col items-center">
-                              {(() => {
-                                const entry = data.top3[0];
-                                const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                                return (
-                                  <div className="text-center">
-                                    <div className="text-sm font-bold text-gray-900">
-                                      #{1}
-                                    </div>
-                                    {/* Fixed Name Height: Prevents long names from pushing layout */}
-                                    <div className="h-[40px] flex items-center justify-center text-center">
-                                      <div className="text-xs font-semibold text-gray-900">
-                                        {displayName}
-                                      </div>
-                                    </div>
-                                    <div className="text-xs text-gray-600 mt-1">
-                                      {formatMetricValue(data.top3[0].value, "rounds")}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          )}
-                          {data.top3[2] && (
-                            <div className="flex flex-col items-center">
-                              {(() => {
-                                const entry = data.top3[2];
-                                const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                                return (
-                                  <div className="text-center">
-                                    <div className="text-xs font-bold text-gray-900">
-                                      #{3}
-                                    </div>
-                                    {/* Fixed Name Height: Prevents long names from pushing layout */}
-                                    <div className="h-[40px] flex items-center justify-center text-center">
-                                      <div className="text-xs font-semibold text-gray-900">
-                                        {displayName}
-                                      </div>
-                                    </div>
-                                    <div className="text-xs text-gray-600 mt-1">
-                                      {formatMetricValue(data.top3[2].value, "rounds")}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="text-center pt-3 border-t border-gray-200">
-                        <p className="text-sm font-semibold text-gray-700">
-                          Your Rank:{" "}
-                          <span className="text-[#014421]">
-                            {data.userRank === 0
-                              ? "Unranked"
-                              : `#${data.userRank}`}
-                          </span>{" "}
-                          |{" "}
-                          <span className="text-[#FFA500]">
-                            {formatMetricValue(data.userValue, "rounds")}
-                          </span>
-                        </p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* Drills Leaderboard */}
-            {(() => {
-              const data = drillsLeaderboard;
-              return (
-                <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full">
-                  {/* Header Alignment: Title at top with minimal padding */}
-                  <h3 className="text-base font-semibold text-gray-900 mb-0 text-center">
-                    Drills
-                  </h3>
-
-                  {data.all.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-sm text-gray-500">
-                        No rankings yet. Start logging to take the lead!
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Kill the Gap: Apply mt-[-20px] to pull players up and remove massive white space under titles */}
-                      <div className="mt-[-20px]">
-                        {/* The Stage: Fixed 100px height for circles only */}
-                        <div className="h-[100px] flex items-end justify-center gap-3">
-                        {data.top3[1] && (
-                          <div className="flex flex-col items-center justify-end">
-                            <CircularAvatar
-                              initial={(data.top3[1].full_name || data.top3[1].name || "U")[0]}
-                              iconId={
-                                data.top3[1].avatar &&
-                                GOLF_ICONS.some(
-                                  (icon: any) =>
-                                    icon.id === data.top3[1].avatar,
-                                )
-                                  ? data.top3[1].avatar
-                                  : undefined
-                              }
-                              size={44}
-                              bgColor="#C0C0C0"
-                            />
-                          </div>
-                        )}
-                        {data.top3[0] && (
-                          <div className="flex flex-col items-center justify-end relative">
-                            {/* Crown Positioning: Absolute so it floats over the circle */}
-                            <Crown
-                              className="w-4 h-4 absolute -top-2"
-                              style={{ color: "#FFA500" }}
-                            />
-                            <CircularAvatar
-                              initial={(data.top3[0].full_name || data.top3[0].name || "U")[0]}
-                              iconId={
-                                data.top3[0].avatar &&
-                                GOLF_ICONS.some(
-                                  (icon: any) =>
-                                    icon.id === data.top3[0].avatar,
-                                )
-                                  ? data.top3[0].avatar
-                                  : undefined
-                              }
-                              size={56}
-                              bgColor="#FFA500"
-                            />
-                          </div>
-                        )}
-                        {data.top3[2] && (
-                          <div className="flex flex-col items-center justify-end">
-                            <CircularAvatar
-                              initial={(data.top3[2].full_name || data.top3[2].name || "U")[0]}
-                              iconId={
-                                data.top3[2].avatar &&
-                                GOLF_ICONS.some(
-                                  (icon: any) =>
-                                    icon.id === data.top3[2].avatar,
-                                )
-                                  ? data.top3[2].avatar
-                                  : undefined
-                              }
-                              size={44}
-                              bgColor="#CD7F32"
-                            />
-                          </div>
-                        )}
-                        </div>
-                        {/* Label Cleanup: Reduce gap between circle and name to mt-1 */}
-                        {/* Fixed Name Height: Wrap names in fixed height container to prevent layout shifts */}
-                        <div className="flex items-start justify-center gap-3 mb-4 mt-1">
-                          {data.top3[1] && (
-                            <div className="flex flex-col items-center">
-                              {(() => {
-                                const entry = data.top3[1];
-                                const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || entry.name || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                                return (
-                                  <div className="text-center">
-                                    <div className="text-xs font-bold text-gray-900">
-                                      #{2}
-                                    </div>
-                                    {/* Fixed Name Height: Prevents long names from pushing layout */}
-                                    <div className="h-[40px] flex items-center justify-center text-center">
-                                      <div className="text-xs font-semibold text-gray-900">
-                                        {displayName}
-                                      </div>
-                                    </div>
-                                    <div className="text-xs text-gray-600 mt-1">
-                                      {formatMetricValue(
-                                        data.top3[1].value,
-                                        "drills",
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          )}
-                          {data.top3[0] && (
-                            <div className="flex flex-col items-center">
-                              {(() => {
-                                const displayName = data.top3[0].name.includes("@")
-                                  ? data.top3[0].name.split("@")[0]
-                                  : data.top3[0].name;
-                                return (
-                                  <div className="text-center">
-                                    <div className="text-sm font-bold text-gray-900">
-                                      #{1}
-                                    </div>
-                                    {/* Fixed Name Height: Prevents long names from pushing layout */}
-                                    <div className="h-[40px] flex items-center justify-center text-center">
-                                      <div className="text-xs font-semibold text-gray-900">
-                                        {displayName}
-                                      </div>
-                                    </div>
-                                    <div className="text-xs text-gray-600 mt-1">
-                                      {formatMetricValue(
-                                        data.top3[0].value,
-                                        "drills",
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          )}
-                          {data.top3[2] && (
-                            <div className="flex flex-col items-center">
-                              {(() => {
-                                const displayName = data.top3[2].name.includes("@")
-                                  ? data.top3[2].name.split("@")[0]
-                                  : data.top3[2].name;
-                                return (
-                                  <div className="text-center">
-                                    <div className="text-xs font-bold text-gray-900">
-                                      #{3}
-                                    </div>
-                                    {/* Fixed Name Height: Prevents long names from pushing layout */}
-                                    <div className="h-[40px] flex items-center justify-center text-center">
-                                      <div className="text-xs font-semibold text-gray-900">
-                                        {displayName}
-                                      </div>
-                                    </div>
-                                    <div className="text-xs text-gray-600 mt-1">
-                                      {formatMetricValue(
-                                        data.top3[2].value,
-                                        "drills",
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="text-center pt-3 border-t border-gray-200">
-                        <p className="text-sm font-semibold text-gray-700">
-                          Your Rank:{" "}
-                          <span className="text-[#014421]">
-                            {data.userRank === 0
-                              ? "Unranked"
-                              : `#${data.userRank}`}
-                          </span>{" "}
-                          |{" "}
-                          <span className="text-[#FFA500]">
-                            {formatMetricValue(data.userValue, "drills")}
-                          </span>
-                        </p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-
-        {/* Unified Leaderboard Card */}
-        <div className="mb-6 w-full overflow-hidden" style={{ maxWidth: '100vw', flexWrap: 'wrap' }}>
-          <div className="rounded-2xl p-4 sm:p-6 bg-white border border-gray-200 shadow-sm w-full overflow-hidden" style={{ maxWidth: '100vw', flexWrap: 'wrap' }}>
-            {/* Title and Category Dropdown - Mobile Stacked */}
-            <div className="flex flex-col md:flex-row gap-2 md:items-center md:justify-between mb-4 w-full">
-              <h2 className="text-base sm:text-lg font-semibold text-gray-900 text-center md:text-left">
-                Overall Leaderboard
-              </h2>
-              
+          <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full flex flex-col">
+            <div className="flex flex-col md:flex-row gap-4 md:items-center md:justify-between mb-6 w-full">
+              <h3 className="text-xl font-bold text-gray-900 text-center md:text-left">
+                Overall Academy Leaderboard
+              </h3>
               {/* Category Dropdown */}
-              <div className="w-full md:w-auto" style={{ maxWidth: '100vw', overflow: 'hidden' }}>
+              <div className="w-full md:w-auto">
                 <div className="flex items-center justify-center md:justify-end gap-2 sm:gap-4 flex-wrap w-full">
-                  <label htmlFor="category-select" className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">
+                  <label htmlFor="category-select" className="text-sm font-medium text-gray-700 whitespace-nowrap">
                     Category:
                   </label>
                   <select
@@ -4792,13 +4063,14 @@ export default function AcademyPage() {
                       const selectedMetric = e.target.value as typeof leaderboardMetric;
                       setLeaderboardMetric(selectedMetric);
                     }}
-                    className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium text-gray-900 bg-white border border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#014421] focus:border-[#014421] transition-colors cursor-pointer w-full sm:w-auto"
-                    style={{ minWidth: '180px', maxWidth: '100vw', width: '100%' }}
+                    className="px-4 py-2 rounded-lg text-sm font-medium text-gray-900 bg-white border border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#014421] focus:border-[#014421] transition-colors cursor-pointer w-full sm:w-auto"
+                    style={{ minWidth: '180px' }}
                   >
-                    <option value="library">Library</option>
-                    <option value="practice">Practice</option>
-                    <option value="drills">Drills</option>
+                    <option value="xp">Overall (Total XP)</option>
+                    <option value="practice">Practice Hours</option>
+                    <option value="library">Library Lessons</option>
                     <option value="rounds">Rounds Entered</option>
+                    <option value="drills">Drills</option>
                     <option value="lowGross">Low Gross</option>
                     <option value="lowNett">Low Nett</option>
                     <option value="birdies">Birdies</option>
@@ -4809,8 +4081,8 @@ export default function AcademyPage() {
               </div>
             </div>
 
-            {/* Time Filter Buttons - Top Row */}
-            <div className="mb-4 w-full">
+            {/* Time Filter Buttons */}
+            <div className="mb-6 w-full">
               <div className="flex items-center justify-center gap-2 sm:gap-2.5 px-2 sm:px-4 flex-wrap">
                 {(["week", "month", "year", "allTime"] as const).map((filter) => {
                   const labels = {
@@ -4819,25 +4091,15 @@ export default function AcademyPage() {
                     year: "This Year",
                     allTime: "All-Time",
                   };
-
                   return (
                     <button
                       key={filter}
-                      onClick={() => {
-                        setIsFiltering(true);
-                        setTimeFilter(filter);
-                        setTimeout(() => setIsFiltering(false), 300);
-                      }}
+                      onClick={() => setTimeFilter(filter)}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                         timeFilter === filter
-                          ? "text-white"
-                          : "text-gray-600 bg-gray-100"
+                          ? "text-white bg-[#014421]"
+                          : "text-gray-600 bg-gray-100 hover:bg-gray-200"
                       }`}
-                      style={
-                        timeFilter === filter
-                          ? { backgroundColor: "#014421" }
-                          : {}
-                      }
                     >
                       {labels[filter]}
                     </button>
@@ -4845,273 +4107,88 @@ export default function AcademyPage() {
                 })}
               </div>
             </div>
-
-            {/* Top 3 Leaders Section */}
-            <div className="mb-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-4 text-center">
-                Top 3 Leaders
-              </h3>
+            
             {(() => {
+              // Compute XP Leaderboard right here to avoid hook order issues, or use currentLeaderboard for other metrics
+              const dataToRender = leaderboardMetric === "xp" ? getLeaderboardData(
+                "xp",
+                timeFilter, // Use actual time filter instead of "allTime"
+                rounds || [],
+                user?.totalXP || 0,
+                userName || "Anonymous",
+                user,
+                userProfiles,
+                practiceSessions || [],
+                drills || []
+              ) : currentLeaderboard;
 
-              // Register XP: Ensure the list rendering logic uses {profile.xp || 0} XP from database
-
-              // Add Null Check: Ensure the leaderboard component only renders if leaderboardData exists, but provide a 'No Data' state instead of a white screen
-              // Verify the Variable: Make sure leaderboardData is being calculated using the rounds from StatsContext and that it isn't being filtered out by a mismatching user_id
-              // Handle Empty State: Show message when no data is available
-              // DUMP TO UI: Show debug message if leaderboard is empty
-              if (
-                !currentLeaderboard ||
-                !sortedLeaderboard ||
-                sortedLeaderboard.length === 0
-              ) {
-                // DUMP TO UI: Show debug message if available
-                const debugMessage = (currentLeaderboard as any)?.debugMessage;
+              if (!dataToRender || !dataToRender.all || dataToRender.all.length === 0) {
+                const timeLabels = {
+                  week: "this week",
+                  month: "this month",
+                  year: "this year",
+                  allTime: "yet"
+                };
                 return (
-                  <div className="text-center py-12">
-                    {debugMessage ? (
-                      <p className="text-sm text-gray-700 font-medium">
-                        {debugMessage}
-                      </p>
-                    ) : (
-                      <p className="text-sm text-gray-500">
-                        No rankings yet. Start logging to take the lead!
-                      </p>
-                    )}
+                  <div className="text-center flex-1 flex flex-col items-center justify-center min-h-[160px]">
+                    <p className="text-sm text-gray-500">
+                      No data for {timeLabels[timeFilter]}. Start logging to take the lead!
+                    </p>
                   </div>
                 );
               }
 
-              // Render the actual leaderboard
-              // Alignment: Wrap the Top 3 profile circles in a div with flex items-end to fix the lopsided look and apply mt-[-25px] to remove the gap under the title
+              // Top 20 list
+              const top20 = dataToRender.all.slice(0, 20);
+
               return (
-                <div className="max-w-md mx-auto mt-[-25px]">
-                  <div className="flex items-end justify-center gap-3">
-                    {/* 2nd Place */}
-                    {top3[1] && (
-                      <div className="flex flex-col items-center">
-                        {/* Unified Names: Ensure every single name display uses the clean fallback */}
-                        {(() => {
-                          const entry = top3[1];
-                          const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                          return (
-                            <>
-                              <CircularAvatar
-                                initial={displayName[0]}
-                                iconId={
-                                  top3[1].avatar &&
-                                  GOLF_ICONS.some(
-                                    (icon: any) => icon.id === top3[1].avatar,
-                                  )
-                                    ? top3[1].avatar
-                                    : undefined
-                                }
-                                size={60}
-                                bgColor="#C0C0C0"
-                              />
-                              <div className="text-center mt-2">
-                                <div className="text-sm font-bold text-gray-900">
-                                  #{2}
-                                </div>
-                                <div className="text-sm font-semibold text-gray-900">
-                                  {displayName}
-                                </div>
-                                {/* Connect to Real Data: Use value from leaderboardData array */}
-                                <div className="text-xs text-gray-600">
-                                  {formatLeaderboardValue(
-                                    top3[1].value,
-                                    leaderboardMetric,
-                                  )}
-                                </div>
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </div>
-                    )}
-
-                    {/* 1st Place - Center, Higher, with Crown */}
-                    {top3[0] && (
-                      <div className="flex flex-col items-center">
-                        <Crown
-                          className="w-6 h-6 mb-1 animate-pulse"
-                          style={{ color: "#FFA500" }}
-                        />
-                        {/* Unified Names: Ensure every single name display uses the clean fallback */}
-                        {(() => {
-                          const entry = top3[0];
-                          const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                          return (
-                            <>
-                              <CircularAvatar
-                                initial={displayName[0]}
-                                iconId={
-                                  top3[0].avatar &&
-                                  GOLF_ICONS.some(
-                                    (icon: any) => icon.id === top3[0].avatar,
-                                  )
-                                    ? top3[0].avatar
-                                    : undefined
-                                }
-                                size={80}
-                                bgColor="#FFA500"
-                              />
-                              <div className="text-center mt-2">
-                                <div className="text-base font-bold text-gray-900">
-                                  #{1}
-                                </div>
-                                <div className="text-base font-semibold text-gray-900">
-                                  {displayName}
-                                </div>
-                                {/* Find the top3 calculation: Ensure Top3Leaders uses values from allEntries array (which uses roundsByUser.get(userId).length) */}
-                                {/* Update Sub-label: Ensure the text below the name says {entry.value} Rounds instead of a static number */}
-                                {/* Remove Mock Fallbacks: Verify this is using entry.value from allEntries, not hardcoded 4000 */}
-                                <div className="text-xs text-gray-600">
-                                  {formatLeaderboardValue(
-                                    top3[0].value,
-                                    leaderboardMetric,
-                                  )}
-                                </div>
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </div>
-                    )}
-
-                    {/* 3rd Place */}
-                    {top3[2] && (
-                      <div className="flex flex-col items-center">
-                        {/* Unified Names: Ensure every single name display uses the clean fallback */}
-                        {(() => {
-                          const entry = top3[2];
-                          const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                          return (
-                            <>
-                              <CircularAvatar
-                                initial={displayName[0]}
-                                iconId={
-                                  top3[2].avatar &&
-                                  GOLF_ICONS.some(
-                                    (icon: any) => icon.id === top3[2].avatar,
-                                  )
-                                    ? top3[2].avatar
-                                    : undefined
-                                }
-                                size={60}
-                                bgColor="#CD7F32"
-                              />
-                              <div className="text-center mt-2">
-                                <div className="text-sm font-bold text-gray-900">
-                                  #{3}
-                                </div>
-                                <div className="text-sm font-semibold text-gray-900">
-                                  {displayName}
-                                </div>
-                                {/* Connect to Real Data: Use value from leaderboardData array */}
-                                <div className="text-xs text-gray-600">
-                                  {formatLeaderboardValue(
-                                    top3[2].value,
-                                    leaderboardMetric,
-                                  )}
-                                </div>
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-            </div>
-
-            {/* Full Leaderboard List Section - Works for ALL categories (Library, Practice, Drills, Low Gross, Low Nett, Birdies, Eagles) */}
-            {sortedLeaderboard && sortedLeaderboard.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-gray-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-base font-semibold text-gray-900">
-                    Full Rankings
-                  </h3>
-                  <button
-                    onClick={() => setShowFullLeaderboard(!showFullLeaderboard)}
-                    className="text-sm font-medium text-[#014421] hover:underline"
-                  >
-                    {showFullLeaderboard ? "Show Less" : "View Full"}
-                  </button>
-                </div>
-
-                {sortedLeaderboard.length > 3 && (
-                  <div className="space-y-2">
-                    {(showFullLeaderboard
-                      ? sortedLeaderboard.slice(3)
-                      : sortedLeaderboard.slice(3, 6)
-                    ).map((entry: any, index: number) => {
-                    const rank = index + 4;
-                    const displayName =
-                      entry.full_name ||
-                      entry.display_name ||
-                      (entry.email?.includes("@")
-                        ? entry.email.split("@")[0]
-                        : entry.email) ||
-                      (entry.name?.includes("@")
-                        ? entry.name.split("@")[0]
-                        : entry.name) ||
-                      "Academy Member";
-
-                    // Unified value extraction for ALL metrics:
-                    // Practice: entry.value = totalHours
-                    // Drills: entry.value = drillCount  
-                    // Library: entry.value = lessons_completed count
-                    // Low Gross: entry.value = min(score_gross)
-                    // Birdies: entry.value = sum(birdies_count)
-                    const entryValue = entry.value !== undefined && entry.value !== null ? entry.value : 0;
+                <div className="flex flex-col gap-3">
+                  {top20.map((entry: any, index: number) => {
+                    const rank = index + 1;
+                    const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
+                    
+                    // Highlight the current user
+                    const isMe = entry.isCurrentUser;
+                    const displayValue = leaderboardMetric === "xp" ? entry.value : formatLeaderboardValue(entry.value, leaderboardMetric);
 
                     return (
-                      <div
-                        key={entry.id || `entry-${rank}`}
-                        className={`flex items-center justify-between p-3 rounded-lg ${
-                          entry.isCurrentUser
-                            ? "bg-green-50 border border-green-200"
-                            : "bg-gray-50"
+                      <div 
+                        key={entry.id || `rank-${rank}`} 
+                        className={`flex items-center justify-between p-3 rounded-xl transition-all ${
+                          isMe 
+                            ? "bg-green-50 border-2 border-[#014421] shadow-sm" 
+                            : "bg-gray-50 border border-transparent hover:border-gray-200"
                         }`}
                       >
-                        <div className="flex items-center gap-3">
-                          <div className="text-sm font-bold text-gray-600 w-8">
+                        <div className="flex items-center gap-4 min-w-0 flex-1">
+                          <div className={`text-lg font-bold w-8 shrink-0 text-center ${
+                            rank === 1 ? 'text-[#FFA500]' : rank === 2 ? 'text-[#C0C0C0]' : rank === 3 ? 'text-[#CD7F32]' : 'text-gray-500'
+                          }`}>
                             #{rank}
                           </div>
-                          <CircularAvatar
-                            initial={displayName[0]}
-                            iconId={
-                              entry.avatar &&
-                              GOLF_ICONS.some(
-                                (icon: any) => icon.id === entry.avatar,
-                              )
-                                ? entry.avatar
-                                : undefined
-                            }
-                            size={40}
-                            bgColor={
-                              entry.isCurrentUser ? "#014421" : "#9CA3AF"
-                            }
-                          />
-                          <div className="text-sm font-medium text-gray-900">
-                            {displayName}
+                          <div className="shrink-0 relative">
+                            {rank === 1 && <Crown className="w-5 h-5 absolute -top-3 -right-2 text-[#FFA500]" />}
+                            <CircularAvatar
+                              initial={displayName[0]}
+                              iconId={entry.avatar && GOLF_ICONS.some((icon: any) => icon.id === entry.avatar) ? entry.avatar : undefined}
+                              size={44}
+                              bgColor={isMe ? "#014421" : rank === 1 ? "#FFA500" : rank === 2 ? "#C0C0C0" : rank === 3 ? "#CD7F32" : "#9CA3AF"}
+                            />
+                          </div>
+                          <div className="text-base font-semibold text-gray-900 truncate pr-2 flex-1" title={displayName}>
+                            {displayName} {isMe && <span className="text-xs font-bold text-[#014421] ml-1">(You)</span>}
                           </div>
                         </div>
-                        <div className="text-sm text-gray-600">
-                          {formatLeaderboardValue(
-                            entryValue,
-                            leaderboardMetric,
-                          )}
+                        <div className="text-lg font-bold text-[#014421] shrink-0 pl-2 text-right">
+                          {displayValue}
+                          {leaderboardMetric === "xp" && <span className="text-xs font-normal text-gray-500 ml-1">XP</span>}
                         </div>
                       </div>
                     );
                   })}
-                  </div>
-                )}
-              </div>
-            )}
+                </div>
+              );
+            })()}
           </div>
         </div>
 

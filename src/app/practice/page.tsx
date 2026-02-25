@@ -105,6 +105,8 @@ const facilityInfo: Record<FacilityType, { label: string; icon: any }> = {
 // All facility types
 const ALL_FACILITIES: FacilityType[] = ['home', 'range-mat', 'range-grass', 'bunker', 'chipping-green', 'putting-green'];
 
+import { logActivity } from "@/lib/activity";
+
 // XP Logic: Create a function updateUserXP(points) that adds a specific amount of XP to the user's profiles record in Supabase
 async function updateUserXP(userId: string, points: number): Promise<void> {
   try {
@@ -674,7 +676,7 @@ export default function PracticePage() {
 
     // Check for priority: Missed < 6ft
     const lastRound = rounds[rounds.length - 1];
-    if (lastRound && lastRound.missed6ftAndIn > 2) {
+    if (lastRound && (lastRound.puttsUnder6ftAttempts - lastRound.made6ftAndIn) > 2) {
       setMostNeededCategory('Putting');
       return;
     }
@@ -799,6 +801,10 @@ export default function PracticePage() {
       // Success Log: Add console.log('Practice saved successfully') so I can see if the button is actually finishing the job
       // Remove the Alert: Delete the alert('Logged!') line - replaced with subtle XP notification toast
       console.log('Practice saved successfully:', data);
+
+      // Log activity to database
+      const hours = (duration / 60).toFixed(1).replace('.0', '');
+      await logActivity(user.id, 'practice', `Practiced for ${hours} hours`);
 
       // Trigger on Practice: In the savePractice function, add 10 XP for every 10 minutes of practice logged
       // Calculate XP: 10 XP per 10 minutes (e.g., 30 minutes = 30 XP)
@@ -1364,6 +1370,9 @@ export default function PracticePage() {
             // Trigger Global Sync
             await refreshDrills();
             window.dispatchEvent(new Event('drillsUpdated'));
+            
+            // Log activity to database
+            await logActivity(user.id, 'drill', `Completed ${drill.title} (+${xpEarned} XP)`);
           }
         }
       } catch (error) {

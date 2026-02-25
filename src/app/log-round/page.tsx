@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { ArrowLeft, Save, Plus, Minus, RotateCcw } from "lucide-react";
+import { logActivity } from "@/lib/activity";
 
 interface RoundData {
   // Scoring Card
@@ -42,7 +43,7 @@ interface RoundData {
   // Putting Card
   totalPutts: number;
   threePutts: number;
-  missed6ftAndIn: number;
+  made6ftAndIn: number;
   puttsUnder6ftAttempts: number; // Total attempts from < 6ft
 }
 
@@ -82,7 +83,7 @@ export default function LogRoundPage() {
     doubleChips: 0,
     totalPutts: 0,
     threePutts: 0,
-    missed6ftAndIn: 0,
+    made6ftAndIn: 0,
     puttsUnder6ftAttempts: 0,
   });
 
@@ -104,17 +105,39 @@ export default function LogRoundPage() {
   };
 
   const incrementCounter = (field: keyof RoundData) => {
-    setRoundData(prev => ({
-      ...prev,
-      [field]: (prev[field] as number) + 1
-    }));
+    setRoundData(prev => {
+      const newValue = (prev[field] as number) + 1;
+      
+      // If we're incrementing Made < 6ft, ensure it doesn't exceed Attempts
+      if (field === 'made6ftAndIn' && newValue > prev.puttsUnder6ftAttempts) {
+        return prev;
+      }
+      
+      return {
+        ...prev,
+        [field]: newValue
+      };
+    });
   };
 
   const decrementCounter = (field: keyof RoundData) => {
-    setRoundData(prev => ({
-      ...prev,
-      [field]: Math.max(0, (prev[field] as number) - 1)
-    }));
+    setRoundData(prev => {
+      const newValue = Math.max(0, (prev[field] as number) - 1);
+      
+      // If we're decrementing Attempts, ensure Made < 6ft doesn't exceed the new Attempts value
+      if (field === 'puttsUnder6ftAttempts' && prev.made6ftAndIn > newValue) {
+        return {
+          ...prev,
+          [field]: newValue,
+          made6ftAndIn: newValue
+        };
+      }
+      
+      return {
+        ...prev,
+        [field]: newValue
+      };
+    });
   };
 
   const clearTeeApproach = () => {
@@ -217,7 +240,7 @@ export default function LogRoundPage() {
         // Putting stats
         total_putts: roundData.totalPutts,
         three_putts: roundData.threePutts, // 3-Putt stat
-        missed_6ft_and_in: roundData.puttsUnder6ftAttempts, // Putts < 6ft (Attempts) maps to missed_6ft_and_in
+        missed_6ft_and_in: Math.max(0, (roundData.puttsUnder6ftAttempts || 0) - (roundData.made6ftAndIn || 0)), // Store missed putts for backward compatibility
         putts_under_6ft_attempts: roundData.puttsUnder6ftAttempts,
       };
 
@@ -286,6 +309,35 @@ export default function LogRoundPage() {
 
       console.log('Round saved successfully!', data);
       console.log('Round saved successfully');
+
+      // Log activity to database
+      await logActivity(user.id, 'round', `Posted a round of ${roundData.score}`);
+
+      // Update handicap history and profile if a handicap was provided
+      if (roundData.handicap !== null && roundData.handicap !== undefined) {
+        // 1. Insert into handicap_history
+        const { error: historyError } = await supabase
+          .from('handicap_history')
+          .insert({
+            user_id: currentUserId,
+            score: roundData.score,
+            new_handicap: roundData.handicap
+          });
+          
+        if (historyError) {
+          console.error('Error saving handicap history:', historyError);
+        }
+        
+        // 2. Update profiles table with new handicap
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ handicap: roundData.handicap })
+          .eq('id', currentUserId);
+          
+        if (profileError) {
+          console.error('Error updating profile handicap:', profileError);
+        }
+      }
 
       // Dispatch event to refresh rounds from database
       if (typeof window !== 'undefined') {
@@ -979,56 +1031,100 @@ export default function LogRoundPage() {
               {/* Proximity Flags */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">GIR Proximity</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="relative">
-                    <button
-                      onClick={() => incrementCounter('gir8ft')}
-                      className="w-full py-4 px-4 rounded-xl border-2 transition-colors text-base font-semibold relative"
-                      style={{ 
-                        backgroundColor: roundData.gir8ft > 0 ? '#FFA500' : 'white',
-                        borderColor: roundData.gir8ft > 0 ? '#FFA500' : '#E5E7EB',
-                        color: roundData.gir8ft > 0 ? 'white' : '#374151'
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Within 8ft */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1 text-center">Within 8ft</label>
+                    <div
+                      className={`p-3 rounded-xl border-2 transition-all ${
+                        roundData.gir8ft > 0
+                          ? 'border-[#FFA500]'
+                          : 'border-gray-200'
+                      }`}
+                      style={{
+                        backgroundColor: roundData.gir8ft > 0 ? '#FFA500' : 'white'
                       }}
                     >
-                      Within 8ft: {roundData.gir8ft}
-                    </button>
-                    {roundData.gir8ft > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          decrementCounter('gir8ft');
-                        }}
-                        className="absolute top-1 right-1 w-5 h-5 rounded flex items-center justify-center hover:bg-black/10 transition-colors"
-                        style={{ color: '#FFA500' }}
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                    )}
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => decrementCounter('gir8ft')}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.gir8ft > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.gir8ft > 0 ? '#014421' : '#6B7280',
+                            minWidth: '32px',
+                            minHeight: '32px'
+                          }}
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <span
+                          className="text-xl font-bold w-10 text-center"
+                          style={{ color: roundData.gir8ft > 0 ? '#014421' : '#111827' }}
+                        >
+                          {roundData.gir8ft}
+                        </span>
+                        <button
+                          onClick={() => incrementCounter('gir8ft')}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.gir8ft > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.gir8ft > 0 ? '#014421' : '#6B7280',
+                            minWidth: '32px',
+                            minHeight: '32px'
+                          }}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="relative">
-                    <button
-                      onClick={() => incrementCounter('gir20ft')}
-                      className="w-full py-4 px-4 rounded-xl border-2 transition-colors text-base font-semibold relative"
-                      style={{ 
-                        backgroundColor: roundData.gir20ft > 0 ? '#FFA500' : 'white',
-                        borderColor: roundData.gir20ft > 0 ? '#FFA500' : '#E5E7EB',
-                        color: roundData.gir20ft > 0 ? 'white' : '#374151'
+                  {/* Within 20ft */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1 text-center">Within 20ft</label>
+                    <div
+                      className={`p-3 rounded-xl border-2 transition-all ${
+                        roundData.gir20ft > 0
+                          ? 'border-[#FFA500]'
+                          : 'border-gray-200'
+                      }`}
+                      style={{
+                        backgroundColor: roundData.gir20ft > 0 ? '#FFA500' : 'white'
                       }}
                     >
-                      Within 20ft: {roundData.gir20ft}
-                    </button>
-                    {roundData.gir20ft > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          decrementCounter('gir20ft');
-                        }}
-                        className="absolute top-1 right-1 w-5 h-5 rounded flex items-center justify-center hover:bg-black/10 transition-colors"
-                        style={{ color: '#FFA500' }}
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                    )}
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => decrementCounter('gir20ft')}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.gir20ft > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.gir20ft > 0 ? '#014421' : '#6B7280',
+                            minWidth: '32px',
+                            minHeight: '32px'
+                          }}
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <span
+                          className="text-xl font-bold w-10 text-center"
+                          style={{ color: roundData.gir20ft > 0 ? '#014421' : '#111827' }}
+                        >
+                          {roundData.gir20ft}
+                        </span>
+                        <button
+                          onClick={() => incrementCounter('gir20ft')}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.gir20ft > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.gir20ft > 0 ? '#014421' : '#6B7280',
+                            minWidth: '32px',
+                            minHeight: '32px'
+                          }}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1407,11 +1503,11 @@ export default function LogRoundPage() {
                 </div>
               </div>
 
-              {/* Putts < 6ft (Attempts) and Missed < 6ft - Side by Side */}
+              {/* Putts < 6ft (Attempts) and Made < 6ft - Side by Side */}
               <div>
                 <div className="grid grid-cols-2 gap-3 mb-2">
                   <label className="text-sm font-medium text-gray-700">Putts &lt; 6ft (Attempts)</label>
-                  <label className="text-sm font-medium text-gray-700">Missed &lt; 6ft</label>
+                  <label className="text-sm font-medium text-gray-700">Made &lt; 6ft</label>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {/* Putt < 6ft Attempts Counter */}
@@ -1459,24 +1555,24 @@ export default function LogRoundPage() {
                     </div>
                   </div>
 
-                  {/* Missed < 6ft Counter */}
+                  {/* Made < 6ft Counter */}
                   <div
                     className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.missed6ftAndIn > 0
+                      roundData.made6ftAndIn > 0
                         ? 'border-[#FFA500]'
                         : 'border-gray-200'
                     }`}
                     style={{
-                      backgroundColor: roundData.missed6ftAndIn > 0 ? '#FFA500' : 'white'
+                      backgroundColor: roundData.made6ftAndIn > 0 ? '#FFA500' : 'white'
                     }}
                   >
                     <div className="flex items-center justify-center gap-1.5">
                       <button
-                        onClick={() => decrementCounter('missed6ftAndIn')}
+                        onClick={() => decrementCounter('made6ftAndIn')}
                         className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
                         style={{
-                          borderColor: roundData.missed6ftAndIn > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.missed6ftAndIn > 0 ? '#014421' : '#6B7280',
+                          borderColor: roundData.made6ftAndIn > 0 ? '#014421' : '#D1D5DB',
+                          color: roundData.made6ftAndIn > 0 ? '#014421' : '#6B7280',
                           minWidth: '32px',
                           minHeight: '32px'
                         }}
@@ -1485,19 +1581,26 @@ export default function LogRoundPage() {
                       </button>
                       <span
                         className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.missed6ftAndIn > 0 ? '#014421' : '#111827' }}
+                        style={{ color: roundData.made6ftAndIn > 0 ? '#014421' : '#111827' }}
                       >
-                        {roundData.missed6ftAndIn}
+                        {roundData.made6ftAndIn}
                       </span>
                       <button
-                        onClick={() => incrementCounter('missed6ftAndIn')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        onClick={() => {
+                          if (roundData.made6ftAndIn < roundData.puttsUnder6ftAttempts) {
+                            incrementCounter('made6ftAndIn');
+                          }
+                        }}
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors ${
+                          roundData.made6ftAndIn >= roundData.puttsUnder6ftAttempts ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
                         style={{
-                          borderColor: roundData.missed6ftAndIn > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.missed6ftAndIn > 0 ? '#014421' : '#6B7280',
+                          borderColor: roundData.made6ftAndIn > 0 ? '#014421' : '#D1D5DB',
+                          color: roundData.made6ftAndIn > 0 ? '#014421' : '#6B7280',
                           minWidth: '32px',
                           minHeight: '32px'
                         }}
+                        disabled={roundData.made6ftAndIn >= roundData.puttsUnder6ftAttempts}
                       >
                         <Plus className="w-3.5 h-3.5" />
                       </button>
@@ -1509,37 +1612,48 @@ export default function LogRoundPage() {
               {/* 3-Putt Counter */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">3-Putts</label>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => decrementCounter('threePutts')}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
-                    style={{
-                      borderColor: roundData.threePutts > 0 ? '#014421' : '#D1D5DB',
-                      color: roundData.threePutts > 0 ? '#014421' : '#6B7280',
-                      minWidth: '32px',
-                      minHeight: '32px'
-                    }}
-                  >
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
-                  <span 
-                    className="text-xl font-bold flex-1 text-center"
-                    style={{ color: roundData.threePutts > 0 ? '#FFA500' : '#111827' }}
-                  >
-                    {roundData.threePutts}
-                  </span>
-                  <button
-                    onClick={() => incrementCounter('threePutts')}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
-                    style={{
-                      borderColor: roundData.threePutts > 0 ? '#014421' : '#D1D5DB',
-                      color: roundData.threePutts > 0 ? '#014421' : '#6B7280',
-                      minWidth: '32px',
-                      minHeight: '32px'
-                    }}
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
+                <div
+                  className={`p-3 rounded-xl border-2 transition-all ${
+                    roundData.threePutts > 0
+                      ? 'border-[#FFA500]'
+                      : 'border-gray-200'
+                  }`}
+                  style={{
+                    backgroundColor: roundData.threePutts > 0 ? '#FFA500' : 'white'
+                  }}
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <button
+                      onClick={() => decrementCounter('threePutts')}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                      style={{
+                        borderColor: roundData.threePutts > 0 ? '#014421' : '#D1D5DB',
+                        color: roundData.threePutts > 0 ? '#014421' : '#6B7280',
+                        minWidth: '32px',
+                        minHeight: '32px'
+                      }}
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <span
+                      className="text-xl font-bold w-10 text-center"
+                      style={{ color: roundData.threePutts > 0 ? '#014421' : '#111827' }}
+                    >
+                      {roundData.threePutts}
+                    </span>
+                    <button
+                      onClick={() => incrementCounter('threePutts')}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                      style={{
+                        borderColor: roundData.threePutts > 0 ? '#014421' : '#D1D5DB',
+                        color: roundData.threePutts > 0 ? '#014421' : '#6B7280',
+                        minWidth: '32px',
+                        minHeight: '32px'
+                      }}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

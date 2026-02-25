@@ -207,7 +207,7 @@ export default function StatsPage() {
 
     // PUTTING: < 6ft Make percentage
     const totalPuttsUnder6ft = safeRounds.reduce((sum, r) => sum + (r.puttsUnder6ftAttempts || 0), 0);
-    const puttsMadeUnder6ft = safeRounds.reduce((sum, r) => sum + ((r.puttsUnder6ftAttempts || 0) - (r.missed6ftAndIn || 0)), 0);
+    const puttsMadeUnder6ft = safeRounds.reduce((sum, r) => sum + (r.made6ftAndIn || 0), 0);
     const puttsUnder6ftMake = totalPuttsUnder6ft > 0 ? (puttsMadeUnder6ft / totalPuttsUnder6ft) * 100 : 0;
 
     // PUTTING: 3-Putts (average per round)
@@ -277,7 +277,7 @@ export default function StatsPage() {
         'TOTAL PENALTIES': safetyNetData.map(d => ({ ...d, val: 1 })),
         'TEE PENALTIES': safetyNetData.map(d => ({ ...d, val: 0 })),
         'APPROACH PENALTIES': safetyNetData.map(d => ({ ...d, val: 1 })),
-        'MISSED 6FT AND IN': safetyNetData.map(d => ({ ...d, val: 2 })),
+        'MADE 6FT AND IN': safetyNetData.map(d => ({ ...d, val: 2 })),
       };
     }
 
@@ -304,7 +304,7 @@ export default function StatsPage() {
       'TOTAL PENALTIES': [],
       'TEE PENALTIES': [],
       'APPROACH PENALTIES': [],
-      'MISSED 6FT AND IN': [],
+      'MADE 6FT AND IN': [],
     };
 
     filteredRounds.forEach((round, index) => {
@@ -332,7 +332,7 @@ export default function StatsPage() {
       data['TOTAL PENALTIES'].push({ val: round.totalPenalties || 0, date: roundDate });
       data['TEE PENALTIES'].push({ val: round.teePenalties || 0, date: roundDate });
       data['APPROACH PENALTIES'].push({ val: round.approachPenalties || 0, date: roundDate });
-      data['MISSED 6FT AND IN'].push({ val: round.missed6ftAndIn || 0, date: roundDate });
+      data['MADE 6FT AND IN'].push({ val: round.made6ftAndIn || 0, date: roundDate });
     });
 
     return data;

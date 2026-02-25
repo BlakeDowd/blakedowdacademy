@@ -34,7 +34,7 @@ interface RoundData {
   doubleChips: number;
   totalPutts: number;
   threePutts: number;
-  missed6ftAndIn: number;
+  made6ftAndIn: number;
   puttsUnder6ftAttempts: number;
 }
 
@@ -70,6 +70,11 @@ interface StatsContextType {
 }
 
 const StatsContext = createContext<StatsContextType | undefined>(undefined);
+
+export function calculatePuttingAccuracy(made6ftAndIn: number, puttsUnder6ftAttempts: number): number {
+  if (!puttsUnder6ftAttempts || puttsUnder6ftAttempts === 0) return 0;
+  return Math.round((made6ftAndIn / puttsUnder6ftAttempts) * 100);
+}
 
 export function StatsProvider({ children }: { children: ReactNode }) {
   // Set rounds to empty array
@@ -198,7 +203,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         doubleChips: round.double_chips || round.chip_ins || 0, // Handle both column names
         totalPutts: round.total_putts,
         threePutts: round.three_putts,
-        missed6ftAndIn: round.missed_6ft_and_in,
+        made6ftAndIn: Math.max(0, (round.putts_under_6ft_attempts || 0) - (round.missed_6ft_and_in || 0)),
         puttsUnder6ftAttempts: round.putts_under_6ft_attempts,
         // Include user_id for leaderboard (profile data available from AuthContext)
         user_id: round.user_id,
