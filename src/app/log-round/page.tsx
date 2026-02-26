@@ -439,7 +439,15 @@ export default function LogRoundPage() {
               <div className="grid grid-cols-2 gap-3">
                 {/* Score */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Score *</label>
+                  <div className="flex items-center gap-1 mb-1">
+                    <label className="block text-sm font-medium text-gray-700">Score *</label>
+                    <div className="group relative">
+                      <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200">i</div>
+                      <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
+                        Total gross score for the round.
+                      </div>
+                    </div>
+                  </div>
                   <input
                     type="number"
                     step="0.1"
@@ -452,7 +460,15 @@ export default function LogRoundPage() {
 
                 {/* Nett */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nett</label>
+                  <div className="flex items-center gap-1 mb-1">
+                    <label className="block text-sm font-medium text-gray-700">Nett</label>
+                    <div className="group relative">
+                      <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200">i</div>
+                      <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
+                        Gross score minus handicap.
+                      </div>
+                    </div>
+                  </div>
                   <input
                     type="number"
                     step="0.1"
@@ -623,7 +639,15 @@ export default function LogRoundPage() {
             <div className="space-y-4">
               {/* FIR */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">Fairways in Regulation</label>
+                <div className="flex items-center gap-1 mb-3">
+                  <label className="block text-sm font-medium text-gray-700">Fairways in Regulation</label>
+                  <div className="group relative">
+                    <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200">i</div>
+                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
+                      The tee shot lands on the fairway on Par 4s and Par 5s.
+                    </div>
+                  </div>
+                </div>
                 <div className="grid grid-cols-3 gap-3">
                   {/* FIR Left */}
                   <div
@@ -771,272 +795,226 @@ export default function LogRoundPage() {
                 </div>
               </div>
 
-              {/* GIR */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">Greens in Regulation</label>
-                <div className="max-w-xs mx-auto">
-                  {/* Total GIR */}
-                  <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.totalGir > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
-                    }`}
-                    style={{
-                      backgroundColor: roundData.totalGir > 0 ? '#FFA500' : 'white'
-                    }}
-                  >
-                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.totalGir > 0 ? '#014421' : '#6B7280' }}>
-                      Total GIR
-                    </div>
-                    <div className="flex items-center justify-center gap-1.5">
-                      <button
-                        onClick={() => decrementCounter('totalGir')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.totalGir > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.totalGir > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
-                        }}
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                      </button>
-                      <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.totalGir > 0 ? '#014421' : '#111827' }}
-                      >
-                        {roundData.totalGir}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter('totalGir')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.totalGir > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.totalGir > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
-                        }}
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               {/* Penalties */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3">Penalties</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Total Penalties */}
-                  <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.totalPenalties > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
-                    }`}
-                    style={{
-                      backgroundColor: roundData.totalPenalties > 0 ? '#FFA500' : 'white'
-                    }}
-                  >
-                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.totalPenalties > 0 ? '#014421' : '#6B7280' }}>
-                      Total
-                    </div>
-                    <div className="flex items-center justify-center gap-1.5">
-                      <button
-                        onClick={() => decrementCounter('totalPenalties')}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.totalPenalties > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.totalPenalties > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
-                        }}
-                      >
-                        <Minus className="w-4 h-4" />
-                      </button>
-                      <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.totalPenalties > 0 ? '#014421' : '#111827' }}
-                      >
-                        {roundData.totalPenalties}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter('totalPenalties')}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.totalPenalties > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.totalPenalties > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
-                        }}
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Tee Penalties */}
-                  <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.teePenalties > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
-                    }`}
-                    style={{
-                      backgroundColor: roundData.teePenalties > 0 ? '#FFA500' : 'white'
-                    }}
-                  >
-                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.teePenalties > 0 ? '#014421' : '#6B7280' }}>
-                      Tee
-                    </div>
-                    <div className="flex items-center justify-center gap-1.5">
-                      <button
-                        onClick={() => decrementCounter('teePenalties')}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.teePenalties > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.teePenalties > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
-                        }}
-                      >
-                        <Minus className="w-4 h-4" />
-                      </button>
-                      <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.teePenalties > 0 ? '#014421' : '#111827' }}
-                      >
-                        {roundData.teePenalties}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter('teePenalties')}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.teePenalties > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.teePenalties > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
-                        }}
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Approach Penalties */}
-                  <div
-                    className={`p-3 rounded-xl border-2 transition-all col-span-2 ${
-                      roundData.approachPenalties > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
-                    }`}
-                    style={{
-                      backgroundColor: roundData.approachPenalties > 0 ? '#FFA500' : 'white'
-                    }}
-                  >
-                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.approachPenalties > 0 ? '#014421' : '#6B7280' }}>
-                      Approach
-                    </div>
-                    <div className="flex items-center justify-center gap-1.5">
-                      <button
-                        onClick={() => decrementCounter('approachPenalties')}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.approachPenalties > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.approachPenalties > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
-                        }}
-                      >
-                        <Minus className="w-4 h-4" />
-                      </button>
-                      <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.approachPenalties > 0 ? '#014421' : '#111827' }}
-                      >
-                        {roundData.approachPenalties}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter('approachPenalties')}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.approachPenalties > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.approachPenalties > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
-                        }}
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Going for Green Under Regulation */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">Going for Green Under Regulation</label>
-                <div className="max-w-xs mx-auto">
-                  <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.goingForGreen > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
-                    }`}
-                    style={{
-                      backgroundColor: roundData.goingForGreen > 0 ? '#FFA500' : 'white'
-                    }}
-                  >
-                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.goingForGreen > 0 ? '#014421' : '#6B7280' }}>
-                      Par 4s in 1 / Par 5s in 2
-                    </div>
-                    <div className="flex items-center justify-center gap-1.5">
-                      <button
-                        onClick={() => decrementCounter('goingForGreen')}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.goingForGreen > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.goingForGreen > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
-                        }}
-                      >
-                        <Minus className="w-4 h-4" />
-                      </button>
-                      <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.goingForGreen > 0 ? '#014421' : '#111827' }}
-                      >
-                        {roundData.goingForGreen}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter('goingForGreen')}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.goingForGreen > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.goingForGreen > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
-                        }}
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Proximity Flags */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">GIR Proximity</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Within 8ft */}
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1 text-center">Within 8ft</label>
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-row justify-between gap-2">
+                    {/* Total Penalties */}
                     <div
-                      className={`p-3 rounded-xl border-2 transition-all ${
+                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
+                        roundData.totalPenalties > 0
+                          ? 'border-[#FFA500]'
+                          : 'border-gray-200'
+                      }`}
+                      style={{
+                        backgroundColor: roundData.totalPenalties > 0 ? '#FFA500' : 'white'
+                      }}
+                    >
+                      <div className="text-[10px] font-medium mb-2 text-center whitespace-nowrap" style={{ color: roundData.totalPenalties > 0 ? '#014421' : '#6B7280' }}>
+                        Total
+                      </div>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => decrementCounter('totalPenalties')}
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.totalPenalties > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.totalPenalties > 0 ? '#014421' : '#6B7280',
+                            minWidth: '28px',
+                            minHeight: '28px'
+                          }}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span
+                          className="text-sm font-bold w-6 text-center"
+                          style={{ color: roundData.totalPenalties > 0 ? '#014421' : '#111827' }}
+                        >
+                          {roundData.totalPenalties}
+                        </span>
+                        <button
+                          onClick={() => incrementCounter('totalPenalties')}
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.totalPenalties > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.totalPenalties > 0 ? '#014421' : '#6B7280',
+                            minWidth: '28px',
+                            minHeight: '28px'
+                          }}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Tee Penalties */}
+                    <div
+                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
+                        roundData.teePenalties > 0
+                          ? 'border-[#FFA500]'
+                          : 'border-gray-200'
+                      }`}
+                      style={{
+                        backgroundColor: roundData.teePenalties > 0 ? '#FFA500' : 'white'
+                      }}
+                    >
+                      <div className="text-[10px] font-medium mb-2 text-center whitespace-nowrap" style={{ color: roundData.teePenalties > 0 ? '#014421' : '#6B7280' }}>
+                        Tee
+                      </div>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => decrementCounter('teePenalties')}
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.teePenalties > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.teePenalties > 0 ? '#014421' : '#6B7280',
+                            minWidth: '28px',
+                            minHeight: '28px'
+                          }}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span
+                          className="text-sm font-bold w-6 text-center"
+                          style={{ color: roundData.teePenalties > 0 ? '#014421' : '#111827' }}
+                        >
+                          {roundData.teePenalties}
+                        </span>
+                        <button
+                          onClick={() => incrementCounter('teePenalties')}
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.teePenalties > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.teePenalties > 0 ? '#014421' : '#6B7280',
+                            minWidth: '28px',
+                            minHeight: '28px'
+                          }}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-row justify-between gap-2">
+                    {/* Approach Penalties */}
+                    <div
+                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
+                        roundData.approachPenalties > 0
+                          ? 'border-[#FFA500]'
+                          : 'border-gray-200'
+                      }`}
+                      style={{
+                        backgroundColor: roundData.approachPenalties > 0 ? '#FFA500' : 'white'
+                      }}
+                    >
+                      <div className="text-[10px] font-medium mb-2 text-center whitespace-nowrap" style={{ color: roundData.approachPenalties > 0 ? '#014421' : '#6B7280' }}>
+                        Approach
+                      </div>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => decrementCounter('approachPenalties')}
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.approachPenalties > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.approachPenalties > 0 ? '#014421' : '#6B7280',
+                            minWidth: '28px',
+                            minHeight: '28px'
+                          }}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span
+                          className="text-sm font-bold w-6 text-center"
+                          style={{ color: roundData.approachPenalties > 0 ? '#014421' : '#111827' }}
+                        >
+                          {roundData.approachPenalties}
+                        </span>
+                        <button
+                          onClick={() => incrementCounter('approachPenalties')}
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.approachPenalties > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.approachPenalties > 0 ? '#014421' : '#6B7280',
+                            minWidth: '28px',
+                            minHeight: '28px'
+                          }}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    {/* Spacer */}
+                    <div className="flex-1 p-2"></div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Greens in Regulation */}
+              <div>
+                <div className="flex items-center gap-1 mb-2">
+                  <label className="block text-sm font-medium text-gray-700">Greens in Regulation</label>
+                  <div className="group relative">
+                    <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200">i</div>
+                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
+                      A green is hit in regulation if any part of the ball is on the putting surface in Par - 2 strokes.
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {/* Row 1: Total GIR and Inside 8ft */}
+                  <div className="flex flex-row justify-between gap-2">
+                    {/* Total GIR */}
+                    <div
+                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
+                        roundData.totalGir > 0
+                          ? 'border-[#FFA500]'
+                          : 'border-gray-200'
+                      }`}
+                      style={{
+                        backgroundColor: roundData.totalGir > 0 ? '#FFA500' : 'white'
+                      }}
+                    >
+                      <div className="text-[10px] font-medium mb-2 text-center whitespace-nowrap" style={{ color: roundData.totalGir > 0 ? '#014421' : '#6B7280' }}>
+                        Total GIR
+                      </div>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => decrementCounter('totalGir')}
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.totalGir > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.totalGir > 0 ? '#014421' : '#6B7280',
+                            minWidth: '28px',
+                            minHeight: '28px'
+                          }}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span
+                          className="text-sm font-bold w-6 text-center"
+                          style={{ color: roundData.totalGir > 0 ? '#014421' : '#111827' }}
+                        >
+                          {roundData.totalGir}
+                        </span>
+                        <button
+                          onClick={() => incrementCounter('totalGir')}
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.totalGir > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.totalGir > 0 ? '#014421' : '#6B7280',
+                            minWidth: '28px',
+                            minHeight: '28px'
+                          }}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Inside 8ft */}
+                    <div
+                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
                         roundData.gir8ft > 0
                           ? 'border-[#FFA500]'
                           : 'border-gray-200'
@@ -1045,45 +1023,57 @@ export default function LogRoundPage() {
                         backgroundColor: roundData.gir8ft > 0 ? '#FFA500' : 'white'
                       }}
                     >
-                      <div className="flex items-center justify-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1 mb-2">
+                        <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.gir8ft > 0 ? '#014421' : '#6B7280' }}>
+                          Inside 8ft
+                        </span>
+                        <div className="group relative">
+                          <div className="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border" style={{ borderColor: roundData.gir8ft > 0 ? '#014421' : '#E5E7EB', color: roundData.gir8ft > 0 ? '#014421' : '#9CA3AF' }}>i</div>
+                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-24 bg-gray-900 text-white text-xs rounded-lg p-1.5 shadow-xl z-10 text-center">
+                            2.4m
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-center gap-1">
                         <button
                           onClick={() => decrementCounter('gir8ft')}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
                           style={{
                             borderColor: roundData.gir8ft > 0 ? '#014421' : '#D1D5DB',
                             color: roundData.gir8ft > 0 ? '#014421' : '#6B7280',
-                            minWidth: '32px',
-                            minHeight: '32px'
+                            minWidth: '28px',
+                            minHeight: '28px'
                           }}
                         >
-                          <Minus className="w-3.5 h-3.5" />
+                          <Minus className="w-3 h-3" />
                         </button>
                         <span
-                          className="text-xl font-bold w-10 text-center"
+                          className="text-sm font-bold w-6 text-center"
                           style={{ color: roundData.gir8ft > 0 ? '#014421' : '#111827' }}
                         >
                           {roundData.gir8ft}
                         </span>
                         <button
                           onClick={() => incrementCounter('gir8ft')}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
                           style={{
                             borderColor: roundData.gir8ft > 0 ? '#014421' : '#D1D5DB',
                             color: roundData.gir8ft > 0 ? '#014421' : '#6B7280',
-                            minWidth: '32px',
-                            minHeight: '32px'
+                            minWidth: '28px',
+                            minHeight: '28px'
                           }}
                         >
-                          <Plus className="w-3.5 h-3.5" />
+                          <Plus className="w-3 h-3" />
                         </button>
                       </div>
                     </div>
                   </div>
-                  {/* Within 20ft */}
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1 text-center">Within 20ft</label>
+
+                  {/* Row 2: Inside 20ft and Going for Green */}
+                  <div className="flex flex-row justify-between gap-2">
+                    {/* Inside 20ft */}
                     <div
-                      className={`p-3 rounded-xl border-2 transition-all ${
+                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
                         roundData.gir20ft > 0
                           ? 'border-[#FFA500]'
                           : 'border-gray-200'
@@ -1092,36 +1082,103 @@ export default function LogRoundPage() {
                         backgroundColor: roundData.gir20ft > 0 ? '#FFA500' : 'white'
                       }}
                     >
-                      <div className="flex items-center justify-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1 mb-2">
+                        <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.gir20ft > 0 ? '#014421' : '#6B7280' }}>
+                          Inside 20ft
+                        </span>
+                        <div className="group relative">
+                          <div className="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border" style={{ borderColor: roundData.gir20ft > 0 ? '#014421' : '#E5E7EB', color: roundData.gir20ft > 0 ? '#014421' : '#9CA3AF' }}>i</div>
+                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-1.5 shadow-xl z-10 text-center">
+                            6.1m. Note: Also includes shots inside 8ft.
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-center gap-1">
                         <button
                           onClick={() => decrementCounter('gir20ft')}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
                           style={{
                             borderColor: roundData.gir20ft > 0 ? '#014421' : '#D1D5DB',
                             color: roundData.gir20ft > 0 ? '#014421' : '#6B7280',
-                            minWidth: '32px',
-                            minHeight: '32px'
+                            minWidth: '28px',
+                            minHeight: '28px'
                           }}
                         >
-                          <Minus className="w-3.5 h-3.5" />
+                          <Minus className="w-3 h-3" />
                         </button>
                         <span
-                          className="text-xl font-bold w-10 text-center"
+                          className="text-sm font-bold w-6 text-center"
                           style={{ color: roundData.gir20ft > 0 ? '#014421' : '#111827' }}
                         >
                           {roundData.gir20ft}
                         </span>
                         <button
                           onClick={() => incrementCounter('gir20ft')}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
                           style={{
                             borderColor: roundData.gir20ft > 0 ? '#014421' : '#D1D5DB',
                             color: roundData.gir20ft > 0 ? '#014421' : '#6B7280',
-                            minWidth: '32px',
-                            minHeight: '32px'
+                            minWidth: '28px',
+                            minHeight: '28px'
                           }}
                         >
-                          <Plus className="w-3.5 h-3.5" />
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Going for Green */}
+                    <div
+                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
+                        roundData.goingForGreen > 0
+                          ? 'border-[#FFA500]'
+                          : 'border-gray-200'
+                      }`}
+                      style={{
+                        backgroundColor: roundData.goingForGreen > 0 ? '#FFA500' : 'white'
+                      }}
+                    >
+                      <div className="flex items-center justify-center gap-1 mb-2">
+                        <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.goingForGreen > 0 ? '#014421' : '#6B7280' }}>
+                          Going for Green
+                        </span>
+                        <div className="group relative">
+                          <div className="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border" style={{ borderColor: roundData.goingForGreen > 0 ? '#014421' : '#E5E7EB', color: roundData.goingForGreen > 0 ? '#014421' : '#9CA3AF' }}>i</div>
+                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-1.5 shadow-xl z-10 text-center">
+                            Attempts to reach a Par 4 in 1 stroke or a Par 5 in 2 strokes.
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => decrementCounter('goingForGreen')}
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.goingForGreen > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.goingForGreen > 0 ? '#014421' : '#6B7280',
+                            minWidth: '28px',
+                            minHeight: '28px'
+                          }}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span
+                          className="text-sm font-bold w-6 text-center"
+                          style={{ color: roundData.goingForGreen > 0 ? '#014421' : '#111827' }}
+                        >
+                          {roundData.goingForGreen}
+                        </span>
+                        <button
+                          onClick={() => incrementCounter('goingForGreen')}
+                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                          style={{
+                            borderColor: roundData.goingForGreen > 0 ? '#014421' : '#D1D5DB',
+                            color: roundData.goingForGreen > 0 ? '#014421' : '#6B7280',
+                            minWidth: '28px',
+                            minHeight: '28px'
+                          }}
+                        >
+                          <Plus className="w-3 h-3" />
                         </button>
                       </div>
                     </div>
@@ -1147,57 +1204,17 @@ export default function LogRoundPage() {
             <div className="space-y-4">
               {/* Up & Down Conversions */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">Up & Down Conversions</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Up & Down Conversions */}
-                  <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.upAndDownConversions > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
-                    }`}
-                    style={{
-                      backgroundColor: roundData.upAndDownConversions > 0 ? '#FFA500' : 'white'
-                    }}
-                  >
-                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.upAndDownConversions > 0 ? '#014421' : '#6B7280' }}>
-                      Conversions
-                    </div>
-                    <div className="flex items-center justify-center gap-1.5">
-                      <button
-                        onClick={() => decrementCounter('upAndDownConversions')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.upAndDownConversions > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.upAndDownConversions > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
-                        }}
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                      </button>
-                      <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.upAndDownConversions > 0 ? '#014421' : '#111827' }}
-                      >
-                        {roundData.upAndDownConversions}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter('upAndDownConversions')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.upAndDownConversions > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.upAndDownConversions > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
-                        }}
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
+                <div className="flex items-center gap-1 mb-3">
+                  <label className="block text-sm font-medium text-gray-700">Up & Down Conversions</label>
+                  <div className="group relative">
+                    <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200">i</div>
+                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
+                      Missing the GIR but still making Par or better (The 'Up & Down' %).
                     </div>
                   </div>
-
-                  {/* Missed */}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Up & Down Attempts */}
                   <div
                     className={`p-3 rounded-xl border-2 transition-all ${
                       roundData.missed > 0
@@ -1209,7 +1226,7 @@ export default function LogRoundPage() {
                     }}
                   >
                     <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.missed > 0 ? '#014421' : '#6B7280' }}>
-                      Missed
+                      Attempts
                     </div>
                     <div className="flex items-center justify-center gap-1.5">
                       <button
@@ -1244,12 +1261,75 @@ export default function LogRoundPage() {
                       </button>
                     </div>
                   </div>
+
+                  {/* Up & Down Made */}
+                  <div
+                    className={`p-3 rounded-xl border-2 transition-all ${
+                      roundData.upAndDownConversions > 0
+                        ? 'border-[#FFA500]'
+                        : 'border-gray-200'
+                    }`}
+                    style={{
+                      backgroundColor: roundData.upAndDownConversions > 0 ? '#FFA500' : 'white'
+                    }}
+                  >
+                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.upAndDownConversions > 0 ? '#014421' : '#6B7280' }}>
+                      Made
+                    </div>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button
+                        onClick={() => decrementCounter('upAndDownConversions')}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        style={{
+                          borderColor: roundData.upAndDownConversions > 0 ? '#014421' : '#D1D5DB',
+                          color: roundData.upAndDownConversions > 0 ? '#014421' : '#6B7280',
+                          minWidth: '32px',
+                          minHeight: '32px'
+                        }}
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+                      <span
+                        className="text-xl font-bold w-10 text-center"
+                        style={{ color: roundData.upAndDownConversions > 0 ? '#014421' : '#111827' }}
+                      >
+                        {roundData.upAndDownConversions}
+                      </span>
+                      <button
+                        onClick={() => {
+                          if (roundData.upAndDownConversions < roundData.missed) {
+                            incrementCounter('upAndDownConversions');
+                          }
+                        }}
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors ${
+                          roundData.upAndDownConversions >= roundData.missed ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        style={{
+                          borderColor: roundData.upAndDownConversions > 0 ? '#014421' : '#D1D5DB',
+                          color: roundData.upAndDownConversions > 0 ? '#014421' : '#6B7280',
+                          minWidth: '32px',
+                          minHeight: '32px'
+                        }}
+                        disabled={roundData.upAndDownConversions >= roundData.missed}
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
               {/* Bunker Saves */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">Bunker Saves</label>
+                <div className="flex items-center gap-1 mb-3">
+                  <label className="block text-sm font-medium text-gray-700">Bunker Saves</label>
+                  <div className="group relative">
+                    <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200">i</div>
+                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
+                      Greenside only.
+                    </div>
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   {/* Bunker Attempts */}
                   <div
@@ -1263,7 +1343,7 @@ export default function LogRoundPage() {
                     }}
                   >
                     <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.bunkerAttempts > 0 ? '#014421' : '#6B7280' }}>
-                      Bunker Attempts
+                      Attempts
                     </div>
                     <div className="flex items-center justify-center gap-1.5">
                       <button
@@ -1311,7 +1391,7 @@ export default function LogRoundPage() {
                     }}
                   >
                     <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.bunkerSaves > 0 ? '#014421' : '#6B7280' }}>
-                      Bunker Saves
+                      Made
                     </div>
                     <div className="flex items-center justify-center gap-1.5">
                       <button
@@ -1333,14 +1413,21 @@ export default function LogRoundPage() {
                         {roundData.bunkerSaves}
                       </span>
                       <button
-                        onClick={() => incrementCounter('bunkerSaves')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        onClick={() => {
+                          if (roundData.bunkerSaves < roundData.bunkerAttempts) {
+                            incrementCounter('bunkerSaves');
+                          }
+                        }}
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors ${
+                          roundData.bunkerSaves >= roundData.bunkerAttempts ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
                         style={{
                           borderColor: roundData.bunkerSaves > 0 ? '#014421' : '#D1D5DB',
                           color: roundData.bunkerSaves > 0 ? '#014421' : '#6B7280',
                           minWidth: '32px',
                           minHeight: '32px'
                         }}
+                        disabled={roundData.bunkerSaves >= roundData.bunkerAttempts}
                       >
                         <Plus className="w-3.5 h-3.5" />
                       </button>
@@ -1352,8 +1439,24 @@ export default function LogRoundPage() {
               {/* Chip Inside 6ft and Double Chips - Side by Side */}
               <div>
                 <div className="grid grid-cols-2 gap-3 mb-2">
-                  <label className="text-sm font-medium text-gray-700">Chip Inside 6ft</label>
-                  <label className="text-sm font-medium text-gray-700">Double Chips</label>
+                  <div className="flex items-center gap-1">
+                    <label className="text-sm font-medium text-gray-700">Chip Inside 6ft</label>
+                    <div className="group relative">
+                      <div className="w-3.5 h-3.5 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[9px] font-bold cursor-help border border-gray-200">i</div>
+                      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-32 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10 text-center">
+                        Approx. 1.8 metres
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <label className="text-sm font-medium text-gray-700">Double Chips</label>
+                    <div className="group relative">
+                      <div className="w-3.5 h-3.5 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[9px] font-bold cursor-help border border-gray-200">i</div>
+                      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10 text-center">
+                        Any instance where an initial chip or pitch failed to reach the putting surface, requiring a second chip.
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {/* Chip Inside 6ft */}
@@ -1455,64 +1558,128 @@ export default function LogRoundPage() {
             <h2 className="text-lg font-bold text-gray-900 mb-4">Putting</h2>
             
             <div className="space-y-4">
-              {/* Total Putts - At Top of Putting Section */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Total Putts *</label>
-                <div
-                  className={`p-3 rounded-xl border-2 transition-all ${
-                    roundData.totalPutts > 0
-                      ? 'border-[#FFA500]'
-                      : 'border-gray-200'
-                  }`}
-                  style={{
-                    backgroundColor: roundData.totalPutts > 0 ? '#FFA500' : 'white'
-                  }}
-                >
-                  <div className="flex items-center justify-center gap-1.5">
-                    <button
-                      onClick={() => updateField('totalPutts', Math.max(0, roundData.totalPutts - 1))}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
-                      style={{
-                        borderColor: roundData.totalPutts > 0 ? '#014421' : '#D1D5DB',
-                        color: roundData.totalPutts > 0 ? '#014421' : '#6B7280',
-                        minWidth: '32px',
-                        minHeight: '32px'
-                      }}
-                    >
-                      <Minus className="w-3.5 h-3.5" />
-                    </button>
-                    <span
-                      className="text-xl font-bold w-10 text-center"
-                      style={{ color: roundData.totalPutts > 0 ? '#014421' : '#111827' }}
-                    >
-                      {roundData.totalPutts}
-                    </span>
-                    <button
-                      onClick={() => updateField('totalPutts', roundData.totalPutts + 1)}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
-                      style={{
-                        borderColor: roundData.totalPutts > 0 ? '#014421' : '#D1D5DB',
-                        color: roundData.totalPutts > 0 ? '#014421' : '#6B7280',
-                        minWidth: '32px',
-                        minHeight: '32px'
-                      }}
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
+              {/* Putting Grid */}
+              <div className="flex flex-col gap-2">
+                {/* Row 1: Total Putts and 3-Putts */}
+                <div className="flex flex-row justify-between gap-2">
+                  {/* Total Putts */}
+                  <div
+                    className={`flex-1 p-2 rounded-xl border-2 transition-all ${
+                      roundData.totalPutts > 0
+                        ? 'border-[#FFA500]'
+                        : 'border-gray-200'
+                    }`}
+                    style={{
+                      backgroundColor: roundData.totalPutts > 0 ? '#FFA500' : 'white'
+                    }}
+                  >
+                    <div className="flex items-center justify-center gap-1 mb-2">
+                      <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.totalPutts > 0 ? '#014421' : '#6B7280' }}>
+                        Total *
+                      </span>
+                      <div className="group relative">
+                        <div className="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border" style={{ borderColor: roundData.totalPutts > 0 ? '#014421' : '#E5E7EB', color: roundData.totalPutts > 0 ? '#014421' : '#9CA3AF' }}>i</div>
+                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-32 bg-gray-900 text-white text-xs rounded-lg p-1.5 shadow-xl z-10 text-center">
+                          Only strokes taken once the ball is on the putting surface.
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        onClick={() => updateField('totalPutts', Math.max(0, roundData.totalPutts - 1))}
+                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                        style={{
+                          borderColor: roundData.totalPutts > 0 ? '#014421' : '#D1D5DB',
+                          color: roundData.totalPutts > 0 ? '#014421' : '#6B7280',
+                          minWidth: '28px',
+                          minHeight: '28px'
+                        }}
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <span
+                        className="text-sm font-bold w-6 text-center"
+                        style={{ color: roundData.totalPutts > 0 ? '#014421' : '#111827' }}
+                      >
+                        {roundData.totalPutts}
+                      </span>
+                      <button
+                        onClick={() => updateField('totalPutts', roundData.totalPutts + 1)}
+                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                        style={{
+                          borderColor: roundData.totalPutts > 0 ? '#014421' : '#D1D5DB',
+                          color: roundData.totalPutts > 0 ? '#014421' : '#6B7280',
+                          minWidth: '28px',
+                          minHeight: '28px'
+                        }}
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 3-Putt Counter */}
+                  <div
+                    className={`flex-1 p-2 rounded-xl border-2 transition-all ${
+                      roundData.threePutts > 0
+                        ? 'border-[#FFA500]'
+                        : 'border-gray-200'
+                    }`}
+                    style={{
+                      backgroundColor: roundData.threePutts > 0 ? '#FFA500' : 'white'
+                    }}
+                  >
+                    <div className="flex items-center justify-center gap-1 mb-2">
+                      <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.threePutts > 0 ? '#014421' : '#6B7280' }}>
+                        3-Putts
+                      </span>
+                      <div className="group relative">
+                        <div className="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border" style={{ borderColor: roundData.threePutts > 0 ? '#014421' : '#E5E7EB', color: roundData.threePutts > 0 ? '#014421' : '#9CA3AF' }}>i</div>
+                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-32 bg-gray-900 text-white text-xs rounded-lg p-1.5 shadow-xl z-10 text-center">
+                          Any hole where 3 or more strokes were taken once the ball reached the putting surface.
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        onClick={() => decrementCounter('threePutts')}
+                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                        style={{
+                          borderColor: roundData.threePutts > 0 ? '#014421' : '#D1D5DB',
+                          color: roundData.threePutts > 0 ? '#014421' : '#6B7280',
+                          minWidth: '28px',
+                          minHeight: '28px'
+                        }}
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <span
+                        className="text-sm font-bold w-6 text-center"
+                        style={{ color: roundData.threePutts > 0 ? '#014421' : '#111827' }}
+                      >
+                        {roundData.threePutts}
+                      </span>
+                      <button
+                        onClick={() => incrementCounter('threePutts')}
+                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
+                        style={{
+                          borderColor: roundData.threePutts > 0 ? '#014421' : '#D1D5DB',
+                          color: roundData.threePutts > 0 ? '#014421' : '#6B7280',
+                          minWidth: '28px',
+                          minHeight: '28px'
+                        }}
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Putts < 6ft (Attempts) and Made < 6ft - Side by Side */}
-              <div>
-                <div className="grid grid-cols-2 gap-3 mb-2">
-                  <label className="text-sm font-medium text-gray-700">Putts &lt; 6ft (Attempts)</label>
-                  <label className="text-sm font-medium text-gray-700">Made &lt; 6ft</label>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Putt < 6ft Attempts Counter */}
+                {/* Row 2: < 6ft Group */}
+                <div className="flex flex-row justify-between gap-2">
+                  {/* Attempts */}
                   <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
+                    className={`flex-1 p-2 rounded-xl border-2 transition-all ${
                       roundData.puttsUnder6ftAttempts > 0
                         ? 'border-[#FFA500]'
                         : 'border-gray-200'
@@ -1521,43 +1688,48 @@ export default function LogRoundPage() {
                       backgroundColor: roundData.puttsUnder6ftAttempts > 0 ? '#FFA500' : 'white'
                     }}
                   >
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className="flex items-center justify-center gap-1 mb-2">
+                      <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.puttsUnder6ftAttempts > 0 ? '#014421' : '#6B7280' }}>
+                        &lt; 6ft Att
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center gap-1">
                       <button
                         onClick={() => decrementCounter('puttsUnder6ftAttempts')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
                         style={{
                           borderColor: roundData.puttsUnder6ftAttempts > 0 ? '#014421' : '#D1D5DB',
                           color: roundData.puttsUnder6ftAttempts > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          minWidth: '28px',
+                          minHeight: '28px'
                         }}
                       >
-                        <Minus className="w-3.5 h-3.5" />
+                        <Minus className="w-3 h-3" />
                       </button>
                       <span
-                        className="text-xl font-bold w-10 text-center"
+                        className="text-sm font-bold w-6 text-center"
                         style={{ color: roundData.puttsUnder6ftAttempts > 0 ? '#014421' : '#111827' }}
                       >
                         {roundData.puttsUnder6ftAttempts}
                       </span>
                       <button
                         onClick={() => incrementCounter('puttsUnder6ftAttempts')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
                         style={{
                           borderColor: roundData.puttsUnder6ftAttempts > 0 ? '#014421' : '#D1D5DB',
                           color: roundData.puttsUnder6ftAttempts > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          minWidth: '28px',
+                          minHeight: '28px'
                         }}
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
-
-                  {/* Made < 6ft Counter */}
+                  
+                  {/* Made */}
                   <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
+                    className={`flex-1 p-2 rounded-xl border-2 transition-all ${
                       roundData.made6ftAndIn > 0
                         ? 'border-[#FFA500]'
                         : 'border-gray-200'
@@ -1566,21 +1738,26 @@ export default function LogRoundPage() {
                       backgroundColor: roundData.made6ftAndIn > 0 ? '#FFA500' : 'white'
                     }}
                   >
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className="flex items-center justify-center gap-1 mb-2">
+                      <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.made6ftAndIn > 0 ? '#014421' : '#6B7280' }}>
+                        &lt; 6ft Made
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center gap-1">
                       <button
                         onClick={() => decrementCounter('made6ftAndIn')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
                         style={{
                           borderColor: roundData.made6ftAndIn > 0 ? '#014421' : '#D1D5DB',
                           color: roundData.made6ftAndIn > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          minWidth: '28px',
+                          minHeight: '28px'
                         }}
                       >
-                        <Minus className="w-3.5 h-3.5" />
+                        <Minus className="w-3 h-3" />
                       </button>
                       <span
-                        className="text-xl font-bold w-10 text-center"
+                        className="text-sm font-bold w-6 text-center"
                         style={{ color: roundData.made6ftAndIn > 0 ? '#014421' : '#111827' }}
                       >
                         {roundData.made6ftAndIn}
@@ -1591,68 +1768,20 @@ export default function LogRoundPage() {
                             incrementCounter('made6ftAndIn');
                           }
                         }}
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors ${
+                        className={`w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors ${
                           roundData.made6ftAndIn >= roundData.puttsUnder6ftAttempts ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
                         style={{
                           borderColor: roundData.made6ftAndIn > 0 ? '#014421' : '#D1D5DB',
                           color: roundData.made6ftAndIn > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          minWidth: '28px',
+                          minHeight: '28px'
                         }}
                         disabled={roundData.made6ftAndIn >= roundData.puttsUnder6ftAttempts}
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="w-3 h-3" />
                       </button>
                     </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 3-Putt Counter */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">3-Putts</label>
-                <div
-                  className={`p-3 rounded-xl border-2 transition-all ${
-                    roundData.threePutts > 0
-                      ? 'border-[#FFA500]'
-                      : 'border-gray-200'
-                  }`}
-                  style={{
-                    backgroundColor: roundData.threePutts > 0 ? '#FFA500' : 'white'
-                  }}
-                >
-                  <div className="flex items-center justify-center gap-1.5">
-                    <button
-                      onClick={() => decrementCounter('threePutts')}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
-                      style={{
-                        borderColor: roundData.threePutts > 0 ? '#014421' : '#D1D5DB',
-                        color: roundData.threePutts > 0 ? '#014421' : '#6B7280',
-                        minWidth: '32px',
-                        minHeight: '32px'
-                      }}
-                    >
-                      <Minus className="w-3.5 h-3.5" />
-                    </button>
-                    <span
-                      className="text-xl font-bold w-10 text-center"
-                      style={{ color: roundData.threePutts > 0 ? '#014421' : '#111827' }}
-                    >
-                      {roundData.threePutts}
-                    </span>
-                    <button
-                      onClick={() => incrementCounter('threePutts')}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
-                      style={{
-                        borderColor: roundData.threePutts > 0 ? '#014421' : '#D1D5DB',
-                        color: roundData.threePutts > 0 ? '#014421' : '#6B7280',
-                        minWidth: '32px',
-                        minHeight: '32px'
-                      }}
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
                   </div>
                 </div>
               </div>

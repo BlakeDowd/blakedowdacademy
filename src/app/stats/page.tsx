@@ -1,8 +1,83 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { motion, useSpring, useTransform } from "framer-motion";
+
+function AnimatedNumber({ value, isPercentage = false }: { value: number; isPercentage?: boolean }) {
+  const spring = useSpring(value, { mass: 0.8, stiffness: 75, damping: 15 });
+  const display = useTransform(spring, (current) => `${current.toFixed(1)}${isPercentage ? '%' : ''}`);
+
+  useEffect(() => {
+    spring.set(value);
+  }, [value, spring]);
+
+  return <motion.span>{display}</motion.span>;
+}
+
+const StatDisplay = ({
+  label,
+  tooltip,
+  current,
+  goal,
+  isPercentage = false,
+  inverse = false,
+  isAdjustingGoal
+}: {
+  label: string;
+  tooltip?: string;
+  current: number;
+  goal: number;
+  isPercentage?: boolean;
+  inverse?: boolean;
+  isAdjustingGoal: boolean;
+}) => {
+  const diff = goal - current;
+  const gap = inverse ? -diff : diff;
+  const needsImprovement = gap > 0;
+  const gapText = needsImprovement ? `${inverse ? '-' : '+'}${Math.abs(gap).toFixed(1)}${isPercentage ? '%' : ''}` : `Target Met`;
+  
+  const isMeetingGoal = inverse ? current <= goal : current >= goal;
+  const goalColor = isMeetingGoal ? 'text-green-500' : 'text-red-500';
+
+  return (
+    <div className="flex items-center justify-between py-2">
+      {tooltip ? (
+        <div className="flex items-center gap-1 group relative">
+          <div className="text-sm text-gray-700">{label}</div>
+          <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200 transition-colors hover:bg-gray-200">i</div>
+          <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
+            {tooltip}
+          </div>
+        </div>
+      ) : (
+        <div className="text-sm text-gray-700">{label}</div>
+      )}
+      
+      <div className="flex items-center gap-3">
+        {isAdjustingGoal && (
+          <div className="flex items-center gap-2 animate-in fade-in duration-300">
+            <span className="text-[10px] font-bold text-[#FF9800] uppercase tracking-wider bg-orange-50 px-2 py-0.5 rounded border border-orange-100">
+              Gap: {gapText}
+            </span>
+          </div>
+        )}
+        <div className="flex items-baseline gap-2">
+          <div className="text-2xl font-bold transition-colors duration-300 text-[#FF9800]">
+            <AnimatedNumber value={current} isPercentage={isPercentage} />
+          </div>
+          <div className="flex flex-col items-end justify-center">
+            <span className="text-[9px] leading-none text-gray-400 font-bold uppercase tracking-wider mb-0.5">Goal</span>
+            <div className={`text-sm leading-none font-bold transition-all duration-300 ${isAdjustingGoal ? 'text-[#FF9800] scale-110 drop-shadow-sm' : goalColor}`}>
+              <AnimatedNumber value={goal} isPercentage={isPercentage} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // Linear scaling function: Maps handicap from 54 to +5 to goal percentages
 const getBenchmarkGoals = (handicap: number) => {
@@ -23,6 +98,9 @@ const getBenchmarkGoals = (handicap: number) => {
   const pars = 5 + (13.5 - 5) * normalized;
   const bogeys = 10 - (10 - 3) * normalized;
   const doubleBogeys = 10 - (10 - 0) * normalized;
+  const teePenalties = 2 - (2 - 0) * normalized;
+  const approachPenalties = 2 - (2 - 0) * normalized;
+  const totalPenalties = teePenalties + approachPenalties;
   
   return {
     score: Math.round(score),
@@ -39,7 +117,10 @@ const getBenchmarkGoals = (handicap: number) => {
     pars: Math.round(pars * 10) / 10,
     eagles: 0,
     bogeys: Math.round(bogeys * 10) / 10,
-    doubleBogeys: Math.round(doubleBogeys * 10) / 10
+    doubleBogeys: Math.round(doubleBogeys * 10) / 10,
+    teePenalties: Math.round(teePenalties * 10) / 10,
+    approachPenalties: Math.round(approachPenalties * 10) / 10,
+    totalPenalties: Math.round(totalPenalties * 10) / 10
   };
 };
 
@@ -97,6 +178,40 @@ export default function StatsPage() {
   // State hooks - MUST be before any conditional returns
   // Use user's initialHandicap if available, otherwise default to 8.7
   const [selectedGoal, setSelectedGoal] = useState<number>(user?.initialHandicap ?? 8.7);
+  const [isAdjustingGoal, setIsAdjustingGoal] = useState<boolean>(false);
+  const adjustTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const handleGoalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newGoal = parseFloat(e.target.value);
+    setSelectedGoal(newGoal);
+    setIsAdjustingGoal(true);
+    
+    if (adjustTimeoutRef.current) {
+      clearTimeout(adjustTimeoutRef.current);
+    }
+    
+    // Debounce the Supabase update
+    adjustTimeoutRef.current = setTimeout(async () => {
+      setIsAdjustingGoal(false);
+      
+      if (user?.id) {
+        try {
+          const { createClient } = await import("@/lib/supabase/client");
+          const supabase = createClient();
+          const { error } = await supabase
+            .from('profiles')
+            .update({ initial_handicap: newGoal })
+            .eq('id', user.id);
+            
+          if (error) {
+            console.error('Error updating goal handicap:', error);
+          }
+        } catch (err) {
+          console.error('Failed to update goal handicap:', err);
+        }
+      }
+    }, 1000); // 1 second debounce for the DB update
+  };
   
   // Update selectedGoal when user's initialHandicap changes
   useEffect(() => {
@@ -112,6 +227,7 @@ export default function StatsPage() {
   const [skillAssessmentFilter, setSkillAssessmentFilter] = useState<'WEEK' | 'MONTH' | 'ALL'>('ALL');
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   
   // Safety Net Mock Data
   const safetyNetData: {val: number, date: string}[] = [
@@ -186,11 +302,12 @@ export default function StatsPage() {
     const totalHoles = safeRounds.reduce((sum, r) => sum + (r.holes || 18), 0);
     const girPercent = totalHoles > 0 ? (totalGir / totalHoles) * 100 : 0;
 
-    // APPROACH: GIR from distances
+    // APPROACH: GIR from distances percentages
     const totalGir8ft = safeRounds.reduce((sum, r) => sum + (r.gir8ft || 0), 0);
     const totalGir20ft = safeRounds.reduce((sum, r) => sum + (r.gir20ft || 0), 0);
-    const gir8ft = safeRounds.length > 0 ? totalGir8ft / safeRounds.length : 0;
-    const gir20ft = safeRounds.length > 0 ? totalGir20ft / safeRounds.length : 0;
+    // Calculate percentage based on total GIRs
+    const gir8ft = totalGir > 0 ? (totalGir8ft / totalGir) * 100 : 0;
+    const gir20ft = totalGir > 0 ? (totalGir20ft / totalGir) * 100 : 0;
 
     // SHORT GAME: Up & Down percentage
     const totalUpDownAttempts = safeRounds.reduce((sum, r) => sum + (r.upAndDownConversions || 0) + (r.missed || 0), 0);
@@ -202,9 +319,11 @@ export default function StatsPage() {
     const bunkerSavesCount = safeRounds.reduce((sum, r) => sum + (r.bunkerSaves || 0), 0);
     const bunkerSaves = totalBunkerAttempts > 0 ? (bunkerSavesCount / totalBunkerAttempts) * 100 : 0;
 
-    // SHORT GAME: Chip Inside 6ft (average per round)
-    const totalChipInside6ft = safeRounds.reduce((sum, r) => sum + (r.chipInside6ft || 0), 0);
-    const chipInside6ft = safeRounds.length > 0 ? totalChipInside6ft / safeRounds.length : 0;
+    // SHORT GAME: Chip Inside 6ft (Scrambling %)
+    const totalChips = safeRounds.reduce((sum, r) => sum + (r.chipInside6ft || 0) + (r.doubleChips || 0), 0); // Need to know total chips, using doubleChips as missed for now or just standardizing based on up&down attempts
+    // Better way for Chip Inside 6ft percentage: It's usually chip inside 6ft / total chips
+    // Let's use totalUpDownAttempts as the denominator since that's roughly total short game shots
+    const chipInside6ft = totalUpDownAttempts > 0 ? (safeRounds.reduce((sum, r) => sum + (r.chipInside6ft || 0), 0) / totalUpDownAttempts) * 100 : 0;
 
     // PUTTING: Average Putts per round
     const totalPutts = safeRounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0);
@@ -401,74 +520,6 @@ export default function StatsPage() {
     return finalData;
   }, [selectedMetric, activeHistory, fullData]);
 
-  // Y-Axis configuration
-  const yAxisConfig = useMemo(() => {
-    if (!activeDataset || activeDataset.length === 0) {
-      return { yMin: 0, yMax: 100, labels: [100.0, 66.7, 33.3, 0.0] };
-    }
-
-    const numericValues = activeDataset.map(d => d?.val ?? 0).filter(v => !isNaN(v) && isFinite(v));
-    if (numericValues.length === 0) {
-      return { yMin: 0, yMax: 100, labels: [100.0, 66.7, 33.3, 0.0] };
-    }
-
-    const dataMin = Math.min(...numericValues);
-    const dataMax = Math.max(...numericValues);
-    const range = dataMax - dataMin;
-
-    let yMin: number, yMax: number;
-    if (range === 0) {
-      if (dataMin === 0) {
-        yMin = 0;
-        yMax = 4;
-      } else {
-        yMin = Math.max(0, dataMin - 1);
-        yMax = dataMax + 1;
-      }
-    } else {
-      const isLowNumberStat = dataMax < 20;
-      const padding = isLowNumberStat ? Math.max(0.2, range * 0.15) : range * 0.1;
-      yMin = Math.max(0, dataMin - padding);
-      yMax = dataMax + padding;
-    }
-
-    const numLabels = 4;
-    const step = (yMax - yMin) / (numLabels - 1);
-    const labels = Array.from({ length: numLabels }, (_, i) => {
-      return Number((yMin + (step * i)).toFixed(1));
-    }).reverse();
-
-    return { yMin, yMax, labels };
-  }, [activeDataset]);
-
-  // SVG dimensions - Define ONCE
-  const viewBoxWidth = 400;
-  const viewBoxHeight = 380;
-  const graphWidth = 340;
-  const graphHeight = 240;
-  const graphStartX = 40;
-  const graphStartY = 20;
-  const xAxisY = 280;
-
-  // Coordinate functions - Define ONCE
-  const getX = (index: number, totalPoints: number) => {
-    if (totalPoints <= 1) return graphStartX + graphWidth / 2;
-    return (index / (totalPoints - 1)) * graphWidth + graphStartX;
-  };
-
-  const getY = (val: number) => {
-    if (yAxisConfig.yMax === yAxisConfig.yMin) {
-      return graphStartY + graphHeight / 2;
-    }
-    const range = yAxisConfig.yMax - yAxisConfig.yMin;
-    if (range === 0) {
-      return graphStartY + graphHeight / 2;
-    }
-    const normalized = (val - yAxisConfig.yMin) / range;
-    const calculatedY = graphStartY + graphHeight - (normalized * graphHeight);
-    return Math.max(graphStartY, Math.min(graphStartY + graphHeight, calculatedY));
-  };
-
   // Calculate goal value for the selected metric
   const getGoalValueForMetric = (metric: string): number => {
     const metricLower = metric.toLowerCase();
@@ -504,11 +555,85 @@ export default function StatsPage() {
       return goals.bunkerSaves;
     } else if (metricLower === 'chipinside6ft' || metricLower === 'chip_inside_6ft') {
       return goals.chipsInside6ft;
+    } else if (metricLower === 'totalpenalties' || metricLower === 'total_penalties') {
+      return goals.totalPenalties;
+    } else if (metricLower === 'teepenalties' || metricLower === 'tee_penalties') {
+      return goals.teePenalties;
+    } else if (metricLower === 'approachpenalties' || metricLower === 'approach_penalties') {
+      return goals.approachPenalties;
     }
     return goals.score - selectedGoal;
   };
   
   const goalValue = getGoalValueForMetric(selectedMetric);
+
+  // Y-Axis configuration
+  const yAxisConfig = useMemo(() => {
+    if (!activeDataset || activeDataset.length === 0) {
+      return { yMin: 0, yMax: 100, labels: [100.0, 66.7, 33.3, 0.0] };
+    }
+
+    const numericValues = activeDataset.map(d => d?.val ?? 0).filter(v => !isNaN(v) && isFinite(v));
+    if (numericValues.length === 0) {
+      return { yMin: 0, yMax: 100, labels: [100.0, 66.7, 33.3, 0.0] };
+    }
+
+    const dataMin = Math.min(...numericValues, goalValue);
+    const dataMax = Math.max(...numericValues, goalValue);
+    const range = dataMax - dataMin;
+
+    let yMin: number, yMax: number;
+    if (range === 0) {
+      if (dataMin === 0) {
+        yMin = 0;
+        yMax = 4;
+      } else {
+        yMin = Math.max(0, dataMin - 1);
+        yMax = dataMax + 1;
+      }
+    } else {
+      const isLowNumberStat = dataMax < 20;
+      const padding = isLowNumberStat ? Math.max(0.2, range * 0.15) : range * 0.1;
+      yMin = Math.max(0, dataMin - padding);
+      yMax = dataMax + padding;
+    }
+
+    const numLabels = 4;
+    const step = (yMax - yMin) / (numLabels - 1);
+    const labels = Array.from({ length: numLabels }, (_, i) => {
+      return Number((yMin + (step * i)).toFixed(1));
+    }).reverse();
+
+    return { yMin, yMax, labels };
+  }, [activeDataset, goalValue]);
+
+  // SVG dimensions - Define ONCE
+  const viewBoxWidth = 400;
+  const viewBoxHeight = 380;
+  const graphWidth = 340;
+  const graphHeight = 240;
+  const graphStartX = 40;
+  const graphStartY = 20;
+  const xAxisY = 280;
+
+  // Coordinate functions - Define ONCE
+  const getX = (index: number, totalPoints: number) => {
+    if (totalPoints <= 1) return graphStartX + graphWidth / 2;
+    return (index / (totalPoints - 1)) * graphWidth + graphStartX;
+  };
+
+  const getY = (val: number) => {
+    if (yAxisConfig.yMax === yAxisConfig.yMin) {
+      return graphStartY + graphHeight / 2;
+    }
+    const range = yAxisConfig.yMax - yAxisConfig.yMin;
+    if (range === 0) {
+      return graphStartY + graphHeight / 2;
+    }
+    const normalized = (val - yAxisConfig.yMin) / range;
+    const calculatedY = graphStartY + graphHeight - (normalized * graphHeight);
+    return Math.max(graphStartY, Math.min(graphStartY + graphHeight, calculatedY));
+  };
 
   // Calculate Practice Allocation Chart values (7 categories)
   const practiceAllocationData = useMemo(() => {
@@ -540,8 +665,109 @@ export default function StatsPage() {
       bunkers: getMinutes('Bunkers'),
       putting: getMinutes('Putting'),
       mentalStrategy: getMinutes('Mental/Strategy'),
+      onCourse: getMinutes('On-Course'),
     };
   }, [personalPractice, skillAssessmentFilter]);
+
+  const handleGenerateReport = async () => {
+    if (!user) return;
+    setIsGeneratingPDF(true);
+    try {
+      // 1. Prepare Rounds Data (latest 10 rounds)
+      const sortedRounds = [...safeRounds].sort((a, b) => 
+        new Date(b.date || b.created_at || 0).getTime() - new Date(a.date || a.created_at || 0).getTime()
+      );
+      
+      const pdfRounds = sortedRounds.slice(0, 10).map((r: any, idx) => {
+        const totalHoles = r.holes || 18;
+        const girPercent = totalHoles > 0 ? ((r.totalGir || 0) / totalHoles) * 100 : 0;
+        
+        let displayDate = `Round ${idx + 1}`;
+        if (r.date || r.created_at) {
+          const d = new Date(r.date || r.created_at);
+          displayDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+        
+        return {
+          date: displayDate,
+          score: r.score || 0,
+          girPercent,
+          putts: r.totalPutts || 0,
+        };
+      });
+
+      // 2. Prepare Practice Data
+      const practiceData = [
+        { category: 'Driving', minutes: practiceAllocationData.driving },
+        { category: 'Irons', minutes: practiceAllocationData.irons },
+        { category: 'Wedges', minutes: practiceAllocationData.wedges },
+        { category: 'Chipping', minutes: practiceAllocationData.chipping },
+        { category: 'Bunkers', minutes: practiceAllocationData.bunkers },
+        { category: 'Putting', minutes: practiceAllocationData.putting },
+        { category: 'Mental/Strategy', minutes: practiceAllocationData.mentalStrategy },
+        { category: 'On-Course', minutes: practiceAllocationData.onCourse },
+      ];
+
+      // 3. Prepare Trends
+      const trends = [];
+      if (sortedRounds.length >= 5) {
+        const last5 = sortedRounds.slice(0, 5);
+        const prev5 = sortedRounds.slice(5, 10);
+        
+        if (prev5.length > 0) {
+          // GIR Trend
+          const last5GIR = last5.reduce((sum, r) => sum + (r.totalGir || 0) / (r.holes || 18), 0) / last5.length * 100;
+          const prev5GIR = prev5.reduce((sum, r) => sum + (r.totalGir || 0) / (r.holes || 18), 0) / prev5.length * 100;
+          const girDiff = last5GIR - prev5GIR;
+          if (Math.abs(girDiff) >= 1) {
+            trends.push({ text: `GIR has ${girDiff > 0 ? 'increased' : 'decreased'} by ${Math.abs(girDiff).toFixed(1)}% over the last 5 rounds compared to the previous ${prev5.length}.` });
+          }
+
+          // Putts Trend
+          const last5Putts = last5.reduce((sum, r) => sum + (r.totalPutts || 0), 0) / last5.length;
+          const prev5Putts = prev5.reduce((sum, r) => sum + (r.totalPutts || 0), 0) / prev5.length;
+          const puttsDiff = last5Putts - prev5Putts;
+          if (Math.abs(puttsDiff) >= 0.5) {
+            trends.push({ text: `Putting average has ${puttsDiff < 0 ? 'improved' : 'worsened'} by ${Math.abs(puttsDiff).toFixed(1)} putts over the last 5 rounds.` });
+          }
+        }
+      }
+      
+      if (trends.length === 0) {
+        trends.push({ text: 'Not enough comparable round data to generate trends.' });
+      }
+
+      // 4. Generate PDF
+      const { pdf } = await import('@react-pdf/renderer');
+      const { StudentReportPDF } = await import('@/components/StudentReportPDF');
+      
+      const studentName = user.fullName || user.email.split('@')[0];
+      const blob = await pdf(
+        <StudentReportPDF 
+          studentName={studentName}
+          rounds={pdfRounds}
+          practiceData={practiceData}
+          trends={trends}
+        />
+      ).toBlob();
+
+      // 5. Trigger Download
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${studentName.replace(/\s+/g, '_')}_Golf_Report.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate report. Please try again.');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
 
   // ============================================
   // NOW WE CAN DO CONDITIONAL RETURNS
@@ -576,10 +802,14 @@ export default function StatsPage() {
             </div>
             {/* Generate Report Button */}
             <button
-              className="px-4 py-2 rounded-lg border-2 border-white text-white text-sm font-semibold hover:bg-white/10 transition-all"
+              onClick={handleGenerateReport}
+              disabled={isGeneratingPDF}
+              className={`px-4 py-2 rounded-lg border-2 border-white text-white text-sm font-semibold transition-all ${
+                isGeneratingPDF ? 'opacity-70 cursor-not-allowed' : 'hover:bg-white/10'
+              }`}
               style={{ backgroundColor: '#05412B' }}
             >
-              Generate Report
+              {isGeneratingPDF ? 'Generating...' : 'Generate Report'}
             </button>
           </div>
           
@@ -593,7 +823,7 @@ export default function StatsPage() {
                 max="54"
                 step="0.1"
                 value={selectedGoal}
-                onChange={(e) => setSelectedGoal(parseFloat(e.target.value))}
+                onChange={handleGoalChange}
                 className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                 style={{
                   background: `linear-gradient(to right, #014421 0%, #014421 ${((selectedGoal + 5) / 59) * 100}%, #E5E7EB ${((selectedGoal + 5) / 59) * 100}%, #E5E7EB 100%)`
@@ -740,17 +970,24 @@ export default function StatsPage() {
                     const yPos = totalLabels > 1 
                       ? graphStartY + (idx / (totalLabels - 1)) * graphHeight
                       : graphStartY + graphHeight / 2;
+                    
+                    // Find the closest label to the goal value
+                    const distances = yAxisConfig.labels.map(l => Math.abs(l - goalValue));
+                    const minDistance = Math.min(...distances);
+                    const isClosest = isAdjustingGoal && Math.abs(label - goalValue) === minDistance;
+                    
                     return (
                       <text
                         key={`y-label-${idx}`}
                         x={35}
                         y={yPos}
                         textAnchor="end"
-                        fill="#FFFFFF"
+                        fill={isClosest ? "#FF9800" : "#FFFFFF"}
                         fontWeight="bold"
-                        opacity="1"
-                        fontSize="10"
+                        opacity={isClosest ? "1" : "0.7"}
+                        fontSize={isClosest ? "12" : "10"}
                         dominantBaseline="middle"
+                        className="transition-all duration-300"
                       >
                         {label.toFixed(1)}
                       </text>
@@ -777,20 +1014,41 @@ export default function StatsPage() {
                     strokeWidth="1" 
                   />
                   
-                  {/* Goal Trend Line - Dashed White Line synced with slider */}
+                  {/* Goal Trend Line - Dashed Orange Line synced with slider */}
                   {(() => {
                     const goalY = getY(goalValue);
                     return (
-                      <line
-                        x1={graphStartX}
-                        y1={goalY}
-                        x2={graphStartX + graphWidth}
-                        y2={goalY}
-                        stroke="#FFFFFF"
-                        strokeWidth="2"
-                        strokeDasharray="5,5"
-                        opacity="0.8"
-                      />
+                      <g className="transition-all duration-300">
+                        <line
+                          x1={graphStartX}
+                          y1={goalY}
+                          x2={graphStartX + graphWidth}
+                          y2={goalY}
+                          stroke="#FF9800"
+                          strokeWidth="2"
+                          strokeDasharray="5,5"
+                          opacity={isAdjustingGoal ? "1" : "0.7"}
+                        />
+                        <rect
+                          x={graphStartX + graphWidth - 65}
+                          y={goalY - 10}
+                          width="65"
+                          height="20"
+                          rx="4"
+                          fill="#FF9800"
+                          opacity={isAdjustingGoal ? "1" : "0.9"}
+                        />
+                        <text
+                          x={graphStartX + graphWidth - 5}
+                          y={goalY + 4}
+                          textAnchor="end"
+                          fill="#FFFFFF"
+                          fontWeight="bold"
+                          fontSize="10"
+                        >
+                          GOAL: {goalValue.toFixed(1)}
+                        </text>
+                      </g>
                     );
                   })()}
                   
@@ -829,16 +1087,25 @@ export default function StatsPage() {
                     const isHovered = hoveredIndex === i;
                     return (
                       <g key={`node-${i}`}>
+                        {/* Invisible larger hitbox for easier hovering */}
+                        <circle
+                          cx={nodeX}
+                          cy={nodeY}
+                          r={24}
+                          fill="transparent"
+                          onMouseEnter={() => setHoveredIndex(i)}
+                          onMouseLeave={() => setHoveredIndex(null)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        {/* Visible node */}
                         <circle
                           cx={nodeX}
                           cy={nodeY}
                           r={isHovered ? 8 : 6}
-                          fill="none"
+                          fill={isHovered ? "#FF9800" : "#014421"}
                           stroke="#FFFFFF"
                           strokeWidth="2"
-                          onMouseEnter={() => setHoveredIndex(i)}
-                          onMouseLeave={() => setHoveredIndex(null)}
-                          style={{ cursor: 'pointer' }}
+                          style={{ pointerEvents: 'none' }}
                         />
                         
                         {isHovered && (
@@ -886,20 +1153,17 @@ export default function StatsPage() {
             {/* DRIVING Section */}
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <div className="text-xs font-bold text-black uppercase tracking-wide mb-3">DRIVING</div>
-              <div className="space-y-0">
-                <div className="flex items-center justify-between py-2">
-                  <div className="text-sm text-gray-700">FIR %</div>
-                  <div className="text-2xl font-bold" style={{ color: '#FF9800' }}>
-                    {performanceMetrics.firPercent.toFixed(1)}%
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Driving Insights */}
-            <div className="bg-white rounded-2xl p-4 shadow-sm">
-              <div className="text-xs font-bold text-black uppercase tracking-wide mb-3">DRIVING INSIGHTS</div>
-              <div className="space-y-3">
+              
+              {/* Top Level FIR % */}
+              <StatDisplay 
+                label="FIR %"
+                current={performanceMetrics.firPercent}
+                goal={goals.fir}
+                isPercentage={true}
+                isAdjustingGoal={isAdjustingGoal}
+              />
+              
+              <div className="space-y-3 pt-3 border-t border-gray-100">
                 {/* FIR % Progress Bar */}
                 <div>
                   <div className="flex justify-between items-center mb-1">
@@ -973,26 +1237,31 @@ export default function StatsPage() {
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <div className="text-xs font-bold text-black uppercase tracking-wide mb-3">APPROACH</div>
               <div className="space-y-0">
-                <div className="flex items-center justify-between py-2">
-                  <div className="text-sm text-gray-700">GIR %</div>
-                  <div className="text-2xl font-bold" style={{ color: '#FF9800' }}>
-                    {performanceMetrics.girPercent.toFixed(1)}%
-                  </div>
-                </div>
+                <StatDisplay 
+                  label="GIR %"
+                  current={performanceMetrics.girPercent}
+                  goal={goals.gir}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
                 <div className="border-t border-gray-200"></div>
-                <div className="flex items-center justify-between py-2">
-                  <div className="text-sm text-gray-700">GIR 8ft</div>
-                  <div className="text-2xl font-bold" style={{ color: '#FF9800' }}>
-                    {performanceMetrics.gir8ft.toFixed(1)}
-                  </div>
-                </div>
+                <StatDisplay 
+                  label="GIR 8ft"
+                  tooltip="Approximately 2.4 metres"
+                  current={performanceMetrics.gir8ft}
+                  goal={goals.within8ft}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
                 <div className="border-t border-gray-200"></div>
-                <div className="flex items-center justify-between py-2">
-                  <div className="text-sm text-gray-700">GIR 20ft</div>
-                  <div className="text-2xl font-bold" style={{ color: '#FF9800' }}>
-                    {performanceMetrics.gir20ft.toFixed(1)}
-                  </div>
-                </div>
+                <StatDisplay 
+                  label="GIR 20ft"
+                  tooltip="Approximately 6.1 metres"
+                  current={performanceMetrics.gir20ft}
+                  goal={goals.within20ft}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
               </div>
             </div>
 
@@ -1000,26 +1269,30 @@ export default function StatsPage() {
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <div className="text-xs font-bold text-black uppercase tracking-wide mb-3">SHORT GAME</div>
               <div className="space-y-0">
-                <div className="flex items-center justify-between py-2">
-                  <div className="text-sm text-gray-700">Up & Down %</div>
-                  <div className="text-2xl font-bold" style={{ color: '#FF9800' }}>
-                    {performanceMetrics.upAndDownPercent.toFixed(1)}%
-                  </div>
-                </div>
+                <StatDisplay 
+                  label="Up & Down %"
+                  current={performanceMetrics.upAndDownPercent}
+                  goal={goals.upAndDown}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
                 <div className="border-t border-gray-200"></div>
-                <div className="flex items-center justify-between py-2">
-                  <div className="text-sm text-gray-700">Bunker Saves</div>
-                  <div className="text-2xl font-bold" style={{ color: '#FF9800' }}>
-                    {performanceMetrics.bunkerSaves.toFixed(1)}%
-                  </div>
-                </div>
+                <StatDisplay 
+                  label="Bunker Saves"
+                  current={performanceMetrics.bunkerSaves}
+                  goal={goals.bunkerSaves}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
                 <div className="border-t border-gray-200"></div>
-                <div className="flex items-center justify-between py-2">
-                  <div className="text-sm text-gray-700">Chip Inside 6ft</div>
-                  <div className="text-2xl font-bold" style={{ color: '#FF9800' }}>
-                    {performanceMetrics.chipInside6ft.toFixed(1)}
-                  </div>
-                </div>
+                <StatDisplay 
+                  label="Scrambling % (< 6ft)"
+                  tooltip="Approximately 1.8 metres. Chip shots ending inside 6ft."
+                  current={performanceMetrics.chipInside6ft}
+                  goal={goals.chipsInside6ft}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
               </div>
             </div>
 
@@ -1027,26 +1300,30 @@ export default function StatsPage() {
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <div className="text-xs font-bold text-black uppercase tracking-wide mb-3">PUTTING PRECISION</div>
               <div className="space-y-0">
-                <div className="flex items-center justify-between py-2">
-                  <div className="text-sm text-gray-700">Total Putts</div>
-                  <div className="text-2xl font-bold" style={{ color: '#FF9800' }}>
-                    {performanceMetrics.avgPutts > 0 ? performanceMetrics.avgPutts.toFixed(1) : '0.0'}
-                  </div>
-                </div>
+                <StatDisplay 
+                  label="Total Putts"
+                  current={performanceMetrics.avgPutts}
+                  goal={goals.putts}
+                  inverse={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
                 <div className="border-t border-gray-200"></div>
-                <div className="flex items-center justify-between py-2">
-                  <div className="text-sm text-gray-700">&lt; 6ft Make %</div>
-                  <div className="text-2xl font-bold" style={{ color: '#FF9800' }}>
-                    {performanceMetrics.puttsUnder6ftMake.toFixed(1)}%
-                  </div>
-                </div>
+                <StatDisplay 
+                  label="< 6ft Make %"
+                  tooltip="Approximately 1.8 metres"
+                  current={performanceMetrics.puttsUnder6ftMake}
+                  goal={goals.puttMake6ft}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
                 <div className="border-t border-gray-200"></div>
-                <div className="flex items-center justify-between py-2">
-                  <div className="text-sm text-gray-700">3-Putts (Avg)</div>
-                  <div className="text-2xl font-bold" style={{ color: '#FF9800' }}>
-                    {performanceMetrics.avgThreePutts.toFixed(1)}
-                  </div>
-                </div>
+                <StatDisplay 
+                  label="3-Putts (Avg)"
+                  current={performanceMetrics.avgThreePutts}
+                  goal={Math.max(0, goals.putts / 18 - 1)}
+                  inverse={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
               </div>
             </div>
 
@@ -1054,26 +1331,29 @@ export default function StatsPage() {
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <div className="text-xs font-bold text-black uppercase tracking-wide mb-3">PENALTIES</div>
               <div className="space-y-0">
-                <div className="flex items-center justify-between py-2">
-                  <div className="text-sm text-gray-700">Tee Penalties</div>
-                  <div className="text-2xl font-bold" style={{ color: '#FF9800' }}>
-                    {performanceMetrics.teePenalties.toFixed(1)}
-                  </div>
-                </div>
+                <StatDisplay 
+                  label="Tee Penalties"
+                  current={performanceMetrics.teePenalties}
+                  goal={goals.teePenalties}
+                  inverse={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
                 <div className="border-t border-gray-200"></div>
-                <div className="flex items-center justify-between py-2">
-                  <div className="text-sm text-gray-700">Approach Penalties</div>
-                  <div className="text-2xl font-bold" style={{ color: '#FF9800' }}>
-                    {performanceMetrics.approachPenalties.toFixed(1)}
-                  </div>
-                </div>
+                <StatDisplay 
+                  label="Approach Penalties"
+                  current={performanceMetrics.approachPenalties}
+                  goal={goals.approachPenalties}
+                  inverse={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
                 <div className="border-t border-gray-200"></div>
-                <div className="flex items-center justify-between py-2">
-                  <div className="text-sm text-gray-700">Total Penalties</div>
-                  <div className="text-2xl font-bold" style={{ color: '#FF9800' }}>
-                    {performanceMetrics.totalPenalties.toFixed(1)}
-                  </div>
-                </div>
+                <StatDisplay 
+                  label="Total Penalties"
+                  current={performanceMetrics.totalPenalties}
+                  goal={goals.totalPenalties}
+                  inverse={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
               </div>
             </div>
           </div>
@@ -1103,12 +1383,12 @@ export default function StatsPage() {
                 ))}
               </div>
             </div>
-            <div className="flex justify-center items-center relative mt-4">
+            <div className="flex justify-center items-center relative mt-4 px-4 py-8">
               <svg 
                 width="100%" 
                 height="100%" 
-                viewBox="0 0 400 400" 
-                className="mx-auto overflow-visible max-w-[400px]"
+                viewBox="0 0 500 500" 
+                className="mx-auto overflow-visible max-w-[500px]"
                 onMouseLeave={() => setHoveredCategory(null)}
               >
                 <defs>
@@ -1118,12 +1398,13 @@ export default function StatsPage() {
                   </linearGradient>
                 </defs>
                 
-                {/* Grid polygons (Heptagons) */}
-                {[30, 60, 90, 120, 150].map((radius, idx) => {
-                  const points = [0, 1, 2, 3, 4, 5, 6].map(i => {
-                    const angle = (i * (360/7) - 90) * (Math.PI / 180);
-                    const x = 200 + radius * Math.cos(angle);
-                    const y = 200 + radius * Math.sin(angle);
+                {/* Grid polygons (Octagons) */}
+                {[34, 68, 102, 136, 170].map((radius, idx) => {
+                  const points = [0, 1, 2, 3, 4, 5, 6, 7].map(i => {
+                    // Start from Driving at top, rotate clockwise
+                    const angle = (i * (360/8) - 90) * (Math.PI / 180);
+                    const x = 250 + radius * Math.cos(angle);
+                    const y = 250 + radius * Math.sin(angle);
                     return `${x},${y}`;
                   }).join(' ');
                   return (
@@ -1138,16 +1419,16 @@ export default function StatsPage() {
                   );
                 })}
                 
-                {/* Grid lines (7 axes for 7 categories) */}
-                {[0, 1, 2, 3, 4, 5, 6].map((idx) => {
-                  const angle = (idx * (360/7) - 90) * (Math.PI / 180);
-                  const x = 200 + 150 * Math.cos(angle);
-                  const y = 200 + 150 * Math.sin(angle);
+                {/* Grid lines (8 axes for 8 categories) */}
+                {[0, 1, 2, 3, 4, 5, 6, 7].map((idx) => {
+                  const angle = (idx * (360/8) - 90) * (Math.PI / 180);
+                  const x = 250 + 170 * Math.cos(angle);
+                  const y = 250 + 170 * Math.sin(angle);
                   return (
                     <line
                       key={`axis-${idx}`}
-                      x1="200"
-                      y1="200"
+                      x1="250"
+                      y1="250"
                       x2={x}
                       y2={y}
                       stroke="white"
@@ -1157,9 +1438,9 @@ export default function StatsPage() {
                   );
                 })}
                 
-                {/* Practice Allocation polygon */}
+                {/* Practice Allocation Area */}
                 {(() => {
-                  const categories = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy'];
+                  const categories = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy', 'On-Course'];
                   const values = [
                     practiceAllocationData.driving,
                     practiceAllocationData.irons,
@@ -1168,48 +1449,55 @@ export default function StatsPage() {
                     practiceAllocationData.bunkers,
                     practiceAllocationData.putting,
                     practiceAllocationData.mentalStrategy,
+                    practiceAllocationData.onCourse,
                   ];
                   
-                  // Dynamic scaling based on highest practice value plus 10% buffer
-                  const maxDataValue = Math.max(10, ...values) * 1.1;
+                  // Consistent maxDomain (like 120 minutes) across all axes so the data forms a clear 'web' shape.
+                  const maxDataValue = Math.max(120, ...values);
                   
-                  const points = values.map((value, idx) => {
-                    const angle = (idx * (360/7) - 90) * (Math.PI / 180);
-                    const radius = (value / maxDataValue) * 150;
-                    const x = 200 + radius * Math.cos(angle);
-                    const y = 200 + radius * Math.sin(angle);
-                    return `${x},${y}`;
-                  }).join(' ');
+                  const dPath = values.map((value, idx) => {
+                    const angle = (idx * (360/8) - 90) * (Math.PI / 180);
+                    // If a student has 0 minutes in a category, ensure the orange line pulls all the way to the center point (radius = 0).
+                    const radius = (value / maxDataValue) * 170;
+                    const x = 250 + radius * Math.cos(angle);
+                    const y = 250 + radius * Math.sin(angle);
+                    return `${idx === 0 ? 'M' : 'L'} ${x} ${y}`;
+                  }).join(' ') + ' Z'; // Z ensures the path explicitly loops back to close the shape
                   
                   return (
                     <>
-                      <polygon
-                        points={points}
-                        fill="url(#practiceGradient)"
+                      <path
+                        d={dPath}
+                        fill="rgba(255, 152, 0, 0.4)"
                         stroke="#FF9800"
                         strokeWidth="2"
-                        strokeOpacity="0.8"
+                        strokeLinejoin="round"
                       />
                       {/* Interactive category segments with hover */}
                       {categories.map((category, idx) => {
-                        const angle = (idx * (360/7) - 90) * (Math.PI / 180);
+                        const angle = (idx * (360/8) - 90) * (Math.PI / 180);
                         const value = values[idx];
-                        const radius = (value / maxDataValue) * 150;
-                        const labelX = 200 + 180 * Math.cos(angle); // Pushed out to 180
-                        const labelY = 200 + 180 * Math.sin(angle); // Pushed out to 180
+                        const radius = (value / maxDataValue) * 170;
+                        const labelX = 250 + 210 * Math.cos(angle); // Pushed further out
+                        const labelY = 250 + 210 * Math.sin(angle); // Pushed further out
+                        
+                        // Text alignment based on horizontal position
+                        let textAnchor: "start" | "middle" | "end" = "middle";
+                        if (Math.cos(angle) > 0.1) textAnchor = "start"; // Right side
+                        else if (Math.cos(angle) < -0.1) textAnchor = "end"; // Left side
                         
                         // Create hover area (triangle from center to point)
-                        const prevAngle = ((idx - 1 + 7) % 7 * (360/7) - 90) * (Math.PI / 180);
-                        const nextAngle = ((idx + 1) % 7 * (360/7) - 90) * (Math.PI / 180);
+                        const prevAngle = ((idx - 1 + 8) % 8 * (360/8) - 90) * (Math.PI / 180);
+                        const nextAngle = ((idx + 1) % 8 * (360/8) - 90) * (Math.PI / 180);
                         const midPrevAngle = (angle + prevAngle) / 2;
                         const midNextAngle = (angle + nextAngle) / 2;
-                        const hoverRadius = 150;
+                        const hoverRadius = 170;
                         
                         const hoverPoints = [
-                          '200,200',
-                          `${200 + hoverRadius * Math.cos(midPrevAngle)},${200 + hoverRadius * Math.sin(midPrevAngle)}`,
-                          `${200 + radius * Math.cos(angle)},${200 + radius * Math.sin(angle)}`,
-                          `${200 + hoverRadius * Math.cos(midNextAngle)},${200 + hoverRadius * Math.sin(midNextAngle)}`,
+                          '250,250',
+                          `${250 + hoverRadius * Math.cos(midPrevAngle)},${250 + hoverRadius * Math.sin(midPrevAngle)}`,
+                          `${250 + radius * Math.cos(angle)},${250 + radius * Math.sin(angle)}`,
+                          `${250 + hoverRadius * Math.cos(midNextAngle)},${250 + hoverRadius * Math.sin(midNextAngle)}`,
                         ].join(' ');
                         
                         const isHovered = hoveredCategory === category;
@@ -1224,7 +1512,7 @@ export default function StatsPage() {
                                 setHoveredCategory(category);
                                 const svgElement = e.currentTarget.closest('svg');
                                 const rect = svgElement?.getBoundingClientRect();
-                                const svgRect = svgElement?.viewBox?.baseVal || { width: 400, height: 400 };
+                                const svgRect = svgElement?.viewBox?.baseVal || { width: 500, height: 500 };
                                 if (rect && svgElement) {
                                   const scaleX = rect.width / svgRect.width;
                                   const scaleY = rect.height / svgRect.height;
@@ -1240,10 +1528,10 @@ export default function StatsPage() {
                             <text
                               x={labelX}
                               y={labelY}
-                              textAnchor="middle"
+                              textAnchor={textAnchor}
                               dominantBaseline="middle"
                               fill="white"
-                              fontSize={category === 'Mental/Strategy' ? "10" : "12"}
+                              fontSize={category === 'Mental/Strategy' ? "11" : "13"}
                               fontWeight="bold"
                               opacity={isHovered ? 1 : 0.8}
                             >
@@ -1252,9 +1540,9 @@ export default function StatsPage() {
                             {/* Value indicator on hover */}
                             {isHovered && (
                               <circle
-                                cx={200 + radius * Math.cos(angle)}
-                                cy={200 + radius * Math.sin(angle)}
-                                r="5"
+                                cx={250 + radius * Math.cos(angle)}
+                                cy={250 + radius * Math.sin(angle)}
+                                r="6"
                                 fill="#FF9800"
                                 stroke="white"
                                 strokeWidth="2"
@@ -1270,7 +1558,7 @@ export default function StatsPage() {
               
               {/* Hover Tooltip */}
               {hoveredCategory && (() => {
-                const categoryIndex = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy'].indexOf(hoveredCategory);
+                const categoryIndex = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy', 'On-Course'].indexOf(hoveredCategory);
                 const currentValue = [
                   practiceAllocationData.driving,
                   practiceAllocationData.irons,
@@ -1279,6 +1567,7 @@ export default function StatsPage() {
                   practiceAllocationData.bunkers,
                   practiceAllocationData.putting,
                   practiceAllocationData.mentalStrategy,
+                  practiceAllocationData.onCourse,
                 ][categoryIndex];
                 
                 return (
@@ -1297,6 +1586,49 @@ export default function StatsPage() {
                     </div>
                   </div>
                 );
+              })()}
+            </div>
+          </div>
+
+          {/* Numeric Breakdown Section */}
+          <div className="bg-white rounded-2xl p-4 mt-4 shadow-sm">
+            <div className="text-xs font-bold text-black uppercase tracking-wide mb-3">PRACTICE BREAKDOWN</div>
+            <div className="space-y-0">
+              {(() => {
+                const categories = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy', 'On-Course'];
+                const values = [
+                  practiceAllocationData.driving,
+                  practiceAllocationData.irons,
+                  practiceAllocationData.wedges,
+                  practiceAllocationData.chipping,
+                  practiceAllocationData.bunkers,
+                  practiceAllocationData.putting,
+                  practiceAllocationData.mentalStrategy,
+                  practiceAllocationData.onCourse,
+                ];
+                const totalMins = values.reduce((sum, val) => sum + val, 0);
+                
+                return categories.map((category, idx) => {
+                  const mins = values[idx];
+                  const percentage = totalMins > 0 ? Math.round((mins / totalMins) * 100) : 0;
+                  
+                  return (
+                    <div key={category}>
+                      <div className="flex items-center justify-between py-2">
+                        <div className="text-sm text-gray-700">{category}</div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-xl font-bold" style={{ color: '#FF9800' }}>
+                            {mins} <span className="text-xs text-gray-500 font-normal">mins</span>
+                          </div>
+                          <div className="text-sm font-semibold text-gray-400 w-12 text-right">
+                            {percentage}%
+                          </div>
+                        </div>
+                      </div>
+                      {idx < categories.length - 1 && <div className="border-t border-gray-200"></div>}
+                    </div>
+                  );
+                });
               })()}
             </div>
           </div>

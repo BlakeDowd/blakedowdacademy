@@ -83,6 +83,7 @@ const facilityDrillMapping: Record<FacilityType, string[]> = {
   'Bunkers': ['Short Game', 'Wedge Play'],
   'Putting': ['Putting'],
   'Mental/Strategy': ['Mental Game', 'Skills'],
+  'On-Course': ['On-Course', 'Skills'],
 };
 
 // XP Tiering based on Pillar
@@ -106,9 +107,10 @@ const facilityInfo: Record<FacilityType, { label: string; icon: any }> = {
   'Bunkers': { label: 'Bunkers', icon: FlagTriangleRight },
   'Putting': { label: 'Putting', icon: Flag },
   'Mental/Strategy': { label: 'Mental/Strategy', icon: BookOpen },
+  'On-Course': { label: 'On-Course', icon: FlagTriangleRight },
 };
 
-// All facility types
+// All facility types (excluding On-Course, handled separately in UI)
 const ALL_FACILITIES: FacilityType[] = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy'];
 
 import { logActivity } from "@/lib/activity";
@@ -287,6 +289,7 @@ export default function PracticePage() {
     'Bunkers': 10,
     'Putting': 5,
     'Mental/Strategy': 5,
+    'On-Course': 50,
   };
 
   // Initialize weekly plan and load from database (DATA JOIN: practice table + drills table)
@@ -1891,34 +1894,6 @@ export default function PracticePage() {
                   </span>
                   <span className="text-gray-600">8h</span>
                 </div>
-
-                {/* Course Selection Buttons - Below Slider */}
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setRoundType(selectedDay, '9-hole')}
-                    className={`flex-1 py-3 px-4 rounded-lg font-semibold text-sm transition-all border-2 ${
-                      weeklyPlan[selectedDay]?.roundType === '9-hole'
-                        ? 'bg-[#FFA500] border-[#014421] text-[#014421]'
-                        : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
-                    }`}
-                  >
-                    <FlagTriangleRight className="w-4 h-4 inline mr-2" />
-                    9-Hole Round
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRoundType(selectedDay, '18-hole')}
-                    className={`flex-1 py-3 px-4 rounded-lg font-semibold text-sm transition-all border-2 ${
-                      weeklyPlan[selectedDay]?.roundType === '18-hole'
-                        ? 'bg-[#FFA500] border-[#014421] text-[#014421]'
-                        : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
-                    }`}
-                  >
-                    <FlagTriangleRight className="w-4 h-4 inline mr-2" />
-                    18-Hole Round
-                  </button>
-                </div>
               </div>
             </div>
           </div>
@@ -1963,6 +1938,55 @@ export default function PracticePage() {
                     </button>
                   );
                 })}
+                {/* Custom Round Buttons */}
+                <button
+                  type="button"
+                  onClick={() => setRoundType(selectedDay, '9-hole')}
+                  className={`flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 ${
+                    weeklyPlan[selectedDay]?.roundType === '9-hole'
+                      ? 'bg-[#014421] border-[#FFA500]'
+                      : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <FlagTriangleRight 
+                    className={`w-5 h-5 ${
+                      weeklyPlan[selectedDay]?.roundType === '9-hole'
+                        ? 'text-[#FFA500]'
+                        : 'text-gray-600'
+                    }`}
+                  />
+                  <span className={`text-xs font-medium text-center ${
+                    weeklyPlan[selectedDay]?.roundType === '9-hole'
+                      ? 'text-white'
+                      : 'text-gray-700'
+                  }`}>
+                    9-Hole Round
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRoundType(selectedDay, '18-hole')}
+                  className={`flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 ${
+                    weeklyPlan[selectedDay]?.roundType === '18-hole'
+                      ? 'bg-[#014421] border-[#FFA500]'
+                      : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <FlagTriangleRight 
+                    className={`w-5 h-5 ${
+                      weeklyPlan[selectedDay]?.roundType === '18-hole'
+                        ? 'text-[#FFA500]'
+                        : 'text-gray-600'
+                    }`}
+                  />
+                  <span className={`text-xs font-medium text-center ${
+                    weeklyPlan[selectedDay]?.roundType === '18-hole'
+                      ? 'text-white'
+                      : 'text-gray-700'
+                  }`}>
+                    18-Hole Round
+                  </span>
+                </button>
               </div>
             </div>
           </div>
@@ -2137,6 +2161,27 @@ export default function PracticePage() {
                   </button>
                 );
               })}
+              {/* Custom Round Buttons for Quick Log */}
+              <button
+                type="button"
+                onClick={() => logFreestylePractice('On-Course', 135)}
+                className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+              >
+                <FlagTriangleRight className="w-5 h-5 text-gray-600" />
+                <span className="text-xs font-medium text-center text-gray-700">
+                  9-Hole Round
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => logFreestylePractice('On-Course', 270)}
+                className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+              >
+                <FlagTriangleRight className="w-5 h-5 text-gray-600" />
+                <span className="text-xs font-medium text-center text-gray-700">
+                  18-Hole Round
+                </span>
+              </button>
             </div>
           </div>
         </div>
