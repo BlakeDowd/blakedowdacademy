@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { CheckCircle2, Check, PlayCircle, File, RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
 
-type FacilityType = 'home' | 'range-mat' | 'range-grass' | 'bunker' | 'chipping-green' | 'putting-green';
+export type FacilityType = 'Driving' | 'Irons' | 'Wedges' | 'Chipping' | 'Bunkers' | 'Putting' | 'Mental/Strategy';
 
 interface DrillLevel {
   id: string;

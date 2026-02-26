@@ -49,7 +49,7 @@ export default function StatsPage() {
   // ============================================
   
   // Context hooks
-  const { rounds, loading: statsLoading, refreshRounds } = useStats();
+  const { rounds, practiceSessions, loading: statsLoading, refreshRounds } = useStats();
   const { user, loading: authLoading } = useAuth();
   
   // Filter by User ID: Filter the array so it only includes rounds belonging to the current user
@@ -59,6 +59,11 @@ export default function StatsPage() {
     // Type assertion: rounds from StatsContext include user_id even though RoundData interface doesn't explicitly list it
     return rounds.filter((r: any) => (r as any).user_id === user.id);
   }, [rounds, user?.id]);
+  
+  const personalPractice = useMemo(() => {
+    if (!practiceSessions || !user?.id) return [];
+    return practiceSessions.filter((p: any) => p.user_id === user.id);
+  }, [practiceSessions, user?.id]);
   
   // Ensure rounds is always an array (use personalRounds for stats page)
   const safeRounds = personalRounds || [];
@@ -505,83 +510,38 @@ export default function StatsPage() {
   
   const goalValue = getGoalValueForMetric(selectedMetric);
 
-  // Calculate Practice Allocation Chart values (6 categories)
+  // Calculate Practice Allocation Chart values (7 categories)
   const practiceAllocationData = useMemo(() => {
-    if (safeRounds.length === 0) {
-      return {
-        driving: 50,
-        approach: 50,
-        mental: 50,
-        wedges: 50,
-        putting: 50,
-        shortGame: 50,
-      };
+    // Filter practice sessions based on selected timeframe
+    const now = new Date();
+    let startDate = new Date(0); // ALL
+    if (skillAssessmentFilter === 'WEEK') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+    } else if (skillAssessmentFilter === 'MONTH') {
+      startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
     }
 
-    // Driving: FIR percentage
-    const totalFir = safeRounds.reduce((sum, r) => sum + (r.firHit || 0) + (r.firLeft || 0) + (r.firRight || 0), 0);
-    const firHit = safeRounds.reduce((sum, r) => sum + (r.firHit || 0), 0);
-    const driving = totalFir > 0 ? (firHit / totalFir) * 100 : 50;
+    const filteredPractice = personalPractice.filter((p: any) => {
+      const pDate = new Date(p.created_at || p.practice_date || new Date());
+      return pDate >= startDate;
+    });
 
-    // Approach: GIR percentage
-    const totalGir = safeRounds.reduce((sum, r) => sum + (r.totalGir || 0), 0);
-    const totalHoles = safeRounds.reduce((sum, r) => sum + (r.holes || 18), 0);
-    const approach = totalHoles > 0 ? (totalGir / totalHoles) * 100 : 50;
-
-    // Mental: Based on penalties (inverse - fewer penalties = higher score)
-    const totalPenalties = safeRounds.reduce((sum, r) => sum + (r.totalPenalties || 0), 0);
-    const avgPenalties = safeRounds.length > 0 ? totalPenalties / safeRounds.length : 2;
-    const mental = Math.max(0, Math.min(100, (1 - avgPenalties / 4) * 100));
-
-    // Wedges: Based on chipInside6ft and upAndDown combined
-    const totalChipInside6ft = safeRounds.reduce((sum, r) => sum + (r.chipInside6ft || 0), 0);
-    const totalUpDownAttempts = safeRounds.reduce((sum, r) => sum + (r.upAndDownConversions || 0) + (r.missed || 0), 0);
-    const upDownSuccess = safeRounds.reduce((sum, r) => sum + (r.upAndDownConversions || 0), 0);
-    const avgChipInside6ft = safeRounds.length > 0 ? totalChipInside6ft / safeRounds.length : 0;
-    const upDownPercent = totalUpDownAttempts > 0 ? (upDownSuccess / totalUpDownAttempts) * 100 : 50;
-    // Combine chip accuracy and up&down percentage (average of normalized values)
-    const wedges = (Math.min(100, (avgChipInside6ft / 5) * 100) + upDownPercent) / 2;
-
-    // Putting: Based on average putts (inverse)
-    const totalPutts = safeRounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0);
-    const avgPutts = safeRounds.length > 0 ? totalPutts / safeRounds.length : 32;
-    const putting = Math.max(0, Math.min(100, ((36 - avgPutts) / 18) * 100));
-
-    // Short Game: Up & Down and Bunker Saves combined
-    const totalBunkerAttempts = safeRounds.reduce((sum, r) => sum + (r.bunkerAttempts || 0) + (r.bunkerSaves || 0), 0);
-    const bunkerSaves = safeRounds.reduce((sum, r) => sum + (r.bunkerSaves || 0), 0);
-    const bunkerSavePercent = totalBunkerAttempts > 0 ? (bunkerSaves / totalBunkerAttempts) * 100 : 50;
-    const shortGame = (upDownPercent + bunkerSavePercent) / 2;
+    const getMinutes = (category: string) => {
+      return filteredPractice
+        .filter((p: any) => p.type === category)
+        .reduce((sum: number, p: any) => sum + (p.duration_minutes || 0), 0);
+    };
 
     return {
-      driving: Math.round(driving),
-      approach: Math.round(approach),
-      mental: Math.round(mental),
-      wedges: Math.round(wedges),
-      putting: Math.round(putting),
-      shortGame: Math.round(shortGame),
+      driving: getMinutes('Driving'),
+      irons: getMinutes('Irons'),
+      wedges: getMinutes('Wedges'),
+      chipping: getMinutes('Chipping'),
+      bunkers: getMinutes('Bunkers'),
+      putting: getMinutes('Putting'),
+      mentalStrategy: getMinutes('Mental/Strategy'),
     };
-  }, [safeRounds]);
-
-  // Calculate goal values for each category based on selectedGoal
-  const practiceAllocationGoals = useMemo(() => {
-    return {
-      driving: goals.fir,
-      approach: goals.gir,
-      mental: 100 - (goals.score - selectedGoal > 80 ? 30 : goals.score - selectedGoal > 70 ? 20 : 10),
-      wedges: goals.upAndDown,
-      putting: 100 - ((goals.putts / 36) * 100),
-      shortGame: goals.upAndDown,
-    };
-  }, [goals, selectedGoal]);
-
-  // Calculate recommended practice hours based on gap
-  const getRecommendedPracticeHours = (current: number, goal: number): number => {
-    const gap = Math.max(0, goal - current);
-    // Convert gap (0-100) to hours per week (0-5 hours)
-    // Larger gap = more practice needed
-    return Math.min(5, (gap / 100) * 5);
-  };
+  }, [personalPractice, skillAssessmentFilter]);
 
   // ============================================
   // NOW WE CAN DO CONDITIONAL RETURNS
@@ -1143,12 +1103,12 @@ export default function StatsPage() {
                 ))}
               </div>
             </div>
-            <div className="flex justify-center items-center relative">
+            <div className="flex justify-center items-center relative mt-4">
               <svg 
-                width="300" 
-                height="300" 
-                viewBox="0 0 300 300" 
-                className="mx-auto"
+                width="100%" 
+                height="100%" 
+                viewBox="0 0 400 400" 
+                className="mx-auto overflow-visible max-w-[400px]"
                 onMouseLeave={() => setHoveredCategory(null)}
               >
                 <defs>
@@ -1158,30 +1118,36 @@ export default function StatsPage() {
                   </linearGradient>
                 </defs>
                 
-                {/* Grid circles */}
-                {[20, 40, 60, 80, 100].map((radius, idx) => (
-                  <circle
-                    key={`grid-${idx}`}
-                    cx="150"
-                    cy="150"
-                    r={radius}
-                    fill="none"
-                    stroke="white"
-                    strokeWidth="1"
-                    strokeOpacity="0.2"
-                  />
-                ))}
+                {/* Grid polygons (Heptagons) */}
+                {[30, 60, 90, 120, 150].map((radius, idx) => {
+                  const points = [0, 1, 2, 3, 4, 5, 6].map(i => {
+                    const angle = (i * (360/7) - 90) * (Math.PI / 180);
+                    const x = 200 + radius * Math.cos(angle);
+                    const y = 200 + radius * Math.sin(angle);
+                    return `${x},${y}`;
+                  }).join(' ');
+                  return (
+                    <polygon
+                      key={`grid-${idx}`}
+                      points={points}
+                      fill="none"
+                      stroke="white"
+                      strokeWidth="1"
+                      strokeOpacity="0.2"
+                    />
+                  );
+                })}
                 
-                {/* Grid lines (6 axes for 6 categories) */}
-                {[0, 60, 120, 180, 240, 300].map((angle, idx) => {
-                  const rad = (angle * Math.PI) / 180;
-                  const x = 150 + 100 * Math.cos(rad - Math.PI / 2);
-                  const y = 150 + 100 * Math.sin(rad - Math.PI / 2);
+                {/* Grid lines (7 axes for 7 categories) */}
+                {[0, 1, 2, 3, 4, 5, 6].map((idx) => {
+                  const angle = (idx * (360/7) - 90) * (Math.PI / 180);
+                  const x = 200 + 150 * Math.cos(angle);
+                  const y = 200 + 150 * Math.sin(angle);
                   return (
                     <line
                       key={`axis-${idx}`}
-                      x1="150"
-                      y1="150"
+                      x1="200"
+                      y1="200"
                       x2={x}
                       y2={y}
                       stroke="white"
@@ -1193,21 +1159,25 @@ export default function StatsPage() {
                 
                 {/* Practice Allocation polygon */}
                 {(() => {
-                  const categories = ['Driving', 'Approach', 'Mental', 'Wedges', 'Putting', 'Short Game'];
+                  const categories = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy'];
                   const values = [
                     practiceAllocationData.driving,
-                    practiceAllocationData.approach,
-                    practiceAllocationData.mental,
+                    practiceAllocationData.irons,
                     practiceAllocationData.wedges,
+                    practiceAllocationData.chipping,
+                    practiceAllocationData.bunkers,
                     practiceAllocationData.putting,
-                    practiceAllocationData.shortGame,
+                    practiceAllocationData.mentalStrategy,
                   ];
                   
+                  // Dynamic scaling based on highest practice value plus 10% buffer
+                  const maxDataValue = Math.max(10, ...values) * 1.1;
+                  
                   const points = values.map((value, idx) => {
-                    const angle = (idx * 60 - 90) * (Math.PI / 180);
-                    const radius = (value / 100) * 100;
-                    const x = 150 + radius * Math.cos(angle);
-                    const y = 150 + radius * Math.sin(angle);
+                    const angle = (idx * (360/7) - 90) * (Math.PI / 180);
+                    const radius = (value / maxDataValue) * 150;
+                    const x = 200 + radius * Math.cos(angle);
+                    const y = 200 + radius * Math.sin(angle);
                     return `${x},${y}`;
                   }).join(' ');
                   
@@ -1222,24 +1192,24 @@ export default function StatsPage() {
                       />
                       {/* Interactive category segments with hover */}
                       {categories.map((category, idx) => {
-                        const angle = (idx * 60 - 90) * (Math.PI / 180);
+                        const angle = (idx * (360/7) - 90) * (Math.PI / 180);
                         const value = values[idx];
-                        const radius = (value / 100) * 100;
-                        const labelX = 150 + 120 * Math.cos(angle);
-                        const labelY = 150 + 120 * Math.sin(angle);
+                        const radius = (value / maxDataValue) * 150;
+                        const labelX = 200 + 180 * Math.cos(angle); // Pushed out to 180
+                        const labelY = 200 + 180 * Math.sin(angle); // Pushed out to 180
                         
                         // Create hover area (triangle from center to point)
-                        const prevAngle = ((idx - 1 + 6) % 6 * 60 - 90) * (Math.PI / 180);
-                        const nextAngle = ((idx + 1) % 6 * 60 - 90) * (Math.PI / 180);
+                        const prevAngle = ((idx - 1 + 7) % 7 * (360/7) - 90) * (Math.PI / 180);
+                        const nextAngle = ((idx + 1) % 7 * (360/7) - 90) * (Math.PI / 180);
                         const midPrevAngle = (angle + prevAngle) / 2;
                         const midNextAngle = (angle + nextAngle) / 2;
-                        const hoverRadius = 100;
+                        const hoverRadius = 150;
                         
                         const hoverPoints = [
-                          '150,150',
-                          `${150 + hoverRadius * Math.cos(midPrevAngle)},${150 + hoverRadius * Math.sin(midPrevAngle)}`,
-                          `${150 + radius * Math.cos(angle)},${150 + radius * Math.sin(angle)}`,
-                          `${150 + hoverRadius * Math.cos(midNextAngle)},${150 + hoverRadius * Math.sin(midNextAngle)}`,
+                          '200,200',
+                          `${200 + hoverRadius * Math.cos(midPrevAngle)},${200 + hoverRadius * Math.sin(midPrevAngle)}`,
+                          `${200 + radius * Math.cos(angle)},${200 + radius * Math.sin(angle)}`,
+                          `${200 + hoverRadius * Math.cos(midNextAngle)},${200 + hoverRadius * Math.sin(midNextAngle)}`,
                         ].join(' ');
                         
                         const isHovered = hoveredCategory === category;
@@ -1254,7 +1224,7 @@ export default function StatsPage() {
                                 setHoveredCategory(category);
                                 const svgElement = e.currentTarget.closest('svg');
                                 const rect = svgElement?.getBoundingClientRect();
-                                const svgRect = svgElement?.viewBox?.baseVal || { width: 300, height: 300 };
+                                const svgRect = svgElement?.viewBox?.baseVal || { width: 400, height: 400 };
                                 if (rect && svgElement) {
                                   const scaleX = rect.width / svgRect.width;
                                   const scaleY = rect.height / svgRect.height;
@@ -1273,7 +1243,7 @@ export default function StatsPage() {
                               textAnchor="middle"
                               dominantBaseline="middle"
                               fill="white"
-                              fontSize="12"
+                              fontSize={category === 'Mental/Strategy' ? "10" : "12"}
                               fontWeight="bold"
                               opacity={isHovered ? 1 : 0.8}
                             >
@@ -1282,9 +1252,9 @@ export default function StatsPage() {
                             {/* Value indicator on hover */}
                             {isHovered && (
                               <circle
-                                cx={150 + radius * Math.cos(angle)}
-                                cy={150 + radius * Math.sin(angle)}
-                                r="4"
+                                cx={200 + radius * Math.cos(angle)}
+                                cy={200 + radius * Math.sin(angle)}
+                                r="5"
                                 fill="#FF9800"
                                 stroke="white"
                                 strokeWidth="2"
@@ -1300,24 +1270,16 @@ export default function StatsPage() {
               
               {/* Hover Tooltip */}
               {hoveredCategory && (() => {
-                const categoryIndex = ['Driving', 'Approach', 'Mental', 'Wedges', 'Putting', 'Short Game'].indexOf(hoveredCategory);
+                const categoryIndex = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy'].indexOf(hoveredCategory);
                 const currentValue = [
                   practiceAllocationData.driving,
-                  practiceAllocationData.approach,
-                  practiceAllocationData.mental,
+                  practiceAllocationData.irons,
                   practiceAllocationData.wedges,
+                  practiceAllocationData.chipping,
+                  practiceAllocationData.bunkers,
                   practiceAllocationData.putting,
-                  practiceAllocationData.shortGame,
+                  practiceAllocationData.mentalStrategy,
                 ][categoryIndex];
-                const goalValue = [
-                  practiceAllocationGoals.driving,
-                  practiceAllocationGoals.approach,
-                  practiceAllocationGoals.mental,
-                  practiceAllocationGoals.wedges,
-                  practiceAllocationGoals.putting,
-                  practiceAllocationGoals.shortGame,
-                ][categoryIndex];
-                const recommendedHours = getRecommendedPracticeHours(currentValue, goalValue);
                 
                 return (
                   <div 
@@ -1326,15 +1288,12 @@ export default function StatsPage() {
                       left: `${tooltipPosition.x}px`,
                       top: `${tooltipPosition.y - 100}px`,
                       transform: 'translateX(-50%)',
-                      minWidth: '180px',
+                      minWidth: '160px',
                     }}
                   >
                     <div className="text-xs font-bold text-gray-900 mb-2">{hoveredCategory}</div>
-                    <div className="text-xs text-gray-700 mb-1">
-                      <span className="font-semibold">Skill Level:</span> {currentValue}% Mastery
-                    </div>
                     <div className="text-xs text-gray-700">
-                      <span className="font-semibold">Recommended Practice:</span> {recommendedHours.toFixed(1)} Hours/Week
+                      <span className="font-semibold">Practice Logged:</span> {currentValue} mins
                     </div>
                   </div>
                 );

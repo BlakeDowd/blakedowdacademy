@@ -240,7 +240,7 @@ export default function LogRoundPage() {
         // Putting stats
         total_putts: roundData.totalPutts,
         three_putts: roundData.threePutts, // 3-Putt stat
-        missed_6ft_and_in: Math.max(0, (roundData.puttsUnder6ftAttempts || 0) - (roundData.made6ftAndIn || 0)), // Store missed putts for backward compatibility
+        made_under_6ft: roundData.made6ftAndIn, // Made < 6ft
         putts_under_6ft_attempts: roundData.puttsUnder6ftAttempts,
       };
 
@@ -277,7 +277,7 @@ export default function LogRoundPage() {
         // Putting (including 3-Putt)
         total_putts: insertData.total_putts,
         three_putts: insertData.three_putts,
-        missed_6ft_and_in: insertData.missed_6ft_and_in, // Putts < 6ft (Attempts)
+        made_under_6ft: insertData.made_under_6ft, // Made < 6ft
         putts_under_6ft_attempts: insertData.putts_under_6ft_attempts,
       });
 

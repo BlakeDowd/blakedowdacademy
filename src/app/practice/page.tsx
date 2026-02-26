@@ -5,9 +5,8 @@ import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File } from "lucide-react";
 import { DRILLS as LIBRARY_DRILLS, type Drill as LibraryDrill } from "@/data/drills";
-import DrillCard from "@/components/DrillCard";
+import DrillCard, { type FacilityType } from "@/components/DrillCard";
 
-type FacilityType = 'home' | 'range-mat' | 'range-grass' | 'bunker' | 'chipping-green' | 'putting-green';
 type RoundType = '9-hole' | '18-hole' | null;
 
 interface DayPlan {
@@ -68,16 +67,22 @@ const categoryMapping: Record<string, string[]> = {
   'Short Game': ['Short Game', 'Wedge Play'],
   'Approach': ['Irons', 'Skills'],
   'Sand Play': ['Short Game', 'Wedge Play'],
+  'Chipping': ['Short Game', 'Wedge Play'],
+  'Irons': ['Irons', 'Skills'],
+  'Wedges': ['Wedge Play', 'Skills'],
+  'Bunkers': ['Short Game', 'Wedge Play'],
+  'Mental/Strategy': ['Mental Game', 'Skills'],
 };
 
 // Map facility types to compatible drill categories (using new pillars)
 const facilityDrillMapping: Record<FacilityType, string[]> = {
-  'home': ['Putting', 'Skills', 'Mental Game'],
-  'range-mat': ['Driving', 'Irons', 'Skills'],
-  'range-grass': ['Skills', 'Wedge Play'], // Smart allocation: Range Grass → Skills & Wedge Play
-  'bunker': ['Short Game', 'Wedge Play'],
-  'chipping-green': ['Short Game', 'Wedge Play'],
-  'putting-green': ['Putting'],
+  'Driving': ['Driving', 'Skills'],
+  'Irons': ['Irons', 'Skills'],
+  'Wedges': ['Wedge Play', 'Skills'],
+  'Chipping': ['Short Game', 'Wedge Play'],
+  'Bunkers': ['Short Game', 'Wedge Play'],
+  'Putting': ['Putting'],
+  'Mental/Strategy': ['Mental Game', 'Skills'],
 };
 
 // XP Tiering based on Pillar
@@ -94,16 +99,17 @@ const pillarXPTiering: Record<string, number> = {
 
 // Facility display info
 const facilityInfo: Record<FacilityType, { label: string; icon: any }> = {
-  'home': { label: 'Home/Net', icon: Home },
-  'range-mat': { label: 'Range (Mat)', icon: Target },
-  'range-grass': { label: 'Range (Grass)', icon: Target },
-  'bunker': { label: 'Bunker', icon: Flag },
-  'chipping-green': { label: 'Chipping Green', icon: Flag },
-  'putting-green': { label: 'Putting Green', icon: Flag },
+  'Driving': { label: 'Driving', icon: Target },
+  'Irons': { label: 'Irons', icon: Target },
+  'Wedges': { label: 'Wedges', icon: Flag },
+  'Chipping': { label: 'Chipping', icon: Flag },
+  'Bunkers': { label: 'Bunkers', icon: FlagTriangleRight },
+  'Putting': { label: 'Putting', icon: Flag },
+  'Mental/Strategy': { label: 'Mental/Strategy', icon: BookOpen },
 };
 
 // All facility types
-const ALL_FACILITIES: FacilityType[] = ['home', 'range-mat', 'range-grass', 'bunker', 'chipping-green', 'putting-green'];
+const ALL_FACILITIES: FacilityType[] = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy'];
 
 import { logActivity } from "@/lib/activity";
 
@@ -274,12 +280,13 @@ export default function PracticePage() {
   
   // Base XP per facility type (for freestyle practice)
   const facilityBaseXP: Record<FacilityType, number> = {
-    'home': 5,
-    'range-mat': 10,
-    'range-grass': 10,
-    'bunker': 10,
-    'chipping-green': 10,
-    'putting-green': 5,
+    'Driving': 10,
+    'Irons': 10,
+    'Wedges': 10,
+    'Chipping': 10,
+    'Bunkers': 10,
+    'Putting': 5,
+    'Mental/Strategy': 5,
   };
 
   // Initialize weekly plan and load from database (DATA JOIN: practice table + drills table)
@@ -683,9 +690,9 @@ export default function PracticePage() {
 
     // Find biggest gap
     const gaps = [
-      { category: 'Approach', gap: goals.gir - averages.gir },
+      { category: 'Irons', gap: goals.gir - averages.gir },
       { category: 'Driving', gap: goals.fir - averages.fir },
-      { category: 'Short Game', gap: goals.upAndDown - averages.upAndDown },
+      { category: 'Chipping', gap: goals.upAndDown - averages.upAndDown },
       { category: 'Putting', gap: averages.putts - goals.putts },
     ];
 
@@ -1097,24 +1104,12 @@ export default function PracticePage() {
           
           // Smart Allocation: If Range (Grass) is selected, prioritize Skills and Wedge Play
           let facilityDrills;
-          if (facility === 'range-grass') {
-            facilityDrills = drills.filter(drill => 
-              drill.category.toLowerCase().includes('skills') ||
-              drill.category.toLowerCase().includes('wedge play') ||
-              drill.category.toLowerCase().includes('wedge') ||
-              compatibleCategories.some(cat =>
-                drill.category.toLowerCase().includes(cat.toLowerCase()) ||
-                cat.toLowerCase().includes(drill.category.toLowerCase())
-              )
-            );
-          } else {
-            facilityDrills = relevantDrills.filter(drill => 
-              compatibleCategories.some(cat =>
-                drill.category.toLowerCase().includes(cat.toLowerCase()) ||
-                cat.toLowerCase().includes(drill.category.toLowerCase())
-              )
-            );
-          }
+          facilityDrills = relevantDrills.filter(drill => 
+            compatibleCategories.some(cat =>
+              drill.category.toLowerCase().includes(cat.toLowerCase()) ||
+              cat.toLowerCase().includes(drill.category.toLowerCase())
+            )
+          );
           
           // Apply XP tiering to facility drills
           facilityDrills = facilityDrills.map(drill => {

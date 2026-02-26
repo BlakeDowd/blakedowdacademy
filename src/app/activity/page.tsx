@@ -1,160 +1,133 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useStats } from "@/contexts/StatsContext";
-import { ArrowLeft, Trophy, Target, Calendar, Zap } from "lucide-react";
+import { ArrowLeft, Trophy, Target, Clock, Flag, Play, Check, Activity } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
 
 interface ActivityItem {
   id: string;
-  type: 'round' | 'practice';
+  type: 'round' | 'drill' | 'video' | 'achievement' | 'practice';
   title: string;
   date: string;
-  xp: number;
-  course?: string;
-  score?: number;
-  handicap?: number;
-  drillTitle?: string;
-  category?: string;
+  xp?: number;
 }
-
-// XP per round
-const XP_PER_ROUND = 500;
 
 export default function ActivityPage() {
   const router = useRouter();
-  const { rounds } = useStats();
+  const { user } = useAuth();
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Format time ago
+  const formatTimeAgo = (dateString: string): string => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const inputDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffDays = Math.floor((today.getTime() - inputDate.getTime()) / 86400000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    const timeString = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    
+    if (diffDays === 0) {
+      if (diffHours >= 1 && diffHours < 12) {
+        return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+      }
+      if (diffMins < 60 && diffMins > 0) {
+        return `${diffMins} min${diffMins === 1 ? '' : 's'} ago`;
+      }
+      if (diffMins === 0) {
+        return 'Just now';
+      }
+      return `Today at ${timeString}`;
+    } else if (diffDays === 1) {
+      return `Yesterday at ${timeString}`;
+    } else {
+      return `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} at ${timeString}`;
+    }
+  };
+
+  // Get icon for activity type
+  const getActivityIcon = (activity: ActivityItem) => {
+    if (activity.type === 'round') return Flag;
+    if (activity.type === 'drill') return Check;
+    if (activity.type === 'video') return Play;
+    if (activity.type === 'achievement') return Trophy;
+    return Clock; // default for practice
+  };
+
+  // Get icon color for activity
+  const getActivityIconColor = (activity: ActivityItem) => {
+    if (activity.type === 'round') return '#014421';
+    if (activity.type === 'drill' || activity.type === 'video') return '#FFA500';
+    if (activity.type === 'achievement') return '#FFD700';
+    return '#014421';
+  };
+
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      setLoading(false);
+    if (typeof window === 'undefined' || !user?.id) {
+      if (!user?.id) setLoading(false);
       return;
     }
 
-    const loadActivities = () => {
-      const allActivities: ActivityItem[] = [];
-
-      // Load rounds from StatsContext
-      rounds.forEach((round, index) => {
-        allActivities.push({
-          id: `round-${index}`,
-          type: 'round',
-          title: `${round.holes} Holes at ${round.course || 'Unknown Course'}`,
-          date: round.date,
-          xp: XP_PER_ROUND,
-          course: round.course,
-          score: round.score || undefined,
-          handicap: round.handicap || undefined,
-        });
-      });
-
-      // Load practice sessions from activity history (new repeatable system)
-      const practiceHistory = localStorage.getItem('practiceActivityHistory');
-      if (practiceHistory) {
-        try {
-          const history = JSON.parse(practiceHistory);
-          history.forEach((activity: any) => {
-            allActivities.push({
-              id: activity.id || `practice-${Date.now()}`,
-              type: 'practice',
-              title: activity.title || activity.drillTitle || 'Practice Session',
-              date: activity.date,
-              xp: activity.xp || 100,
-              drillTitle: activity.drillTitle || activity.title,
-              category: activity.category,
-            });
-          });
-        } catch (e) {
-          console.error('Error loading practice history:', e);
-        }
-      }
-      
-      // Fallback: Load from old userProgress system (for backward compatibility)
-      const savedProgress = localStorage.getItem('userProgress');
-      const savedDrills = localStorage.getItem('drillsData');
-      
-      if (savedProgress && savedDrills && (!practiceHistory || JSON.parse(practiceHistory).length === 0)) {
-        try {
-          const userProgress = JSON.parse(savedProgress);
-          const drills = JSON.parse(savedDrills);
+    const loadActivities = async () => {
+      setLoading(true);
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        
+        const { data, error } = await supabase
+          .from('activity_logs')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(100); // Fetch up to 100 recent activities
           
-          // Only use old system if no new history exists
-          userProgress.completedDrills?.forEach((drillId: string, index: number) => {
-            const drill = drills.find((d: any) => d.id === drillId);
-            if (drill) {
-              const completionDate = new Date();
-              completionDate.setDate(completionDate.getDate() - (userProgress.completedDrills.length - index));
-              
-              allActivities.push({
-                id: `practice-${drillId}-${index}`,
-                type: 'practice',
-                title: drill.title || 'Practice Session',
-                date: completionDate.toISOString().split('T')[0],
-                xp: drill.xpValue || 100,
-                drillTitle: drill.title,
-                category: drill.category,
-              });
-            }
-          });
-        } catch (e) {
-          console.error('Error loading practice sessions:', e);
+        if (error) {
+          console.error('Error loading activities:', error);
+          setLoading(false);
+          return;
         }
+        
+        if (data) {
+          const mappedActivities: ActivityItem[] = data.map(log => ({
+            id: log.id,
+            type: (log.activity_type ?? log.type) as any,
+            title: log.activity_title ?? log.title ?? '',
+            date: log.created_at,
+            xp: log.xp_earned // Assuming there might be an xp_earned column, but we'll map it if it exists
+          }));
+          
+          setActivities(mappedActivities);
+        }
+      } catch (err) {
+        console.error('Failed to fetch activity logs:', err);
+      } finally {
+        setLoading(false);
       }
-
-      // Sort by date (newest first)
-      allActivities.sort((a, b) => {
-        return new Date(b.date).getTime() - new Date(a.date).getTime();
-      });
-
-      setActivities(allActivities);
-      setLoading(false);
     };
 
     loadActivities();
 
     // Listen for all updates
-    const handleRoundsUpdated = () => {
-      loadActivities();
-    };
-    
-    const handleStorageChange = () => {
-      loadActivities();
-    };
-
-    const handlePracticeUpdate = () => {
-      loadActivities();
-    };
+    const handleRoundsUpdated = () => loadActivities();
+    const handlePracticeUpdate = () => loadActivities();
 
     window.addEventListener('roundsUpdated', handleRoundsUpdated);
-    window.addEventListener('storage', handleStorageChange);
     window.addEventListener('practiceActivityUpdated', handlePracticeUpdate);
     window.addEventListener('userProgressUpdated', handlePracticeUpdate);
 
     return () => {
       window.removeEventListener('roundsUpdated', handleRoundsUpdated);
-      window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('practiceActivityUpdated', handlePracticeUpdate);
       window.removeEventListener('userProgressUpdated', handlePracticeUpdate);
     };
-  }, [rounds]);
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) {
-      return 'Today';
-    } else if (date.toDateString() === yesterday.toDateString()) {
-      return 'Yesterday';
-    } else {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    }
-  };
+  }, [user?.id]);
 
   if (loading) {
     return (
@@ -187,11 +160,11 @@ export default function ActivityPage() {
             /* Empty State */
             <div className="text-center py-12">
               <div className="w-20 h-20 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(1, 68, 33, 0.1)' }}>
-                <Target className="w-10 h-10" style={{ color: '#014421' }} />
+                <Activity className="w-10 h-10" style={{ color: '#014421' }} />
               </div>
               <h2 className="text-xl font-semibold text-gray-900 mb-2">No activity yet</h2>
               <p className="text-gray-600 text-sm mb-6">
-                Log your first round to start your journey to 8.7!
+                Log your first round or practice session to start your journey!
               </p>
               <Link
                 href="/log-round"
@@ -203,30 +176,29 @@ export default function ActivityPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {activities.map((activity) => (
-                <div
-                  key={activity.id}
-                  className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-all"
-                >
-                  <div className="flex items-start gap-3">
+              {activities.map((activity) => {
+                const IconComponent = getActivityIcon(activity);
+                const iconColor = getActivityIconColor(activity);
+                const isRound = activity.type === 'round';
+
+                return (
+                  <div
+                    key={activity.id}
+                    className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-all flex items-center gap-3"
+                  >
                     {/* Icon */}
                     <div
                       className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
                       style={{ 
-                        backgroundColor: activity.type === 'round' ? '#dcfce7' : '#dbeafe' 
+                        backgroundColor: isRound 
+                          ? 'rgba(1, 68, 33, 0.1)' 
+                          : 'rgba(255, 165, 0, 0.1)' 
                       }}
                     >
-                      {activity.type === 'round' ? (
-                        <Trophy
-                          className="w-6 h-6"
-                          style={{ color: '#014421' }}
-                        />
-                      ) : (
-                        <Target
-                          className="w-6 h-6"
-                          style={{ color: '#3B82F6' }}
-                        />
-                      )}
+                      <IconComponent
+                        className="w-6 h-6"
+                        style={{ color: iconColor }}
+                      />
                     </div>
 
                     {/* Content */}
@@ -235,46 +207,23 @@ export default function ActivityPage() {
                         {activity.title}
                       </h3>
                       
-                      {/* Round Details */}
-                      {activity.type === 'round' && (
-                        <div className="flex items-center gap-3 text-sm text-gray-600 mb-2">
-                          {activity.score && (
-                            <span className="font-medium" style={{ color: '#FFA500' }}>
-                              Score: {activity.score}
-                            </span>
-                          )}
-                          {activity.handicap && (
-                            <span>HCP: {activity.handicap.toFixed(1)}</span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Practice Details */}
-                      {activity.type === 'practice' && activity.category && (
-                        <div className="text-sm text-gray-600 mb-2">
-                          <span className="px-2 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(1, 68, 33, 0.1)', color: '#014421' }}>
-                            {activity.category}
-                          </span>
-                        </div>
-                      )}
-
                       {/* Date and XP */}
-                      <div className="flex items-center justify-between mt-2">
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          <Calendar className="w-4 h-4" />
-                          <span>{formatDate(activity.date)}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Zap className="w-4 h-4" style={{ color: '#FFA500' }} />
-                          <span className="text-sm font-semibold" style={{ color: '#FFA500' }}>
-                            +{activity.xp} XP
-                          </span>
-                        </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Clock className="w-3 h-3 text-gray-400" />
+                        <span className="text-gray-400 text-xs">{formatTimeAgo(activity.date)}</span>
+                        {activity.xp && (
+                          <>
+                            <span className="text-gray-400 text-xs">•</span>
+                            <span className="text-xs font-medium" style={{ color: '#FFA500' }}>
+                              +{activity.xp} XP
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

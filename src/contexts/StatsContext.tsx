@@ -203,7 +203,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         doubleChips: round.double_chips || round.chip_ins || 0, // Handle both column names
         totalPutts: round.total_putts,
         threePutts: round.three_putts,
-        made6ftAndIn: Math.max(0, (round.putts_under_6ft_attempts || 0) - (round.missed_6ft_and_in || 0)),
+        made6ftAndIn: round.made_under_6ft !== undefined ? round.made_under_6ft : Math.max(0, (round.putts_under_6ft_attempts || 0) - (round.missed_6ft_and_in || 0)),
         puttsUnder6ftAttempts: round.putts_under_6ft_attempts,
         // Include user_id for leaderboard (profile data available from AuthContext)
         user_id: round.user_id,
@@ -406,7 +406,29 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       if (data && data.length > 0) {
         console.log('StatsContext: Sample practice sessions:', data.slice(0, 3).map((p: any) => ({ id: p.id, user_id: p.user_id, duration_minutes: p.duration_minutes })));
       }
-      setPracticeSessions((data || []) as PracticeSessionData[]);
+      
+      // Data Mapping: Map old categories to new ones so old data doesn't disappear from charts
+      const mappedData = (data || []).map((session: any) => {
+        let mappedType = session.type;
+        if (!mappedType) return session;
+        
+        const lowerType = mappedType.toLowerCase();
+        
+        if (lowerType === 'short game' || lowerType === 'chipping-green' || lowerType === 'chipping') mappedType = 'Chipping';
+        else if (lowerType === 'approach' || lowerType === 'range-grass' || lowerType === 'irons') mappedType = 'Irons';
+        else if (lowerType === 'mental game' || lowerType === 'mental' || lowerType === 'home' || lowerType === 'mental/strategy') mappedType = 'Mental/Strategy';
+        else if (lowerType === 'range-mat' || lowerType === 'driving') mappedType = 'Driving';
+        else if (lowerType === 'bunker' || lowerType === 'bunkers') mappedType = 'Bunkers';
+        else if (lowerType === 'putting-green' || lowerType === 'putting') mappedType = 'Putting';
+        else if (lowerType === 'wedges' || lowerType === 'wedge play') mappedType = 'Wedges';
+        
+        return {
+          ...session,
+          type: mappedType
+        };
+      });
+      
+      setPracticeSessions(mappedData as PracticeSessionData[]);
       practiceSessionsFetched.current = true;
     } catch (error) {
       console.error('StatsContext: Error loading practice sessions:', error);

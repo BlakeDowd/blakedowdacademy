@@ -951,7 +951,7 @@ function getDisplayName(
   if (email && email.includes("@")) {
     return email.split("@")[0];
   }
-  return "Anonymous User";
+  return "Academy Member";
 }
 
 // Helper function: Get avatar/icon with proper fallback (preferred_icon_id from database, then first initial)
@@ -1059,7 +1059,7 @@ async function fetchUserProfiles(
       "fetchUserProfiles: ALL profiles in database:",
       safeAllProfiles.map((p: any) => ({
         id: p.id,
-        full_name: p.full_name || "Anonymous User",
+        full_name: p.full_name || "Academy Member",
         xp: p.total_xp,
       })),
     );
@@ -1075,7 +1075,8 @@ async function fetchUserProfiles(
     const { data, error } = await supabase
       .from("profiles")
       .select("id, full_name, total_xp, preferred_icon_id")
-      .in("id", userIds);
+      .in("id", userIds)
+      .not("full_name", "is", null);
 
     if (error) {
       // Debug the Error: Full error object with JSON.stringify to see actual message
@@ -1111,7 +1112,7 @@ async function fetchUserProfiles(
         xp: xpValue, // Standardize Fallback: Use (profile.total_xp || 0) to ensure we aren't trying to add undefined or NaN to the state
       });
       console.log(
-        `fetchUserProfiles: Mapped ${profile.id} -> ${profile.full_name || "Anonymous User"}`,
+        `fetchUserProfiles: Mapped ${profile.id} -> ${profile.full_name || "Academy Member"}`,
       );
     });
 
@@ -1133,7 +1134,7 @@ async function fetchUserProfiles(
       "users:",
       Array.from(profileMap.entries()).map(([id, data]) => ({
         id,
-        name: data.full_name || "Anonymous User",
+        name: data.full_name || "Academy Member",
         xp: data.xp,
       })),
     );
@@ -1227,8 +1228,9 @@ function getMockLeaderboard(
       // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
       // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       const profile = userProfiles?.get(userId);
-      // Fallback Logic: Since the email is gone, ensure the name display logic uses: profile.full_name || 'Anonymous User'
-      const displayName = profile?.full_name || "Anonymous User";
+      // Inner Join: Skip if no profile or name exists
+      if (!profile || !profile.full_name) return;
+      const displayName = profile.full_name;
 
       // Fix Avatars: Update the avatar circles to show the first letter of their names
       let nameForAvatar = "U";
@@ -1338,8 +1340,9 @@ function getMockLeaderboard(
       // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
       // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       const profile = userProfiles?.get(userId);
-      // Fallback Logic: Since the email is gone, ensure the name display logic uses: profile.full_name || 'Anonymous User'
-      const displayName = profile?.full_name || "Anonymous User";
+      // Inner Join: Skip if no profile or name exists
+      if (!profile || !profile.full_name) return;
+      const displayName = profile.full_name;
 
       // Fix Avatars: Update the avatar circles to show the first letter of their names
       let nameForAvatar = "U";
@@ -1442,8 +1445,9 @@ function getMockLeaderboard(
       // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
       // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       const profile = userProfiles?.get(userId);
-      // Fallback Logic: Since the email is gone, ensure the name display logic uses: profile.full_name || 'Anonymous User'
-      const displayName = profile?.full_name || "Anonymous User";
+      // Inner Join: Skip if no profile or name exists
+      if (!profile || !profile.full_name) return;
+      const displayName = profile.full_name;
 
       // Fix Avatars: Update the avatar circles to show the first letter of their names (e.g., 'B') instead of the first letter of the ID
       let nameForAvatar = "U";
@@ -1547,7 +1551,8 @@ function getMockLeaderboard(
     // Add current user's entry
     if (user?.id) {
       const profile = userProfiles?.get(user.id);
-      const displayName = profile?.full_name || userName || "Anonymous User";
+      if (!profile || !profile.full_name) return; // Skip if no profile or name exists
+      const displayName = profile.full_name || userName || "Academy Member";
       
       let nameForAvatar = "U";
       if (profile?.full_name) {
@@ -1577,8 +1582,9 @@ function getMockLeaderboard(
     if (userProfiles) {
       userProfiles.forEach((profile, userId) => {
         if (userId === user?.id) return; // Skip current user, already added
+        if (!profile || !profile.full_name) return; // Skip if no profile or name exists
         
-        const displayName = profile.full_name || "Anonymous User";
+        const displayName = profile.full_name || "Academy Member";
         let nameForAvatar = "U";
         if (profile.full_name) {
           nameForAvatar =
@@ -1961,8 +1967,9 @@ function getLeaderboardData(
       // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
       // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       const profile = userProfiles?.get(userId);
-      // Fallback Logic: Since the email is gone, ensure the name display logic uses: profile.full_name || 'Anonymous User'
-      const displayName = profile?.full_name || "Anonymous User";
+      // Inner Join: Skip if no profile or name exists
+      if (!profile || !profile.full_name) return;
+      const displayName = profile.full_name;
 
       // Fix Avatars: Update the avatar circles to show the first letter of their names
       let nameForAvatar = "U";
@@ -2144,8 +2151,9 @@ function getLeaderboardData(
       // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
       // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       const profile = userProfiles?.get(userId);
-      // Fallback Logic: Since the email is gone, ensure the name display logic uses: profile.full_name || 'Anonymous User'
-      const displayName = profile?.full_name || "Anonymous User";
+      // Inner Join: Skip if no profile or name exists
+      if (!profile || !profile.full_name) return;
+      const displayName = profile.full_name;
 
       // Fix Avatars: Update the avatar circles to show the first letter of their names
       let nameForAvatar = "U";
@@ -2276,7 +2284,8 @@ function getLeaderboardData(
       const userAvgPutts = Number((sumPutts / puttsValues.length).toFixed(1));
 
       const profile = userProfiles?.get(userId);
-      const displayName = profile?.full_name || "Anonymous User";
+      if (!profile || !profile.full_name) return; // Skip if no profile or name exists
+      const displayName = profile.full_name;
 
       let nameForAvatar = "U";
       if (profile?.full_name) {
@@ -2379,8 +2388,9 @@ function getLeaderboardData(
       // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
       // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       const profile = userProfiles?.get(userId);
-      // Fallback Logic: Since the email is gone, ensure the name display logic uses: profile.full_name || 'Anonymous User'
-      const displayName = profile?.full_name || "Anonymous User";
+      // Inner Join: Skip if no profile or name exists
+      if (!profile || !profile.full_name) return;
+      const displayName = profile.full_name;
 
       // Fix Avatars: Update the avatar circles to show the first letter of their names (e.g., 'B') instead of the first letter of the ID
       let nameForAvatar = "U";
@@ -2546,8 +2556,9 @@ function getLeaderboardData(
       // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
       // Check Names: Ensure the Practice leaderboard uses the same profile name-mapping logic we used for the Rounds
       const profile = userProfiles?.get(userId);
-      // Fallback Logic: Since the email is gone, ensure the name display logic uses: profile.full_name || 'Anonymous User'
-      const displayName = profile?.full_name || "Anonymous User";
+      // Inner Join: Skip if no profile or name exists
+      if (!profile || !profile.full_name) return;
+      const displayName = profile.full_name;
 
       // Fix Avatars: Update the avatar circles to show the first letter of their names
       let nameForAvatar = "U";
@@ -2672,8 +2683,9 @@ function getLeaderboardData(
         fetch('http://127.0.0.1:7242/ingest/cc9628f8-b6b7-4cad-8d2c-8aad59e6d1dc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'academy/page.tsx:2464',message:'XP value extraction',data:{userId,profileKeys:Object.keys(profile||{}),hasXp:'xp' in (profile||{}),xpValue:profile?.xp,rawProfile:profile},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
         // #endregion
         const xpValue = profile.xp || 0;
-        // Fallback Logic: Since the email is gone, ensure the name display logic uses: profile.full_name || 'Anonymous User'
-        const displayName = profile.full_name || "Anonymous User";
+        // Inner Join: Skip if no profile or name exists
+        if (!profile || !profile.full_name) return;
+        const displayName = profile.full_name;
         
         // Debug: Log XP values to verify they're being fetched
         if (xpValue > 0) {
@@ -3225,7 +3237,7 @@ export default function AcademyPage() {
         "Academy: Available Profiles Map:",
         Array.from(profiles.entries()).map(([id, data]) => ({
           id,
-          full_name: data.full_name || "Anonymous User",
+          full_name: data.full_name || "Academy Member",
           preferred_icon_id: data.preferred_icon_id,
           xp: data.xp,
         })),
@@ -3271,7 +3283,7 @@ export default function AcademyPage() {
         "Academy: Loaded profiles:",
         Array.from(profiles.entries()).map(([id, data]) => ({
           id,
-          name: data.full_name || "Anonymous User",
+          name: data.full_name || "Academy Member",
         })),
       );
     };
@@ -4115,7 +4127,7 @@ export default function AcademyPage() {
                 timeFilter, // Use actual time filter instead of "allTime"
                 rounds || [],
                 user?.totalXP || 0,
-                userName || "Anonymous",
+                userName || "Academy Member",
                 user,
                 userProfiles,
                 practiceSessions || [],

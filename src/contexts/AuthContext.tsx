@@ -13,12 +13,11 @@ interface User {
   preferredIconId?: string; // Golf icon selected by student
   initialHandicap?: number;
   createdAt?: string;
-  streak?: number; // State Sync: Include streak in user state so banner updates
+  currentStreak?: number; // State Sync: Include streak in user state so banner updates
   totalXP?: number; // Sync Interfaces: Include totalXP from database total_xp column
   currentLevel?: number; // Pull current level from database
   startingHandicap?: number; // Store starting_handicap
   currentHandicap?: number; // Store current handicap
-  preferredIconId?: string; // Golf icon selected by student
   trophies?: string[]; // Use Profile Data: Pull trophies directly from profile data (trophies or achievements column)
 }
 
@@ -828,7 +827,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('full_name, profile_icon, created_at')
+          .select('full_name, preferred_icon_id, created_at')
           .eq('id', supabaseUser.id)
           .single();
         
@@ -866,7 +865,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: supabaseUser.email?.split('@')[0] || 'User',
             created_at: new Date().toISOString(),
           })
-          .select('full_name, profile_icon, created_at')
+          .select('full_name, preferred_icon_id, created_at')
           .single();
         
         if (createError) {
@@ -885,7 +884,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: supabaseUser.email?.split('@')[0] || 'User',
             created_at: new Date().toISOString(),
           })
-          .select('full_name, profile_icon, created_at')
+          .select('full_name, preferred_icon_id, created_at')
           .single();
         
         if (!createError && newProfile) {
@@ -943,7 +942,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Remove Database Dependency: Removed initial_handicap from .select() to avoid database dependency
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('full_name, profile_icon, created_at')
+          .select('full_name, preferred_icon_id, created_at')
           .eq('id', data.user.id)
           .single();
         
@@ -957,7 +956,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               full_name: data.user.email?.split('@')[0] || 'User',
               created_at: new Date().toISOString(),
             })
-            .select('full_name, profile_icon, created_at')
+            .select('full_name, preferred_icon_id, created_at')
             .single();
           
           if (createError) {
@@ -976,7 +975,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               full_name: data.user.email?.split('@')[0] || 'User',
               created_at: new Date().toISOString(),
             })
-            .select('full_name, profile_icon, created_at')
+            .select('full_name, preferred_icon_id, created_at')
             .single();
           
           if (!createError && newProfile) {
