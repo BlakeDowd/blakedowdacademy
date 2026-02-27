@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
-import { Search, ExternalLink, Play, FileText, File, Check, ChevronDown, X, Lock, Star } from "lucide-react";
+import { Search, ExternalLink, Play, FileText, File, Check, ChevronDown, X, Lock, Star, MoreVertical } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { logActivity } from "@/lib/activity";
 
@@ -205,7 +205,7 @@ Remember: Consistency is more important than perfection. Practice daily, even if
 ];
 
 function LibraryPageContent() {
-  // Access Context: Ensure the page is using the useAuth() hook to get the user or profile object
+
   const { user } = useAuth();
   const searchParams = useSearchParams();
   const [selectedDrill, setSelectedDrill] = useState<Drill | null>(null);
@@ -454,764 +454,286 @@ function LibraryPageContent() {
     }
   };
 
-  return (
-    <div className="bg-gray-50 pb-24">
-      <div className="max-w-md mx-auto bg-white">
-        {/* Mobile Layout - Professional Mobile-First */}
-        <div className="lg:hidden flex flex-col">
-          {/* Top Header - HUD Style - Sticky */}
-          <div className="sticky top-0 z-30 backdrop-blur-md border-b border-white/5" style={{ backgroundColor: 'rgba(1, 68, 33, 0.95)' }}>
-            {/* Header with Typography Refresh */}
-            <div className="px-4 py-2.5">
-              <div className="flex items-start justify-between gap-4">
-                <h1 className="text-xl font-extrabold text-white">Library</h1>
-                {/* Floating Level Bar Section */}
-                <div className="flex flex-col items-end gap-1.5 flex-1 max-w-xs">
-                  {/* Wrapper to match badge+XP row width exactly */}
-                  <div className="flex flex-col items-end gap-1.5 ml-2">
-                    {/* Level Badge and XP Counter Row */}
-                    <div className="flex items-center gap-2">
-                      {/* Elegant Level Badge */}
-                      <span 
-                        className="border rounded-md px-2.5 py-0.5 text-[10px] font-bold font-sans text-center"
-                        style={{ 
-                          borderColor: 'rgba(255, 165, 0, 0.5)',
-                          color: '#FFA500'
-                        }}
-                      >
-                        Level {currentLevel}
-                      </span>
-                      {/* Micro-Stats XP Counter */}
-                      {/* Update Display: Use profile?.totalXP || 0 to match the Home Dashboard (synchronized from database) */}
-                      <span className="tracking-widest text-[10px] text-gray-400 uppercase font-mono">
-                        {totalXP} XP
-                      </span>
-                    </div>
-                    {/* Ultra-Thin Floating Progress Bar with Neon Glow - Matched Width */}
-                    <div className="relative bg-white/10 rounded-full h-0.5 overflow-hidden w-full">
-                      {/* Progress Fill with Gradient and Neon Glow */}
-                      <div
-                        className="h-full rounded-full transition-all duration-500 relative overflow-hidden shadow-[0_0_8px_rgba(255,165,0,0.4)]"
-                        style={{ width: `${levelProgress}%` }}
-                      >
-                        <div 
-                          className="absolute inset-0"
-                          style={{ background: 'linear-gradient(to right, #FFA500, #FF8C00)' }}
-                        ></div>
-                        {/* Shimmer Effect */}
-                        <div 
-                          className="absolute inset-0"
-                          style={{
-                            background: 'linear-gradient(to right, transparent, rgba(255, 255, 255, 0.4), transparent)',
-                            animation: 'shimmer 2s infinite ease-in-out'
-                          }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+  // Netflix-style drill categorization
+  const continuePracticingDrills = DRILLS.filter(d => userProgress.completedDrills.includes(d.id));
+  const row1Drills = continuePracticingDrills.length > 0 ? continuePracticingDrills : DRILLS.slice(0, 4);
+  
+  const shortGameDrills = DRILLS.filter(d => d.category === 'Short Game' || d.category === 'Putting' || d.category === 'Wedge Play' || d.mechanic === 'Short Game');
+  const longGameDrills = DRILLS.filter(d => d.category === 'Driving' || d.category === 'Irons' || d.mechanic === 'Ball Striking');
+  const strategyDrills = DRILLS.filter(d => d.category === 'Mental Game' || d.category === 'On-Course' || d.mechanic === 'Strategy');
+
+  const heroDrill = DRILLS.find(d => d.id === '1') || DRILLS[0];
+  
+  const getThumbnailUrl = (source: string) => {
+    if (source.includes('youtube.com/embed/')) {
+      const videoId = source.split('youtube.com/embed/')[1]?.split('?')[0];
+      return videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : null;
+    } else if (source.includes('youtu.be/')) {
+      const videoId = source.split('youtu.be/')[1]?.split('?')[0];
+      return videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : null;
+    }
+    return null;
+  };
+  
+  const heroThumbnail = getThumbnailUrl(heroDrill.source) || 'https://images.unsplash.com/photo-1535136104956-6211bc6432f6?q=80&w=2000&auto=format&fit=crop';
+
+  const isFiltering = searchQuery !== '' || selectedCategory !== 'All' || selectedLevel !== 'All' || selectedMechanic !== 'All' || selectedPracticeMode !== 'All Modes';
+
+  const renderNetflixCard = (drill: Drill) => {
+    const isCompletedDrill = isCompleted(drill.id);
+    const thumbnailUrl = getThumbnailUrl(drill.source);
+
+    return (
+      <div
+        key={drill.id}
+        onClick={() => handleDrillClick(drill)}
+        style={{
+          flex: '0 0 280px',
+          minWidth: '280px',
+          maxWidth: '280px',
+          scrollSnapAlign: 'start',
+          cursor: 'pointer',
+        }}
+      >
+        <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', aspectRatio: '16/9', width: '100%', backgroundColor: '#f3f4f6' }}>
+          {thumbnailUrl ? (
+            <img src={thumbnailUrl} alt={drill.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          ) : drill.type === 'video' ? (
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#e5e7eb' }}>
+              <Play className="w-8 h-8 text-gray-400" />
             </div>
-
-            {/* Glass Search Bar */}
-            <div className="px-4 pb-2.5">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/50 z-10" />
-                <input
-                  type="text"
-                  placeholder="Search drills..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-white/5 backdrop-blur-md rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-orange-500/30 focus:bg-white/10 text-sm border-t border-white/10"
-                />
-              </div>
+          ) : (
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#eff6ff' }}>
+              <FileText className="w-8 h-8 text-blue-300" />
             </div>
-
-            {/* Premium Selectors - Side by Side */}
-            <div className="px-4 pb-2.5">
-              <div className="flex flex-wrap justify-center gap-2">
-                {/* Skill Level Dropdown - Premium Dark Background */}
-                <select
-                  value={selectedLevel === 'All' ? 'All Levels' : selectedLevel === 'Foundation' ? 'Break 100' : selectedLevel === 'Performance' ? 'Break 90' : 'Break 80'}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    if (value === 'All Levels') setSelectedLevel('All');
-                    else if (value === 'Break 100') setSelectedLevel('Foundation');
-                    else if (value === 'Break 90') setSelectedLevel('Performance');
-                    else if (value === 'Break 80') setSelectedLevel('Elite');
-                  }}
-                  className={`flex-1 min-w-[100px] px-3 py-2 rounded-lg text-white text-xs truncate focus:outline-none appearance-none cursor-pointer h-9 transition-all ${
-                    selectedLevel !== 'All' ? 'border-b-2 border-[#FFA500]' : ''
-                  }`}
-                  style={{ 
-                    backgroundColor: '#0a2118',
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 0.75rem center',
-                    backgroundSize: '16px 16px',
-                    paddingRight: '2.75rem'
-                  }}
-                >
-                  <option value="All Levels" style={{ backgroundColor: '#0a2118', color: 'white' }}>All Levels</option>
-                  <option value="Break 100" style={{ backgroundColor: '#0a2118', color: 'white' }}>Break 100</option>
-                  <option value="Break 90" style={{ backgroundColor: '#0a2118', color: 'white' }}>Break 90</option>
-                  <option value="Break 80" style={{ backgroundColor: '#0a2118', color: 'white' }}>Break 80</option>
-                </select>
-
-                {/* Focus Area Dropdown - Premium Dark Background */}
-                <select
-                  value={selectedMechanic}
-                  onChange={(e) => setSelectedMechanic(e.target.value)}
-                  className={`flex-1 min-w-[100px] px-3 py-2 rounded-lg text-white text-xs truncate focus:outline-none appearance-none cursor-pointer h-9 transition-all ${
-                    selectedMechanic !== 'All' ? 'border-b-2 border-[#FFA500]' : ''
-                  }`}
-                  style={{ 
-                    backgroundColor: '#0a2118',
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 0.75rem center',
-                    backgroundSize: '16px 16px',
-                    paddingRight: '2.75rem'
-                  }}
-                >
-                  <option value="All" style={{ backgroundColor: '#0a2118', color: 'white' }}>All Focus Areas</option>
-                  <option value="Ball Striking" style={{ backgroundColor: '#0a2118', color: 'white' }}>Ball Striking</option>
-                  <option value="Short Game" style={{ backgroundColor: '#0a2118', color: 'white' }}>Short Game</option>
-                  <option value="Putting" style={{ backgroundColor: '#0a2118', color: 'white' }}>Putting</option>
-                  <option value="Strategy" style={{ backgroundColor: '#0a2118', color: 'white' }}>Strategy</option>
-                </select>
-
-                {/* Practice Mode Dropdown - Premium Dark Background */}
-                <select
-                  value={selectedPracticeMode}
-                  onChange={(e) => setSelectedPracticeMode(e.target.value)}
-                  className={`flex-1 min-w-[100px] px-3 py-2 rounded-lg text-white text-xs truncate focus:outline-none appearance-none cursor-pointer h-9 transition-all ${
-                    selectedPracticeMode !== 'All Modes' ? 'border-b-2 border-[#FFA500]' : ''
-                  }`}
-                  style={{ 
-                    backgroundColor: '#0a2118',
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 0.75rem center',
-                    backgroundSize: '16px 16px',
-                    paddingRight: '2.75rem'
-                  }}
-                >
-                  <option value="All Modes" style={{ backgroundColor: '#0a2118', color: 'white' }}>All Modes</option>
-                  <option value="Technique" style={{ backgroundColor: '#0a2118', color: 'white' }}>Technique</option>
-                  <option value="Skill" style={{ backgroundColor: '#0a2118', color: 'white' }}>Skill</option>
-                  <option value="Performance" style={{ backgroundColor: '#0a2118', color: 'white' }}>Performance</option>
-                </select>
-              </div>
+          )}
+          {isCompletedDrill && (
+            <div style={{ position: 'absolute', top: '8px', left: '8px', width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#014421', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Check className="w-3 h-3 text-white" />
             </div>
-          </div>
-
-          {/* Video Hero Section - Full Width, No Padding - Slide Down Animation */}
-          <div
-            className={`w-full overflow-hidden transition-all duration-500 ease-in-out ${
-              selectedDrill ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
-            }`}
-          >
-            {selectedDrill && (
-              <div className="w-full">
-                {/* Video Player - Full Width with Close Button */}
-                <div className="w-full aspect-video bg-gray-900 relative">
-                  {/* Close Button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedDrill(null);
-                    }}
-                    className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center transition-colors"
-                    aria-label="Close video"
-                  >
-                    <X className="w-5 h-5 text-white" />
-                  </button>
-                  
-                  {selectedDrill.type === 'video' && (
-                    <iframe
-                      src={selectedDrill.source}
-                      className="w-full h-full"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
-                  )}
-                  {selectedDrill.type === 'pdf' && (
-                    <iframe
-                      src={selectedDrill.source}
-                      className="w-full h-full"
-                      title={selectedDrill.title}
-                    />
-                  )}
-                  {selectedDrill.type === 'text' && (
-                    <div className="w-full h-full flex items-center justify-center bg-gray-100 p-6">
-                      <div className="text-gray-800 leading-relaxed whitespace-pre-line text-sm max-w-2xl">
-                        {selectedDrill.source}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                {/* Full-Width Gold Action Bar */}
-                <button
-                  onClick={openFullscreen}
-                  className="w-full py-4 text-center font-semibold text-white transition-colors"
-                  style={{ backgroundColor: '#FFA500' }}
-                >
-                  <ExternalLink className="w-5 h-5 inline mr-2" />
-                  Open Fullscreen
-                </button>
-                
-                {/* Title & Description - Below Action Bar */}
-                <div className="px-4 py-4 bg-white">
-                  <h2 className="font-bold text-xl text-gray-900 mb-2">{selectedDrill.title}</h2>
-                  <p className="text-sm text-gray-600 mb-2">{selectedDrill.category} • {selectedDrill.level}</p>
-                  <div className="flex items-center gap-2 mb-3">
-                    {renderComplexityStars(selectedDrill.complexity)}
-                    <span className="text-xs text-gray-500">Difficulty Rating</span>
-                  </div>
-                  <p className="text-sm text-gray-700 leading-relaxed">{selectedDrill.description}</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Drill List - 2-Column Grid, Full Width */}
-          <div className="px-4 py-4">
-            {/* Drill Grid - 2 Columns */}
-            <div className="grid grid-cols-2 gap-3">
-              {filteredDrills.map((drill) => {
-                const completionCount = userProgress.drillCompletions?.[drill.id] || 0;
-                const isCompletedDrill = isCompleted(drill.id);
-                
-                // Extract video ID for thumbnail
-                const getThumbnailUrl = (source: string) => {
-                  if (drill.type === 'video') {
-                    const videoId = source.includes('youtube.com/embed/') 
-                      ? source.split('youtube.com/embed/')[1]?.split('?')[0]
-                      : source.includes('youtu.be/')
-                      ? source.split('youtu.be/')[1]?.split('?')[0]
-                      : null;
-                    return videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null;
-                  }
-                  return null;
-                };
-                const thumbnailUrl = getThumbnailUrl(drill.source);
-                
-                return (
-                  <div
-                    key={drill.id}
-                    onClick={() => handleDrillClick(drill)}
-                    className="bg-white rounded-lg border border-gray-200 hover:border-[#014421] transition-all cursor-pointer overflow-hidden shadow-sm relative"
-                  >
-                    {/* Thumbnail - Full Width */}
-                    <div className="w-full aspect-video bg-gray-200 relative overflow-hidden">
-                      {thumbnailUrl ? (
-                        <img 
-                          src={thumbnailUrl} 
-                          alt={drill.title}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : drill.type === 'video' ? (
-                        <div className="w-full h-full flex items-center justify-center bg-gray-300">
-                          <Play className="w-8 h-8 text-gray-500" />
-                        </div>
-                      ) : drill.type === 'pdf' ? (
-                        <div 
-                          className="w-full h-full flex items-center justify-center"
-                          style={{ backgroundColor: '#dbeafe' }}
-                        >
-                          <FileText className="w-8 h-8" style={{ color: '#2563eb' }} />
-                        </div>
-                      ) : (
-                        <div 
-                          className="w-full h-full flex items-center justify-center"
-                          style={{ backgroundColor: '#dcfce7' }}
-                        >
-                          <FileText className="w-8 h-8" style={{ color: '#16a34a' }} />
-                        </div>
-                      )}
-                      {/* Premium Lock Icon */}
-                      {drill.accessType === 'premium' && (
-                        <div className="absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center shadow-md bg-black/60">
-                          <Lock className="w-4 h-4 text-[#FFA500]" />
-                        </div>
-                      )}
-                      {/* XP Badge Overlay */}
-                      <div 
-                        className="absolute top-2 right-2 px-2 py-1 rounded-full text-xs font-bold shadow-md"
-                        style={{ 
-                          backgroundColor: '#FFA500', 
-                          color: '#014421'
-                        }}
-                      >
-                        +{drill.xpValue} XP
-                      </div>
-                      {/* Completion Check */}
-                      {isCompletedDrill && (
-                        <div className="absolute bottom-2 left-2 w-6 h-6 rounded-full flex items-center justify-center shadow-md" style={{ backgroundColor: '#014421' }}>
-                          <Check className="w-4 h-4 text-white" />
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Card Content */}
-                    <div className="p-3">
-                      <div className="flex items-start justify-between mb-1">
-                        <h3 className="font-semibold text-sm text-gray-900 line-clamp-2 flex-1 min-h-[2.5rem]">
-                          {drill.title}
-                        </h3>
-                        {drill.accessType === 'premium' && (
-                          <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold text-[#FFA500] border border-[#FFA500] flex-shrink-0">
-                            Premium
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-500 mb-1">
-                        {drill.category} • {drill.level}
-                      </p>
-                      {/* Complexity Rating and Practice Mode */}
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          {renderComplexityStars(drill.complexity)}
-                          <span className="text-[10px] text-gray-400">Difficulty</span>
-                        </div>
-                        {drill.practiceMode && (
-                          <span className="text-[10px] text-gray-500 font-medium">
-                            {drill.practiceMode} • {drill.level === 'Foundation' ? 'Beginner' : drill.level === 'Performance' ? 'Intermediate' : 'Advanced'}
-                          </span>
-                        )}
-                      </div>
-                      {completionCount > 0 && (
-                        <p className="text-xs text-[#014421] font-medium">
-                          Completed {completionCount}x
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+          )}
+          {drill.accessType === 'premium' && (
+            <div style={{ position: 'absolute', top: '8px', right: '8px', width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#FFA500', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Lock className="w-3 h-3 text-black" />
             </div>
-          </div>
+          )}
         </div>
+        <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#111827', marginTop: '8px', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>{drill.title}</h3>
+        <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{drill.category} &bull; {drill.level}</p>
+      </div>
+    );
+  };
 
-        {/* Desktop Layout - Vertical Stack */}
-        <div className="hidden lg:flex flex-col">
-          {/* Header Section - HUD Style - Sticky */}
-          <div className="sticky top-0 z-30 backdrop-blur-md border-b border-white/5" style={{ backgroundColor: 'rgba(1, 68, 33, 0.95)' }}>
-            {/* Header with Typography Refresh */}
-            <div className="px-6 py-2.5">
-              <div className="flex items-start justify-between gap-4">
-                <h1 className="text-xl font-extrabold text-white">Library</h1>
-                {/* Floating Level Bar Section */}
-                <div className="flex flex-col items-end gap-1.5 flex-1 max-w-xs">
-                  {/* Wrapper to match badge+XP row width exactly */}
-                  <div className="flex flex-col items-end gap-1.5 ml-2">
-                    {/* Level Badge and XP Counter Row */}
-                    <div className="flex items-center gap-2">
-                      {/* Elegant Level Badge */}
-                      <span 
-                        className="border rounded-md px-2.5 py-0.5 text-[10px] font-bold font-sans text-center"
-                        style={{ 
-                          borderColor: 'rgba(255, 165, 0, 0.5)',
-                          color: '#FFA500'
-                        }}
-                      >
-                        Level {currentLevel}
-                      </span>
-                      {/* Micro-Stats XP Counter */}
-                      {/* Update Display: Use profile?.totalXP || 0 to match the Home Dashboard (synchronized from database) */}
-                      <span className="tracking-widest text-[10px] text-gray-400 uppercase font-mono">
-                        {totalXP} XP
-                      </span>
-                    </div>
-                    {/* Ultra-Thin Floating Progress Bar with Neon Glow - Matched Width */}
-                    <div className="relative bg-white/10 rounded-full h-0.5 overflow-hidden w-full">
-                      {/* Progress Fill with Gradient and Neon Glow */}
-                      <div
-                        className="h-full rounded-full transition-all duration-500 relative overflow-hidden shadow-[0_0_8px_rgba(255,165,0,0.4)]"
-                        style={{ width: `${levelProgress}%` }}
-                      >
-                        <div 
-                          className="absolute inset-0"
-                          style={{ background: 'linear-gradient(to right, #FFA500, #FF8C00)' }}
-                        ></div>
-                        {/* Shimmer Effect */}
-                        <div 
-                          className="absolute inset-0"
-                          style={{
-                            background: 'linear-gradient(to right, transparent, rgba(255, 255, 255, 0.4), transparent)',
-                            animation: 'shimmer 2s infinite ease-in-out'
-                          }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+  const DrillCarousel = ({ title, drills }: { title: string, drills: Drill[] }) => {
+    if (drills.length === 0) return null;
+    return (
+      <div style={{ width: '100%', marginBottom: '24px' }}>
+        <h2 style={{ padding: '12px 16px', fontWeight: 700, color: '#111827', fontSize: '14px', margin: 0 }}>{title}</h2>
+        <div
+          className="netflix-scroll-row"
+          style={{
+            display: 'flex',
+            flexDirection: 'row',
+            flexWrap: 'nowrap',
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            scrollSnapType: 'x mandatory',
+            gap: '16px',
+            padding: '0 16px 16px',
+            cursor: 'grab',
+            scrollbarWidth: 'auto',
+          } as React.CSSProperties}
+        >
+          {drills.map(renderNetflixCard)}
+        </div>
+      </div>
+    );
+  };
+
+  const handleDrillComplete = (drillId: string) => {
+    markComplete(drillId);
+  };
+
+  const allDrills = isFiltering ? filteredDrills : [...row1Drills, ...shortGameDrills, ...longGameDrills, ...strategyDrills];
+
+  return (
+    <div style={{ maxWidth: '448px', margin: '0 auto', backgroundColor: '#fff', minHeight: '100vh', paddingBottom: '80px', overflowX: 'hidden' }}>
+      <style>{`
+        .netflix-scroll-row::-webkit-scrollbar {
+          height: 8px;
+          display: block;
+        }
+        .netflix-scroll-row::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .netflix-scroll-row::-webkit-scrollbar-thumb {
+          background: #ccc;
+          border-radius: 10px;
+        }
+        .netflix-scroll-row::-webkit-scrollbar-thumb:hover {
+          background: #aaa;
+        }
+      `}</style>
+
+      {/* Header */}
+      <div className="sticky top-0 z-40 w-full px-4 py-3" style={{ backgroundColor: '#054d2b' }}>
+        <div className="flex items-center justify-between">
+          <span className="text-lg font-bold text-white">Library</span>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-white/90">Level {currentLevel}</span>
+              <span className="text-[10px] text-white/70 font-mono">{totalXP} XP</span>
             </div>
-
-            {/* Glass Search Bar */}
-            <div className="px-6 pb-2.5">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/50 z-10" />
-                <input
-                  type="text"
-                  placeholder="Search drills..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-white/5 backdrop-blur-md rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-orange-500/30 focus:bg-white/10 text-sm border-t border-white/10"
-                />
-              </div>
-            </div>
-
-            {/* Premium Selectors - Side by Side */}
-            <div className="px-6 pb-2.5">
-              <div className="flex flex-wrap justify-center gap-2">
-                {/* Skill Level Dropdown - Premium Dark Background */}
-                <select
-                  value={selectedLevel === 'All' ? 'All Levels' : selectedLevel === 'Foundation' ? 'Break 100' : selectedLevel === 'Performance' ? 'Break 90' : 'Break 80'}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    if (value === 'All Levels') setSelectedLevel('All');
-                    else if (value === 'Break 100') setSelectedLevel('Foundation');
-                    else if (value === 'Break 90') setSelectedLevel('Performance');
-                    else if (value === 'Break 80') setSelectedLevel('Elite');
-                  }}
-                  className={`flex-1 min-w-[100px] px-3 py-2 rounded-lg text-white text-xs truncate focus:outline-none appearance-none cursor-pointer h-9 transition-all ${
-                    selectedLevel !== 'All' ? 'border-b-2 border-[#FFA500]' : ''
-                  }`}
-                  style={{ 
-                    backgroundColor: '#0a2118',
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 0.75rem center',
-                    backgroundSize: '16px 16px',
-                    paddingRight: '2.75rem'
-                  }}
-                >
-                  <option value="All Levels" style={{ backgroundColor: '#0a2118', color: 'white' }}>All Levels</option>
-                  <option value="Break 100" style={{ backgroundColor: '#0a2118', color: 'white' }}>Break 100</option>
-                  <option value="Break 90" style={{ backgroundColor: '#0a2118', color: 'white' }}>Break 90</option>
-                  <option value="Break 80" style={{ backgroundColor: '#0a2118', color: 'white' }}>Break 80</option>
-                </select>
-
-                {/* Focus Area Dropdown - Premium Dark Background */}
-                <select
-                  value={selectedMechanic}
-                  onChange={(e) => setSelectedMechanic(e.target.value)}
-                  className={`flex-1 min-w-[100px] px-3 py-2 rounded-lg text-white text-xs truncate focus:outline-none appearance-none cursor-pointer h-9 transition-all ${
-                    selectedMechanic !== 'All' ? 'border-b-2 border-[#FFA500]' : ''
-                  }`}
-                  style={{ 
-                    backgroundColor: '#0a2118',
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 0.75rem center',
-                    backgroundSize: '16px 16px',
-                    paddingRight: '2.75rem'
-                  }}
-                >
-                  <option value="All" style={{ backgroundColor: '#0a2118', color: 'white' }}>All Focus Areas</option>
-                  <option value="Ball Striking" style={{ backgroundColor: '#0a2118', color: 'white' }}>Ball Striking</option>
-                  <option value="Short Game" style={{ backgroundColor: '#0a2118', color: 'white' }}>Short Game</option>
-                  <option value="Putting" style={{ backgroundColor: '#0a2118', color: 'white' }}>Putting</option>
-                  <option value="Strategy" style={{ backgroundColor: '#0a2118', color: 'white' }}>Strategy</option>
-                </select>
-
-                {/* Practice Mode Dropdown - Premium Dark Background */}
-                <select
-                  value={selectedPracticeMode}
-                  onChange={(e) => setSelectedPracticeMode(e.target.value)}
-                  className={`flex-1 min-w-[100px] px-3 py-2 rounded-lg text-white text-xs truncate focus:outline-none appearance-none cursor-pointer h-9 transition-all ${
-                    selectedPracticeMode !== 'All Modes' ? 'border-b-2 border-[#FFA500]' : ''
-                  }`}
-                  style={{ 
-                    backgroundColor: '#0a2118',
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 0.75rem center',
-                    backgroundSize: '16px 16px',
-                    paddingRight: '2.75rem'
-                  }}
-                >
-                  <option value="All Modes" style={{ backgroundColor: '#0a2118', color: 'white' }}>All Modes</option>
-                  <option value="Technique" style={{ backgroundColor: '#0a2118', color: 'white' }}>Technique</option>
-                  <option value="Skill" style={{ backgroundColor: '#0a2118', color: 'white' }}>Skill</option>
-                  <option value="Performance" style={{ backgroundColor: '#0a2118', color: 'white' }}>Performance</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Video Hero Section - Full Width - Slide Down Animation */}
-          <div
-            className={`w-full overflow-hidden transition-all duration-500 ease-in-out ${
-              selectedDrill ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
-            }`}
-          >
-            {selectedDrill && (
-              <div className="w-full">
-                {/* Video Player - Full Width with Close Button */}
-                <div className="w-full aspect-video bg-gray-900 relative">
-                  {/* Close Button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedDrill(null);
-                    }}
-                    className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center transition-colors"
-                    aria-label="Close video"
-                  >
-                    <X className="w-5 h-5 text-white" />
-                  </button>
-                  
-                  {selectedDrill.type === 'video' && (
-                    <iframe
-                      src={selectedDrill.source}
-                      className="w-full h-full"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
-                  )}
-                  {selectedDrill.type === 'pdf' && (
-                    <iframe
-                      src={selectedDrill.source}
-                      className="w-full h-full"
-                      title={selectedDrill.title}
-                    />
-                  )}
-                  {selectedDrill.type === 'text' && (
-                    <div className="w-full h-full flex items-center justify-center bg-gray-100 p-6">
-                      <div className="text-gray-800 leading-relaxed whitespace-pre-line text-base max-w-2xl">
-                        {selectedDrill.source}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                {/* Full-Width Gold Action Bar */}
-                <button
-                  onClick={openFullscreen}
-                  className="w-full py-4 text-center font-semibold text-white transition-colors"
-                  style={{ backgroundColor: '#FFA500' }}
-                >
-                  <ExternalLink className="w-5 h-5 inline mr-2" />
-                  Open Fullscreen
-                </button>
-                
-                {/* Title & Description */}
-                <div className="px-6 py-4 bg-white">
-                  <h2 className="font-bold text-xl text-gray-900 mb-2">{selectedDrill.title}</h2>
-                  <p className="text-sm text-gray-600 mb-2">{selectedDrill.category} • {selectedDrill.level}</p>
-                  <div className="flex items-center gap-2 mb-3">
-                    {renderComplexityStars(selectedDrill.complexity)}
-                    <span className="text-xs text-gray-500">Difficulty Rating</span>
-                  </div>
-                  <p className="text-base text-gray-700 leading-relaxed">{selectedDrill.description}</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Drill List - Vertical List, Full Width */}
-          <div className="px-6 py-4">
-            <div className="space-y-3">
-              {filteredDrills.map((drill) => {
-                const completionCount = userProgress.drillCompletions?.[drill.id] || 0;
-                const isCompletedDrill = isCompleted(drill.id);
-                
-                // Extract video ID for thumbnail
-                const getThumbnailUrl = (source: string) => {
-                  if (drill.type === 'video') {
-                    const videoId = source.includes('youtube.com/embed/') 
-                      ? source.split('youtube.com/embed/')[1]?.split('?')[0]
-                      : source.includes('youtu.be/')
-                      ? source.split('youtu.be/')[1]?.split('?')[0]
-                      : null;
-                    return videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null;
-                  }
-                  return null;
-                };
-                const thumbnailUrl = getThumbnailUrl(drill.source);
-                
-                return (
-                  <div
-                    key={drill.id}
-                    onClick={() => handleDrillClick(drill)}
-                    className="bg-white rounded-lg border border-gray-200 hover:border-[#014421] transition-all cursor-pointer overflow-hidden shadow-sm relative"
-                  >
-                    <div className="flex items-center gap-3 p-4">
-                      {/* Thumbnail */}
-                      <div className="flex-shrink-0 w-24 h-24 rounded-lg bg-gray-200 relative overflow-hidden">
-                        {thumbnailUrl ? (
-                          <img 
-                            src={thumbnailUrl} 
-                            alt={drill.title}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : drill.type === 'video' ? (
-                          <div className="w-full h-full flex items-center justify-center bg-gray-300">
-                            <Play className="w-6 h-6 text-gray-500" />
-                          </div>
-                        ) : drill.type === 'pdf' ? (
-                          <div 
-                            className="w-full h-full flex items-center justify-center"
-                            style={{ backgroundColor: '#dbeafe' }}
-                          >
-                            <FileText className="w-6 h-6" style={{ color: '#2563eb' }} />
-                          </div>
-                        ) : (
-                          <div 
-                            className="w-full h-full flex items-center justify-center"
-                            style={{ backgroundColor: '#dcfce7' }}
-                          >
-                            <FileText className="w-6 h-6" style={{ color: '#16a34a' }} />
-                          </div>
-                        )}
-                        {/* Premium Lock Icon */}
-                        {drill.accessType === 'premium' && (
-                          <div className="absolute top-1 left-1 w-5 h-5 rounded-full flex items-center justify-center shadow-md bg-black/60">
-                            <Lock className="w-3 h-3 text-[#FFA500]" />
-                          </div>
-                        )}
-                        {/* XP Badge Overlay */}
-                        <div 
-                          className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold shadow-md"
-                          style={{ 
-                            backgroundColor: '#FFA500', 
-                            color: '#014421'
-                          }}
-                        >
-                          +{drill.xpValue} XP
-                        </div>
-                        {/* Completion Check */}
-                        {isCompletedDrill && (
-                          <div className="absolute bottom-1 left-1 w-5 h-5 rounded-full flex items-center justify-center shadow-md" style={{ backgroundColor: '#014421' }}>
-                            <Check className="w-3 h-3 text-white" />
-                          </div>
-                        )}
-                      </div>
-                      
-                      {/* Card Content */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between mb-1">
-                          <h3 className="font-semibold text-sm text-gray-900 line-clamp-2 flex-1">
-                            {drill.title}
-                          </h3>
-                          {drill.accessType === 'premium' && (
-                            <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold text-[#FFA500] border border-[#FFA500] flex-shrink-0">
-                              Premium
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-500 mb-1">
-                          {drill.category} • {drill.level}
-                        </p>
-                        {/* Complexity Rating and Practice Mode */}
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center gap-2">
-                            {renderComplexityStars(drill.complexity)}
-                            <span className="text-[10px] text-gray-400">Difficulty</span>
-                          </div>
-                          {drill.practiceMode && (
-                            <span className="text-[10px] text-gray-500 font-medium">
-                              {drill.practiceMode} • {drill.level === 'Foundation' ? 'Beginner' : drill.level === 'Performance' ? 'Intermediate' : 'Advanced'}
-                            </span>
-                          )}
-                        </div>
-                        {completionCount > 0 && (
-                          <p className="text-xs text-[#014421] font-medium">
-                            Completed {completionCount}x
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="w-20 h-1 bg-white/20 rounded-full overflow-hidden">
+              <div className="h-full bg-white rounded-full transition-all duration-500" style={{ width: `${levelProgress}%` }} />
             </div>
           </div>
         </div>
       </div>
 
+      {/* Video Player */}
+      {selectedDrill && (
+        <div className="w-full bg-black">
+          <div className="relative w-full pb-[56.25%]">
+            <button
+              onClick={() => setSelectedDrill(null)}
+              className="absolute top-3 right-3 z-50 w-8 h-8 rounded-full bg-black/50 border-none text-white flex items-center justify-center cursor-pointer"
+            >
+              <X className="w-4.5 h-4.5" />
+            </button>
+            <iframe
+              src={selectedDrill.source}
+              className="absolute top-0 left-0 w-full h-full border-none"
+              allowFullScreen
+            />
+          </div>
+          <div className="p-4">
+            <h2 className="text-base font-bold text-white m-0">{selectedDrill.title}</h2>
+            <p className="text-xs text-gray-400 mt-1">{selectedDrill.category} &bull; {selectedDrill.level}</p>
+            <button
+              onClick={() => handleDrillComplete(selectedDrill.id)}
+              className={`mt-3 w-full py-2.5 rounded-lg font-bold text-[13px] text-white transition-colors ${isCompleted(selectedDrill.id) ? 'bg-gray-800' : 'bg-[#16a34a]'}`}
+            >
+              {isCompleted(selectedDrill.id) ? 'Completed' : 'Mark as Complete'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Search */}
+      <div className="px-4 py-3 bg-white w-full border-b border-gray-100">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search drills..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 rounded-lg text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#16a34a] border-none"
+            style={{ backgroundColor: '#f3f4f6' }}
+          />
+        </div>
+        
+        {/* YouTube-style Category Chips */}
+        <div
+          className="netflix-scroll-row"
+          style={{
+            display: 'flex',
+            flexWrap: 'nowrap',
+            overflowX: 'auto',
+            gap: '8px',
+            marginTop: '12px',
+            paddingBottom: '4px',
+            paddingRight: '40px',
+            WebkitOverflowScrolling: 'touch',
+            cursor: 'grab',
+            scrollbarWidth: 'auto',
+          } as React.CSSProperties}
+        >
+          {[
+            { label: 'All', onClick: () => { setSelectedLevel('All'); setSelectedMechanic('All'); }, active: selectedLevel === 'All' && selectedMechanic === 'All' },
+            { label: 'Break 100', onClick: () => { setSelectedLevel('Foundation'); setSelectedMechanic('All'); }, active: selectedLevel === 'Foundation' },
+            { label: 'Break 90', onClick: () => { setSelectedLevel('Performance'); setSelectedMechanic('All'); }, active: selectedLevel === 'Performance' },
+            { label: 'Break 80', onClick: () => { setSelectedLevel('Elite'); setSelectedMechanic('All'); }, active: selectedLevel === 'Elite' },
+            { label: 'Ball Striking', onClick: () => { setSelectedMechanic('Ball Striking'); setSelectedLevel('All'); }, active: selectedMechanic === 'Ball Striking' },
+            { label: 'Short Game', onClick: () => { setSelectedMechanic('Short Game'); setSelectedLevel('All'); }, active: selectedMechanic === 'Short Game' },
+            { label: 'Putting', onClick: () => { setSelectedMechanic('Putting'); setSelectedLevel('All'); }, active: selectedMechanic === 'Putting' },
+            { label: 'Strategy', onClick: () => { setSelectedMechanic('Strategy'); setSelectedLevel('All'); }, active: selectedMechanic === 'Strategy' },
+          ].map((chip) => (
+            <button
+              key={chip.label}
+              onClick={chip.onClick}
+              style={{
+                flexShrink: 0,
+                padding: '6px 16px',
+                borderRadius: '9999px',
+                fontSize: '12px',
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'background-color 0.15s',
+                backgroundColor: chip.active ? '#111827' : '#f3f4f6',
+                color: chip.active ? '#fff' : '#374151',
+              }}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Drill Content */}
+      <div className="w-full pb-8">
+        {isFiltering ? (
+          <div style={{ width: '100%', paddingTop: '16px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', padding: '0 16px 16px' }}>
+              {filteredDrills.map(renderNetflixCard)}
+            </div>
+            {filteredDrills.length === 0 && (
+              <p className="text-center text-gray-400 py-12 text-sm">No drills match your search.</p>
+            )}
+          </div>
+        ) : (
+          <div className="w-full pt-2">
+            <DrillCarousel title="Continue Practicing" drills={row1Drills} />
+            <DrillCarousel title="Short Game Mastery" drills={shortGameDrills} />
+            <DrillCarousel title="Long Game Power" drills={longGameDrills} />
+            <DrillCarousel title="Mental &amp; Strategy" drills={strategyDrills} />
+          </div>
+        )}
+      </div>
+
       {/* Paywall Modal */}
       {showPaywallModal && premiumDrill && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6 relative">
-            {/* Close Button */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="bg-[#111] border border-white/10 rounded-2xl max-w-[400px] w-[90%] p-6 relative">
             <button
-              onClick={() => {
-                setShowPaywallModal(false);
-                setPremiumDrill(null);
-              }}
-              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
-              aria-label="Close modal"
+              onClick={() => { setShowPaywallModal(false); setPremiumDrill(null); }}
+              className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/10 border-none text-[#aaa] cursor-pointer flex items-center justify-center"
             >
-              <X className="w-5 h-5 text-gray-600" />
+              <X className="w-4 h-4" />
             </button>
-
-            {/* Premium Icon */}
-            <div className="flex justify-center mb-4">
-              <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ backgroundColor: '#FFA500' }}>
-                <Lock className="w-8 h-8 text-white" />
+            <div className="text-center mb-4">
+              <div className="w-14 h-14 rounded-full bg-[#FFA500] inline-flex items-center justify-center">
+                <Lock className="w-7 h-7 text-black" />
               </div>
             </div>
-
-            {/* Title */}
-            <h2 className="text-2xl font-bold text-center text-gray-900 mb-2">
-              Premium Content
-            </h2>
-            <p className="text-center text-gray-600 mb-6">
-              {premiumDrill.title}
-            </p>
-
-            {/* Description */}
-            <div className="bg-gray-50 rounded-lg p-4 mb-6">
-              <p className="text-sm text-gray-700 text-center">
-                This premium drill is part of our advanced training library. Upgrade to access exclusive content, advanced techniques, and personalized coaching.
-              </p>
-            </div>
-
-            {/* Features */}
-            <div className="space-y-2 mb-6">
-              <div className="flex items-center gap-2 text-sm text-gray-700">
-                <Check className="w-5 h-5 text-[#014421] flex-shrink-0" />
-                <span>Access to all premium drills and lessons</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-700">
-                <Check className="w-5 h-5 text-[#014421] flex-shrink-0" />
-                <span>Advanced technique breakdowns</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-700">
-                <Check className="w-5 h-5 text-[#014421] flex-shrink-0" />
-                <span>Personalized practice plans</span>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="space-y-3">
-              <button
-                onClick={() => {
-                  setShowPaywallModal(false);
-                  setPremiumDrill(null);
-                  // TODO: Navigate to upgrade page or trigger upgrade flow
-                }}
-                className="w-full py-3 rounded-lg font-semibold text-white transition-colors"
-                style={{ backgroundColor: '#FFA500' }}
-              >
-                Upgrade to Premium
-              </button>
-              <button
-                onClick={() => {
-                  setShowPaywallModal(false);
-                  setPremiumDrill(null);
-                }}
-                className="w-full py-3 rounded-lg font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
-              >
-                Maybe Later
-              </button>
-            </div>
+            <h2 className="text-xl font-extrabold text-center text-white m-0 mb-1">Premium Content</h2>
+            <p className="text-center text-[#888] mb-5 text-[13px]">{premiumDrill.title}</p>
+            <button
+              onClick={() => { setShowPaywallModal(false); setPremiumDrill(null); }}
+              className="w-full py-3 rounded-lg border-none font-bold text-sm cursor-pointer bg-[#FFA500] text-black mb-2"
+            >
+              Upgrade to Premium
+            </button>
+            <button
+              onClick={() => { setShowPaywallModal(false); setPremiumDrill(null); }}
+              className="w-full py-3 rounded-lg border-none font-medium text-sm cursor-pointer bg-white/10 text-white"
+            >
+              Maybe Later
+            </button>
           </div>
         </div>
       )}
@@ -1221,7 +743,7 @@ function LibraryPageContent() {
 
 export default function LibraryPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center">Loading...</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-[#050505] flex items-center justify-center text-[#FFA500] font-bold">Loading...</div>}>
       <LibraryPageContent />
     </Suspense>
   );

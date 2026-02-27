@@ -2254,7 +2254,7 @@ export default function PracticePage() {
 
             {/* Schedule Content - Collapsible - Single Day View */}
             {scheduleExpanded && (
-              <div className="px-4 pb-4 w-full overflow-hidden" style={{ maxWidth: '100vw' }}>
+              <div className="px-4 pb-4 w-full overflow-hidden" style={{ maxWidth: '100%' }}>
                 {/* View Mode Toggle */}
                 <div className="flex items-center justify-center gap-2 mb-4">
                   <button

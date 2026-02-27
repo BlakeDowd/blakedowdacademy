@@ -6,11 +6,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { motion, useSpring, useTransform } from "framer-motion";
 
 function AnimatedNumber({ value, isPercentage = false }: { value: number; isPercentage?: boolean }) {
-  const spring = useSpring(value, { mass: 0.8, stiffness: 75, damping: 15 });
-  const display = useTransform(spring, (current) => `${current.toFixed(1)}${isPercentage ? '%' : ''}`);
+  const spring = useSpring(value >= 0 ? value : 0, { mass: 0.8, stiffness: 75, damping: 15 });
+  const display = useTransform(spring, (current) => value === -1 ? '--' : `${current.toFixed(1)}${isPercentage ? '%' : ''}`);
 
   useEffect(() => {
-    spring.set(value);
+    spring.set(value >= 0 ? value : 0);
   }, [value, spring]);
 
   return <motion.span>{display}</motion.span>;
@@ -330,9 +330,9 @@ export default function StatsPage() {
     const avgPutts = safeRounds.length > 0 ? totalPutts / safeRounds.length : 0;
 
     // PUTTING: < 6ft Make percentage
-    const totalPuttsUnder6ft = safeRounds.reduce((sum, r) => sum + (r.puttsUnder6ftAttempts || 0), 0);
-    const puttsMadeUnder6ft = safeRounds.reduce((sum, r) => sum + (r.made6ftAndIn || 0), 0);
-    const puttsUnder6ftMake = totalPuttsUnder6ft > 0 ? (puttsMadeUnder6ft / totalPuttsUnder6ft) * 100 : 0;
+    const totalPuttsUnder6ft = safeRounds.reduce((sum, r) => sum + ((r as any).putts_attempts_6ft ?? r.puttsUnder6ftAttempts ?? 0), 0);
+    const puttsMadeUnder6ft = safeRounds.reduce((sum, r) => sum + ((r as any).putts_made_6ft ?? r.made6ftAndIn ?? 0), 0);
+    const puttsUnder6ftMake = Math.round((puttsMadeUnder6ft / totalPuttsUnder6ft) * 100) || 0;
 
     // PUTTING: 3-Putts (average per round)
     const totalThreePutts = safeRounds.reduce((sum, r) => sum + (r.threePutts || 0), 0);
@@ -829,7 +829,7 @@ export default function StatsPage() {
                   background: `linear-gradient(to right, #014421 0%, #014421 ${((selectedGoal + 5) / 59) * 100}%, #E5E7EB ${((selectedGoal + 5) / 59) * 100}%, #E5E7EB 100%)`
                 }}
               />
-              <div className="text-sm font-semibold text-gray-900 min-w-[80px] text-right">
+              <div className="text-sm font-semibold text-gray-900 w-full text-right">
                 {(selectedGoal ?? 0) >= 0 ? `${(selectedGoal ?? 0).toFixed(1)}` : `+${Math.abs(selectedGoal ?? 0).toFixed(1)}`} {(selectedGoal ?? 0) <= 0 ? 'Pro' : 'HCP'}
               </div>
             </div>
@@ -1399,7 +1399,7 @@ export default function StatsPage() {
                 </defs>
                 
                 {/* Grid polygons (Octagons) */}
-                {[34, 68, 102, 136, 170].map((radius, idx) => {
+                {[42, 84, 126, 168, 210].map((radius, idx) => {
                   const points = [0, 1, 2, 3, 4, 5, 6, 7].map(i => {
                     // Start from Driving at top, rotate clockwise
                     const angle = (i * (360/8) - 90) * (Math.PI / 180);
@@ -1422,8 +1422,8 @@ export default function StatsPage() {
                 {/* Grid lines (8 axes for 8 categories) */}
                 {[0, 1, 2, 3, 4, 5, 6, 7].map((idx) => {
                   const angle = (idx * (360/8) - 90) * (Math.PI / 180);
-                  const x = 250 + 170 * Math.cos(angle);
-                  const y = 250 + 170 * Math.sin(angle);
+                  const x = 250 + 210 * Math.cos(angle);
+                  const y = 250 + 210 * Math.sin(angle);
                   return (
                     <line
                       key={`axis-${idx}`}
@@ -1458,7 +1458,7 @@ export default function StatsPage() {
                   const dPath = values.map((value, idx) => {
                     const angle = (idx * (360/8) - 90) * (Math.PI / 180);
                     // If a student has 0 minutes in a category, ensure the orange line pulls all the way to the center point (radius = 0).
-                    const radius = (value / maxDataValue) * 170;
+                    const radius = (value / maxDataValue) * 210;
                     const x = 250 + radius * Math.cos(angle);
                     const y = 250 + radius * Math.sin(angle);
                     return `${idx === 0 ? 'M' : 'L'} ${x} ${y}`;
@@ -1477,9 +1477,9 @@ export default function StatsPage() {
                       {categories.map((category, idx) => {
                         const angle = (idx * (360/8) - 90) * (Math.PI / 180);
                         const value = values[idx];
-                        const radius = (value / maxDataValue) * 170;
-                        const labelX = 250 + 210 * Math.cos(angle); // Pushed further out
-                        const labelY = 250 + 210 * Math.sin(angle); // Pushed further out
+                        const radius = (value / maxDataValue) * 210;
+                        const labelX = 250 + 235 * Math.cos(angle); // Pushed further out
+                        const labelY = 250 + 235 * Math.sin(angle); // Pushed further out
                         
                         // Text alignment based on horizontal position
                         let textAnchor: "start" | "middle" | "end" = "middle";
@@ -1491,7 +1491,7 @@ export default function StatsPage() {
                         const nextAngle = ((idx + 1) % 8 * (360/8) - 90) * (Math.PI / 180);
                         const midPrevAngle = (angle + prevAngle) / 2;
                         const midNextAngle = (angle + nextAngle) / 2;
-                        const hoverRadius = 170;
+                        const hoverRadius = 210;
                         
                         const hoverPoints = [
                           '250,250',
@@ -1525,18 +1525,34 @@ export default function StatsPage() {
                               style={{ cursor: 'pointer' }}
                             />
                             {/* Category labels */}
-                            <text
-                              x={labelX}
-                              y={labelY}
-                              textAnchor={textAnchor}
-                              dominantBaseline="middle"
-                              fill="white"
-                              fontSize={category === 'Mental/Strategy' ? "11" : "13"}
-                              fontWeight="bold"
-                              opacity={isHovered ? 1 : 0.8}
-                            >
-                              {category}
-                            </text>
+                            {category === 'Mental/Strategy' ? (
+                              <text
+                                x={labelX}
+                                y={labelY}
+                                textAnchor={textAnchor}
+                                dominantBaseline="middle"
+                                fill="white"
+                                fontSize="13"
+                                fontWeight="bold"
+                                opacity={isHovered ? 1 : 0.8}
+                              >
+                                <tspan x={labelX} dy="-0.6em">Mental</tspan>
+                                <tspan x={labelX} dy="1.2em">Strategy</tspan>
+                              </text>
+                            ) : (
+                              <text
+                                x={labelX}
+                                y={labelY}
+                                textAnchor={textAnchor}
+                                dominantBaseline="middle"
+                                fill="white"
+                                fontSize="13"
+                                fontWeight="bold"
+                                opacity={isHovered ? 1 : 0.8}
+                              >
+                                {category}
+                              </text>
+                            )}
                             {/* Value indicator on hover */}
                             {isHovered && (
                               <circle

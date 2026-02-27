@@ -158,7 +158,7 @@ export default function DrillCard({
                     e.stopPropagation();
                     onYoutubeOpen(drill.youtube_url || drill.video_url || '');
                   }}
-                  className="px-4 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-sm font-semibold text-white transition-colors flex items-center gap-2 flex-1 min-w-[140px]"
+                  className="px-4 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-sm font-semibold text-white transition-colors flex items-center gap-2 flex-1 w-full"
                 >
                   <PlayCircle className="w-5 h-5" />
                   Watch Video
@@ -167,7 +167,7 @@ export default function DrillCard({
                 <button
                   type="button"
                   disabled
-                  className="px-4 py-2.5 rounded-lg bg-gray-300 text-gray-500 text-sm font-semibold cursor-not-allowed flex items-center gap-2 flex-1 min-w-[140px] opacity-50"
+                  className="px-4 py-2.5 rounded-lg bg-gray-300 text-gray-500 text-sm font-semibold cursor-not-allowed flex items-center gap-2 flex-1 w-full opacity-50"
                 >
                   <PlayCircle className="w-5 h-5" />
                   No Video Link
@@ -181,7 +181,7 @@ export default function DrillCard({
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  className="px-4 py-2.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm font-semibold text-gray-700 transition-colors flex items-center gap-2 flex-1 min-w-[140px]"
+                  className="px-4 py-2.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm font-semibold text-gray-700 transition-colors flex items-center gap-2 flex-1 w-full"
                 >
                   <File className="w-5 h-5" />
                   View PDF
@@ -190,7 +190,7 @@ export default function DrillCard({
                 <button
                   type="button"
                   disabled
-                  className="px-4 py-2.5 rounded-lg bg-gray-300 text-gray-500 text-sm font-semibold cursor-not-allowed flex items-center gap-2 flex-1 min-w-[140px] opacity-50"
+                  className="px-4 py-2.5 rounded-lg bg-gray-300 text-gray-500 text-sm font-semibold cursor-not-allowed flex items-center gap-2 flex-1 w-full opacity-50"
                 >
                   <File className="w-5 h-5" />
                   No PDF Link

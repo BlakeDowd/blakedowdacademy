@@ -5,6 +5,7 @@ import ConditionalNavbar from "@/components/ConditionalNavbar";
 import { StatsProvider } from "@/contexts/StatsContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import ProfileGuard from "@/components/ProfileGuard";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,18 +30,21 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased relative`}
+        style={{ maxWidth: '100vw', width: '100vw', overflowX: 'hidden', boxSizing: 'border-box' }}
       >
         {/* Cache Buster: Add this at the very top of the body to physically wipe the 'poisoned' session every time the page loads */}
         <script dangerouslySetInnerHTML={{ __html: 'localStorage.clear(); sessionStorage.clear();' }} />
         <ErrorBoundary>
           <AuthProvider>
-            <StatsProvider>
-              {/* Global Click-Through: Wrap children in z-0 div to ensure navbar is on top */}
-              <div className="relative z-0">
-                {children}
-              </div>
-            </StatsProvider>
+            <ProfileGuard>
+              <StatsProvider>
+                {/* Global Click-Through: Wrap children in z-0 div to ensure navbar is on top */}
+                <div className="relative z-0">
+                  {children}
+                </div>
+              </StatsProvider>
+            </ProfileGuard>
           </AuthProvider>
           {/* Layout Clean-up: Temporarily remove StatsProvider and AuthProvider wrappers around ConditionalNavbar to see if a provider is crashing */}
           {/* Force Interactive: Ensure ConditionalNavbar has pointerEvents: auto and high z-index to override any crashed components */}

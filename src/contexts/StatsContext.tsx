@@ -203,8 +203,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         doubleChips: round.double_chips || round.chip_ins || 0, // Handle both column names
         totalPutts: round.total_putts,
         threePutts: round.three_putts,
-        made6ftAndIn: round.made_under_6ft !== undefined ? round.made_under_6ft : Math.max(0, (round.putts_under_6ft_attempts || 0) - (round.missed_6ft_and_in || 0)),
-        puttsUnder6ftAttempts: round.putts_under_6ft_attempts,
+        made6ftAndIn: round.putts_made_6ft !== undefined ? round.putts_made_6ft : (round.made_under_6ft !== undefined ? round.made_under_6ft : Math.max(0, (round.putts_attempts_6ft || round.putts_under_6ft_attempts || 0) - (round.missed_6ft_and_in || 0))),
+        puttsUnder6ftAttempts: round.putts_attempts_6ft !== undefined ? round.putts_attempts_6ft : round.putts_under_6ft_attempts,
         // Include user_id for leaderboard (profile data available from AuthContext)
         user_id: round.user_id,
         // Profile data is available from AuthContext, so we don't need to join it here

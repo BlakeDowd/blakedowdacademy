@@ -827,7 +827,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('full_name, preferred_icon_id, created_at')
+          .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, preferred_icon_id, starting_handicap, handicap')
           .eq('id', supabaseUser.id)
           .single();
         
@@ -865,7 +865,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: supabaseUser.email?.split('@')[0] || 'User',
             created_at: new Date().toISOString(),
           })
-          .select('full_name, preferred_icon_id, created_at')
+          .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, preferred_icon_id, starting_handicap, handicap')
           .single();
         
         if (createError) {
@@ -884,7 +884,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: supabaseUser.email?.split('@')[0] || 'User',
             created_at: new Date().toISOString(),
           })
-          .select('full_name, preferred_icon_id, created_at')
+          .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, preferred_icon_id, starting_handicap, handicap')
           .single();
         
         if (!createError && newProfile) {
@@ -905,6 +905,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           fullName: profile?.full_name || prev.fullName || undefined,
           preferredIconId: profile?.preferred_icon_id || prev.preferredIconId || undefined,
           initialHandicap: 0, // Hard-Code Defaults: Manually set to 0 instead of getting from database
+          startingHandicap: profile?.starting_handicap !== undefined ? profile.starting_handicap : prev.startingHandicap,
+          currentHandicap: profile?.handicap !== undefined ? profile.handicap : prev.currentHandicap,
+          totalXP: profile?.total_xp !== undefined ? profile.total_xp : prev.totalXP,
+          currentLevel: profile?.current_level !== undefined ? profile.current_level : prev.currentLevel,
         };
       });
     } catch (error) {
