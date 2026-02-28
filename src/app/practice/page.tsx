@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File } from "lucide-react";
 import { DRILLS as LIBRARY_DRILLS, type Drill as LibraryDrill } from "@/data/drills";
 import DrillCard, { type FacilityType } from "@/components/DrillCard";
+import { AIPlayerInsights } from "@/components/AIPlayerInsights";
+import { getBenchmarkGoals } from "@/app/stats/page";
 
 type RoundType = '9-hole' | '18-hole' | null;
 
@@ -1714,6 +1716,73 @@ export default function PracticePage() {
     };
   };
 
+  // Filter to current user's rounds only — StatsContext fetches all users for leaderboard
+  const myRounds = useMemo(() => {
+    if (!user?.id || !rounds || rounds.length === 0) return [];
+    return rounds.filter((r: any) => r.user_id === user.id);
+  }, [rounds, user?.id]);
+
+  const [goals, performanceMetrics] = useMemo(() => {
+    const targetGoal = user?.initialHandicap ?? 54;
+    const g = getBenchmarkGoals(targetGoal);
+    const r1 = (v: number) => Math.round(v * 10) / 10;
+
+    const empty = {
+      firPercent: 0, girPercent: 0, gir8ft: 0, gir20ft: 0,
+      upAndDownPercent: 0, bunkerSaves: 0, chipInside6ft: 0,
+      avgPutts: 0, puttsUnder6ftMake: 0, avgThreePutts: 0,
+      teePenalties: 0, approachPenalties: 0, totalPenalties: 0,
+    };
+
+    if (myRounds.length === 0) return [g, empty];
+
+    const n = myRounds.length;
+
+    // DRIVING: Fairways in Regulation
+    const totalFir = myRounds.reduce((s, r) => s + (r.firHit || 0) + (r.firLeft || 0) + (r.firRight || 0), 0);
+    const firHit = myRounds.reduce((s, r) => s + (r.firHit || 0), 0);
+    const firPercent = totalFir > 0 ? (firHit / totalFir) * 100 : 0;
+
+    // APPROACH: GIR + Proximity
+    const totalGir = myRounds.reduce((s, r) => s + (r.totalGir || 0), 0);
+    const totalHoles = myRounds.reduce((s, r) => s + (r.holes || 18), 0);
+    const girPercent = totalHoles > 0 ? (totalGir / totalHoles) * 100 : 0;
+    const totalGir8ft = myRounds.reduce((s, r) => s + (r.gir8ft || 0), 0);
+    const totalGir20ft = myRounds.reduce((s, r) => s + (r.gir20ft || 0), 0);
+    const gir8ft = totalGir > 0 ? (totalGir8ft / totalGir) * 100 : 0;
+    const gir20ft = totalGir > 0 ? (totalGir20ft / totalGir) * 100 : 0;
+
+    // SHORT GAME: Up & Down, Bunker Saves, Chips inside 6ft
+    const totalUpDownAttempts = myRounds.reduce((s, r) => s + (r.upAndDownConversions || 0) + (r.missed || 0), 0);
+    const upDownSuccess = myRounds.reduce((s, r) => s + (r.upAndDownConversions || 0), 0);
+    const upAndDownPercent = totalUpDownAttempts > 0 ? (upDownSuccess / totalUpDownAttempts) * 100 : 0;
+    const totalBunkerAttempts = myRounds.reduce((s, r) => s + (r.bunkerAttempts || 0) + (r.bunkerSaves || 0), 0);
+    const bunkerSavesCount = myRounds.reduce((s, r) => s + (r.bunkerSaves || 0), 0);
+    const bunkerSaves = totalBunkerAttempts > 0 ? (bunkerSavesCount / totalBunkerAttempts) * 100 : 0;
+    const chipInside6ft = totalUpDownAttempts > 0 ? (myRounds.reduce((s, r) => s + (r.chipInside6ft || 0), 0) / totalUpDownAttempts) * 100 : 0;
+
+    // PUTTING: Total Putts, < 6ft Make %, 3-Putts
+    const totalPutts = myRounds.reduce((s, r) => s + (r.totalPutts || 0), 0);
+    const avgPutts = n > 0 ? totalPutts / n : 0;
+    const totalPuttsUnder6ft = myRounds.reduce((s, r) => s + (r.puttsUnder6ftAttempts || 0), 0);
+    const puttsMadeUnder6ft = myRounds.reduce((s, r) => s + (r.made6ftAndIn || 0), 0);
+    const puttsUnder6ftMake = totalPuttsUnder6ft > 0 ? Math.round((puttsMadeUnder6ft / totalPuttsUnder6ft) * 100) : 0;
+    const totalThreePutts = myRounds.reduce((s, r) => s + (r.threePutts || 0), 0);
+    const avgThreePutts = n > 0 ? totalThreePutts / n : 0;
+
+    // PENALTIES
+    const teePenalties = n > 0 ? myRounds.reduce((s, r) => s + (r.teePenalties || 0), 0) / n : 0;
+    const approachPenalties = n > 0 ? myRounds.reduce((s, r) => s + (r.approachPenalties || 0), 0) / n : 0;
+    const totalPenalties = n > 0 ? myRounds.reduce((s, r) => s + (r.totalPenalties || 0), 0) / n : 0;
+
+    return [g, {
+      firPercent: r1(firPercent), girPercent: r1(girPercent), gir8ft: r1(gir8ft), gir20ft: r1(gir20ft),
+      upAndDownPercent: r1(upAndDownPercent), bunkerSaves: r1(bunkerSaves), chipInside6ft: r1(chipInside6ft),
+      avgPutts: r1(avgPutts), puttsUnder6ftMake: r1(puttsUnder6ftMake), avgThreePutts: r1(avgThreePutts),
+      teePenalties: r1(teePenalties), approachPenalties: r1(approachPenalties), totalPenalties: r1(totalPenalties),
+    }];
+  }, [myRounds, user?.initialHandicap]);
+
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-md mx-auto bg-white min-h-screen px-4">
@@ -2117,25 +2186,8 @@ export default function PracticePage() {
           </div>
         )}
 
-        {/* Info Card */}
-        <div className="mb-6">
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
-            <p className="text-sm text-gray-600">
-              <span className="font-semibold text-gray-900">Focus Area:</span>{' '}
-              {Object.values(weeklyPlan).some(day => day.selected && day.roundType) ? (
-                <span className="font-semibold" style={{ color: '#014421' }}>
-                  On-Course Performance.
-                </span>
-              ) : (
-                <>
-                  Based on your stats, we're targeting <span className="font-semibold" style={{ color: '#014421' }}>
-                    {mostNeededCategory}
-                  </span> improvements.
-                </>
-              )}
-            </p>
-          </div>
-        </div>
+        {/* AI Player Insights */}
+        <AIPlayerInsights performanceMetrics={performanceMetrics} goals={goals} roundCount={myRounds.length} />
 
         {/* Quick Practice Log Section */}
         <div className="mb-6">

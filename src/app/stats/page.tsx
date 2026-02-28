@@ -5,6 +5,7 @@ import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { motion, useSpring, useTransform } from "framer-motion";
 
+
 function AnimatedNumber({ value, isPercentage = false }: { value: number; isPercentage?: boolean }) {
   const spring = useSpring(value >= 0 ? value : 0, { mass: 0.8, stiffness: 75, damping: 15 });
   const display = useTransform(spring, (current) => value === -1 ? '--' : `${current.toFixed(1)}${isPercentage ? '%' : ''}`);
@@ -33,13 +34,14 @@ const StatDisplay = ({
   inverse?: boolean;
   isAdjustingGoal: boolean;
 }) => {
-  const diff = goal - current;
+  const noData = current === -1;
+  const diff = goal - (noData ? 0 : current);
   const gap = inverse ? -diff : diff;
   const needsImprovement = gap > 0;
-  const gapText = needsImprovement ? `${inverse ? '-' : '+'}${Math.abs(gap).toFixed(1)}${isPercentage ? '%' : ''}` : `Target Met`;
+  const gapText = noData ? 'No Data' : needsImprovement ? `${inverse ? '-' : '+'}${Math.abs(gap).toFixed(1)}${isPercentage ? '%' : ''}` : `Target Met`;
   
-  const isMeetingGoal = inverse ? current <= goal : current >= goal;
-  const goalColor = isMeetingGoal ? 'text-green-500' : 'text-red-500';
+  const isMeetingGoal = noData ? false : inverse ? current <= goal : current >= goal;
+  const goalColor = noData ? 'text-gray-400' : isMeetingGoal ? 'text-green-500' : 'text-red-500';
 
   return (
     <div className="flex items-center justify-between py-2">
@@ -80,7 +82,7 @@ const StatDisplay = ({
 };
 
 // Linear scaling function: Maps handicap from 54 to +5 to goal percentages
-const getBenchmarkGoals = (handicap: number) => {
+export const getBenchmarkGoals = (handicap: number) => {
   const clampedHandicap = Math.max(-5, Math.min(54, handicap));
   const normalized = (54 - clampedHandicap) / (54 - (-5));
   
@@ -257,33 +259,35 @@ export default function StatsPage() {
   // Get benchmark goals based on selected goal handicap
   const goals = getBenchmarkGoals(selectedGoal);
   
-  // Calculate ALL performance metrics for tiles
+  const hasRoundData = safeRounds.length > 0;
+
+  // Calculate ALL performance metrics for tiles (-1 = no data sentinel for AnimatedNumber)
   const performanceMetrics = useMemo(() => {
     if (safeRounds.length === 0) {
       return {
         // DRIVING
-        firPercent: 0,
-        missedLeft: 0,
-        missedRight: 0,
+        firPercent: -1,
+        missedLeft: -1,
+        missedRight: -1,
         totalFirShots: 0,
         firHit: 0,
         firMissed: 0,
         // APPROACH
-        girPercent: 0,
-        gir8ft: 0,
-        gir20ft: 0,
+        girPercent: -1,
+        gir8ft: -1,
+        gir20ft: -1,
         // SHORT GAME
-        upAndDownPercent: 0,
-        bunkerSaves: 0,
-        chipInside6ft: 0,
+        upAndDownPercent: -1,
+        bunkerSaves: -1,
+        chipInside6ft: -1,
         // PUTTING
-        avgPutts: 0,
-        puttsUnder6ftMake: 0,
-        avgThreePutts: 0,
+        avgPutts: -1,
+        puttsUnder6ftMake: -1,
+        avgThreePutts: -1,
         // PENALTIES
-        teePenalties: 0,
-        approachPenalties: 0,
-        totalPenalties: 0,
+        teePenalties: -1,
+        approachPenalties: -1,
+        totalPenalties: -1,
       };
     }
 
@@ -829,7 +833,7 @@ export default function StatsPage() {
                   background: `linear-gradient(to right, #014421 0%, #014421 ${((selectedGoal + 5) / 59) * 100}%, #E5E7EB ${((selectedGoal + 5) / 59) * 100}%, #E5E7EB 100%)`
                 }}
               />
-              <div className="text-sm font-semibold text-gray-900 w-full text-right">
+              <div className="text-sm font-semibold text-gray-900 whitespace-nowrap shrink-0 text-right">
                 {(selectedGoal ?? 0) >= 0 ? `${(selectedGoal ?? 0).toFixed(1)}` : `+${Math.abs(selectedGoal ?? 0).toFixed(1)}`} {(selectedGoal ?? 0) <= 0 ? 'Pro' : 'HCP'}
               </div>
             </div>
@@ -1163,18 +1167,19 @@ export default function StatsPage() {
                 isAdjustingGoal={isAdjustingGoal}
               />
               
+              {hasRoundData ? (
               <div className="space-y-3 pt-3 border-t border-gray-100">
                 {/* FIR % Progress Bar */}
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-xs text-gray-700">Fairways Hit (FIR %)</span>
-                    <span className="text-xs font-bold" style={{ color: '#FF9800' }}>{performanceMetrics.firPercent.toFixed(1)}%</span>
+                    <span className="text-xs font-bold" style={{ color: '#FF9800' }}>{Math.max(0, performanceMetrics.firPercent).toFixed(1)}%</span>
                   </div>
                   <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
                     <div 
                       className="h-full rounded-full transition-all"
                       style={{ 
-                        width: `${Math.min(100, performanceMetrics.firPercent)}%`,
+                        width: `${Math.min(100, Math.max(0, performanceMetrics.firPercent))}%`,
                         backgroundColor: '#FF9800'
                       }}
                     />
@@ -1185,13 +1190,13 @@ export default function StatsPage() {
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-xs text-gray-700">Left Miss %</span>
-                    <span className="text-xs font-bold" style={{ color: '#FF9800' }}>{performanceMetrics.missedLeft.toFixed(1)}%</span>
+                    <span className="text-xs font-bold" style={{ color: '#FF9800' }}>{Math.max(0, performanceMetrics.missedLeft).toFixed(1)}%</span>
                   </div>
                   <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
                     <div 
                       className="h-full rounded-full transition-all"
                       style={{ 
-                        width: `${Math.min(100, performanceMetrics.missedLeft)}%`,
+                        width: `${Math.min(100, Math.max(0, performanceMetrics.missedLeft))}%`,
                         backgroundColor: '#FF9800'
                       }}
                     />
@@ -1202,13 +1207,13 @@ export default function StatsPage() {
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-xs text-gray-700">Right Miss %</span>
-                    <span className="text-xs font-bold" style={{ color: '#FF9800' }}>{performanceMetrics.missedRight.toFixed(1)}%</span>
+                    <span className="text-xs font-bold" style={{ color: '#FF9800' }}>{Math.max(0, performanceMetrics.missedRight).toFixed(1)}%</span>
                   </div>
                   <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
                     <div 
                       className="h-full rounded-full transition-all"
                       style={{ 
-                        width: `${Math.min(100, performanceMetrics.missedRight)}%`,
+                        width: `${Math.min(100, Math.max(0, performanceMetrics.missedRight))}%`,
                         backgroundColor: '#FF9800'
                       }}
                     />
@@ -1231,6 +1236,11 @@ export default function StatsPage() {
                   </div>
                 </div>
               </div>
+              ) : (
+              <div className="pt-3 border-t border-gray-100 text-center py-4">
+                <p className="text-xs text-gray-400">No rounds logged yet</p>
+              </div>
+              )}
             </div>
 
             {/* APPROACH Section */}
