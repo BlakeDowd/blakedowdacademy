@@ -154,43 +154,28 @@ export default function LoginPage() {
 
   return (
     <div 
-      className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden"
-      style={{ 
-        backgroundColor: '#014421',
-        backgroundImage: 'linear-gradient(135deg, rgba(1, 68, 33, 0.95) 0%, rgba(1, 90, 46, 0.95) 100%)'
-      }}
+      className="min-h-screen flex items-center justify-center px-4 py-12"
+      style={{ backgroundColor: '#ffffff' }}
     >
-      {/* Optional: Add a blurred golf course image background here */}
-      <div 
-        className="absolute inset-0"
-        style={{ background: 'linear-gradient(to bottom right, rgba(20, 83, 45, 0.2), rgba(22, 101, 52, 0.2))' }}
-      />
-      
-      <div className="relative z-10 w-full max-w-md px-4">
+      <div className="w-full max-w-md px-4">
         {/* Logo and Branding */}
         <div className="text-center mb-8">
-          {/* Logo Image */}
           <div className="flex justify-center mb-4">
-            <img src="/logo.png" alt="Logo" className="h-12 w-auto object-contain" />
+            <img src="/logo.png" alt="Blake Dowd Golf" className="w-64 object-contain" />
           </div>
-          <div 
-            className="text-6xl font-bold mb-4"
-            style={{ 
-              color: '#FFA500',
-              fontFamily: 'Georgia, serif',
-              textShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-              letterSpacing: '0.05em'
-            }}
+          <h1 
+            className="text-2xl font-bold"
+            style={{ color: '#054d2b', letterSpacing: '0.02em' }}
           >
-            The Academy
-          </div>
-          <p className="text-white/80 text-sm">
+            Online Academy
+          </h1>
+          <p className="text-gray-500 text-sm mt-2">
             {isSignUp ? "Create your account" : "Welcome back"}
           </p>
         </div>
 
         {/* Auth Card */}
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
           {/* Toggle between Login and Sign Up */}
           <div className="flex gap-2 mb-6 bg-gray-100 rounded-lg p-1">
             <button
@@ -243,7 +228,7 @@ export default function LoginPage() {
                 <button
                   onClick={() => window.location.reload()}
                   className="mt-3 w-full py-2 px-4 rounded-lg font-medium text-white transition-all hover:shadow-md"
-                  style={{ backgroundColor: '#014421' }}
+                  style={{ backgroundColor: '#054d2b' }}
                 >
                   Click here to retry
                 </button>
@@ -265,7 +250,7 @@ export default function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#014421] focus:border-[#014421] outline-none transition-all"
+                  className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#054d2b] focus:border-[#054d2b] outline-none transition-all"
                   placeholder="your@email.com"
                   required
                 />
@@ -284,7 +269,7 @@ export default function LoginPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#014421] focus:border-[#014421] outline-none transition-all"
+                  className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#054d2b] focus:border-[#054d2b] outline-none transition-all"
                   placeholder="••••••••"
                   required
                   minLength={6}
@@ -305,7 +290,7 @@ export default function LoginPage() {
                     type="text"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#014421] focus:border-[#014421] outline-none transition-all"
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#054d2b] focus:border-[#054d2b] outline-none transition-all"
                     placeholder="John Doe"
                     required={isSignUp}
                   />
@@ -327,7 +312,7 @@ export default function LoginPage() {
                     step="0.1"
                     value={initialHandicap}
                     onChange={(e) => setInitialHandicap(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#014421] focus:border-[#014421] outline-none transition-all"
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#054d2b] focus:border-[#054d2b] outline-none transition-all"
                     placeholder="e.g., 12.0"
                     required={isSignUp}
                     min="-5"
@@ -352,7 +337,7 @@ export default function LoginPage() {
               type="submit"
               disabled={loading}
               className="w-full py-3.5 rounded-lg font-semibold text-white transition-all hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ backgroundColor: '#014421' }}
+              style={{ backgroundColor: '#054d2b' }}
             >
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -370,11 +355,11 @@ export default function LoginPage() {
             {isSignUp ? (
               <>
                 By signing up, you agree to our{" "}
-                <a href="#" className="text-[#014421] hover:underline">
+                <a href="#" className="text-[#054d2b] hover:underline">
                   Terms of Service
                 </a>{" "}
                 and{" "}
-                <a href="#" className="text-[#014421] hover:underline">
+                <a href="#" className="text-[#054d2b] hover:underline">
                   Privacy Policy
                 </a>
               </>
@@ -384,7 +369,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setIsSignUp(true)}
-                  className="text-[#014421] font-medium hover:underline"
+                  className="text-[#054d2b] font-medium hover:underline"
                 >
                   Sign up
                 </button>

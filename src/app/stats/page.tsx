@@ -329,10 +329,10 @@ export default function StatsPage() {
     const totalPutts = safeRounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0);
     const avgPutts = safeRounds.length > 0 ? totalPutts / safeRounds.length : 0;
 
-    // PUTTING: < 6ft Make percentage
-    const totalPuttsUnder6ft = safeRounds.reduce((sum, r) => sum + ((r as any).putts_attempts_6ft ?? r.puttsUnder6ftAttempts ?? 0), 0);
-    const puttsMadeUnder6ft = safeRounds.reduce((sum, r) => sum + ((r as any).putts_made_6ft ?? r.made6ftAndIn ?? 0), 0);
-    const puttsUnder6ftMake = Math.round((puttsMadeUnder6ft / totalPuttsUnder6ft) * 100) || 0;
+    // PUTTING: < 6ft Make percentage (made_under_6ft / putts_under_6ft_attempts)
+    const totalPuttsUnder6ft = safeRounds.reduce((sum, r) => sum + (r.puttsUnder6ftAttempts || 0), 0);
+    const puttsMadeUnder6ft = safeRounds.reduce((sum, r) => sum + (r.made6ftAndIn || 0), 0);
+    const puttsUnder6ftMake = totalPuttsUnder6ft > 0 ? Math.round((puttsMadeUnder6ft / totalPuttsUnder6ft) * 100) : 0;
 
     // PUTTING: 3-Putts (average per round)
     const totalThreePutts = safeRounds.reduce((sum, r) => sum + (r.threePutts || 0), 0);

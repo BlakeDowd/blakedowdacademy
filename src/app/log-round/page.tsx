@@ -240,10 +240,8 @@ export default function LogRoundPage() {
         // Putting stats
         total_putts: roundData.totalPutts,
         three_putts: roundData.threePutts, // 3-Putt stat
-        made_under_6ft: roundData.made6ftAndIn, // Made < 6ft
+        made_under_6ft: roundData.made6ftAndIn,
         putts_under_6ft_attempts: roundData.puttsUnder6ftAttempts,
-        putts_made_6ft: roundData.made6ftAndIn, // New column
-        putts_attempts_6ft: roundData.puttsUnder6ftAttempts, // New column
       };
 
       console.log('Attempting to save round with user_id:', currentUserId);
