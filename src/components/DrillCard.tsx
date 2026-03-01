@@ -26,6 +26,7 @@ interface DrillCardProps {
     video_url?: string;
     levels?: DrillLevel[];
     facility?: FacilityType;
+    goal?: string;
   };
   dayIndex: number;
   drillIndex: number;
@@ -54,10 +55,10 @@ export default function DrillCard({
   onLevelToggle,
   onYoutubeOpen,
   onExpandToggle,
-  defaultExpanded = true, // FORCE VISIBILITY: Default to true
+  defaultExpanded = false, // FORCE VISIBILITY: Default to false
 }: DrillCardProps) {
-  // FIX THE TOGGLE: Default to expanded, but allow user to collapse
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded !== false); // Start expanded unless explicitly false
+  // FIX THE TOGGLE: Default to collapsed
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const isCompleted = drill.completed || false;
   // SMOOTH TRANSITION: Show content only when expanded or just swapped
   const shouldShowContent = isExpanded || justSwapped;
@@ -85,44 +86,36 @@ export default function DrillCard({
   return (
     <div className="relative w-full">
       <div
-        className={`w-full p-4 rounded-lg border-2 transition-all ${
+        onClick={handleExpandToggle}
+        className={`w-full p-3 rounded-lg border-2 transition-all cursor-pointer ${
           isCompleted
             ? 'bg-green-50 border-green-300'
             : 'bg-white border-gray-200 hover:border-[#FFA500]'
         } ${justSwapped ? 'ring-2 ring-green-400' : ''} ${isExpanded ? 'border-[#014421]' : ''}`}
       >
         {/* Drill Header */}
-        <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <div className="mb-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className={`text-lg font-semibold flex-1 ${
-                  isCompleted ? 'text-green-700 line-through' : 'text-gray-900'
-                }`}>
-                  {isCompleted && (
-                    <span className="inline-flex items-center mr-2">
-                      <CheckCircle2 className="w-5 h-5 text-green-600" />
-                    </span>
-                  )}
-                  {drill.title}
-                </h4>
-              </div>
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <h4 className={`text-lg font-semibold flex-1 ${
+                isCompleted ? 'text-green-700 line-through' : 'text-gray-900'
+              }`}>
+                {isCompleted && (
+                  <span className="inline-flex items-center mr-2">
+                    <CheckCircle2 className="w-5 h-5 text-green-600" />
+                  </span>
+                )}
+                {drill.title}
+              </h4>
             </div>
             
-            {/* Target/Category */}
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-gray-700">Target: {drill.category}</p>
-              {drill.facility && facilityInfo && (
-                <p className="text-sm text-gray-600">@ {facilityInfo[drill.facility].label}</p>
+            <div className="flex items-center gap-3 text-sm text-gray-600">
+              <span className="flex items-center gap-1">
+                <span>{drill.estimatedMinutes} min</span>
+              </span>
+              {drill.xpEarned && drill.xpEarned > 0 && (
+                <span className="text-[#FFA500] font-semibold">+{drill.xpEarned} XP</span>
               )}
-              <div className="flex items-center gap-3 text-sm text-gray-600">
-                <span className="flex items-center gap-1">
-                  <span>{drill.estimatedMinutes} min</span>
-                </span>
-                {drill.xpEarned && drill.xpEarned > 0 && (
-                  <span className="text-[#FFA500] font-semibold">+{drill.xpEarned} XP</span>
-                )}
-              </div>
             </div>
           </div>
           
@@ -144,9 +137,23 @@ export default function DrillCard({
         
         {/* CORE UPGRADES: Always show content - cards expanded by default */}
         {shouldShowContent && (
-          <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+          <div className="mt-3 pt-3 border-t border-gray-200 space-y-3">
+            
+            {/* Target/Category Details Moved Inside Expanded */}
+            <div className="space-y-1 mb-2">
+              {drill.goal && (
+                <p className="text-sm font-medium text-[#014421]">Goal/Reps: {drill.goal}</p>
+              )}
+              {drill.facility && facilityInfo && (
+                <p className="text-sm text-gray-600">@ {facilityInfo[drill.facility].label}</p>
+              )}
+            </div>
+
             {drill.description && (
-              <p className="text-sm text-gray-700 leading-relaxed">{drill.description}</p>
+              <div className="text-sm text-gray-700 leading-relaxed">
+                <span className="font-semibold text-gray-900 block mb-1">Instructions:</span>
+                {drill.description}
+              </div>
             )}
             
             {/* CORE UPGRADE: Watch Video Button (YouTube icon) */}

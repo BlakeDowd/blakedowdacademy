@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File } from "lucide-react";
-import { DRILLS as LIBRARY_DRILLS, type Drill as LibraryDrill } from "@/data/drills";
+import { OFFICIAL_DRILLS } from "@/data/official_drills";
 import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
 import { getBenchmarkGoals } from "@/app/stats/page";
@@ -35,6 +35,7 @@ interface DayPlan {
     pdf_url?: string; // PDF resource URL
     youtube_url?: string; // YouTube video URL
     levels?: Array<{ id: string; name: string; completed?: boolean }>; // Drill levels/checklist
+    goal?: string; // Goal/Reps for this drill
   }>;
   date?: string; // Date this plan was generated
 }
@@ -47,6 +48,8 @@ interface Drill {
   id: string;
   title: string;
   category: string;
+  sub_category?: string;
+  focus?: string;
   estimatedMinutes: number;
   xpValue: number;
   contentType?: 'video' | 'pdf' | 'text'; // Content type for display
@@ -57,6 +60,7 @@ interface Drill {
   youtube_url?: string; // YouTube URL (mapped from video_url)
   drill_levels?: any; // Drill levels from database
   levels?: Array<{ id: string; name: string; completed?: boolean }>; // Parsed drill levels
+  goal?: string; // Goal/Reps from database
 }
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -65,27 +69,33 @@ const DAY_ABBREVIATIONS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 // Map Stats categories to Drill categories
 const categoryMapping: Record<string, string[]> = {
   'Putting': ['Putting'],
-  'Driving': ['Driving'],
-  'Short Game': ['Short Game', 'Wedge Play'],
-  'Approach': ['Irons', 'Skills'],
-  'Sand Play': ['Short Game', 'Wedge Play'],
-  'Chipping': ['Short Game', 'Wedge Play'],
-  'Irons': ['Irons', 'Skills'],
+  'Driving': ['Driving', 'Tee'],
+  'Short Game': ['Short Game', 'Wedge Play', 'Chipping', 'Bunkers'],
+  'Approach': ['Irons', 'Skills', 'Full Swing'],
+  'Sand Play': ['Short Game', 'Wedge Play', 'Bunkers'],
+  'Chipping': ['Short Game', 'Wedge Play', 'Chipping'],
+  'Irons': ['Irons', 'Skills', 'Full Swing'],
   'Wedges': ['Wedge Play', 'Skills'],
-  'Bunkers': ['Short Game', 'Wedge Play'],
-  'Mental/Strategy': ['Mental Game', 'Skills'],
+  'Bunkers': ['Short Game', 'Wedge Play', 'Bunkers'],
+  'Mental/Strategy': ['Mental Game', 'Skills', 'Strategy'],
 };
 
-// Map facility types to compatible drill categories (using new pillars)
-const facilityDrillMapping: Record<FacilityType, string[]> = {
-  'Driving': ['Driving', 'Skills'],
-  'Irons': ['Irons', 'Skills'],
-  'Wedges': ['Wedge Play', 'Skills'],
-  'Chipping': ['Short Game', 'Wedge Play'],
-  'Bunkers': ['Short Game', 'Wedge Play'],
-  'Putting': ['Putting'],
-  'Mental/Strategy': ['Mental Game', 'Skills'],
-  'On-Course': ['On-Course', 'Skills'],
+// Map facility types to compatible drill categories and sub-categories
+interface CategoryFilter {
+  category: string;
+  sub_category?: string;
+  focus?: string;
+}
+
+const facilityDrillMapping: Record<FacilityType, CategoryFilter[]> = {
+  'Driving': [{ category: 'Driving' }, { category: 'Tee' }],
+  'Irons': [{ category: 'Irons' }], // Only map to Irons
+  'Wedges': [{ category: 'Wedges' }, { category: 'Wedge Play' }],
+  'Chipping': [{ category: 'Chipping' }, { category: 'Short Game' }],
+  'Bunkers': [{ category: 'Bunkers' }, { category: 'Short Game' }],
+  'Putting': [{ category: 'Putting' }],
+  'Mental/Strategy': [{ category: 'Mental Game' }, { category: 'Strategy' }],
+  'On-Course': [{ category: 'On Course' }, { category: 'On-Course' }],
 };
 
 // XP Tiering based on Pillar
@@ -94,10 +104,15 @@ const pillarXPTiering: Record<string, number> = {
   'Wedge Play': 75,
   'Putting': 50,
   'Driving': 75,
+  'Tee': 75,
   'Irons': 60,
+  'Full Swing': 60,
   'Short Game': 60,
+  'Chipping': 60,
+  'Bunkers': 60,
   'On-Course': 500, // High XP for on-course practice
   'Mental Game': 100, // Higher XP for mental game
+  'Strategy': 100,
 };
 
 // Facility display info
@@ -398,8 +413,8 @@ export default function PracticePage() {
           const drillDetailsMap: Record<string, any> = {};
           
           // Add library drills first
-          if (typeof LIBRARY_DRILLS !== 'undefined') {
-            LIBRARY_DRILLS.forEach((drill: any) => {
+          if (typeof OFFICIAL_DRILLS !== 'undefined') {
+            OFFICIAL_DRILLS.forEach((drill: any) => {
               if (drill.id) drillDetailsMap[drill.id] = drill;
               if (drill.title) drillDetailsMap[drill.title.toLowerCase().trim()] = drill;
             });
@@ -568,75 +583,35 @@ export default function PracticePage() {
     loadWeeklySchedule();
   }, [user?.id]);
 
-  // Load drills from drills.ts (library drills) and merge with database data
+  // Fetch drills directly from local data
   useEffect(() => {
-    const loadDrills = async () => {
+    const loadDrills = () => {
       if (typeof window !== 'undefined') {
-        // Use drills from the library data file
-        let libraryDrills: Drill[] = LIBRARY_DRILLS.map((d: LibraryDrill) => ({
-          id: d.id,
-          title: d.title,
-          category: d.category,
-          estimatedMinutes: d.estimatedMinutes,
-          xpValue: d.xpValue,
-          contentType: d.contentType,
-          source: d.source,
-          description: d.description,
-        }));
-
-        // DATA MAPPING: Fetch video_url, pdf_url, and drill_levels from drills table
         try {
-          const { createClient } = await import("@/lib/supabase/client");
-          const supabase = createClient();
+          // Map local static drills directly to state, bypassing Supabase RLS completely
+          const fetchedDrills: Drill[] = OFFICIAL_DRILLS.map(d => {
+            return {
+              id: d.id,
+              title: d.title,
+              category: d.category,
+              sub_category: '', // Not strictly needed
+              focus: d.focus,
+              estimatedMinutes: d.estimatedMinutes,
+              xpValue: d.xpValue,
+              contentType: d.contentType,
+              source: d.video_url || d.youtube_url || d.pdf_url || d.description || '',
+              description: d.description,
+              pdf_url: d.pdf_url,
+              youtube_url: d.youtube_url || d.video_url,
+              goal: d.goal,
+            };
+          });
           
-          const { data: dbDrills, error } = await supabase
-            .from('drills')
-            .select('id, video_url, pdf_url, drill_levels');
-          
-          if (!error && dbDrills) {
-            // Merge database data with library drills
-            libraryDrills = libraryDrills.map(libDrill => {
-              const dbDrill = dbDrills.find(db => db.id === libDrill.id);
-              if (dbDrill) {
-                // Parse drill_levels if it's a JSON string
-                let levels = null;
-                if (dbDrill.drill_levels) {
-                  try {
-                    levels = typeof dbDrill.drill_levels === 'string' 
-                      ? JSON.parse(dbDrill.drill_levels)
-                      : dbDrill.drill_levels;
-                    // Ensure levels have id and name properties
-                    if (Array.isArray(levels)) {
-                      levels = levels.map((level, idx) => ({
-                        id: level.id || `level-${idx}`,
-                        name: level.name || level,
-                        completed: level.completed || false
-                      }));
-                    }
-                  } catch (e) {
-                    console.error('Error parsing drill_levels:', e);
-                  }
-                }
-                
-                return {
-                  ...libDrill,
-                  // Map video_url to youtube_url for consistency
-                  youtube_url: dbDrill.video_url || undefined,
-                  pdf_url: dbDrill.pdf_url || undefined,
-                  levels: levels || undefined,
-                };
-              }
-              return libDrill;
-            });
-          }
-        } catch (error) {
-          console.error('Error fetching drills from database:', error);
+          setDrills(fetchedDrills);
+          localStorage.setItem('drillsData', JSON.stringify(fetchedDrills));
+        } catch (err) {
+          console.error('Error loading drills:', err);
         }
-
-        setDrills(libraryDrills);
-        
-        // Also save to localStorage for backward compatibility
-        localStorage.setItem('drillsData', JSON.stringify(libraryDrills));
       }
     };
 
@@ -947,26 +922,16 @@ export default function PracticePage() {
     // Filter drills by category
     let relevantDrills = drills.filter(drill => 
       relevantCategories.some(cat => 
-        drill.category.toLowerCase().includes(cat.toLowerCase()) ||
-        cat.toLowerCase().includes(drill.category.toLowerCase())
+        (drill.category && drill.category.toLowerCase().includes(cat.toLowerCase())) ||
+        (drill.category && cat.toLowerCase().includes(drill.category.toLowerCase()))
       )
     );
 
     // Apply XP tiering based on pillar
     relevantDrills = relevantDrills.map(drill => {
       const pillar = Object.keys(pillarXPTiering).find(p => 
-        drill.category.toLowerCase().includes(p.toLowerCase()) ||
-        p.toLowerCase().includes(drill.category.toLowerCase())
-      );
-      const xpValue = pillar ? pillarXPTiering[pillar] : drill.xpValue;
-      return { ...drill, xpValue };
-    });
-
-    // Apply XP tiering based on pillar
-    relevantDrills = relevantDrills.map(drill => {
-      const pillar = Object.keys(pillarXPTiering).find(p => 
-        drill.category.toLowerCase().includes(p.toLowerCase()) ||
-        p.toLowerCase().includes(drill.category.toLowerCase())
+        (drill.category && drill.category.toLowerCase().includes(p.toLowerCase())) ||
+        (drill.category && p.toLowerCase().includes(drill.category.toLowerCase()))
       );
       const xpValue = pillar ? pillarXPTiering[pillar] : drill.xpValue;
       return { ...drill, xpValue };
@@ -974,14 +939,14 @@ export default function PracticePage() {
 
     // Try to find on-course challenge drills from the library first
     const libraryOnCourseChallenges: Drill[] = drills.filter(drill => 
-      drill.title.toLowerCase().includes('ladies tee') ||
-      drill.title.toLowerCase().includes('alternate club') ||
-      drill.title.toLowerCase().includes('scrambling only') ||
-      drill.title.toLowerCase().includes('challenge') ||
-      drill.title.toLowerCase().includes('target') ||
-      drill.title.toLowerCase().includes('3-club') ||
-      drill.category.toLowerCase().includes('on-course') ||
-      drill.category.toLowerCase().includes('course challenge')
+      (drill.title && drill.title.toLowerCase().includes('ladies tee')) ||
+      (drill.title && drill.title.toLowerCase().includes('alternate club')) ||
+      (drill.title && drill.title.toLowerCase().includes('scrambling only')) ||
+      (drill.title && drill.title.toLowerCase().includes('challenge')) ||
+      (drill.title && drill.title.toLowerCase().includes('target')) ||
+      (drill.title && drill.title.toLowerCase().includes('3-club')) ||
+      (drill.category && drill.category.toLowerCase().includes('on-course')) ||
+      (drill.category && drill.category.toLowerCase().includes('course challenge'))
     );
 
     // On-Course Challenge options (fallback if not found in library)
@@ -1077,8 +1042,8 @@ export default function PracticePage() {
 
         // Smart Allocation: Also prioritize Mental Game drills when round is selected
         const mentalGameDrills = drills.filter(drill => 
-          drill.category.toLowerCase().includes('mental game') ||
-          drill.category.toLowerCase().includes('mental')
+          (drill.category && drill.category.toLowerCase().includes('mental game')) ||
+          (drill.category && drill.category.toLowerCase().includes('mental'))
         );
         
         if (mentalGameDrills.length > 0 && availableTime > roundTime) {
@@ -1109,18 +1074,26 @@ export default function PracticePage() {
           
           // Smart Allocation: If Range (Grass) is selected, prioritize Skills and Wedge Play
           let facilityDrills;
-          facilityDrills = relevantDrills.filter(drill => 
-            compatibleCategories.some(cat =>
-              drill.category.toLowerCase().includes(cat.toLowerCase()) ||
-              cat.toLowerCase().includes(drill.category.toLowerCase())
-            )
+          facilityDrills = drills.filter(drill => 
+            compatibleCategories.some(filter => {
+              if (!drill.category || !filter.category) return false;
+              const matchesCategory = drill.category.toLowerCase() === filter.category.toLowerCase();
+              
+              if (filter.sub_category && drill.sub_category) {
+                const matchesSubCategory = drill.sub_category.toLowerCase() === filter.sub_category.toLowerCase();
+                return matchesCategory && matchesSubCategory;
+              } else if (filter.sub_category && !drill.sub_category) {
+                 return matchesCategory; 
+              }
+              return matchesCategory;
+            })
           );
           
           // Apply XP tiering to facility drills
           facilityDrills = facilityDrills.map(drill => {
             const pillar = Object.keys(pillarXPTiering).find(p => 
-              drill.category.toLowerCase().includes(p.toLowerCase()) ||
-              p.toLowerCase().includes(drill.category.toLowerCase())
+              (drill.category && drill.category.toLowerCase().includes(p.toLowerCase())) ||
+              (drill.category && p.toLowerCase().includes(drill.category.toLowerCase()))
             );
             const xpValue = pillar ? pillarXPTiering[pillar] : drill.xpValue;
             return { ...drill, xpValue };
@@ -1129,15 +1102,32 @@ export default function PracticePage() {
           // If no compatible drills, use any drills that could work at this facility
           if (facilityDrills.length === 0) {
             facilityDrills = drills.filter(drill => {
-              return compatibleCategories.some(cat =>
-                drill.category.toLowerCase().includes(cat.toLowerCase()) ||
-                drill.title.toLowerCase().includes(cat.toLowerCase())
-              );
+              return compatibleCategories.some(filter => {
+                const categoryMatch = drill.category && filter.category && drill.category.toLowerCase() === filter.category.toLowerCase();
+                const titleMatch = drill.title && filter.category && drill.title.toLowerCase().includes(filter.category.toLowerCase());
+                const matchesCategory = categoryMatch || titleMatch;
+                
+                if (filter.sub_category && drill.sub_category) {
+                  return matchesCategory && ((drill.sub_category.toLowerCase() === filter.sub_category.toLowerCase()) ||
+                                            (drill.title && drill.title.toLowerCase().includes(filter.sub_category.toLowerCase())));
+                }
+                return matchesCategory;
+              });
             });
           }
 
           // Select drills for this facility
-          const shuffled = [...facilityDrills].sort(() => Math.random() - 0.5);
+          const shuffled = [...facilityDrills].sort((a, b) => {
+            // Prioritize by focus if specified in the mapping
+            const aHasFocus = compatibleCategories.some(f => f.focus && a.focus && a.focus.toLowerCase().includes(f.focus.toLowerCase()));
+            const bHasFocus = compatibleCategories.some(f => f.focus && b.focus && b.focus.toLowerCase().includes(f.focus.toLowerCase()));
+            
+            if (aHasFocus && !bHasFocus) return -1;
+            if (!aHasFocus && bHasFocus) return 1;
+            
+            // Random sort for the rest
+            return Math.random() - 0.5;
+          });
           let facilityTime = timePerFacility;
           const facilitySelectedDrills: Drill[] = [];
 
@@ -1150,7 +1140,7 @@ export default function PracticePage() {
               break;
             }
           }
-
+          
           // Add drills with facility assignment
           facilitySelectedDrills.forEach(drill => {
             allSelectedDrills.push({
@@ -1205,6 +1195,11 @@ export default function PracticePage() {
             contentType: d.contentType, // Preserve content type
             source: d.source, // Preserve source
             description: d.description, // Preserve description
+            pdf_url: d.pdf_url, // Preserve PDF URL
+            youtube_url: d.youtube_url, // Preserve YouTube URL
+            video_url: d.video_url, // Preserve video URL
+            levels: d.levels, // Preserve levels
+            goal: d.goal, // Preserve goal
           })),
         };
       }
@@ -1732,6 +1727,7 @@ export default function PracticePage() {
       upAndDownPercent: 0, bunkerSaves: 0, chipInside6ft: 0,
       avgPutts: 0, puttsUnder6ftMake: 0, avgThreePutts: 0,
       teePenalties: 0, approachPenalties: 0, totalPenalties: 0,
+      _attempts: { fir: 0, gir: 0, girProximity: 0, upDown: 0, bunker: 0, putts6ft: 0, putts: 0 },
     };
 
     if (myRounds.length === 0) return [g, empty];
@@ -1780,6 +1776,11 @@ export default function PracticePage() {
       upAndDownPercent: r1(upAndDownPercent), bunkerSaves: r1(bunkerSaves), chipInside6ft: r1(chipInside6ft),
       avgPutts: r1(avgPutts), puttsUnder6ftMake: r1(puttsUnder6ftMake), avgThreePutts: r1(avgThreePutts),
       teePenalties: r1(teePenalties), approachPenalties: r1(approachPenalties), totalPenalties: r1(totalPenalties),
+      _attempts: {
+        fir: totalFir, gir: totalHoles, girProximity: totalGir,
+        upDown: totalUpDownAttempts, bunker: totalBunkerAttempts,
+        putts6ft: totalPuttsUnder6ft, putts: totalPutts,
+      },
     }];
   }, [myRounds, user?.initialHandicap]);
 
@@ -1941,12 +1942,12 @@ export default function PracticePage() {
                     }}
                   />
                   
-                  {/* Slider Input with 15-minute snap points */}
+                  {/* Slider Input with 5-minute snap points */}
                   <input
                     type="range"
                     min="0"
                     max="480"
-                    step="15"
+                    step="5"
                     value={weeklyPlan[selectedDay]?.availableTime || 0}
                     onChange={(e) => updateTime(selectedDay, parseInt(e.target.value))}
                     className="relative w-full h-4 bg-transparent appearance-none cursor-pointer z-10"
@@ -2165,7 +2166,7 @@ export default function PracticePage() {
                                 setExpandedScheduleDrill({ dayIndex: dayIdx, drillIndex: drillIdx });
                               }
                             }}
-                            defaultExpanded={true} // AUTO-OPEN: Force expanded so buttons are always visible
+                            defaultExpanded={false} // Default to collapsed
                           />
                         );
                       })}
@@ -2443,7 +2444,7 @@ export default function PracticePage() {
                                 setExpandedScheduleDrill({ dayIndex: dayIdx, drillIndex: drillIdx });
                               }
                             }}
-                            defaultExpanded={true} // AUTO-OPEN: Force expanded so buttons are always visible
+                            defaultExpanded={false} // Default to collapsed
                           />
                         );
                       })}

@@ -13,6 +13,8 @@ interface MetricDefinition {
   drillCategory: string;
   isLowerBetter: boolean;
   unit: '%' | 'avg';
+  hasAttempts: boolean;
+  zeroIsStrength?: boolean;
 }
 
 interface MetricWithGap extends MetricDefinition {
@@ -22,6 +24,16 @@ interface MetricWithGap extends MetricDefinition {
 
 interface IdentityItem extends MetricWithGap {
   badge?: 'pressure' | 'engine';
+}
+
+interface AttemptCounts {
+  fir: number;
+  gir: number;
+  girProximity: number;
+  upDown: number;
+  bunker: number;
+  putts6ft: number;
+  putts: number;
 }
 
 interface AIPlayerInsightsProps {
@@ -39,6 +51,7 @@ interface AIPlayerInsightsProps {
     teePenalties: number;
     approachPenalties: number;
     totalPenalties: number;
+    _attempts?: AttemptCounts;
   };
   goals: {
     fir: number;
@@ -59,10 +72,10 @@ interface AIPlayerInsightsProps {
 
 const DRILL_CATEGORY_MAP: Record<string, string[]> = {
   'Driving':    ['Driving'],
-  'Irons':      ['Irons', 'Technique'],
-  'Short Game': ['Short Game'],
+  'Irons':      ['Irons', 'Technique', 'Approach'],
+  'Short Game': ['Short Game', 'Chipping'],
   'Putting':    ['Putting'],
-  'Bunkers':    ['Short Game'],
+  'Bunkers':    ['Short Game', 'Chipping', 'Bunkers'],
   'Mental':     ['Mental Game', 'Strategy'],
 };
 
@@ -79,45 +92,53 @@ function findDrillForCategory(drillCategory: string): typeof DRILLS[number] | nu
 }
 
 export function AIPlayerInsights({ performanceMetrics, goals, roundCount = -1 }: AIPlayerInsightsProps) {
-  const hasData = roundCount > 0 || (roundCount === -1 && Object.values(performanceMetrics).some(v => v > 0));
-  const { weaknesses, identityItems } = useMemo(() => {
+  const hasData = roundCount > 0 || (roundCount === -1 && Object.entries(performanceMetrics).some(([k, v]) => k !== '_attempts' && (v as number) > 0));
+
+  const { weaknesses, identityItems, noDataMetrics } = useMemo(() => {
+    const a = performanceMetrics._attempts || { fir: 0, gir: 0, girProximity: 0, upDown: 0, bunker: 0, putts6ft: 0, putts: 0 };
+    const hasRounds = roundCount > 0;
+
     const allMetrics: MetricDefinition[] = [
       // DRIVING
-      { name: 'Driving Accuracy',    actual: performanceMetrics.firPercent,        goal: goals.fir,              section: 'Driving',    drillCategory: 'Driving',    isLowerBetter: false, unit: '%' },
-      { name: 'Tee Penalties',        actual: performanceMetrics.teePenalties,      goal: goals.teePenalties,     section: 'Driving',    drillCategory: 'Driving',    isLowerBetter: true,  unit: 'avg' },
+      { name: 'Driving Accuracy',    actual: performanceMetrics.firPercent,        goal: goals.fir,              section: 'Driving',    drillCategory: 'Driving',    isLowerBetter: false, unit: '%',  hasAttempts: a.fir > 0 },
+      { name: 'Tee Penalties',        actual: performanceMetrics.teePenalties,      goal: goals.teePenalties,     section: 'Driving',    drillCategory: 'Driving',    isLowerBetter: true,  unit: 'avg', hasAttempts: hasRounds, zeroIsStrength: true },
       // APPROACH
-      { name: 'Greens in Regulation', actual: performanceMetrics.girPercent,        goal: goals.gir,              section: 'Approach',   drillCategory: 'Irons',      isLowerBetter: false, unit: '%' },
-      { name: 'GIR Inside 8ft',       actual: performanceMetrics.gir8ft,            goal: goals.within8ft,        section: 'Approach',   drillCategory: 'Irons',      isLowerBetter: false, unit: '%' },
-      { name: 'GIR Inside 20ft',      actual: performanceMetrics.gir20ft,           goal: goals.within20ft,       section: 'Approach',   drillCategory: 'Irons',      isLowerBetter: false, unit: '%' },
-      { name: 'Approach Penalties',    actual: performanceMetrics.approachPenalties, goal: goals.approachPenalties,section: 'Approach',   drillCategory: 'Irons',      isLowerBetter: true,  unit: 'avg' },
+      { name: 'Greens in Regulation', actual: performanceMetrics.girPercent,        goal: goals.gir,              section: 'Approach',   drillCategory: 'Irons',      isLowerBetter: false, unit: '%',  hasAttempts: a.gir > 0 },
+      { name: 'GIR Inside 8ft',       actual: performanceMetrics.gir8ft,            goal: goals.within8ft,        section: 'Approach',   drillCategory: 'Irons',      isLowerBetter: false, unit: '%',  hasAttempts: a.girProximity > 0 },
+      { name: 'GIR Inside 20ft',      actual: performanceMetrics.gir20ft,           goal: goals.within20ft,       section: 'Approach',   drillCategory: 'Irons',      isLowerBetter: false, unit: '%',  hasAttempts: a.girProximity > 0 },
+      { name: 'Approach Penalties',    actual: performanceMetrics.approachPenalties, goal: goals.approachPenalties,section: 'Approach',   drillCategory: 'Irons',      isLowerBetter: true,  unit: 'avg', hasAttempts: hasRounds, zeroIsStrength: true },
       // SHORT GAME
-      { name: 'Up & Down %',          actual: performanceMetrics.upAndDownPercent,  goal: goals.upAndDown,        section: 'Short Game', drillCategory: 'Short Game', isLowerBetter: false, unit: '%' },
-      { name: 'Bunker Saves %',       actual: performanceMetrics.bunkerSaves,       goal: goals.bunkerSaves,      section: 'Short Game', drillCategory: 'Bunkers',    isLowerBetter: false, unit: '%' },
-      { name: 'Scrambling (< 6ft)',    actual: performanceMetrics.chipInside6ft,    goal: goals.chipsInside6ft,   section: 'Short Game', drillCategory: 'Short Game', isLowerBetter: false, unit: '%' },
+      { name: 'Up & Down %',          actual: performanceMetrics.upAndDownPercent,  goal: goals.upAndDown,        section: 'Short Game', drillCategory: 'Short Game', isLowerBetter: false, unit: '%',  hasAttempts: a.upDown > 0 },
+      { name: 'Bunker Saves %',       actual: performanceMetrics.bunkerSaves,       goal: goals.bunkerSaves,      section: 'Short Game', drillCategory: 'Bunkers',    isLowerBetter: false, unit: '%',  hasAttempts: a.bunker > 0 },
+      { name: 'Scrambling (< 6ft)',    actual: performanceMetrics.chipInside6ft,    goal: goals.chipsInside6ft,   section: 'Short Game', drillCategory: 'Short Game', isLowerBetter: false, unit: '%',  hasAttempts: a.upDown > 0 },
       // PUTTING
-      { name: 'Average Putts',        actual: performanceMetrics.avgPutts,          goal: goals.putts,            section: 'Putting',    drillCategory: 'Putting',    isLowerBetter: true,  unit: 'avg' },
-      { name: '< 6ft Make %',         actual: performanceMetrics.puttsUnder6ftMake, goal: goals.puttMake6ft,      section: 'Putting',    drillCategory: 'Putting',    isLowerBetter: false, unit: '%' },
-      { name: '3-Putts (Avg)',         actual: performanceMetrics.avgThreePutts,     goal: Math.max(0, goals.putts / 18 - 1), section: 'Putting', drillCategory: 'Putting', isLowerBetter: true, unit: 'avg' },
+      { name: 'Average Putts',        actual: performanceMetrics.avgPutts,          goal: goals.putts,            section: 'Putting',    drillCategory: 'Putting',    isLowerBetter: true,  unit: 'avg', hasAttempts: a.putts > 0 },
+      { name: '< 6ft Make %',         actual: performanceMetrics.puttsUnder6ftMake, goal: goals.puttMake6ft,      section: 'Putting',    drillCategory: 'Putting',    isLowerBetter: false, unit: '%',  hasAttempts: a.putts6ft > 0 },
+      { name: '3-Putts (Avg)',         actual: performanceMetrics.avgThreePutts,     goal: Math.max(0, goals.putts / 18 - 1), section: 'Putting', drillCategory: 'Putting', isLowerBetter: true, unit: 'avg', hasAttempts: a.putts > 0 },
     ];
 
-    const withGaps: MetricWithGap[] = allMetrics.map(m => {
+    // Separate metrics with data from those without
+    const noData = allMetrics.filter(m => !m.hasAttempts && !m.zeroIsStrength);
+    const validMetrics = allMetrics.filter(m => m.hasAttempts || m.zeroIsStrength);
+
+    const withGaps: MetricWithGap[] = validMetrics.map(m => {
       const rawGap = m.isLowerBetter ? m.goal - m.actual : m.actual - m.goal;
       const gap = m.isLowerBetter ? rawGap * 3 : rawGap;
       return { ...m, gap, rawGap };
     });
 
-    // --- WEAKNESSES: top 5 negative gaps ---
+    // --- WEAKNESSES: top 5 negative gaps (only from metrics with real data) ---
     const sorted = [...withGaps].sort((a, b) => a.gap - b.gap);
     const w = sorted.filter(m => m.gap < 0).slice(0, 5);
 
-    // --- IDENTITY: 5 items ---
+    // --- IDENTITY: 5 items (only from metrics with real data) ---
     const positives = [...withGaps].filter(m => m.gap >= 0).sort((a, b) => b.gap - a.gap);
     const pool = positives.length >= 3 ? positives : [...withGaps].sort((a, b) => b.gap - a.gap);
 
     // 1) Scoring Engine: largest positive raw gap
     const engineCandidate = pool[0] || null;
 
-    // 2) Pressure Proof: highest actual/goal ratio (most reliable performer)
+    // 2) Pressure Proof: highest actual/goal ratio among metrics with attempts
     const pressurePool = pool.filter(m => m.goal !== 0);
     let pressureCandidate: MetricWithGap | null = null;
     if (pressurePool.length > 0) {
@@ -127,13 +148,12 @@ export function AIPlayerInsights({ performanceMetrics, goals, roundCount = -1 }:
         return ratio > bestRatio ? m : best;
       });
     }
-    // If pressure and engine are the same stat, pick the next-best for pressure
     if (pressureCandidate && engineCandidate && pressureCandidate.name === engineCandidate.name) {
       const alt = pressurePool.find(m => m.name !== engineCandidate.name);
       if (alt) pressureCandidate = alt;
     }
 
-    // 3) Top 3 strengths (excluding any already used by engine/pressure)
+    // 3) Top 3 strengths (excluding engine/pressure)
     const usedNames = new Set<string>();
     if (engineCandidate) usedNames.add(engineCandidate.name);
     if (pressureCandidate) usedNames.add(pressureCandidate.name);
@@ -147,8 +167,8 @@ export function AIPlayerInsights({ performanceMetrics, goals, roundCount = -1 }:
     }
     top3.forEach(s => items.push({ ...s }));
 
-    return { weaknesses: w, identityItems: items.slice(0, 5) };
-  }, [performanceMetrics, goals]);
+    return { weaknesses: w, identityItems: items.slice(0, 5), noDataMetrics: noData };
+  }, [performanceMetrics, goals, roundCount]);
 
   const formatValue = (m: { unit: string; actual: number }) =>
     m.unit === '%' ? `${m.actual.toFixed(1)}%` : m.actual.toFixed(1);
@@ -249,6 +269,16 @@ export function AIPlayerInsights({ performanceMetrics, goals, roundCount = -1 }:
               You are currently meeting or exceeding all your goals. Incredible work &mdash; keep up the consistent practice.
             </div>
           )}
+
+          {/* No Data metrics */}
+          {noDataMetrics.length > 0 && (
+            <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+              <span className="text-[10px] text-white/40 uppercase tracking-wider font-bold">No Data Entered:</span>
+              <p className="text-xs text-white/50 mt-1">
+                {noDataMetrics.map(m => m.name).join(', ')}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* ===== PLAYING IDENTITY (The Fuel) ===== */}
@@ -257,7 +287,7 @@ export function AIPlayerInsights({ performanceMetrics, goals, roundCount = -1 }:
             <TrendingUp className="w-4 h-4" /> Your Playing Identity
           </h3>
 
-          {identityItems.length > 0 && (
+          {identityItems.length > 0 ? (
             <div className="space-y-2 mb-4">
               {identityItems.map((item, idx) => (
                 <div
@@ -293,6 +323,10 @@ export function AIPlayerInsights({ performanceMetrics, goals, roundCount = -1 }:
                 </div>
               ))}
             </div>
+          ) : (
+            <p className="text-xs text-white/50 mb-4">
+              Log more detailed stats to identify your strengths.
+            </p>
           )}
 
           {/* Coach's Practice Split Note */}
