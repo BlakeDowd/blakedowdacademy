@@ -93,7 +93,6 @@ export default function DrillCard({
             : 'bg-white border-gray-200 hover:border-[#FFA500]'
         } ${justSwapped ? 'ring-2 ring-green-400' : ''} ${isExpanded ? 'border-[#014421]' : ''}`}
       >
-        {/* Drill Header */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -135,7 +134,7 @@ export default function DrillCard({
           </button>
         </div>
         
-        {/* CORE UPGRADES: Always show content - cards expanded by default */}
+        {/* CORE UPGRADES: Show content only when expanded */}
         {shouldShowContent && (
           <div className="mt-3 pt-3 border-t border-gray-200 space-y-3">
             

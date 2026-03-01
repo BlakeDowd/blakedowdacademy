@@ -698,11 +698,15 @@ export default function PracticePage() {
   };
 
   const updateTime = (dayIndex: number, minutes: number) => {
+    // Ensure the value is a clean integer. 
+    // Sometimes slider input events can act as strings if not handled carefully down the chain.
+    const cleanMinutes = Math.max(0, parseInt(minutes.toString(), 10) || 0);
+
     setWeeklyPlan(prev => ({
       ...prev,
       [dayIndex]: {
         ...prev[dayIndex],
-        availableTime: minutes,
+        availableTime: cleanMinutes,
       },
     }));
   };
@@ -904,9 +908,11 @@ export default function PracticePage() {
     }
 
     // Check if any selected day has time > 0 or a round selected
-    const validDays = selectedDays.filter(day => 
-      day.availableTime > 0 || day.roundType !== null
-    );
+    // Note: We use parseInt and strict > 0 to ensure slider value is seen properly, even for 5-minute increments.
+    const validDays = selectedDays.filter(day => {
+      const timeVal = parseInt((day.availableTime || 0).toString(), 10);
+      return timeVal >= 5 || day.roundType !== null;
+    });
 
     if (validDays.length === 0) {
       alert('Please set practice time > 0 or select a round for at least one selected day');
@@ -2066,9 +2072,9 @@ export default function PracticePage() {
         <div className="mb-6">
           <button
             onClick={generatePlan}
-            disabled={selectedDay === null || (weeklyPlan[selectedDay]?.availableTime || 0) === 0}
+            disabled={selectedDay === null || parseInt((weeklyPlan[selectedDay]?.availableTime || 0).toString(), 10) < 5}
             className={`w-full py-4 rounded-xl font-semibold text-white shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 ${
-              selectedDay === null || (weeklyPlan[selectedDay]?.availableTime || 0) === 0
+              selectedDay === null || parseInt((weeklyPlan[selectedDay]?.availableTime || 0).toString(), 10) < 5
                 ? 'opacity-50 cursor-not-allowed'
                 : ''
             }`}
