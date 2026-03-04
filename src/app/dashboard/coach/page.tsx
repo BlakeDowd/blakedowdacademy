@@ -21,30 +21,38 @@ interface PlayerProfile {
 
 export default function CoachesDashboard() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, profileLoading } = useAuth();
   const [players, setPlayers] = useState<PlayerProfile[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || profileLoading) return;
 
-    // Protection Check
     if (!user) {
       router.push("/login");
       return;
     }
 
+    const role = (user as any).role;
     const authorizedEmails = ["bdowd@pgamember.org.au", "allendowd86@gmail.com"];
     const userEmail = (user.email || "").toLowerCase().trim();
-    if (!userEmail || !authorizedEmails.includes(userEmail)) {
+    const isEmailAuthorized = userEmail && authorizedEmails.includes(userEmail);
+    const isCoachByRole = role === "coach";
+    const isStudent = role === "student";
+
+    if (isStudent) {
+      router.push("/");
+      return;
+    }
+    if (!isCoachByRole && !isEmailAuthorized) {
       router.push("/");
       return;
     }
 
     fetchPlayers();
-  }, [user, loading, router]);
+  }, [user, loading, profileLoading, router]);
 
   const fetchPlayers = async () => {
     try {
@@ -84,7 +92,7 @@ export default function CoachesDashboard() {
     );
   });
 
-  if (loading || isLoading) {
+  if (loading || profileLoading || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="w-16 h-16 border-4 border-[#014421] border-t-transparent rounded-full animate-spin"></div>

@@ -19,6 +19,7 @@ interface User {
   startingHandicap?: number; // Store starting_handicap
   currentHandicap?: number; // Store current handicap
   trophies?: string[]; // Use Profile Data: Pull trophies directly from profile data (trophies or achievements column)
+  role?: string; // coach | student - from profiles.role for role-based access
 }
 
 interface AuthContextType {
@@ -326,7 +327,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               console.log('Fetching profile for ID:', supabaseUser.id);
               const { data, error } = await supabase
                 .from('profiles')
-                .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, preferred_icon_id, starting_handicap, handicap')
+                .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, preferred_icon_id, starting_handicap, handicap, role')
                 .eq('id', supabaseUser.id)
                 .single();
               
@@ -566,6 +567,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 startingHandicap: (profile as any)?.starting_handicap,
                 currentHandicap: (profile as any)?.handicap,
                 trophies: (profile as any)?.trophies || (profile as any)?.achievements || [], // Use Profile Data: Pull trophies from profile
+                role: (profile as any)?.role, // coach | student for role-based access
               });
               
               // Sync the State: Log the final streak value for verification
@@ -644,7 +646,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.log('Fetching profile for ID:', session.user.id);
             let { data: profile, error: profileError } = await supabase
               .from('profiles')
-              .select('id, full_name, total_xp, current_level, starting_handicap, handicap, "currentStreak", preferred_icon_id')
+              .select('id, full_name, total_xp, current_level, starting_handicap, handicap, "currentStreak", preferred_icon_id, role')
               .eq('id', session.user.id) // Fix the Query: Use session.user.id which matches auth.uid()
               .single();
             
@@ -775,6 +777,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 startingHandicap: (profileData as any)?.starting_handicap,
                 currentHandicap: (profileData as any)?.handicap,
                 trophies: (profileData as any)?.trophies || (profileData as any)?.achievements || [], // Use Profile Data: Pull trophies from profile
+                role: (profileData as any)?.role,
               });
               setIsAuthenticated(true);
               console.log('AuthContext: User authenticated and profile loaded with currentStreak:', profileData.currentStreak);
@@ -827,7 +830,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, preferred_icon_id, starting_handicap, handicap')
+          .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, preferred_icon_id, starting_handicap, handicap, role')
           .eq('id', supabaseUser.id)
           .single();
         
@@ -865,7 +868,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: supabaseUser.email?.split('@')[0] || 'User',
             created_at: new Date().toISOString(),
           })
-          .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, preferred_icon_id, starting_handicap, handicap')
+          .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, preferred_icon_id, starting_handicap, handicap, role')
           .single();
         
         if (createError) {
@@ -884,7 +887,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: supabaseUser.email?.split('@')[0] || 'User',
             created_at: new Date().toISOString(),
           })
-          .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, preferred_icon_id, starting_handicap, handicap')
+          .select('id, full_name, total_xp, current_level, "currentStreak", last_login_date, preferred_icon_id, starting_handicap, handicap, role')
           .single();
         
         if (!createError && newProfile) {
@@ -909,6 +912,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           currentHandicap: profile?.handicap !== undefined ? profile.handicap : prev.currentHandicap,
           totalXP: profile?.total_xp !== undefined ? profile.total_xp : prev.totalXP,
           currentLevel: profile?.current_level !== undefined ? profile.current_level : prev.currentLevel,
+          role: (profile as any)?.role !== undefined ? (profile as any).role : prev.role,
         };
       });
     } catch (error) {
