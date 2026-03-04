@@ -593,11 +593,11 @@ export default function PlayerDeepDivePage() {
     setIsGeneratingAi(false);
   };
 
-  const role = (user as any)?.role;
-  if (authLoading || profileLoading || (isLoading && !playerName) || !role) {
+  const playerData = playerName;
+  if (authLoading || profileLoading || isLoading || !playerData) {
     return (
       <div className="h-screen flex items-center justify-center">
-        <div className="p-10 text-center">Verifying Coach Access...</div>
+        <div className="p-10 text-center">Loading Player Stats...</div>
       </div>
     );
   }
@@ -692,7 +692,7 @@ export default function PlayerDeepDivePage() {
                 { label: "Putts / Round", statValue: bigSix.puttsPer18, unit: "", icon: "🧤", color: "text-orange-600" },
                 { label: "Birdies / Round", statValue: bigSix.birdiesPer18, unit: "", icon: "🐦", color: "text-red-500" },
               ].map((stat: any, i) => {
-                const displayValue = stat?.statValue ?? stat?.value ?? 0;
+                const displayValue = (stat as any).statValue ?? (stat as any).value ?? 0;
                 return (
                 <div key={i} className="bg-white rounded-2xl shadow-md border border-gray-100 p-3 sm:p-4">
                   <div className="text-xl mb-1">{stat.icon}</div>
@@ -750,7 +750,7 @@ export default function PlayerDeepDivePage() {
             </h2>
             <div className="space-y-4">
               {metricMatrix.map((stat: any, i) => {
-                const displayValue = stat?.statValue ?? stat?.value ?? stat?.current ?? 0;
+                const displayValue = (stat as any).statValue ?? (stat as any).value ?? (stat as any).current ?? 0;
                 const goalVal = stat?.goal ?? 0;
                 const gapVal = stat?.gap ?? 0;
                 const isMeetingGoal = stat?.isLowerBetter ? displayValue <= goalVal : displayValue >= goalVal;
