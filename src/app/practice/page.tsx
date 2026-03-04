@@ -210,21 +210,17 @@ export default function PracticePage() {
   const [isSavingName, setIsSavingName] = useState(false);
   
   // Force full_name: Fetch from profiles.full_name ONLY
-  // No fallbacks to 'User' - if full_name is an email, show email; if it's a name, show name
-  const getUserName = () => {
-    // Force: ONLY use full_name from profiles table
+  // Use state + useEffect to avoid hydration mismatch (user loads client-side only)
+  const [userName, setUserName] = useState('');
+  useEffect(() => {
     if (user?.fullName) {
-      return user.fullName; // Show whatever is in full_name (email or name)
+      setUserName(user.fullName);
+    } else if (user?.email) {
+      setUserName(user.email);
+    } else {
+      setUserName('');
     }
-    // If no full_name exists, show email as fallback
-    if (user?.email) {
-      return user.email;
-    }
-    // Final fallback only if nothing exists
-    return '';
-  };
-  
-  const userName = getUserName();
+  }, [user?.fullName, user?.email]);
   
   // Handle name editing
   const handleEditName = () => {

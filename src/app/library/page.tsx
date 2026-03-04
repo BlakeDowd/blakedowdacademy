@@ -348,10 +348,6 @@ function LibraryPageContent() {
 
   const isCompleted = (drillId: string) => userProgress.completedDrills.includes(drillId);
 
-  // Exponential Growth: Level thresholds - Level 2 = 500 XP, Level 3 = 1500 XP, Level 4 = 3000 XP
-  // Update Display: Use profile?.totalXP || 0 to match the Home Dashboard (synchronized from database)
-  const totalXP = profile?.totalXP || 0;
-  
   // Exponential Growth: Calculate level based on exponential thresholds
   const getLevelInfo = (xp: number) => {
     if (xp < 500) {
@@ -369,12 +365,20 @@ function LibraryPageContent() {
       return { level, xpForCurrentLevel: xpInCurrentLevel, xpNeededForNextLevel: 2000, xpRemaining: 2000 - xpInCurrentLevel };
     }
   };
-  
-  const levelInfo = getLevelInfo(totalXP);
-  const currentLevel = levelInfo.level;
-  const xpForCurrentLevel = levelInfo.xpForCurrentLevel;
-  const xpNeededForNextLevel = levelInfo.xpNeededForNextLevel;
-  const levelProgress = (xpForCurrentLevel / xpNeededForNextLevel) * 100;
+
+  // Use state + useEffect to avoid hydration mismatch (user.totalXP loads client-side only)
+  const [levelDisplay, setLevelDisplay] = useState({ currentLevel: 1, totalXP: 0, levelProgress: 0 });
+  useEffect(() => {
+    const xp = user?.totalXP ?? 0;
+    const info = getLevelInfo(xp);
+    setLevelDisplay({
+      currentLevel: info.level,
+      totalXP: xp,
+      levelProgress: (info.xpForCurrentLevel / info.xpNeededForNextLevel) * 100,
+    });
+  }, [user?.totalXP]);
+
+  const { currentLevel, totalXP, levelProgress } = levelDisplay;
 
   const filteredDrills = DRILLS.filter(drill => {
     // Search filter

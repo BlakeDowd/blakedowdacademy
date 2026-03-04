@@ -129,7 +129,9 @@ export default function CoachesDashboard() {
 
           {/* Player List Cards - truncate + min-w-0 on text to prevent stretch */}
           {filteredPlayers.length > 0 ? (
-            filteredPlayers.map((player) => (
+            filteredPlayers
+              .filter((player) => player.id)
+              .map((player) => (
               <Link
                 key={player.id}
                 href={`/dashboard/coach/player/${player.id}`}
@@ -147,7 +149,7 @@ export default function CoachesDashboard() {
                 </div>
                 <ChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
               </Link>
-            ))
+              ))
           ) : (
             <div className="w-full bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">
               {searchQuery ? "No players found." : "No players yet."}

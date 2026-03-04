@@ -21,7 +21,7 @@ function getDefaultRange() {
 export default function PlayerDeepDivePage() {
   const router = useRouter();
   const params = useParams();
-  const playerId = params.id as string;
+  const playerId = (params?.id as string) ?? "";
   const { user, loading: authLoading } = useAuth();
 
   const [playerName, setPlayerName] = useState<string>("");
@@ -50,6 +50,10 @@ export default function PlayerDeepDivePage() {
     const userEmail = (user.email || "").toLowerCase().trim();
     if (!userEmail || !authorizedEmails.includes(userEmail)) {
       router.push("/");
+      return;
+    }
+    if (!playerId || playerId === "undefined") {
+      router.push("/dashboard/coach");
       return;
     }
     fetchAllData();
@@ -661,13 +665,13 @@ export default function PlayerDeepDivePage() {
                 { label: "Putts / Round", statValue: bigSix.puttsPer18, unit: "", icon: "🧤", color: "text-orange-600" },
                 { label: "Birdies / Round", statValue: bigSix.birdiesPer18, unit: "", icon: "🐦", color: "text-red-500" },
               ].map((stat, i) => {
-                const displayVal = stat.statValue ?? '--';
+                const statValue = stat.statValue ?? '--';
                 return (
                 <div key={i} className="bg-white rounded-2xl shadow-md border border-gray-100 p-3 sm:p-4">
                   <div className="text-xl mb-1">{stat.icon}</div>
                   <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter truncate">{stat.label}</div>
                   <div className={`text-2xl font-black ${stat.color}`}>
-                    {displayVal}{stat.unit}
+                    {statValue}{stat.unit}
                   </div>
                 </div>
               );})}
@@ -719,9 +723,9 @@ export default function PlayerDeepDivePage() {
             </h2>
             <div className="space-y-4">
               {metricMatrix.map((m, i) => {
-                const currentAvg = m.current;
-                const goalVal = m.goal;
-                const gapVal = m.gap;
+                const currentAvg = m.current ?? 0;
+                const goalVal = m.goal ?? 0;
+                const gapVal = m.gap ?? 0;
                 const isMeetingGoal = m.isLowerBetter ? currentAvg <= goalVal : currentAvg >= goalVal;
                 const isPositive = gapVal > 0;
                 
