@@ -691,7 +691,7 @@ export default function PlayerDeepDivePage() {
                 { label: "Putts / Round", statValue: bigSix.puttsPer18, unit: "", icon: "🧤", color: "text-orange-600" },
                 { label: "Birdies / Round", statValue: bigSix.birdiesPer18, unit: "", icon: "🐦", color: "text-red-500" },
               ].map((stat, i) => {
-                const statValue = (stat?.statValue ?? stat?.value ?? 0);
+                const statValue = (stat as any).statValue ?? (stat as any).value ?? 0;
                 return (
                 <div key={i} className="bg-white rounded-2xl shadow-md border border-gray-100 p-3 sm:p-4">
                   <div className="text-xl mb-1">{stat.icon}</div>
