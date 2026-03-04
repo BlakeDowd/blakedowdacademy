@@ -35,22 +35,6 @@ export default function CoachesDashboard() {
       return;
     }
 
-    const role = (user as any).role;
-    const authorizedEmails = ["bdowd@pgamember.org.au", "allendowd86@gmail.com"];
-    const userEmail = (user.email || "").toLowerCase().trim();
-    const isEmailAuthorized = userEmail && authorizedEmails.includes(userEmail);
-    const isCoachByRole = role === "coach";
-    const isStudent = role === "student";
-
-    if (isStudent) {
-      router.push("/");
-      return;
-    }
-    if (!isCoachByRole && !isEmailAuthorized) {
-      router.push("/");
-      return;
-    }
-
     fetchPlayers();
   }, [user, loading, profileLoading, router]);
 

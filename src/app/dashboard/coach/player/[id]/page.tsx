@@ -71,26 +71,10 @@ export default function PlayerDeepDivePage() {
   const [aiSummary, setAiSummary] = useState<string[] | null>(null);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const authorizedEmails = ["bdowd@pgamember.org.au", "allendowd86@gmail.com"];
-
   useEffect(() => {
     if (authLoading || profileLoading) return;
     if (!user) {
       router.push("/login");
-      return;
-    }
-    const role = (user as any).role;
-    const userEmail = (user.email || "").toLowerCase().trim();
-    const isEmailAuthorized = userEmail && authorizedEmails.includes(userEmail);
-    const isCoachByRole = role === "coach";
-    const isStudent = role === "student";
-
-    if (isStudent) {
-      router.push("/");
-      return;
-    }
-    if (!isCoachByRole && !isEmailAuthorized) {
-      router.push("/");
       return;
     }
     if (!playerId || playerId === "undefined") {
@@ -707,7 +691,7 @@ export default function PlayerDeepDivePage() {
                 { label: "Putts / Round", statValue: bigSix.puttsPer18, unit: "", icon: "🧤", color: "text-orange-600" },
                 { label: "Birdies / Round", statValue: bigSix.birdiesPer18, unit: "", icon: "🐦", color: "text-red-500" },
               ].map((stat, i) => {
-                const statValue = (stat?.statValue ?? '--');
+                const statValue = stat?.statValue ?? (stat as any)?.value ?? '--';
                 return (
                 <div key={i} className="bg-white rounded-2xl shadow-md border border-gray-100 p-3 sm:p-4">
                   <div className="text-xl mb-1">{stat.icon}</div>
@@ -765,7 +749,7 @@ export default function PlayerDeepDivePage() {
             </h2>
             <div className="space-y-4">
               {metricMatrix.map((stat, i) => {
-                const currentAvg = stat?.current ?? 0;
+                const currentAvg = stat?.current ?? (stat as any)?.value ?? 0;
                 const goalVal = stat?.goal ?? 0;
                 const gapVal = stat?.gap ?? 0;
                 const isMeetingGoal = stat?.isLowerBetter ? currentAvg <= goalVal : currentAvg >= goalVal;
