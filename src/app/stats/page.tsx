@@ -49,7 +49,7 @@ const StatDisplay = ({
         <div className="flex items-center gap-1 group relative">
           <div className="text-sm text-gray-700">{label}</div>
           <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200 transition-colors hover:bg-gray-200">i</div>
-          <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-48 max-w-[200px] bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10 whitespace-normal break-words">
             {tooltip}
           </div>
         </div>
@@ -1603,16 +1603,16 @@ export default function StatsPage() {
                 
                 return (
                   <div 
-                    className="fixed bg-white rounded-lg shadow-xl p-3 z-50 border-2 border-[#FF9800] pointer-events-none"
+                    className="fixed bg-white rounded-lg shadow-xl p-3 z-50 border-2 border-[#FF9800] pointer-events-none max-w-[200px] whitespace-normal break-words"
                     style={{
                       left: `${tooltipPosition.x}px`,
                       top: `${tooltipPosition.y - 100}px`,
                       transform: 'translateX(-50%)',
-                      minWidth: '160px',
+                      minWidth: '120px',
                     }}
                   >
-                    <div className="text-xs font-bold text-gray-900 mb-2">{hoveredCategory}</div>
-                    <div className="text-xs text-gray-700">
+                    <div className="text-xs font-bold text-gray-900 mb-2 break-words">{hoveredCategory}</div>
+                    <div className="text-xs text-gray-700 whitespace-normal">
                       <span className="font-semibold">Practice Logged:</span> {currentValue} mins
                     </div>
                   </div>

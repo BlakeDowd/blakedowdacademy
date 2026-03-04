@@ -4,9 +4,10 @@ import { useState, useEffect, useMemo } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File } from "lucide-react";
-import { OFFICIAL_DRILLS } from "@/data/official_drills";
+import { OFFICIAL_DRILLS, type DrillRecord } from "@/data/official_drills";
 import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
+import { DrillLibrary } from "@/components/DrillLibrary";
 import { getBenchmarkGoals } from "@/app/stats/page";
 
 type RoundType = '9-hole' | '18-hole' | null;
@@ -727,6 +728,96 @@ export default function PracticePage() {
         },
       };
     });
+  };
+
+  // Map drill category to FacilityType for schedule display
+  const categoryToFacility = (category: string): FacilityType | undefined => {
+    const map: Record<string, FacilityType> = {
+      Driving: "Driving",
+      Irons: "Irons",
+      Wedges: "Wedges",
+      Chipping: "Chipping",
+      Bunkers: "Bunkers",
+      Putting: "Putting",
+      "Mental/Strategy": "Mental/Strategy",
+      "9-Hole Round": "On-Course",
+      "18-Hole Round": "On-Course",
+    };
+    return map[category];
+  };
+
+  const addDrillToDay = async (drill: DrillRecord, dayIndex: number) => {
+    const today = new Date();
+    const currentDay = today.getDay();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+    const dayDate = new Date(monday);
+    dayDate.setDate(monday.getDate() + dayIndex);
+    const formattedDate = dayDate.toISOString().split("T")[0];
+
+    const facility = categoryToFacility(drill.category);
+
+    const drillToAdd = {
+      id: drill.id,
+      title: drill.title,
+      category: drill.category,
+      estimatedMinutes: drill.estimatedMinutes,
+      completed: false,
+      xpEarned: 0,
+      isRound: drill.category === "9-Hole Round" || drill.category === "18-Hole Round",
+      contentType: drill.contentType,
+      description: drill.description,
+      pdf_url: drill.pdf_url,
+      youtube_url: drill.youtube_url || drill.video_url,
+      goal: drill.goal,
+      facility,
+    };
+
+    setWeeklyPlan(prev => {
+      const existing = prev[dayIndex] || {
+        dayIndex,
+        dayName: DAY_NAMES[dayIndex],
+        selected: false,
+        availableTime: 0,
+        selectedFacilities: [],
+        roundType: null,
+        drills: [],
+      };
+      const updated = {
+        ...prev,
+        [dayIndex]: {
+          ...existing,
+          selected: true,
+          date: formattedDate,
+          drills: [...(existing.drills || []), drillToAdd],
+        },
+      };
+      if (typeof window !== "undefined") {
+        localStorage.setItem("weeklyPracticePlans", JSON.stringify(updated));
+      }
+      return updated;
+    });
+
+    if (user?.id) {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const { error } = await supabase.from("user_drills").insert({
+          user_id: user.id,
+          drill_id: drill.id,
+          selected_date: formattedDate,
+        });
+        if (error) {
+          console.error("Error saving drill to day:", error);
+          alert("Drill added to schedule, but failed to save to cloud. Check your connection.");
+        }
+      } catch (err) {
+        console.error("Database error:", err);
+      }
+    }
+
+    setScheduleExpanded(true);
+    setCurrentDayView(dayIndex);
   };
 
   // Log freestyle practice session
@@ -2197,16 +2288,16 @@ export default function PracticePage() {
         {/* AI Player Insights */}
         <AIPlayerInsights performanceMetrics={performanceMetrics} goals={goals} roundCount={myRounds.length} />
 
-        {/* Quick Practice Log Section */}
+        {/* Log Freestyle Practice Section */}
         <div className="mb-6">
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
-            <h3 className="font-semibold text-gray-900 mb-4">Quick Practice Log</h3>
-            <p className="text-xs text-gray-600 mb-4">Tap a facility to log freestyle practice</p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {ALL_FACILITIES.map((facilityType) => {
+            <h3 className="font-semibold text-gray-900 mb-4">Log Freestyle Practice</h3>
+            <p className="text-xs text-gray-600 mb-4">Tap a category to log freestyle practice</p>
+            <div className="grid grid-cols-3 gap-3">
+              {/* Top Row: Driving, Irons, Wedges */}
+              {(['Driving', 'Irons', 'Wedges'] as FacilityType[]).map((facilityType) => {
                 const info = facilityInfo[facilityType];
                 const Icon = info.icon;
-                
                 return (
                   <button
                     key={`freestyle-${facilityType}`}
@@ -2215,22 +2306,42 @@ export default function PracticePage() {
                     className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
                   >
                     <Icon className="w-5 h-5 text-gray-600" />
-                    <span className="text-xs font-medium text-center text-gray-700">
-                      {info.label}
-                    </span>
+                    <span className="text-xs font-medium text-center text-gray-700">{info.label}</span>
                   </button>
                 );
               })}
-              {/* Custom Round Buttons for Quick Log */}
+              {/* Middle Row: Chipping, Bunkers, Putting */}
+              {(['Chipping', 'Bunkers', 'Putting'] as FacilityType[]).map((facilityType) => {
+                const info = facilityInfo[facilityType];
+                const Icon = info.icon;
+                return (
+                  <button
+                    key={`freestyle-${facilityType}`}
+                    type="button"
+                    onClick={() => setDurationModal({ open: true, facility: facilityType })}
+                    className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                  >
+                    <Icon className="w-5 h-5 text-gray-600" />
+                    <span className="text-xs font-medium text-center text-gray-700">{info.label}</span>
+                  </button>
+                );
+              })}
+              {/* Bottom Row: Mental/Strategy, 9-Hole Round, 18-Hole Round */}
+              <button
+                type="button"
+                onClick={() => setDurationModal({ open: true, facility: 'Mental/Strategy' })}
+                className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+              >
+                <BookOpen className="w-5 h-5 text-gray-600" />
+                <span className="text-xs font-medium text-center text-gray-700">Mental/Strategy</span>
+              </button>
               <button
                 type="button"
                 onClick={() => logFreestylePractice('On-Course', 135)}
                 className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
               >
                 <FlagTriangleRight className="w-5 h-5 text-gray-600" />
-                <span className="text-xs font-medium text-center text-gray-700">
-                  9-Hole Round
-                </span>
+                <span className="text-xs font-medium text-center text-gray-700">9-Hole Round</span>
               </button>
               <button
                 type="button"
@@ -2238,9 +2349,7 @@ export default function PracticePage() {
                 className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
               >
                 <FlagTriangleRight className="w-5 h-5 text-gray-600" />
-                <span className="text-xs font-medium text-center text-gray-700">
-                  18-Hole Round
-                </span>
+                <span className="text-xs font-medium text-center text-gray-700">18-Hole Round</span>
               </button>
             </div>
           </div>
@@ -2542,7 +2651,10 @@ export default function PracticePage() {
             )}
           </div>
         </div>
-        
+
+        {/* Drill Library */}
+        <DrillLibrary onAssignToDay={addDrillToDay} />
+
         {/* YouTube Modal */}
         {youtubeModal.open && (
           <div 

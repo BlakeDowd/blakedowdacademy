@@ -20,7 +20,7 @@ export function InfoBubble({
   content,
   buttonClassName = "w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200",
   buttonStyle,
-  tooltipClassName = "left-0 bottom-full mb-2 w-48",
+  tooltipClassName = "left-1/2 -translate-x-1/2 bottom-full mb-2 w-48 max-w-[200px]",
 }: InfoBubbleProps) {
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -58,7 +58,7 @@ export function InfoBubble({
         i
       </button>
       <div
-        className={`absolute bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-50 ${
+        className={`absolute bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-50 max-w-[200px] whitespace-normal break-words ${
           isOpen ? "block" : "hidden group-hover:block"
         } ${tooltipClassName}`}
       >

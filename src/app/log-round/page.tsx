@@ -941,7 +941,18 @@ export default function LogRoundPage() {
               <div>
                 <div className="flex items-center gap-1 mb-2">
                   <label className="block text-sm font-medium text-gray-700">Greens in Regulation</label>
-                  <InfoBubble content="A green is hit in regulation if any part of the ball is on the putting surface in Par - 2 strokes." tooltipClassName="left-0 bottom-full mb-2 w-64" />
+                  <InfoBubble
+                    content={
+                      <>
+                        <span className="font-semibold">Tier 1 (Base):</span> Green hit → &quot;GIR&quot;
+                        <br />
+                        <span className="font-semibold">Tier 2 (Proximity):</span> Ball inside 20ft → &quot;GIR + 20ft GIR&quot;
+                        <br />
+                        <span className="font-semibold">Tier 3 (Elite):</span> Ball inside 8ft → &quot;GIR + 20ft GIR + 8ft GIR&quot;
+                      </>
+                    }
+                    tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 max-w-[200px]"
+                  />
                 </div>
                 <div className="flex flex-col gap-2">
                   {/* Row 1: Total GIR and Inside 8ft */}
@@ -1188,7 +1199,7 @@ export default function LogRoundPage() {
               <div>
                 <div className="flex items-center gap-1 mb-3">
                   <label className="block text-sm font-medium text-gray-700">Up & Down Conversions</label>
-                  <InfoBubble content="Missing the GIR but still making Par or better (The 'Up & Down' %)." tooltipClassName="left-0 bottom-full mb-2 w-64" />
+                  <InfoBubble content="Missing the GIR but still making Par or better (The 'Up & Down' %)." tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 max-w-[200px]" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {/* Up & Down Attempts */}
@@ -1300,7 +1311,7 @@ export default function LogRoundPage() {
               <div>
                 <div className="flex items-center gap-1 mb-3">
                   <label className="block text-sm font-medium text-gray-700">Bunker Saves</label>
-                  <InfoBubble content="Greenside only." tooltipClassName="left-0 bottom-full mb-2 w-64" />
+                  <InfoBubble content="Greenside only." tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 max-w-[200px]" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {/* Bunker Attempts */}

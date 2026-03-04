@@ -39,8 +39,6 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased relative`}
       >
-        {/* Cache Buster: Add this at the very top of the body to physically wipe the 'poisoned' session every time the page loads */}
-        <script dangerouslySetInnerHTML={{ __html: 'localStorage.clear(); sessionStorage.clear();' }} />
         <ErrorBoundary>
           <AuthProvider>
             <ProfileGuard>
