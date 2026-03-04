@@ -89,7 +89,15 @@ export const getBenchmarkGoals = (handicap: number) => {
   const gir = 8 + (70 - 8) * normalized;
   const fir = 15 + (75 - 15) * normalized;
   const upAndDown = 10 + (65 - 10) * normalized;
-  const putts = 40 - (40 - 26) * normalized;
+  // Putts per round: realistic benchmarks (54→41.5, 15→34.2, 5→31.7, 0→30.1)
+  const getPuttsGoal = (h: number) => {
+    if (h >= 54) return 41.5;
+    if (h <= 0) return 30.1;
+    if (h >= 15) return 34.2 + (41.5 - 34.2) * (54 - h) / (54 - 15);
+    if (h >= 5) return 31.7 + (34.2 - 31.7) * (15 - h) / (15 - 5);
+    return 30.1 + (31.7 - 30.1) * (5 - h) / 5;
+  };
+  const putts = getPuttsGoal(clampedHandicap);
   const bunkerSaves = 10 + (50 - 10) * normalized;
   const within8ft = 3 + (15 - 3) * normalized;
   const within20ft = 15 + (50 - 15) * normalized;
@@ -306,12 +314,11 @@ export default function StatsPage() {
     const totalHoles = safeRounds.reduce((sum, r) => sum + (r.holes || 18), 0);
     const girPercent = totalHoles > 0 ? (totalGir / totalHoles) * 100 : 0;
 
-    // APPROACH: GIR from distances percentages
+    // APPROACH: GIR from distances - % of holes (18) hit within 8ft/20ft
     const totalGir8ft = safeRounds.reduce((sum, r) => sum + (r.gir8ft || 0), 0);
     const totalGir20ft = safeRounds.reduce((sum, r) => sum + (r.gir20ft || 0), 0);
-    // Calculate percentage based on total GIRs
-    const gir8ft = totalGir > 0 ? (totalGir8ft / totalGir) * 100 : 0;
-    const gir20ft = totalGir > 0 ? (totalGir20ft / totalGir) * 100 : 0;
+    const gir8ft = totalHoles > 0 ? (totalGir8ft / totalHoles) * 100 : 0;
+    const gir20ft = totalHoles > 0 ? (totalGir20ft / totalHoles) * 100 : 0;
 
     // SHORT GAME: Up & Down percentage
     const totalUpDownAttempts = safeRounds.reduce((sum, r) => sum + (r.upAndDownConversions || 0) + (r.missed || 0), 0);
@@ -700,15 +707,13 @@ export default function StatsPage() {
         };
       });
 
-      // 2. Prepare Practice Data
+      // 2. Prepare Practice Data (matches radar chart order)
       const practiceData = [
-        { category: 'Driving', minutes: practiceAllocationData.driving },
-        { category: 'Irons', minutes: practiceAllocationData.irons },
-        { category: 'Wedges', minutes: practiceAllocationData.wedges },
-        { category: 'Chipping', minutes: practiceAllocationData.chipping },
-        { category: 'Bunkers', minutes: practiceAllocationData.bunkers },
-        { category: 'Putting', minutes: practiceAllocationData.putting },
         { category: 'Mental/Strategy', minutes: practiceAllocationData.mentalStrategy },
+        { category: 'Short Game', minutes: practiceAllocationData.chipping + practiceAllocationData.bunkers },
+        { category: 'Putting', minutes: practiceAllocationData.putting },
+        { category: 'Approach', minutes: practiceAllocationData.irons + practiceAllocationData.wedges },
+        { category: 'Driving', minutes: practiceAllocationData.driving },
         { category: 'On-Course', minutes: practiceAllocationData.onCourse },
       ];
 
@@ -790,75 +795,77 @@ export default function StatsPage() {
   }
   
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="max-w-md mx-auto bg-white min-h-screen">
-        <div className="pt-6 pb-4 px-4">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Game Overview</h1>
-              <p className="text-gray-600 text-sm mt-1">Track your performance metrics</p>
-              {/* Handicap Display: Show initial_handicap from database */}
-              {user?.initialHandicap !== undefined && (
-                <p className="text-sm font-semibold mt-1" style={{ color: '#014421' }}>
-                  Handicap: {(user.initialHandicap >= 0 ? user.initialHandicap.toFixed(1) : `+${Math.abs(user.initialHandicap).toFixed(1)}`)} {user.initialHandicap <= 0 ? 'Pro' : 'HCP'}
-                </p>
-              )}
-            </div>
-            {/* Generate Report Button */}
-            <button
-              onClick={handleGenerateReport}
-              disabled={isGeneratingPDF}
-              className={`px-4 py-2 rounded-lg border-2 border-white text-white text-sm font-semibold transition-all ${
-                isGeneratingPDF ? 'opacity-70 cursor-not-allowed' : 'hover:bg-white/10'
-              }`}
-              style={{ backgroundColor: '#05412B' }}
-            >
-              {isGeneratingPDF ? 'Generating...' : 'Generate Report'}
-            </button>
+    <div className="flex-1 w-full max-w-md mx-auto flex flex-col bg-gray-50 min-w-0" style={{ overflowX: 'clip' }}>
+      {/* Header */}
+      <div className="shrink-0 pt-4 pb-3 px-3 sm:px-4 bg-white border-b border-gray-100 min-w-0 overflow-hidden">
+        <div className="flex items-center justify-between gap-2 mb-2 min-w-0">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">Game Overview</h1>
+            <p className="text-gray-600 text-sm mt-1">Track your performance metrics</p>
+            {/* Handicap Display: Show initial_handicap from database */}
+            {user?.initialHandicap !== undefined && (
+              <p className="text-sm font-semibold mt-1" style={{ color: '#014421' }}>
+                Handicap: {(user.initialHandicap >= 0 ? user.initialHandicap.toFixed(1) : `+${Math.abs(user.initialHandicap).toFixed(1)}`)} {user.initialHandicap <= 0 ? 'Pro' : 'HCP'}
+              </p>
+            )}
           </div>
-          
-          {/* Stat Slider */}
-          <div className="mt-3 p-3 rounded-lg bg-gray-50 border border-gray-200">
-            <div className="text-xs font-medium text-gray-600 mb-2">Target Goal</div>
-            <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min="-5"
-                max="54"
-                step="0.1"
-                value={selectedGoal}
-                onChange={handleGoalChange}
-                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                style={{
-                  background: `linear-gradient(to right, #014421 0%, #014421 ${((selectedGoal + 5) / 59) * 100}%, #E5E7EB ${((selectedGoal + 5) / 59) * 100}%, #E5E7EB 100%)`
-                }}
-              />
-              <div className="text-sm font-semibold text-gray-900 whitespace-nowrap shrink-0 text-right">
-                {(selectedGoal ?? 0) >= 0 ? `${(selectedGoal ?? 0).toFixed(1)}` : `+${Math.abs(selectedGoal ?? 0).toFixed(1)}`} {(selectedGoal ?? 0) <= 0 ? 'Pro' : 'HCP'}
-              </div>
+          {/* Generate Report Button */}
+          <button
+            onClick={handleGenerateReport}
+            disabled={isGeneratingPDF}
+            className={`shrink-0 px-3 py-2 rounded-lg border-2 border-white text-white text-xs font-semibold transition-all whitespace-nowrap ${
+              isGeneratingPDF ? 'opacity-70 cursor-not-allowed' : 'hover:bg-white/10'
+            }`}
+            style={{ backgroundColor: '#05412B' }}
+          >
+            {isGeneratingPDF ? 'Generating...' : 'Generate Report'}
+          </button>
+        </div>
+        
+        {/* Stat Slider */}
+        <div className="mt-2 p-3 rounded-lg bg-gray-50 border border-gray-200 min-w-0 overflow-hidden">
+          <div className="text-xs font-medium text-gray-600 mb-2">Target Goal</div>
+          <div className="flex items-center gap-3 min-w-0">
+            <input
+              type="range"
+              min="-5"
+              max="54"
+              step="0.1"
+              value={selectedGoal}
+              onChange={handleGoalChange}
+              className="flex-1 min-w-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, #014421 0%, #014421 ${((selectedGoal + 5) / 59) * 100}%, #E5E7EB ${((selectedGoal + 5) / 59) * 100}%, #E5E7EB 100%)`
+              }}
+            />
+            <div className="text-sm font-semibold text-gray-900 whitespace-nowrap shrink-0 text-right">
+              {(selectedGoal ?? 0) >= 0 ? `${(selectedGoal ?? 0).toFixed(1)}` : `+${Math.abs(selectedGoal ?? 0).toFixed(1)}`} {(selectedGoal ?? 0) <= 0 ? 'Pro' : 'HCP'}
             </div>
-            <div className="text-xs text-gray-600 mt-2">
-              GIR: {goals.gir}% | FIR: {goals.fir}% | Up & Down: {goals.upAndDown}% | Putts: {goals.putts} | Bunker: {goals.bunkerSaves}%
-            </div>
+          </div>
+          <div className="text-xs text-gray-600 mt-2 break-words">
+            GIR: {goals.gir}% | FIR: {goals.fir}% | Up & Down: {goals.upAndDown}% | Putts: {goals.putts} | Bunker: {goals.bunkerSaves}%
           </div>
         </div>
+      </div>
 
+      <div className="flex-1 overflow-y-auto overflow-x-clip px-3 pt-4 pb-32 min-w-0" style={{ overflowX: 'clip' }}>
+        <div className="w-full min-w-0 bg-white" style={{ maxWidth: '100%' }}>
         {/* TREND ANALYSIS */}
-        <div className="px-3 mb-6">
-          <div className="bg-[#05412B] rounded-[40px] p-6 text-white shadow-2xl">
-            <h2 className="text-center font-bold text-lg mb-6 uppercase tracking-wider italic" style={{ color: '#FFFFFF', textDecoration: 'underline', textDecorationColor: '#FF9800', textDecorationThickness: '2px', textUnderlineOffset: '8px' }}>
+        <div className="px-0 sm:px-2 mb-4 min-w-0 overflow-hidden">
+          <div className="bg-[#05412B] rounded-2xl sm:rounded-[32px] p-3 sm:p-6 text-white shadow-2xl overflow-hidden">
+            <h2 className="text-center font-bold text-base sm:text-lg mb-4 uppercase tracking-wider italic" style={{ color: '#FFFFFF', textDecoration: 'underline', textDecorationColor: '#FF9800', textDecorationThickness: '2px', textUnderlineOffset: '8px' }}>
               TREND ANALYSIS
             </h2>
             
             {/* Controls */}
-            <div className="bg-white/5 rounded-3xl p-5 mb-6 border border-white/10 space-y-4">
+            <div className="bg-white/5 rounded-2xl p-3 sm:p-5 mb-4 border border-white/10 space-y-3">
               {/* Metric Selection */}
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-white/50 uppercase">Metric:</span>
+              <div className="flex justify-between items-center gap-2 min-w-0">
+                <span className="text-[10px] font-bold text-white/50 uppercase shrink-0">Metric:</span>
                 <select 
                   value={selectedMetric} 
                   onChange={(e) => setSelectedMetric(e.target.value as typeof selectedMetric)} 
-                  className="bg-white text-[#05412B] text-xs font-bold py-2 px-3 rounded-xl outline-none max-h-48 overflow-y-auto"
+                  className="bg-white text-[#05412B] text-xs font-bold py-2 px-3 rounded-xl outline-none max-h-48 overflow-y-auto flex-1 min-w-0"
                   style={{ maxHeight: '200px' }}
                 >
                   <option value="nettScore">NETT SCORE</option>
@@ -883,9 +890,9 @@ export default function StatsPage() {
               </div>
 
               {/* Hole Filter */}
-              <div className="flex justify-between items-center border-t border-white/10 pt-4">
-                <span className="text-[10px] font-bold text-white/50 uppercase tracking-tight">Filter:</span>
-                <div className="flex gap-1">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 border-t border-white/10 pt-4">
+                <span className="text-[10px] font-bold text-white/50 uppercase tracking-tight shrink-0">Filter:</span>
+                <div className="flex gap-1 flex-wrap">
                   <button 
                     onClick={() => setHoleFilter('9')} 
                     className={`px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase transition-all ${
@@ -910,9 +917,9 @@ export default function StatsPage() {
               </div>
 
               {/* History Filter */}
-              <div className="flex justify-between items-center border-t border-white/10 pt-4">
-                <span className="text-[10px] font-bold text-white/50 uppercase tracking-tight">History:</span>
-                <div className="flex gap-1">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 border-t border-white/10 pt-4">
+                <span className="text-[10px] font-bold text-white/50 uppercase tracking-tight shrink-0">History:</span>
+                <div className="flex gap-1 flex-wrap">
                   {(['LAST 5', 'LAST 10', 'LAST 20', 'ALL'] as const).map(h => (
                     <button 
                       key={h} 
@@ -931,14 +938,14 @@ export default function StatsPage() {
             </div>
 
             {/* SVG Graph */}
-            <div className="relative w-full bg-[#05412B] rounded-[32px] p-4 border border-white/5" style={{ height: '350px', overflow: 'visible', minHeight: '350px' }}>
-              <div className="overflow-x-auto scrollbar-hide" style={{ height: '100%', overflow: 'visible', minHeight: '350px' }}>
+            <div className="relative w-full min-w-0 bg-[#05412B] rounded-2xl p-3 border border-white/5 overflow-hidden" style={{ height: '340px', minHeight: '340px' }}>
+              <div className="w-full h-full min-w-0 overflow-visible" style={{ minHeight: '300px' }}>
                 <svg 
                   key={`${selectedMetric}-${activeHistory}-${yAxisConfig.yMin}-${yAxisConfig.yMax}-${selectedGoal}`}
                   viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`} 
                   preserveAspectRatio="xMidYMid meet"
-                  className="w-full h-full"
-                  style={{ display: 'block', overflow: 'visible' }}
+                  className="w-full h-full block max-w-full"
+                  overflow="visible"
                 >
                   <defs>
                     <linearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -1152,7 +1159,7 @@ export default function StatsPage() {
         </div>
 
         {/* Performance Tiles - High-Fidelity White/Orange Style */}
-        <div className="px-4 mb-6">
+        <div className="px-3 sm:px-4 mb-6 min-w-0 overflow-hidden">
           <div className="space-y-3">
             {/* DRIVING Section */}
             <div className="bg-white rounded-2xl p-4 shadow-sm">
@@ -1370,10 +1377,10 @@ export default function StatsPage() {
         </div>
 
         {/* Practice Allocation Chart - At the bottom */}
-        <div className="px-4 mb-6">
-          <div className="bg-[#05412B] rounded-2xl p-6 border border-white/10 relative">
+        <div className="px-3 sm:px-4 mb-6 min-w-0">
+          <div className="bg-white rounded-xl shadow-sm p-6 mb-8 w-full overflow-hidden">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-lg uppercase tracking-wider italic text-white" style={{ textDecoration: 'underline', textDecorationColor: '#FF9800', textDecorationThickness: '2px', textUnderlineOffset: '8px' }}>
+              <h2 className="font-bold text-lg uppercase tracking-wider italic text-gray-900" style={{ textDecoration: 'underline', textDecorationColor: '#FF9800', textDecorationThickness: '2px', textUnderlineOffset: '8px' }}>
                 PRACTICE ALLOCATION
               </h2>
               {/* Time Filter */}
@@ -1384,8 +1391,8 @@ export default function StatsPage() {
                     onClick={() => setSkillAssessmentFilter(filter)} 
                     className={`px-3 py-1 rounded-lg text-xs font-bold uppercase transition-all ${
                       skillAssessmentFilter === filter 
-                        ? 'bg-white text-[#05412B] border-2 border-white' 
-                        : 'bg-white/10 text-white/60 border border-white/20'
+                        ? 'bg-[#05412B] text-white border-2 border-[#05412B]' 
+                        : 'bg-gray-100 text-gray-600 border border-gray-200'
                     }`}
                   >
                     {filter}
@@ -1393,12 +1400,12 @@ export default function StatsPage() {
                 ))}
               </div>
             </div>
-            <div className="flex justify-center items-center relative mt-4 px-4 py-8">
+            <div className="w-full aspect-square flex justify-center items-center relative overflow-hidden">
               <svg 
-                width="100%" 
-                height="100%" 
-                viewBox="0 0 500 500" 
-                className="mx-auto overflow-visible max-w-[500px]"
+                viewBox="-80 -80 660 660" 
+                className="w-full h-full max-w-full max-h-full"
+                preserveAspectRatio="xMidYMid meet"
+                overflow="visible"
                 onMouseLeave={() => setHoveredCategory(null)}
               >
                 <defs>
@@ -1408,11 +1415,11 @@ export default function StatsPage() {
                   </linearGradient>
                 </defs>
                 
-                {/* Grid polygons (Octagons) */}
+                {/* Grid polygons (Hexagons - 6 categories) */}
                 {[42, 84, 126, 168, 210].map((radius, idx) => {
-                  const points = [0, 1, 2, 3, 4, 5, 6, 7].map(i => {
-                    // Start from Driving at top, rotate clockwise
-                    const angle = (i * (360/8) - 90) * (Math.PI / 180);
+                  const points = [0, 1, 2, 3, 4, 5].map(i => {
+                    // Mental/Strategy at top (12 o'clock), clockwise
+                    const angle = (i * (360/6) - 90) * (Math.PI / 180);
                     const x = 250 + radius * Math.cos(angle);
                     const y = 250 + radius * Math.sin(angle);
                     return `${x},${y}`;
@@ -1422,16 +1429,16 @@ export default function StatsPage() {
                       key={`grid-${idx}`}
                       points={points}
                       fill="none"
-                      stroke="white"
+                      stroke="#4B5563"
                       strokeWidth="1"
-                      strokeOpacity="0.2"
+                      strokeOpacity="0.4"
                     />
                   );
                 })}
                 
-                {/* Grid lines (8 axes for 8 categories) */}
-                {[0, 1, 2, 3, 4, 5, 6, 7].map((idx) => {
-                  const angle = (idx * (360/8) - 90) * (Math.PI / 180);
+                {/* Grid lines (6 axes) */}
+                {[0, 1, 2, 3, 4, 5].map((idx) => {
+                  const angle = (idx * (360/6) - 90) * (Math.PI / 180);
                   const x = 250 + 210 * Math.cos(angle);
                   const y = 250 + 210 * Math.sin(angle);
                   return (
@@ -1441,64 +1448,60 @@ export default function StatsPage() {
                       y1="250"
                       x2={x}
                       y2={y}
-                      stroke="white"
+                      stroke="#4B5563"
                       strokeWidth="1"
-                      strokeOpacity="0.2"
+                      strokeOpacity="0.4"
                     />
                   );
                 })}
                 
-                {/* Practice Allocation Area */}
+                {/* Practice Allocation Area - Order: Mental/Strategy, Short Game, Putting, Approach, Driving, On-Course */}
                 {(() => {
-                  const categories = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy', 'On-Course'];
+                  const categories = ['Mental/Strategy', 'Short Game', 'Putting', 'Approach', 'Driving', 'On-Course'];
                   const values = [
-                    practiceAllocationData.driving,
-                    practiceAllocationData.irons,
-                    practiceAllocationData.wedges,
-                    practiceAllocationData.chipping,
-                    practiceAllocationData.bunkers,
-                    practiceAllocationData.putting,
                     practiceAllocationData.mentalStrategy,
+                    practiceAllocationData.chipping + practiceAllocationData.bunkers,
+                    practiceAllocationData.putting,
+                    practiceAllocationData.irons + practiceAllocationData.wedges,
+                    practiceAllocationData.driving,
                     practiceAllocationData.onCourse,
                   ];
                   
                   // Consistent maxDomain (like 120 minutes) across all axes so the data forms a clear 'web' shape.
                   const maxDataValue = Math.max(120, ...values);
                   
-                  const dPath = values.map((value, idx) => {
-                    const angle = (idx * (360/8) - 90) * (Math.PI / 180);
-                    // If a student has 0 minutes in a category, ensure the orange line pulls all the way to the center point (radius = 0).
-                    const radius = (value / maxDataValue) * 210;
+                  const dPath = values.map((val, idx) => {
+                    const angle = (idx * (360/6) - 90) * (Math.PI / 180);
+                    const radius = (val / maxDataValue) * 210;
                     const x = 250 + radius * Math.cos(angle);
                     const y = 250 + radius * Math.sin(angle);
                     return `${idx === 0 ? 'M' : 'L'} ${x} ${y}`;
-                  }).join(' ') + ' Z'; // Z ensures the path explicitly loops back to close the shape
+                  }).join(' ') + ' Z';
                   
                   return (
                     <>
                       <path
                         d={dPath}
-                        fill="rgba(255, 152, 0, 0.4)"
-                        stroke="#FF9800"
-                        strokeWidth="2"
+                        fill="rgba(1, 68, 33, 0.4)"
+                        fillOpacity={0.4}
+                        stroke="#014421"
+                        strokeWidth={2}
                         strokeLinejoin="round"
                       />
                       {/* Interactive category segments with hover */}
                       {categories.map((category, idx) => {
-                        const angle = (idx * (360/8) - 90) * (Math.PI / 180);
-                        const value = values[idx];
-                        const radius = (value / maxDataValue) * 210;
-                        const labelX = 250 + 235 * Math.cos(angle); // Pushed further out
-                        const labelY = 250 + 235 * Math.sin(angle); // Pushed further out
+                        const angle = (idx * (360/6) - 90) * (Math.PI / 180);
+                        const minsVal = values[idx];
+                        const radius = (minsVal / maxDataValue) * 210;
+                        const labelX = 250 + 250 * Math.cos(angle);
+                        const labelY = 250 + 250 * Math.sin(angle);
                         
-                        // Text alignment based on horizontal position
                         let textAnchor: "start" | "middle" | "end" = "middle";
-                        if (Math.cos(angle) > 0.1) textAnchor = "start"; // Right side
-                        else if (Math.cos(angle) < -0.1) textAnchor = "end"; // Left side
+                        if (Math.cos(angle) > 0.1) textAnchor = "start";
+                        else if (Math.cos(angle) < -0.1) textAnchor = "end";
                         
-                        // Create hover area (triangle from center to point)
-                        const prevAngle = ((idx - 1 + 8) % 8 * (360/8) - 90) * (Math.PI / 180);
-                        const nextAngle = ((idx + 1) % 8 * (360/8) - 90) * (Math.PI / 180);
+                        const prevAngle = ((idx - 1 + 6) % 6 * (360/6) - 90) * (Math.PI / 180);
+                        const nextAngle = ((idx + 1) % 6 * (360/6) - 90) * (Math.PI / 180);
                         const midPrevAngle = (angle + prevAngle) / 2;
                         const midNextAngle = (angle + nextAngle) / 2;
                         const hoverRadius = 210;
@@ -1541,10 +1544,11 @@ export default function StatsPage() {
                                 y={labelY}
                                 textAnchor={textAnchor}
                                 dominantBaseline="middle"
-                                fill="white"
-                                fontSize="13"
+                                fill={isHovered ? "#FF9800" : "#111827"}
+                                fontSize="15"
                                 fontWeight="bold"
-                                opacity={isHovered ? 1 : 0.8}
+                                opacity={isHovered ? 1 : 0.95}
+                                className="uppercase tracking-wider"
                               >
                                 <tspan x={labelX} dy="-0.6em">Mental</tspan>
                                 <tspan x={labelX} dy="1.2em">Strategy</tspan>
@@ -1555,10 +1559,11 @@ export default function StatsPage() {
                                 y={labelY}
                                 textAnchor={textAnchor}
                                 dominantBaseline="middle"
-                                fill="white"
-                                fontSize="13"
+                                fill={isHovered ? "#FF9800" : "#111827"}
+                                fontSize="15"
                                 fontWeight="bold"
-                                opacity={isHovered ? 1 : 0.8}
+                                opacity={isHovered ? 1 : 0.95}
+                                className="uppercase tracking-wider"
                               >
                                 {category}
                               </text>
@@ -1570,7 +1575,7 @@ export default function StatsPage() {
                                 cy={250 + radius * Math.sin(angle)}
                                 r="6"
                                 fill="#FF9800"
-                                stroke="white"
+                                stroke="#374151"
                                 strokeWidth="2"
                               />
                             )}
@@ -1584,17 +1589,17 @@ export default function StatsPage() {
               
               {/* Hover Tooltip */}
               {hoveredCategory && (() => {
-                const categoryIndex = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy', 'On-Course'].indexOf(hoveredCategory);
-                const currentValue = [
-                  practiceAllocationData.driving,
-                  practiceAllocationData.irons,
-                  practiceAllocationData.wedges,
-                  practiceAllocationData.chipping,
-                  practiceAllocationData.bunkers,
-                  practiceAllocationData.putting,
+                const categories = ['Mental/Strategy', 'Short Game', 'Putting', 'Approach', 'Driving', 'On-Course'];
+                const categoryValues = [
                   practiceAllocationData.mentalStrategy,
+                  practiceAllocationData.chipping + practiceAllocationData.bunkers,
+                  practiceAllocationData.putting,
+                  practiceAllocationData.irons + practiceAllocationData.wedges,
+                  practiceAllocationData.driving,
                   practiceAllocationData.onCourse,
-                ][categoryIndex];
+                ];
+                const categoryIndex = categories.indexOf(hoveredCategory);
+                const currentValue = categoryValues[categoryIndex] ?? 0;
                 
                 return (
                   <div 
@@ -1618,18 +1623,16 @@ export default function StatsPage() {
 
           {/* Numeric Breakdown Section */}
           <div className="bg-white rounded-2xl p-4 mt-4 shadow-sm">
-            <div className="text-xs font-bold text-black uppercase tracking-wide mb-3">PRACTICE BREAKDOWN</div>
+            <div className="text-xs font-bold text-gray-900 uppercase tracking-wide mb-3">PRACTICE BREAKDOWN</div>
             <div className="space-y-0">
               {(() => {
-                const categories = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy', 'On-Course'];
+                const categories = ['Mental/Strategy', 'Short Game', 'Putting', 'Approach', 'Driving', 'On-Course'];
                 const values = [
-                  practiceAllocationData.driving,
-                  practiceAllocationData.irons,
-                  practiceAllocationData.wedges,
-                  practiceAllocationData.chipping,
-                  practiceAllocationData.bunkers,
-                  practiceAllocationData.putting,
                   practiceAllocationData.mentalStrategy,
+                  practiceAllocationData.chipping + practiceAllocationData.bunkers,
+                  practiceAllocationData.putting,
+                  practiceAllocationData.irons + practiceAllocationData.wedges,
+                  practiceAllocationData.driving,
                   practiceAllocationData.onCourse,
                 ];
                 const totalMins = values.reduce((sum, val) => sum + val, 0);
@@ -1641,7 +1644,7 @@ export default function StatsPage() {
                   return (
                     <div key={category}>
                       <div className="flex items-center justify-between py-2">
-                        <div className="text-sm text-gray-700">{category}</div>
+                        <div className="text-sm font-medium text-gray-900">{category}</div>
                         <div className="flex items-center gap-3">
                           <div className="text-xl font-bold" style={{ color: '#FF9800' }}>
                             {mins} <span className="text-xs text-gray-500 font-normal">mins</span>
@@ -1658,6 +1661,7 @@ export default function StatsPage() {
               })()}
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

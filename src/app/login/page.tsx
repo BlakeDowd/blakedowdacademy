@@ -159,12 +159,12 @@ export default function LoginPage() {
     >
       <div className="w-full max-w-md px-4">
         {/* Logo and Branding */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 break-text shrink min-w-0">
           <div className="flex justify-center mb-4">
             <img src="/logo.png" alt="Blake Dowd Golf" className="w-64 object-contain" />
           </div>
           <h1 
-            className="text-2xl font-bold"
+            className="text-2xl font-bold break-text shrink"
             style={{ color: '#054d2b', letterSpacing: '0.02em' }}
           >
             Online Academy

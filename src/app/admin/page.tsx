@@ -117,8 +117,9 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
-      <div className="max-w-2xl mx-auto">
+    <div className="flex-1 w-full flex flex-col bg-gray-50">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-12 pb-32">
+        <div className="max-w-2xl mx-auto">
         <div className="bg-white rounded-lg shadow-lg p-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
           <p className="text-gray-600 mb-8">Add new drills to the library</p>
@@ -209,6 +210,7 @@ export default function AdminPage() {
               )}
             </button>
           </form>
+        </div>
         </div>
       </div>
     </div>

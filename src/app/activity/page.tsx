@@ -131,7 +131,7 @@ export default function ActivityPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 pb-24 flex items-center justify-center">
+      <div className="flex-1 w-full flex flex-col bg-gray-50 items-center justify-center">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-[#014421] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-600">Loading activities...</p>
@@ -141,21 +141,22 @@ export default function ActivityPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="max-w-md mx-auto bg-white min-h-screen">
-        {/* Header */}
-        <div className="px-5 pt-6 pb-4 flex items-center gap-4 border-b border-gray-200">
-          <button
-            onClick={() => router.back()}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
-          </button>
-          <h1 className="text-2xl font-bold text-gray-900">Activity</h1>
-        </div>
+    <div className="flex-1 w-full flex flex-col bg-gray-50">
+      {/* Header */}
+      <div className="shrink-0 px-5 pt-6 pb-4 flex items-center gap-4 border-b border-gray-200 bg-white">
+        <button
+          onClick={() => router.back()}
+          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 text-gray-600" />
+        </button>
+        <h1 className="text-2xl font-bold text-gray-900">Activity</h1>
+      </div>
 
-        {/* Activity List */}
-        <div className="px-5 py-6">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
+        <div className="max-w-md mx-auto bg-white min-h-screen">
+          {/* Activity List */}
+          <div className="py-6">
           {activities.length === 0 ? (
             /* Empty State */
             <div className="text-center py-12">
@@ -226,6 +227,7 @@ export default function ActivityPage() {
               })}
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>

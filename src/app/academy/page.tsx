@@ -3728,10 +3728,11 @@ export default function AcademyPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-32 w-full overflow-x-hidden">
-      <div className="max-w-md mx-auto px-4 w-full overflow-x-hidden min-h-screen pb-32">
-        {/* Modern Profile Header - Centered */}
-        <div className="pt-6 pb-4 bg-white">
+    <div className="flex-1 w-full flex flex-col bg-gray-50">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
+        <div className="max-w-md mx-auto">
+          {/* Modern Profile Header - Centered */}
+          <div className="pb-4 bg-white rounded-2xl p-4 shadow-sm mb-6">
           <div className="flex flex-col items-center gap-3">
             {/* Large Circular Avatar */}
             <CircularAvatar
@@ -4204,6 +4205,7 @@ export default function AcademyPage() {
           </div>
         </div>
 
+        </div>
       </div>
     </div>
   );

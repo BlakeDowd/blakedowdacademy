@@ -1082,8 +1082,9 @@ export default function HomeDashboard() {
             onClose={() => setToast(null)}
           />
         )}
-        <div className="min-h-screen bg-gray-50 pb-20">
-          <div className="max-w-md mx-auto bg-white min-h-screen">
+        <div className="flex-1 w-full flex flex-col bg-gray-50">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
+            <div className="max-w-md mx-auto">
         {/* Profile Modal - Opens when avatar is clicked */}
         {/* Kill Invisible Overlays: Add pointer-events-none to backdrop so it doesn't block Navbar */}
         {/* Z-Index Check: Modal z-40 is lower than Navbar z-[60] so navigation is never covered */}
@@ -1145,7 +1146,7 @@ export default function HomeDashboard() {
         
         {/* Top Section - Premium Header */}
         {/* Alignment: Use flexbox container (flex justify-between items-center) to ensure name is on left and streak is perfectly aligned on right */}
-        <div className="px-5 pt-6 pb-4 flex items-center justify-between mb-4 bg-white">
+        <div className="pt-2 pb-4 flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowProfileModal(true)}
@@ -1166,7 +1167,7 @@ export default function HomeDashboard() {
             </button>
             <div className="flex-1">
               <p className="text-gray-400 text-xs">Welcome back,</p>
-              <p className="text-gray-900 font-bold text-xl mt-1">
+              <p className="text-gray-900 font-bold text-xl mt-1 truncate min-w-0 flex-shrink">
                 {/* Connect Auth: Import useAuth and extract the user object */}
                 {/* Personalize Greeting: Replace the hardcoded 'Member' text with {user?.fullName || 'Golfer'} */}
                 {/* Safety: Keep the existing useRef guards to ensure this doesn't trigger a re-fetch loop */}
@@ -1191,6 +1192,33 @@ export default function HomeDashboard() {
             </span>
           </div>
         </div>
+
+        {/* Coach Administration - visible for authorized coaches only */}
+        {(['bdowd@pgamember.org.au', 'allendowd86@gmail.com'].includes((user?.email || '').toLowerCase().trim())) && (
+          <div className="px-5 mb-4">
+            <Link 
+              href="/dashboard/coach"
+              className="block"
+            >
+              <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl shadow-lg border border-gray-700 overflow-hidden hover:from-gray-800 hover:to-gray-700 transition-all">
+                <div className="p-5 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0">
+                      <Users className="w-6 h-6 text-blue-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white mb-0.5">Coach Administration</h3>
+                      <p className="text-gray-400 text-sm">Open Coaches Dashboard →</p>
+                    </div>
+                  </div>
+                  <span className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg shrink-0">
+                    Open
+                  </span>
+                </div>
+              </div>
+            </Link>
+          </div>
+        )}
 
         {/* Video and Daily Focus - Premium Card */}
         <div className="px-5 mb-4">
@@ -1806,6 +1834,7 @@ export default function HomeDashboard() {
           </div>
         )}
 
+            </div>
           </div>
         </div>
       </>

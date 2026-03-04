@@ -199,7 +199,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         missed: round.missed || round.up_and_down_missed || 0,
         bunkerAttempts: round.bunker_attempts || 0,
         bunkerSaves: round.bunker_saves || 0,
-        chipInside6ft: round.inside_6ft || round.chip_inside_6ft || 0, // Handle both column names
+        chipInside6ft: round.chip_inside_6ft ?? round.inside_6ft ?? 0, // Schema: chip_inside_6ft; legacy: inside_6ft
         doubleChips: round.double_chips || round.chip_ins || 0, // Handle both column names
         totalPutts: round.total_putts,
         threePutts: round.three_putts,

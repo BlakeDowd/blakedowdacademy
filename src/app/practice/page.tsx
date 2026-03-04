@@ -1751,8 +1751,8 @@ export default function PracticePage() {
     const girPercent = totalHoles > 0 ? (totalGir / totalHoles) * 100 : 0;
     const totalGir8ft = myRounds.reduce((s, r) => s + (r.gir8ft || 0), 0);
     const totalGir20ft = myRounds.reduce((s, r) => s + (r.gir20ft || 0), 0);
-    const gir8ft = totalGir > 0 ? (totalGir8ft / totalGir) * 100 : 0;
-    const gir20ft = totalGir > 0 ? (totalGir20ft / totalGir) * 100 : 0;
+    const gir8ft = totalHoles > 0 ? (totalGir8ft / totalHoles) * 100 : 0;
+    const gir20ft = totalHoles > 0 ? (totalGir20ft / totalHoles) * 100 : 0;
 
     // SHORT GAME: Up & Down, Bunker Saves, Chips inside 6ft
     const totalUpDownAttempts = myRounds.reduce((s, r) => s + (r.upAndDownConversions || 0) + (r.missed || 0), 0);
@@ -1791,8 +1791,9 @@ export default function PracticePage() {
   }, [myRounds, user?.initialHandicap]);
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="max-w-md mx-auto bg-white min-h-screen px-4">
+    <div className="flex-1 w-full flex flex-col bg-gray-50">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
+        <div className="max-w-md mx-auto">
         {/* Header with Name Editing */}
         <div className="pt-6 pb-4">
           <div className="flex items-center justify-between mb-3">
@@ -2587,7 +2588,9 @@ export default function PracticePage() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
 }
+

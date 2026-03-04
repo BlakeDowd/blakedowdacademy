@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { ArrowLeft, Save, Plus, Minus, RotateCcw } from "lucide-react";
 import { logActivity } from "@/lib/activity";
+import { InfoBubble } from "@/components/InfoBubble";
 
 interface RoundData {
   // Scoring Card
@@ -235,7 +236,7 @@ export default function LogRoundPage() {
         bunker_attempts: roundData.bunkerAttempts,
         bunker_saves: roundData.bunkerSaves,
         chip_ins: roundData.doubleChips || 0, // Chip ins
-        inside_6ft: roundData.chipInside6ft, // Inside 6ft
+        chip_inside_6ft: roundData.chipInside6ft, // Chips ending inside 6ft
         double_chips: roundData.doubleChips,
         // Putting stats
         total_putts: roundData.totalPutts,
@@ -273,7 +274,7 @@ export default function LogRoundPage() {
         bunker_attempts: insertData.bunker_attempts,
         bunker_saves: insertData.bunker_saves,
         chip_ins: insertData.chip_ins,
-        inside_6ft: insertData.inside_6ft,
+        chip_inside_6ft: insertData.chip_inside_6ft,
         // Putting (including 3-Putt)
         total_putts: insertData.total_putts,
         three_putts: insertData.three_putts,
@@ -359,23 +360,24 @@ export default function LogRoundPage() {
   const isRequiredFilled = roundData.course && roundData.score !== null && roundData.totalPutts > 0;
 
   return (
-    <div className="min-h-screen pb-24" style={{ backgroundColor: '#014421' }}>
-      <div className="max-w-md mx-auto min-h-screen">
-        {/* Header */}
-        <div className="px-4 pt-6 pb-4 flex items-center gap-4 sticky top-0 z-10" style={{ backgroundColor: '#014421' }}>
-          <button
-            onClick={() => router.back()}
-            className="p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
-          >
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-white">Round Performance Entry</h1>
-            <p className="text-white/80 text-sm">Enter your performance metrics</p>
-          </div>
+    <div className="flex-1 w-full flex flex-col bg-[#014421]">
+      {/* Header */}
+      <div className="shrink-0 px-4 pt-6 pb-4 flex items-center gap-4 sticky top-0 z-10" style={{ backgroundColor: '#014421' }}>
+        <button
+          onClick={() => router.back()}
+          className="p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
+        >
+          <ArrowLeft className="w-6 h-6" />
+        </button>
+        <div>
+          <h1 className="text-2xl font-bold text-white">Round Performance Entry</h1>
+          <p className="text-white/80 text-sm">Enter your performance metrics</p>
         </div>
+      </div>
 
-        <div className="px-4 space-y-4 pb-6">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
+        <div className="max-w-md mx-auto">
+          <div className="space-y-4 pb-6">
           {/* Scoring Card */}
           <div className="bg-white rounded-2xl p-4 shadow-lg">
             <h2 className="text-lg font-bold text-gray-900 mb-4">Scoring</h2>
@@ -441,12 +443,7 @@ export default function LogRoundPage() {
                 <div>
                   <div className="flex items-center gap-1 mb-1">
                     <label className="block text-sm font-medium text-gray-700">Score *</label>
-                    <div className="group relative">
-                      <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200">i</div>
-                      <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
-                        Total gross score for the round.
-                      </div>
-                    </div>
+                    <InfoBubble content="Total gross score for the round." />
                   </div>
                   <input
                     type="number"
@@ -462,12 +459,7 @@ export default function LogRoundPage() {
                 <div>
                   <div className="flex items-center gap-1 mb-1">
                     <label className="block text-sm font-medium text-gray-700">Nett</label>
-                    <div className="group relative">
-                      <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200">i</div>
-                      <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
-                        Gross score minus handicap.
-                      </div>
-                    </div>
+                    <InfoBubble content="Gross score minus handicap." />
                   </div>
                   <input
                     type="number"
@@ -641,12 +633,7 @@ export default function LogRoundPage() {
               <div>
                 <div className="flex items-center gap-1 mb-3">
                   <label className="block text-sm font-medium text-gray-700">Fairways in Regulation</label>
-                  <div className="group relative">
-                    <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200">i</div>
-                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
-                      The tee shot lands on the fairway on Par 4s and Par 5s.
-                    </div>
-                  </div>
+                  <InfoBubble content="The tee shot lands on the fairway on Par 4s and Par 5s." />
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   {/* FIR Left */}
@@ -954,12 +941,7 @@ export default function LogRoundPage() {
               <div>
                 <div className="flex items-center gap-1 mb-2">
                   <label className="block text-sm font-medium text-gray-700">Greens in Regulation</label>
-                  <div className="group relative">
-                    <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200">i</div>
-                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
-                      A green is hit in regulation if any part of the ball is on the putting surface in Par - 2 strokes.
-                    </div>
-                  </div>
+                  <InfoBubble content="A green is hit in regulation if any part of the ball is on the putting surface in Par - 2 strokes." tooltipClassName="left-0 bottom-full mb-2 w-64" />
                 </div>
                 <div className="flex flex-col gap-2">
                   {/* Row 1: Total GIR and Inside 8ft */}
@@ -1027,12 +1009,12 @@ export default function LogRoundPage() {
                         <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.gir8ft > 0 ? '#014421' : '#6B7280' }}>
                           Inside 8ft
                         </span>
-                        <div className="group relative">
-                          <div className="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border" style={{ borderColor: roundData.gir8ft > 0 ? '#014421' : '#E5E7EB', color: roundData.gir8ft > 0 ? '#014421' : '#9CA3AF' }}>i</div>
-                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-24 bg-gray-900 text-white text-xs rounded-lg p-1.5 shadow-xl z-10 text-center">
-                            2.4m
-                          </div>
-                        </div>
+                        <InfoBubble
+                          content="2.4m"
+                          buttonClassName="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border"
+                          buttonStyle={{ borderColor: roundData.gir8ft > 0 ? '#014421' : '#E5E7EB', color: roundData.gir8ft > 0 ? '#014421' : '#9CA3AF' }}
+                          tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-24 text-center p-1.5"
+                        />
                       </div>
                       <div className="flex items-center justify-center gap-1">
                         <button
@@ -1086,12 +1068,12 @@ export default function LogRoundPage() {
                         <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.gir20ft > 0 ? '#014421' : '#6B7280' }}>
                           Inside 20ft
                         </span>
-                        <div className="group relative">
-                          <div className="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border" style={{ borderColor: roundData.gir20ft > 0 ? '#014421' : '#E5E7EB', color: roundData.gir20ft > 0 ? '#014421' : '#9CA3AF' }}>i</div>
-                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-1.5 shadow-xl z-10 text-center">
-                            6.1m. Note: Also includes shots inside 8ft.
-                          </div>
-                        </div>
+                        <InfoBubble
+                          content="6.1m. Note: Also includes shots inside 8ft."
+                          buttonClassName="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border"
+                          buttonStyle={{ borderColor: roundData.gir20ft > 0 ? '#014421' : '#E5E7EB', color: roundData.gir20ft > 0 ? '#014421' : '#9CA3AF' }}
+                          tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-48 text-center p-1.5"
+                        />
                       </div>
                       <div className="flex items-center justify-center gap-1">
                         <button
@@ -1142,12 +1124,12 @@ export default function LogRoundPage() {
                         <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.goingForGreen > 0 ? '#014421' : '#6B7280' }}>
                           Going for Green
                         </span>
-                        <div className="group relative">
-                          <div className="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border" style={{ borderColor: roundData.goingForGreen > 0 ? '#014421' : '#E5E7EB', color: roundData.goingForGreen > 0 ? '#014421' : '#9CA3AF' }}>i</div>
-                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-1.5 shadow-xl z-10 text-center">
-                            Attempts to reach a Par 4 in 1 stroke or a Par 5 in 2 strokes.
-                          </div>
-                        </div>
+                        <InfoBubble
+                          content="Attempts to reach a Par 4 in 1 stroke or a Par 5 in 2 strokes."
+                          buttonClassName="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border"
+                          buttonStyle={{ borderColor: roundData.goingForGreen > 0 ? '#014421' : '#E5E7EB', color: roundData.goingForGreen > 0 ? '#014421' : '#9CA3AF' }}
+                          tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-48 text-center p-1.5"
+                        />
                       </div>
                       <div className="flex items-center justify-center gap-1">
                         <button
@@ -1206,12 +1188,7 @@ export default function LogRoundPage() {
               <div>
                 <div className="flex items-center gap-1 mb-3">
                   <label className="block text-sm font-medium text-gray-700">Up & Down Conversions</label>
-                  <div className="group relative">
-                    <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200">i</div>
-                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
-                      Missing the GIR but still making Par or better (The 'Up & Down' %).
-                    </div>
-                  </div>
+                  <InfoBubble content="Missing the GIR but still making Par or better (The 'Up & Down' %)." tooltipClassName="left-0 bottom-full mb-2 w-64" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {/* Up & Down Attempts */}
@@ -1323,12 +1300,7 @@ export default function LogRoundPage() {
               <div>
                 <div className="flex items-center gap-1 mb-3">
                   <label className="block text-sm font-medium text-gray-700">Bunker Saves</label>
-                  <div className="group relative">
-                    <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200">i</div>
-                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10">
-                      Greenside only.
-                    </div>
-                  </div>
+                  <InfoBubble content="Greenside only." tooltipClassName="left-0 bottom-full mb-2 w-64" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {/* Bunker Attempts */}
@@ -1441,21 +1413,11 @@ export default function LogRoundPage() {
                 <div className="grid grid-cols-2 gap-3 mb-2">
                   <div className="flex items-center gap-1">
                     <label className="text-sm font-medium text-gray-700">Chip Inside 6ft</label>
-                    <div className="group relative">
-                      <div className="w-3.5 h-3.5 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[9px] font-bold cursor-help border border-gray-200">i</div>
-                      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-32 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10 text-center">
-                        Approx. 1.8 metres
-                      </div>
-                    </div>
+                    <InfoBubble content="Approx. 1.8 metres" buttonClassName="w-3.5 h-3.5 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[9px] font-bold cursor-help border border-gray-200" tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-32 text-center" />
                   </div>
                   <div className="flex items-center gap-1">
                     <label className="text-sm font-medium text-gray-700">Double Chips</label>
-                    <div className="group relative">
-                      <div className="w-3.5 h-3.5 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[9px] font-bold cursor-help border border-gray-200">i</div>
-                      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-48 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10 text-center">
-                        Any instance where an initial chip or pitch failed to reach the putting surface, requiring a second chip.
-                      </div>
-                    </div>
+                    <InfoBubble content="Any instance where an initial chip or pitch failed to reach the putting surface, requiring a second chip." buttonClassName="w-3.5 h-3.5 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[9px] font-bold cursor-help border border-gray-200" tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-48 text-center" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -1577,12 +1539,12 @@ export default function LogRoundPage() {
                       <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.totalPutts > 0 ? '#014421' : '#6B7280' }}>
                         Total *
                       </span>
-                      <div className="group relative">
-                        <div className="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border" style={{ borderColor: roundData.totalPutts > 0 ? '#014421' : '#E5E7EB', color: roundData.totalPutts > 0 ? '#014421' : '#9CA3AF' }}>i</div>
-                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-32 bg-gray-900 text-white text-xs rounded-lg p-1.5 shadow-xl z-10 text-center">
-                          Only strokes taken once the ball is on the putting surface.
-                        </div>
-                      </div>
+                      <InfoBubble
+                        content="Only strokes taken once the ball is on the putting surface."
+                        buttonClassName="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border"
+                        buttonStyle={{ borderColor: roundData.totalPutts > 0 ? '#014421' : '#E5E7EB', color: roundData.totalPutts > 0 ? '#014421' : '#9CA3AF' }}
+                        tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-32 text-center p-1.5"
+                      />
                     </div>
                     <div className="flex items-center justify-center gap-1">
                       <button
@@ -1633,12 +1595,12 @@ export default function LogRoundPage() {
                       <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.threePutts > 0 ? '#014421' : '#6B7280' }}>
                         3-Putts
                       </span>
-                      <div className="group relative">
-                        <div className="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border" style={{ borderColor: roundData.threePutts > 0 ? '#014421' : '#E5E7EB', color: roundData.threePutts > 0 ? '#014421' : '#9CA3AF' }}>i</div>
-                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-32 bg-gray-900 text-white text-xs rounded-lg p-1.5 shadow-xl z-10 text-center">
-                          Any hole where 3 or more strokes were taken once the ball reached the putting surface.
-                        </div>
-                      </div>
+                      <InfoBubble
+                        content="Any hole where 3 or more strokes were taken once the ball reached the putting surface."
+                        buttonClassName="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border"
+                        buttonStyle={{ borderColor: roundData.threePutts > 0 ? '#014421' : '#E5E7EB', color: roundData.threePutts > 0 ? '#014421' : '#9CA3AF' }}
+                        tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-32 text-center p-1.5"
+                      />
                     </div>
                     <div className="flex items-center justify-center gap-1">
                       <button
@@ -1807,6 +1769,7 @@ export default function LogRoundPage() {
               </>
             )}
           </button>
+        </div>
         </div>
       </div>
     </div>

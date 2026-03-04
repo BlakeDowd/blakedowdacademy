@@ -20,35 +20,31 @@ const navItems = [
 export default function Navbar() {
   const pathname = usePathname();
 
-  // Debug Navigation: Add console.log to see if Navbar is being rendered
-  console.log('Navbar Mounted - Navbar component rendered, pathname:', pathname);
-
-  // Nuclear Navigation: Delete all Link and button tags for navigation. Replace them with standard HTML <a> tags
-  // This forces the browser to kill the current frozen process and download a fresh page
-  // Z-Index Check: Ensure navbar z-[60] is higher than modals (z-40) so navigation is never covered
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-[60] flex justify-center">
-      <nav className="w-full max-w-md flex items-center justify-around py-3" style={{ backgroundColor: '#054d2b' }}>
-        {navItems.map((item) => {
+    <nav className="w-full bg-[#014421] h-14 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] flex items-center justify-around">
+      {navItems.map((item) => {
         const Icon = item.icon;
         const isActive = pathname === item.href;
-        
         return (
           <a
             key={item.href}
             href={item.href}
             className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80"
           >
-            <Icon 
-              className={`w-6 h-6 ${isActive ? "" : "text-white"}`}
-              style={isActive ? { color: '#FFA500', fill: '#FFA500' } : {}}
+            <Icon
+              className="w-5 h-5"
+              style={isActive ? { color: '#FFA500', fill: '#FFA500' } : { color: 'white' }}
             />
-            <span className="text-white text-xs">{item.label}</span>
+            <span
+              className="text-xs"
+              style={isActive ? { color: '#86efac' } : { color: 'white' }}
+            >
+              {item.label}
+            </span>
           </a>
         );
       })}
-      </nav>
-    </div>
+    </nav>
   );
 }
 

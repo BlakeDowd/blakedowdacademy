@@ -78,9 +78,9 @@ export default function HandicapHistoryPage() {
   const currentHandicap = user?.currentHandicap ?? user?.startingHandicap;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="flex-1 w-full flex flex-col bg-gray-50">
       {/* Header */}
-      <div className="bg-white px-5 py-4 flex items-center justify-between sticky top-0 z-10 border-b border-gray-100">
+      <div className="shrink-0 bg-white px-5 py-4 flex items-center justify-between border-b border-gray-100">
         <button 
           onClick={() => router.push('/')}
           className="p-2 -ml-2 rounded-full hover:bg-gray-50 transition-colors"
@@ -91,7 +91,8 @@ export default function HandicapHistoryPage() {
         <div className="w-10"></div> {/* Spacer for centering */}
       </div>
 
-      <div className="px-5 py-6 max-w-lg mx-auto">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-6 pb-32">
+        <div className="max-w-lg mx-auto">
         
         {/* Current Handicap Summary */}
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 mb-6 flex flex-col items-center">
@@ -152,6 +153,7 @@ export default function HandicapHistoryPage() {
           )}
         </div>
 
+        </div>
       </div>
     </div>
   );

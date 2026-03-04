@@ -558,7 +558,7 @@ function LibraryPageContent() {
   const allDrills = isFiltering ? filteredDrills : [...row1Drills, ...shortGameDrills, ...longGameDrills, ...strategyDrills];
 
   return (
-    <div style={{ maxWidth: '448px', margin: '0 auto', backgroundColor: '#fff', minHeight: '100vh', paddingBottom: '80px', overflowX: 'hidden' }}>
+    <div className="flex-1 w-full max-w-md mx-auto flex flex-col bg-gray-50 min-w-0 overflow-x-hidden">
       <style>{`
         .netflix-scroll-row::-webkit-scrollbar {
           height: 8px;
@@ -577,7 +577,7 @@ function LibraryPageContent() {
       `}</style>
 
       {/* Header */}
-      <div className="sticky top-0 z-40 w-full px-4 py-3" style={{ backgroundColor: '#054d2b' }}>
+      <div className="shrink-0 w-full px-4 py-3" style={{ backgroundColor: '#054d2b' }}>
         <div className="flex items-center justify-between">
           <span className="text-lg font-bold text-white">Library</span>
           <div className="flex flex-col items-end gap-1">
@@ -592,9 +592,11 @@ function LibraryPageContent() {
         </div>
       </div>
 
-      {/* Video Player */}
-      {selectedDrill && (
-        <div className="w-full bg-black">
+      {/* Video Player & Main Content Container */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden pb-32 min-w-0">
+        <div className="max-w-md mx-auto w-full min-w-0">
+          {selectedDrill && (
+            <div className="w-full bg-black">
           <div className="relative w-full pb-[56.25%]">
             <button
               onClick={() => setSelectedDrill(null)}
@@ -737,6 +739,8 @@ function LibraryPageContent() {
           </div>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }

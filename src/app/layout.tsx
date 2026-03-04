@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import ConditionalNavbar from "@/components/ConditionalNavbar";
@@ -22,6 +22,13 @@ export const metadata: Metadata = {
   description: "Your personal golf training companion",
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -31,7 +38,6 @@ export default function RootLayout({
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased relative`}
-        style={{ maxWidth: '100vw', width: '100vw', overflowX: 'hidden', boxSizing: 'border-box' }}
       >
         {/* Cache Buster: Add this at the very top of the body to physically wipe the 'poisoned' session every time the page loads */}
         <script dangerouslySetInnerHTML={{ __html: 'localStorage.clear(); sessionStorage.clear();' }} />
@@ -39,18 +45,19 @@ export default function RootLayout({
           <AuthProvider>
             <ProfileGuard>
               <StatsProvider>
-                {/* Global Click-Through: Wrap children in z-0 div to ensure navbar is on top */}
-                <div className="relative z-0">
-                  {children}
+                <div className="h-screen w-full flex justify-center bg-gray-100 overflow-hidden" style={{ overflowX: 'clip' }}>
+                  <div className="h-full w-full max-w-md flex flex-col bg-gray-50 shadow-2xl relative border-x border-gray-200">
+                    <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-clip" style={{ overflowX: 'clip' }}>
+                      {children}
+                    </main>
+                    <footer className="shrink-0 w-full z-50">
+                      <ConditionalNavbar />
+                    </footer>
+                  </div>
                 </div>
               </StatsProvider>
             </ProfileGuard>
           </AuthProvider>
-          {/* Layout Clean-up: Temporarily remove StatsProvider and AuthProvider wrappers around ConditionalNavbar to see if a provider is crashing */}
-          {/* Force Interactive: Ensure ConditionalNavbar has pointerEvents: auto and high z-index to override any crashed components */}
-          <div style={{ pointerEvents: 'auto', zIndex: 99999 }}>
-            <ConditionalNavbar />
-          </div>
         </ErrorBoundary>
       </body>
     </html>
