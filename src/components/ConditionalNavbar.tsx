@@ -6,20 +6,11 @@ import Navbar from "./Navbar";
 export default function ConditionalNavbar() {
   const pathname = usePathname();
 
-  // Debug Navigation: Add console.log to see if Navbar is being rendered
-  // Force Render: Ensure ConditionalNavbar renders even if loading is true, so we can always switch pages
-  console.log('Navbar Mounted - ConditionalNavbar rendered, pathname:', pathname);
-
-  // Force Render: Always render navbar (except login page) - don't check loading state
-  // Hide navbar on login page
+  // Only hide on login; no user/loading checks so nav persists on Vercel initial load
   if (pathname === "/login") {
-    console.log('Navbar Mounted - Hiding navbar on login page');
     return null;
   }
 
-  // Force Render: Render navbar regardless of loading state
-  // Reset Navbar Style: Removed zIndex: 99999 wrapper and active:bg-red-500 to restore original design
-  console.log('Navbar Mounted - Rendering Navbar component (forced render, not checking loading)');
   return <Navbar />;
 }
 

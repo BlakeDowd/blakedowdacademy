@@ -144,7 +144,7 @@ function SkillsSnapshot({
   const xpRemaining = levelInfo?.xpRemaining ?? 500;
 
   return (
-    <div className="px-5 mb-6">
+    <div className="px-4 mb-6 w-full">
       <h3 className="text-gray-600 font-medium text-base mb-3">Skills Snapshot</h3>
       {isLoading || totalXP === null ? (
         <div className="flex gap-3">
@@ -1083,8 +1083,8 @@ export default function HomeDashboard() {
           />
         )}
         <div className="flex-1 w-full flex flex-col bg-gray-50">
-          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
-            <div className="max-w-md mx-auto">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32 w-full">
+            <div className="w-full max-w-md mx-auto">
         {/* Profile Modal - Opens when avatar is clicked */}
         {/* Kill Invisible Overlays: Add pointer-events-none to backdrop so it doesn't block Navbar */}
         {/* Z-Index Check: Modal z-40 is lower than Navbar z-[60] so navigation is never covered */}
@@ -1195,12 +1195,12 @@ export default function HomeDashboard() {
 
         {/* Coach Administration - visible for authorized coaches only */}
         {(['bdowd@pgamember.org.au', 'allendowd86@gmail.com'].includes((user?.email || '').toLowerCase().trim())) && (
-          <div className="px-5 mb-4">
+          <div className="w-full px-4 mb-4">
             <Link 
               href="/dashboard/coach"
-              className="block"
+              className="block w-full"
             >
-              <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl shadow-lg border border-gray-700 overflow-hidden hover:from-gray-800 hover:to-gray-700 transition-all">
+              <div className="w-full bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl shadow-lg border border-gray-700 overflow-hidden hover:from-gray-800 hover:to-gray-700 transition-all">
                 <div className="p-5 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0">
@@ -1221,9 +1221,9 @@ export default function HomeDashboard() {
         )}
 
         {/* Video and Daily Focus - Premium Card */}
-        <div className="px-5 mb-4">
+        <div className="w-full px-4 mb-4">
           <div 
-            className="bg-white overflow-hidden"
+            className="w-full bg-white overflow-hidden"
             style={{ 
               borderRadius: '16px',
               boxShadow: '0 8px 24px rgba(0, 0, 0, 0.08)'
@@ -1295,7 +1295,7 @@ export default function HomeDashboard() {
         </div>
 
         {/* Action Buttons - Side by Side */}
-        <div className="px-5 mb-6 flex gap-3">
+        <div className="w-full px-4 mb-6 flex gap-3">
           <button 
             onClick={() => router.push('/log-round')}
             className="flex-1 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]" 
@@ -1411,7 +1411,7 @@ export default function HomeDashboard() {
         )}
 
         {/* Recent Activity */}
-        <div className="px-5 mb-6">
+        <div className="px-4 mb-6 w-full">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-gray-600 font-medium text-base">Recent Activity</h3>
             <Link 
@@ -1479,7 +1479,7 @@ export default function HomeDashboard() {
         </div>
 
         {/* Recent Scores */}
-        <div className="px-5 mb-6">
+        <div className="px-4 mb-6 w-full">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-gray-600 font-medium text-base">Recent Scores</h3>
             <Link
@@ -1652,7 +1652,7 @@ export default function HomeDashboard() {
         {/* Display: Render trophy icons and names in the Trophy Case section */}
         {/* Horizontal Scroll: Display multiple trophies in a neat horizontal row */}
         {/* Empty State: Show subtle 'Empty Case' placeholder if no trophies earned yet */}
-        <div className="px-5 mb-6">
+        <div className="px-4 mb-6 w-full">
           <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
             {/* Header with Toggle Button: Put a small 'Show Locked' button next to the 'Trophy Case' title */}
             <div className="flex items-center gap-3 mb-4">

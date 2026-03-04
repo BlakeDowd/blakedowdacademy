@@ -21,7 +21,7 @@ export default function Navbar() {
   const pathname = usePathname();
 
   return (
-    <nav className="w-full bg-[#014421] h-14 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] flex items-center justify-around">
+    <nav className="w-full bg-[#014421] h-14 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] flex items-center justify-around z-50">
       {navItems.map((item) => {
         const Icon = item.icon;
         const isActive = pathname === item.href;
