@@ -760,7 +760,7 @@ export default function PlayerDeepDivePage() {
                 const currentAvg = stat?.current ?? 0;
                 const goalVal = stat?.goal ?? 0;
                 const gapVal = stat?.gap ?? 0;
-                const isMeetingGoal = m.isLowerBetter ? currentAvg <= goalVal : currentAvg >= goalVal;
+                const isMeetingGoal = stat?.isLowerBetter ? currentAvg <= goalVal : currentAvg >= goalVal;
                 const isPositive = gapVal > 0;
                 
                 return (
