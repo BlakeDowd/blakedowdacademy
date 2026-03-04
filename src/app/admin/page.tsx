@@ -37,8 +37,8 @@ export default function AdminPage() {
       setIsAuthorized(true);
       setCheckingAuth(false);
     } else {
-      // Redirect non-admin users to home
-      router.push("/");
+      // Redirect non-admin users to home - COMMENTED OUT: keep logged-in users on page
+      // router.push("/");
     }
   }, [user, authLoading, router]);
 

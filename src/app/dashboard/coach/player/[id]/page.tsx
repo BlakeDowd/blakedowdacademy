@@ -690,7 +690,7 @@ export default function PlayerDeepDivePage() {
                 { label: "Scrambling %", statValue: bigSix.scramblePct, unit: "%", icon: "🪄", color: "text-purple-600" },
                 { label: "Putts / Round", statValue: bigSix.puttsPer18, unit: "", icon: "🧤", color: "text-orange-600" },
                 { label: "Birdies / Round", statValue: bigSix.birdiesPer18, unit: "", icon: "🐦", color: "text-red-500" },
-              ].map((stat, i) => {
+              ].map((stat: any, i) => {
                 const statValue = (stat as any).statValue ?? (stat as any).value ?? 0;
                 return (
                 <div key={i} className="bg-white rounded-2xl shadow-md border border-gray-100 p-3 sm:p-4">
@@ -748,7 +748,7 @@ export default function PlayerDeepDivePage() {
               Full Metric Matrix
             </h2>
             <div className="space-y-4">
-              {metricMatrix.map((stat, i) => {
+              {metricMatrix.map((stat: any, i) => {
                 const currentAvg = (stat?.statValue ?? stat?.value ?? stat?.current ?? 0);
                 const goalVal = stat?.goal ?? 0;
                 const gapVal = stat?.gap ?? 0;
