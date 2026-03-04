@@ -71,8 +71,9 @@ export default function PlayerDeepDivePage() {
   const [aiSummary, setAiSummary] = useState<string[] | null>(null);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accessDeniedInfo, setAccessDeniedInfo] = useState<{ email?: string; role?: string } | null>(null);
 
-    const authorizedEmails = ["bdowd@pgamember.org.au", "allendowd86@gmail.com"];
+  const authorizedEmails = ["bdowd@pgamember.org.au", "allendowd86@gmail.com"];
 
   useEffect(() => {
     if (authLoading || profileLoading) return;
@@ -82,9 +83,19 @@ export default function PlayerDeepDivePage() {
     }
     const userEmail = (user.email || "").toLowerCase().trim();
     if (!userEmail || !authorizedEmails.includes(userEmail)) {
-      router.push("/");
+      // router.push("/");  // Commented out for debugging - show Access Denied instead
+      (async () => {
+        const supabase = createClient();
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .single();
+        setAccessDeniedInfo({ email: userEmail || "none", role: (profile as any)?.role ?? "undefined" });
+      })();
       return;
     }
+    setAccessDeniedInfo(null);
     if (!playerId || playerId === "undefined") {
       router.push("/dashboard/coach");
       return;
@@ -600,6 +611,15 @@ export default function PlayerDeepDivePage() {
     setAiSummary(bullets.slice(0, 3));
     setIsGeneratingAi(false);
   };
+
+  if (accessDeniedInfo) {
+    const profile = { role: accessDeniedInfo.role };
+    return (
+      <div className="p-10 bg-red-100 text-red-700">
+        Redirect Blocked. User: {user?.email} | Role: {profile?.role}
+      </div>
+    );
+  }
 
   if (authLoading || profileLoading || (isLoading && !playerName)) {
     return (

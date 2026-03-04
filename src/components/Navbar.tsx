@@ -22,7 +22,7 @@ export default function Navbar() {
 
   return (
     <nav 
-      className="w-full bg-[#014421] min-h-24 pt-3 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] flex items-center justify-around z-50"
+      className="w-full bg-[#014421] h-28 min-h-28 pt-3 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] flex items-center justify-around z-50"
       style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom, 2rem))" }}
     >
       {navItems.map((item) => {
