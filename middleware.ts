@@ -4,6 +4,11 @@ import type { NextRequest } from 'next/server';
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Safety Valve: let coach routes through regardless of auth status
+  if (pathname.startsWith('/dashboard/coach')) {
+    return NextResponse.next();
+  }
+
   // Skip middleware for Next.js static files and internal routes
   if (
     pathname.startsWith('/_next/') ||

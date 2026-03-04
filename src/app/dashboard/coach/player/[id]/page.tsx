@@ -71,8 +71,6 @@ export default function PlayerDeepDivePage() {
   const [aiSummary, setAiSummary] = useState<string[] | null>(null);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [accessDeniedInfo, setAccessDeniedInfo] = useState<{ email?: string; role?: string } | null>(null);
-
   const authorizedEmails = ["bdowd@pgamember.org.au", "allendowd86@gmail.com"];
 
   useEffect(() => {
@@ -82,20 +80,19 @@ export default function PlayerDeepDivePage() {
       return;
     }
     const userEmail = (user.email || "").toLowerCase().trim();
-    if (!userEmail || !authorizedEmails.includes(userEmail)) {
-      // router.push("/");  // Commented out for debugging - show Access Denied instead
+    const isEmailAuthorized = userEmail && authorizedEmails.includes(userEmail);
+    if (!isEmailAuthorized) {
       (async () => {
         const supabase = createClient();
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .single();
-        setAccessDeniedInfo({ email: userEmail || "none", role: (profile as any)?.role ?? "undefined" });
+        const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+        if ((profile as any)?.role === "coach") {
+          if (playerId && playerId !== "undefined") fetchAllData();
+          return;
+        }
+        router.push("/");
       })();
       return;
     }
-    setAccessDeniedInfo(null);
     if (!playerId || playerId === "undefined") {
       router.push("/dashboard/coach");
       return;
@@ -612,15 +609,6 @@ export default function PlayerDeepDivePage() {
     setIsGeneratingAi(false);
   };
 
-  if (accessDeniedInfo) {
-    const profile = { role: accessDeniedInfo.role };
-    return (
-      <div className="p-10 bg-red-100 text-red-700">
-        Redirect Blocked. User: {user?.email} | Role: {profile?.role}
-      </div>
-    );
-  }
-
   if (authLoading || profileLoading || (isLoading && !playerName)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -1049,9 +1037,9 @@ export default function PlayerDeepDivePage() {
                 { category: 'On-Course', minutes: practiceAllocationData.onCourse },
               ].map((item) => {
                 const minsDisplay = Number(item.minutes ?? 0);
-                const totalMinutes = practiceAllocationData.driving + practiceAllocationData.irons + practiceAllocationData.wedges +
-                  practiceAllocationData.chipping + practiceAllocationData.bunkers + practiceAllocationData.putting +
-                  practiceAllocationData.mentalStrategy + practiceAllocationData.onCourse;
+                const totalMinutes = (practiceAllocationData.driving ?? 0) + (practiceAllocationData.irons ?? 0) + (practiceAllocationData.wedges ?? 0) +
+                  (practiceAllocationData.chipping ?? 0) + (practiceAllocationData.bunkers ?? 0) + (practiceAllocationData.putting ?? 0) +
+                  (practiceAllocationData.mentalStrategy ?? 0) + (practiceAllocationData.onCourse ?? 0);
                 const pct = totalMinutes > 0 ? Math.round((minsDisplay / totalMinutes) * 100) : 0;
                 
                 return (
