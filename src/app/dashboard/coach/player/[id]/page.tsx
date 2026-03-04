@@ -1,12 +1,45 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, Component, ErrorInfo, ReactNode } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
 import { ArrowLeft, Sparkles, Loader2, Target, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
 import { getBenchmarkGoals } from "@/app/stats/page";
+
+class CoachDeepDiveErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Deep Dive error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6">
+          <p className="text-gray-600 mb-6 text-center">Something went wrong loading this player.</p>
+          <Link
+            href="/dashboard/coach"
+            className="inline-flex items-center px-6 py-3 bg-[#014421] text-white font-semibold rounded-lg hover:bg-[#01331a] transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Coach Dashboard
+          </Link>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function getDefaultRange() {
   const end = new Date();
@@ -22,7 +55,7 @@ export default function PlayerDeepDivePage() {
   const router = useRouter();
   const params = useParams();
   const playerId = (params?.id as string) ?? "";
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, profileLoading } = useAuth();
 
   const [playerName, setPlayerName] = useState<string>("");
   const [playerHandicap, setPlayerHandicap] = useState<number>(54);
@@ -42,7 +75,7 @@ export default function PlayerDeepDivePage() {
     const authorizedEmails = ["bdowd@pgamember.org.au", "allendowd86@gmail.com"];
 
   useEffect(() => {
-    if (authLoading) return;
+    if (authLoading || profileLoading) return;
     if (!user) {
       router.push("/login");
       return;
@@ -57,7 +90,7 @@ export default function PlayerDeepDivePage() {
       return;
     }
     fetchAllData();
-  }, [user, authLoading, router, playerId, dateRange]);
+  }, [user, authLoading, profileLoading, router, playerId, dateRange]);
 
   const fetchAllData = async () => {
     try {
@@ -568,7 +601,7 @@ export default function PlayerDeepDivePage() {
     setIsGeneratingAi(false);
   };
 
-  if (authLoading || (isLoading && !playerName)) {
+  if (authLoading || profileLoading || (isLoading && !playerName)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="w-16 h-16 border-4 border-[#014421] border-t-transparent rounded-full animate-spin" />
@@ -577,6 +610,7 @@ export default function PlayerDeepDivePage() {
   }
 
   return (
+    <CoachDeepDiveErrorBoundary>
     <div className="w-full max-w-md mx-auto min-w-0 flex flex-col bg-gray-50 overflow-x-hidden">
       {/* Header */}
       <header className="shrink-0 w-full bg-[#014421] text-white pt-3 pb-4 px-4">
@@ -722,10 +756,10 @@ export default function PlayerDeepDivePage() {
               Full Metric Matrix
             </h2>
             <div className="space-y-4">
-              {metricMatrix.map((m, i) => {
-                const currentAvg = m.current ?? 0;
-                const goalVal = m.goal ?? 0;
-                const gapVal = m.gap ?? 0;
+              {metricMatrix.map((stat, i) => {
+                const currentAvg = stat?.current ?? 0;
+                const goalVal = stat?.goal ?? 0;
+                const gapVal = stat?.gap ?? 0;
                 const isMeetingGoal = m.isLowerBetter ? currentAvg <= goalVal : currentAvg >= goalVal;
                 const isPositive = gapVal > 0;
                 
@@ -733,10 +767,10 @@ export default function PlayerDeepDivePage() {
                   <div key={i} className="flex items-center justify-between py-1 border-b border-gray-50 last:border-0 group hover:bg-gray-50 transition-colors px-2 -mx-2 rounded-lg">
                     <div className="flex-1">
                       <div className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                        {m.name}
-                        {m.trend === "up" && <ArrowUpRight className={`w-3 h-3 ${m.isLowerBetter ? "text-red-500" : "text-green-500"}`} />}
-                        {m.trend === "down" && <ArrowDownRight className={`w-3 h-3 ${m.isLowerBetter ? "text-green-500" : "text-red-500"}`} />}
-                        {m.trend === "neutral" && <Minus className="w-3 h-3 text-gray-300" />}
+                        {stat?.name ?? ""}
+                        {stat?.trend === "up" && <ArrowUpRight className={`w-3 h-3 ${stat?.isLowerBetter ? "text-red-500" : "text-green-500"}`} />}
+                        {stat?.trend === "down" && <ArrowDownRight className={`w-3 h-3 ${stat?.isLowerBetter ? "text-green-500" : "text-red-500"}`} />}
+                        {stat?.trend === "neutral" && <Minus className="w-3 h-3 text-gray-300" />}
                       </div>
                       <div className="text-[10px] text-gray-400 font-medium tracking-tight">
                         Target: {goalVal} | Gap: {isPositive ? "+" : ""}{gapVal}
@@ -823,14 +857,14 @@ export default function PlayerDeepDivePage() {
                 {(() => {
                   const categories = ['Mental/Strategy', 'Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'On-Course'];
                   const values = [
-                    practiceAllocationData.mentalStrategy,
-                    practiceAllocationData.driving,
-                    practiceAllocationData.irons,
-                    practiceAllocationData.wedges,
-                    practiceAllocationData.chipping,
-                    practiceAllocationData.bunkers,
-                    practiceAllocationData.putting,
-                    practiceAllocationData.onCourse,
+                    practiceAllocationData.mentalStrategy ?? 0,
+                    practiceAllocationData.driving ?? 0,
+                    practiceAllocationData.irons ?? 0,
+                    practiceAllocationData.wedges ?? 0,
+                    practiceAllocationData.chipping ?? 0,
+                    practiceAllocationData.bunkers ?? 0,
+                    practiceAllocationData.putting ?? 0,
+                    practiceAllocationData.onCourse ?? 0,
                   ];
                   
                   // Consistent maxDomain (like 120 minutes) across all axes so the data forms a clear 'web' shape.
@@ -1058,5 +1092,6 @@ export default function PlayerDeepDivePage() {
         </div>
       </div>
     </div>
+    </CoachDeepDiveErrorBoundary>
   );
 }
