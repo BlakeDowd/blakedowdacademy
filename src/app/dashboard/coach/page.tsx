@@ -129,8 +129,8 @@ export default function CoachesDashboard() {
               return (
                 <Link
                   key={playerId}
-                  href={`/dashboard/coach/player/${playerId}`}
-                  onClick={() => console.log("Navigating to:", playerId)}
+                  href={`/dashboard/coach/player/${player.id || (player as any).user_id}`}
+                  onClick={() => console.log("Navigating to:", player.id || (player as any).user_id)}
                   className="flex w-full bg-white rounded-xl border border-gray-200 p-4 items-center justify-between shadow-sm hover:bg-gray-50 transition-colors min-w-0"
                 >
                   <div className="flex flex-col min-w-0 flex-1 pr-3">
