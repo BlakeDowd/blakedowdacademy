@@ -56,6 +56,14 @@ export default function PlayerDeepDivePage() {
   const params = useParams();
   const playerId = (params?.id as string) ?? "";
   const { user, loading: authLoading, profileLoading } = useAuth();
+  const role = (user as any)?.role;
+  console.log("Coach Role Check:", role);
+
+  useEffect(() => {
+    if (!authLoading && !profileLoading && typeof window !== "undefined") {
+      alert("Role: " + role);
+    }
+  }, [role, authLoading, profileLoading]);
 
   const [playerName, setPlayerName] = useState<string>("");
   const [playerHandicap, setPlayerHandicap] = useState<number>(54);
@@ -594,7 +602,7 @@ export default function PlayerDeepDivePage() {
   };
 
   if (authLoading || profileLoading || isLoading || !playerName) {
-    return <div className="p-20 text-center">Verifying Coach Access...</div>;
+    return <div className="p-10 text-center">Verifying Coach Access...</div>;
   }
 
   return (
@@ -687,13 +695,13 @@ export default function PlayerDeepDivePage() {
                 { label: "Putts / Round", statValue: bigSix.puttsPer18, unit: "", icon: "🧤", color: "text-orange-600" },
                 { label: "Birdies / Round", statValue: bigSix.birdiesPer18, unit: "", icon: "🐦", color: "text-red-500" },
               ].map((stat: any, i) => {
-                const statValue = (stat as any).statValue ?? (stat as any).value ?? 0;
+                const displayValue = (stat as any).statValue ?? (stat as any).value ?? 0;
                 return (
                 <div key={i} className="bg-white rounded-2xl shadow-md border border-gray-100 p-3 sm:p-4">
                   <div className="text-xl mb-1">{stat.icon}</div>
                   <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter truncate">{stat.label}</div>
                   <div className={`text-2xl font-black ${stat.color}`}>
-                    {statValue}{stat.unit}
+                    {displayValue}{stat.unit}
                   </div>
                 </div>
               );})}
@@ -745,10 +753,10 @@ export default function PlayerDeepDivePage() {
             </h2>
             <div className="space-y-4">
               {metricMatrix.map((stat: any, i) => {
-                const currentAvg = (stat as any).statValue ?? (stat as any).value ?? (stat as any).current ?? 0;
+                const displayValue = (stat as any).statValue ?? (stat as any).value ?? (stat as any).current ?? 0;
                 const goalVal = stat?.goal ?? 0;
                 const gapVal = stat?.gap ?? 0;
-                const isMeetingGoal = stat?.isLowerBetter ? currentAvg <= goalVal : currentAvg >= goalVal;
+                const isMeetingGoal = stat?.isLowerBetter ? displayValue <= goalVal : displayValue >= goalVal;
                 const isPositive = gapVal > 0;
                 
                 return (
@@ -765,7 +773,7 @@ export default function PlayerDeepDivePage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-4 text-right">
-                      <div className="text-lg font-black text-gray-900">{currentAvg}</div>
+                      <div className="text-lg font-black text-gray-900">{displayValue}</div>
                       <div className={`w-20 text-center py-1 rounded-full text-[9px] font-black uppercase tracking-tighter ${
                         isMeetingGoal 
                         ? "bg-green-100 text-green-700" 

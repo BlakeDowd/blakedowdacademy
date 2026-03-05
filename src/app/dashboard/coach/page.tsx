@@ -76,8 +76,7 @@ export default function CoachesDashboard() {
     );
   });
 
-  const role = (user as any)?.role;
-  if (loading || profileLoading || isLoading || !role) {
+  if (loading || profileLoading || isLoading) {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="p-10 text-center">Verifying Coach Access...</div>
