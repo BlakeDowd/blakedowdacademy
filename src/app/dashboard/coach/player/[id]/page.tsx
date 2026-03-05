@@ -95,11 +95,22 @@ export default function PlayerDeepDivePage() {
       const endIso = endDate.toISOString();
 
       // Fetch player profile
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("full_name, initial_handicap")
         .eq("id", playerId)
         .single();
+      console.log("Supabase Response:", { data: profile, error: profileError });
+      if (profileError) {
+        setError(profileError.message);
+        setIsLoading(false);
+        return;
+      }
+      if (!profile) {
+        setError("Profile not found");
+        setIsLoading(false);
+        return;
+      }
       setPlayerName(profile?.full_name || "Player");
       const hcap = profile?.initial_handicap ?? 54;
       setPlayerHandicap(typeof hcap === "number" ? hcap : Number(hcap) || 54);
@@ -595,6 +606,15 @@ export default function PlayerDeepDivePage() {
   // Role check removed - app stays on page even if user isn't a coach
   if (!role) console.log("REDIRECTION BLOCKED");
 
+  // Show database error instead of redirecting (e.g. RLS denial)
+  if (error) {
+    return (
+      <div className="p-20 text-white bg-red-600 min-h-screen flex flex-col items-center justify-center text-center">
+        DATABASE ERROR: {error}
+      </div>
+    );
+  }
+
   if (!user || !playerName || isLoading) {
     return (
       <div className="p-20 h-screen flex flex-col items-center justify-center text-center text-orange-600 bg-white">
@@ -760,7 +780,7 @@ export default function PlayerDeepDivePage() {
             </h2>
             <div className="space-y-4">
               {metricMatrix.map((stat: any, i) => {
-                const val = (stat as any)?.statValue ?? (stat as any)?.value ?? 0;
+                const val = (stat as any)?.statValue ?? (stat as any)?.value ?? (stat as any)?.current ?? 0;
                 const goalVal = (stat as any)?.goal ?? 0;
                 const gapVal = (stat as any)?.gap ?? 0;
                 const isMeetingGoal = (stat as any)?.isLowerBetter ? val <= goalVal : val >= goalVal;
