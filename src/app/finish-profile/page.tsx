@@ -80,9 +80,8 @@ export default function FinishProfile() {
         await supabase.auth.refreshSession();
         await refreshUser();
         
-        // Force a router refresh and redirect to dashboard
+        // Force a router refresh (panic redirect to / removed - stay on page)
         router.refresh();
-        router.push("/");
       }
     } catch (err: any) {
       console.error("Error updating profile:", err);

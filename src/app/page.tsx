@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useStats } from "@/contexts/StatsContext";
 import HomeDashboard from "@/components/HomeDashboard";
@@ -63,5 +64,19 @@ export default function Home() {
   // After forceLoaded timeout, always render the dashboard
   // The useEffect above will handle redirecting to /login if not authenticated
   // This prevents the blank page issue
-  return <HomeDashboard />;
+  return (
+    <>
+      <HomeDashboard />
+      <button
+        onClick={async () => {
+          const supabase = createClient();
+          await supabase.auth.signOut();
+          window.location.href = "/login";
+        }}
+        className="mt-12 w-full max-w-md mx-auto block rounded-full bg-[#F57C00] py-4 text-white font-bold uppercase tracking-wider shadow-lg active:scale-95 transition-transform"
+      >
+        Logout
+      </button>
+    </>
+  );
 }

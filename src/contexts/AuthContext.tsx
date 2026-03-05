@@ -456,10 +456,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             
             // Fix the State Conflict: The reason it shows 0 is likely because the profile state is being initialized to a default object with current_streak: 0 before the Supabase data arrives.
             // The Sync Rule: In the useEffect where you fetch the profile, make sure you call setProfile(data) only after you've verified the data is not null.
-            // Add a Loading Guard: Don't proceed if profile is not loaded
+            // Bypass redirect: If profile is missing, just return null for the user (don't redirect)
             if (!profile || !profile.id) {
-              console.warn('AuthContext: Profile not loaded, cannot set user state - waiting for profile data');
-              // Fix the State Conflict: Don't set user state with default values - wait for profile data
+              console.warn('AuthContext: Profile not loaded, setting user to null (no redirect)');
+              setUser(null);
+              setProfileLoading(false);
               return;
             }
             
@@ -1054,8 +1055,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         createdAt: data.user.created_at,
       });
       setIsAuthenticated(true);
-      // Redirect to Home Dashboard after signup
-      router.push("/");
+      // REDIRECTION BLOCKED: was router.push("/")
+      console.log("REDIRECTION BLOCKED");
     }
   };
 

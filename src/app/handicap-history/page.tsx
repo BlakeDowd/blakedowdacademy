@@ -82,7 +82,7 @@ export default function HandicapHistoryPage() {
       {/* Header */}
       <div className="shrink-0 bg-white px-5 py-4 flex items-center justify-between border-b border-gray-100">
         <button 
-          onClick={() => router.push('/')}
+          onClick={() => router.back()}
           className="p-2 -ml-2 rounded-full hover:bg-gray-50 transition-colors"
         >
           <ArrowLeft className="w-6 h-6 text-gray-800" />

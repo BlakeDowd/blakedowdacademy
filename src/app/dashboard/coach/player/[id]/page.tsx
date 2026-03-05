@@ -592,14 +592,8 @@ export default function PlayerDeepDivePage() {
     setIsGeneratingAi(false);
   };
 
-  // Force a "Loading" Wall: Show exactly what's happening instead of redirecting
-  if (!role) {
-    return (
-      <div className="p-20 bg-black text-white">
-        DEBUG: Waiting for Role... (Current: {JSON.stringify(role)})
-      </div>
-    );
-  }
+  // Role check removed - app stays on page even if user isn't a coach
+  if (!role) console.log("REDIRECTION BLOCKED");
 
   if (authLoading || profileLoading || isLoading || !playerName) {
     return (
@@ -708,13 +702,13 @@ export default function PlayerDeepDivePage() {
                 { label: "Putts / Round", statValue: bigSix.puttsPer18, unit: "", icon: "🧤", color: "text-orange-600" },
                 { label: "Birdies / Round", statValue: bigSix.birdiesPer18, unit: "", icon: "🐦", color: "text-red-500" },
               ].map((stat: any, i) => {
-                const val = (stat as any).statValue ?? (stat as any).value ?? 0;
+                const displayValue = (stat as any)?.statValue ?? (stat as any)?.value ?? 0;
                 return (
                 <div key={i} className="bg-white rounded-2xl shadow-md border border-gray-100 p-3 sm:p-4">
                   <div className="text-xl mb-1">{(stat as any).icon}</div>
                   <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter truncate">{(stat as any).label}</div>
                   <div className={`text-2xl font-black ${(stat as any).color}`}>
-                    {val}{(stat as any).unit}
+                    {displayValue}{(stat as any).unit}
                   </div>
                 </div>
               );})}
@@ -766,10 +760,10 @@ export default function PlayerDeepDivePage() {
             </h2>
             <div className="space-y-4">
               {metricMatrix.map((stat: any, i) => {
-                const val = (stat as any).statValue ?? (stat as any).value ?? (stat as any).current ?? 0;
+                const displayValue = (stat as any)?.statValue ?? (stat as any)?.value ?? (stat as any)?.current ?? 0;
                 const goalVal = (stat as any)?.goal ?? 0;
                 const gapVal = (stat as any)?.gap ?? 0;
-                const isMeetingGoal = (stat as any)?.isLowerBetter ? val <= goalVal : val >= goalVal;
+                const isMeetingGoal = (stat as any)?.isLowerBetter ? displayValue <= goalVal : displayValue >= goalVal;
                 const isPositive = gapVal > 0;
                 
                 return (
@@ -786,7 +780,7 @@ export default function PlayerDeepDivePage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-4 text-right">
-                      <div className="text-lg font-black text-gray-900">{val}</div>
+                      <div className="text-lg font-black text-gray-900">{displayValue}</div>
                       <div className={`w-20 text-center py-1 rounded-full text-[9px] font-black uppercase tracking-tighter ${
                         isMeetingGoal 
                         ? "bg-green-100 text-green-700" 
