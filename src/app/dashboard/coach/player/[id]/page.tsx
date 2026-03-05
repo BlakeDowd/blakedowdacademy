@@ -56,6 +56,7 @@ export default function PlayerDeepDivePage() {
   const params = useParams();
   const playerId = (params?.id as string) ?? "";
   const { user, loading: authLoading, profileLoading } = useAuth();
+  // ROLE CHECK: Temporarily commented out for debugging - let page load for everyone
   const role = (user as any)?.role;
 
   const [playerName, setPlayerName] = useState<string>("");
@@ -74,15 +75,12 @@ export default function PlayerDeepDivePage() {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (authLoading || profileLoading) return;
-    if (!user) {
-      router.push("/login");
-      return;
+    // REDIRECT: Temporarily disabled - let page render to see errors instead of bouncing
+    // if (!user) { router.push("/login"); return; }
+    // if (!playerId || playerId === "undefined") { router.push("/dashboard/coach"); return; }
+    if (user && playerId && playerId !== "undefined") {
+      fetchAllData();
     }
-    if (!playerId || playerId === "undefined") {
-      router.push("/dashboard/coach");
-      return;
-    }
-    fetchAllData();
   }, [user, authLoading, profileLoading, router, playerId, dateRange]);
 
   const fetchAllData = async () => {
@@ -593,6 +591,15 @@ export default function PlayerDeepDivePage() {
     setAiSummary(bullets.slice(0, 3));
     setIsGeneratingAi(false);
   };
+
+  // Force a "Loading" Wall: Show exactly what's happening instead of redirecting
+  if (!role) {
+    return (
+      <div className="p-20 bg-black text-white">
+        DEBUG: Waiting for Role... (Current: {JSON.stringify(role)})
+      </div>
+    );
+  }
 
   if (authLoading || profileLoading || isLoading || !playerName) {
     return (

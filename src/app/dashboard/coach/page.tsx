@@ -86,6 +86,8 @@ export default function CoachesDashboard() {
 
   const userEmail = (user?.email || "").toLowerCase().trim();
 
+  console.log("DEBUG: Player Object:", players[0]);
+
   return (
     <div className="w-full max-w-md mx-auto min-w-0 flex flex-col bg-gray-50 overflow-x-hidden">
       {/* Header: Shrink-0 ensures it never loses its size */}
@@ -121,33 +123,30 @@ export default function CoachesDashboard() {
 
           {/* Player List Cards - truncate + min-w-0 on text to prevent stretch */}
           {filteredPlayers.length > 0 ? (
-            filteredPlayers
-              .filter((player) => player.id)
-              .map((player) => (
-              <div
-                key={player.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => {
-                  console.log("Navigating to:", player.id);
-                  if (player.id) router.push(`/dashboard/coach/player/${player.id}`);
-                }}
-                onKeyDown={(e) => e.key === "Enter" && player.id && router.push(`/dashboard/coach/player/${player.id}`)}
-                className="flex w-full bg-white rounded-xl border border-gray-200 p-4 items-center justify-between shadow-sm hover:bg-gray-50 transition-colors min-w-0 cursor-pointer"
-              >
-                <div className="flex flex-col min-w-0 flex-1 pr-3">
-                  <span className="text-lg font-bold text-gray-900 truncate min-w-0">
-                    {player.full_name || "Unknown Player"}
-                  </span>
-                  {player.email && (
-                    <span className="text-sm text-gray-500 truncate min-w-0">
-                      {player.email}
+            filteredPlayers.map((player) => {
+              const playerId = (player as any).id ?? (player as any).user_id;
+              if (!playerId) return null;
+              return (
+                <Link
+                  key={playerId}
+                  href={`/dashboard/coach/player/${playerId}`}
+                  onClick={() => console.log("Navigating to:", playerId)}
+                  className="flex w-full bg-white rounded-xl border border-gray-200 p-4 items-center justify-between shadow-sm hover:bg-gray-50 transition-colors min-w-0"
+                >
+                  <div className="flex flex-col min-w-0 flex-1 pr-3">
+                    <span className="text-lg font-bold text-gray-900 truncate min-w-0">
+                      {player.full_name || "Unknown Player"}
                     </span>
-                  )}
-                </div>
-                <ChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
-              </div>
-              ))
+                    {player.email && (
+                      <span className="text-sm text-gray-500 truncate min-w-0">
+                        {player.email}
+                      </span>
+                    )}
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
+                </Link>
+              );
+            })
           ) : (
             <div className="w-full bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">
               {searchQuery ? "No players found." : "No players yet."}
