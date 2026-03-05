@@ -57,13 +57,6 @@ export default function PlayerDeepDivePage() {
   const playerId = (params?.id as string) ?? "";
   const { user, loading: authLoading, profileLoading } = useAuth();
   const role = (user as any)?.role;
-  console.log("Coach Role Check:", role);
-
-  useEffect(() => {
-    if (!authLoading && !profileLoading && typeof window !== "undefined") {
-      alert("Role: " + role);
-    }
-  }, [role, authLoading, profileLoading]);
 
   const [playerName, setPlayerName] = useState<string>("");
   const [playerHandicap, setPlayerHandicap] = useState<number>(54);

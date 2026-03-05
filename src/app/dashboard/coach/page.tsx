@@ -124,11 +124,16 @@ export default function CoachesDashboard() {
             filteredPlayers
               .filter((player) => player.id)
               .map((player) => (
-              <Link
+              <div
                 key={player.id}
-                href={`/dashboard/coach/player/${player.id}`}
-                onClick={() => console.log("DEBUG: Clicking player with ID:", player.id)}
-                className="flex w-full bg-white rounded-xl border border-gray-200 p-4 items-center justify-between shadow-sm hover:bg-gray-50 transition-colors min-w-0"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  console.log("Navigating to player ID:", player.id);
+                  if (player.id) router.push(`/dashboard/coach/player/${player.id}`);
+                }}
+                onKeyDown={(e) => e.key === "Enter" && player.id && router.push(`/dashboard/coach/player/${player.id}`)}
+                className="flex w-full bg-white rounded-xl border border-gray-200 p-4 items-center justify-between shadow-sm hover:bg-gray-50 transition-colors min-w-0 cursor-pointer"
               >
                 <div className="flex flex-col min-w-0 flex-1 pr-3">
                   <span className="text-lg font-bold text-gray-900 truncate min-w-0">
@@ -141,7 +146,7 @@ export default function CoachesDashboard() {
                   )}
                 </div>
                 <ChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
-              </Link>
+              </div>
               ))
           ) : (
             <div className="w-full bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">
