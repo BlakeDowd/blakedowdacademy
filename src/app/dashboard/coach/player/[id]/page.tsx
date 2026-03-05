@@ -595,7 +595,20 @@ export default function PlayerDeepDivePage() {
   };
 
   if (authLoading || profileLoading || isLoading || !playerName) {
-    return <div className="p-10 text-center">Verifying Coach Access...</div>;
+    return (
+      <div className="flex h-screen items-center justify-center bg-black text-white">
+        Verifying Coach Access...
+      </div>
+    );
+  }
+
+  // Defensive: ensure we have minimal data before rendering full UI
+  if (!playerId || playerId === "undefined") {
+    return (
+      <div className="flex h-screen items-center justify-center bg-black text-white">
+        Loading Player Data...
+      </div>
+    );
   }
 
   return (
@@ -688,13 +701,13 @@ export default function PlayerDeepDivePage() {
                 { label: "Putts / Round", statValue: bigSix.puttsPer18, unit: "", icon: "🧤", color: "text-orange-600" },
                 { label: "Birdies / Round", statValue: bigSix.birdiesPer18, unit: "", icon: "🐦", color: "text-red-500" },
               ].map((stat: any, i) => {
-                const displayValue = (stat as any).statValue ?? (stat as any).value ?? 0;
+                const val = (stat as any).statValue ?? (stat as any).value ?? 0;
                 return (
                 <div key={i} className="bg-white rounded-2xl shadow-md border border-gray-100 p-3 sm:p-4">
-                  <div className="text-xl mb-1">{stat.icon}</div>
-                  <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter truncate">{stat.label}</div>
-                  <div className={`text-2xl font-black ${stat.color}`}>
-                    {displayValue}{stat.unit}
+                  <div className="text-xl mb-1">{(stat as any).icon}</div>
+                  <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter truncate">{(stat as any).label}</div>
+                  <div className={`text-2xl font-black ${(stat as any).color}`}>
+                    {val}{(stat as any).unit}
                   </div>
                 </div>
               );})}
@@ -746,27 +759,27 @@ export default function PlayerDeepDivePage() {
             </h2>
             <div className="space-y-4">
               {metricMatrix.map((stat: any, i) => {
-                const displayValue = (stat as any).statValue ?? (stat as any).value ?? (stat as any).current ?? 0;
-                const goalVal = stat?.goal ?? 0;
-                const gapVal = stat?.gap ?? 0;
-                const isMeetingGoal = stat?.isLowerBetter ? displayValue <= goalVal : displayValue >= goalVal;
+                const val = (stat as any).statValue ?? (stat as any).value ?? (stat as any).current ?? 0;
+                const goalVal = (stat as any)?.goal ?? 0;
+                const gapVal = (stat as any)?.gap ?? 0;
+                const isMeetingGoal = (stat as any)?.isLowerBetter ? val <= goalVal : val >= goalVal;
                 const isPositive = gapVal > 0;
                 
                 return (
                   <div key={i} className="flex items-center justify-between py-1 border-b border-gray-50 last:border-0 group hover:bg-gray-50 transition-colors px-2 -mx-2 rounded-lg">
                     <div className="flex-1">
                       <div className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                        {stat?.name ?? ""}
-                        {stat?.trend === "up" && <ArrowUpRight className={`w-3 h-3 ${stat?.isLowerBetter ? "text-red-500" : "text-green-500"}`} />}
-                        {stat?.trend === "down" && <ArrowDownRight className={`w-3 h-3 ${stat?.isLowerBetter ? "text-green-500" : "text-red-500"}`} />}
-                        {stat?.trend === "neutral" && <Minus className="w-3 h-3 text-gray-300" />}
+                        {(stat as any)?.name ?? ""}
+                        {(stat as any)?.trend === "up" && <ArrowUpRight className={`w-3 h-3 ${(stat as any)?.isLowerBetter ? "text-red-500" : "text-green-500"}`} />}
+                        {(stat as any)?.trend === "down" && <ArrowDownRight className={`w-3 h-3 ${(stat as any)?.isLowerBetter ? "text-green-500" : "text-red-500"}`} />}
+                        {(stat as any)?.trend === "neutral" && <Minus className="w-3 h-3 text-gray-300" />}
                       </div>
                       <div className="text-[10px] text-gray-400 font-medium tracking-tight">
                         Target: {goalVal} | Gap: {isPositive ? "+" : ""}{gapVal}
                       </div>
                     </div>
                     <div className="flex items-center gap-4 text-right">
-                      <div className="text-lg font-black text-gray-900">{displayValue}</div>
+                      <div className="text-lg font-black text-gray-900">{val}</div>
                       <div className={`w-20 text-center py-1 rounded-full text-[9px] font-black uppercase tracking-tighter ${
                         isMeetingGoal 
                         ? "bg-green-100 text-green-700" 

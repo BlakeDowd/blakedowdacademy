@@ -78,8 +78,8 @@ export default function CoachesDashboard() {
 
   if (loading || profileLoading || isLoading) {
     return (
-      <div className="h-screen flex items-center justify-center">
-        <div className="p-10 text-center">Verifying Coach Access...</div>
+      <div className="flex h-screen items-center justify-center bg-black text-white">
+        Verifying Coach Access...
       </div>
     );
   }
@@ -129,7 +129,7 @@ export default function CoachesDashboard() {
                 role="button"
                 tabIndex={0}
                 onClick={() => {
-                  console.log("Navigating to player ID:", player.id);
+                  console.log("Navigating to:", player.id);
                   if (player.id) router.push(`/dashboard/coach/player/${player.id}`);
                 }}
                 onKeyDown={(e) => e.key === "Enter" && player.id && router.push(`/dashboard/coach/player/${player.id}`)}
