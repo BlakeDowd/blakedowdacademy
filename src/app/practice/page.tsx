@@ -532,19 +532,20 @@ export default function PracticePage() {
             const drillTitle = drillDetails?.title || practice.drill_name || practice.type || practice.title || 'Practice Session';
             const isCompleted = practice.completed || false;
             
-            // Check if this drill is already in our local plan
-            const existingDrillIndex = loadedPlan[dayIndex].drills.findIndex(d => 
-              d.id === generatedDrillId || d.title === drillTitle
+            // Check if this drill is already in our local plan (optional chaining prevents e[a].selected-style crash)
+            const dayPlanRef = loadedPlan?.[dayIndex];
+            const existingDrillIndex = (dayPlanRef?.drills ?? []).findIndex(d => 
+              d?.id === generatedDrillId || d?.title === drillTitle
             );
 
-            if (existingDrillIndex >= 0) {
-              loadedPlan[dayIndex].drills[existingDrillIndex].completed = isCompleted;
-              if (levels) loadedPlan[dayIndex].drills[existingDrillIndex].levels = levels;
-              if (drillDetails?.pdf_url || practice.pdf_url) loadedPlan[dayIndex].drills[existingDrillIndex].pdf_url = drillDetails?.pdf_url || practice.pdf_url;
-              if (drillDetails?.video_url || practice.youtube_url || practice.video_url) loadedPlan[dayIndex].drills[existingDrillIndex].youtube_url = drillDetails?.video_url || practice.youtube_url || practice.video_url;
-              if (drillDetails?.description != null) loadedPlan[dayIndex].drills[existingDrillIndex].description = drillDetails.description;
-            } else {
-              loadedPlan[dayIndex].drills.push({
+            if (existingDrillIndex >= 0 && dayPlanRef?.drills) {
+              dayPlanRef.drills[existingDrillIndex].completed = isCompleted;
+              if (levels) dayPlanRef.drills[existingDrillIndex].levels = levels;
+              if (drillDetails?.pdf_url || practice.pdf_url) dayPlanRef.drills[existingDrillIndex].pdf_url = drillDetails?.pdf_url || practice.pdf_url;
+              if (drillDetails?.video_url || practice.youtube_url || practice.video_url) dayPlanRef.drills[existingDrillIndex].youtube_url = drillDetails?.video_url || practice.youtube_url || practice.video_url;
+              if (drillDetails?.description != null) dayPlanRef.drills[existingDrillIndex].description = drillDetails.description;
+            } else if (dayPlanRef?.drills) {
+              dayPlanRef.drills.push({
                 id: generatedDrillId,
                 title: drillTitle,
                 category: drillDetails?.category || practice.category || 'Practice',
@@ -688,7 +689,7 @@ export default function PracticePage() {
         : { dayIndex, dayName: DAY_NAMES[dayIndex], selected: false, availableTime: 0, selectedFacilities: [] as FacilityType[], roundType: null as RoundType, drills: [] };
       return {
         ...prev,
-        [dayIndex]: { ...base, selected: !(base.selected) },
+        [dayIndex]: { ...base, selected: !(base?.selected ?? false) },
       };
     });
   };
@@ -771,7 +772,7 @@ export default function PracticePage() {
     };
 
     setWeeklyPlan(prev => {
-      const existing = prev[dayIndex] || {
+      const existing = prev?.[dayIndex] ?? {
         dayIndex,
         dayName: DAY_NAMES[dayIndex],
         selected: false,
@@ -961,14 +962,20 @@ export default function PracticePage() {
 
   const setRoundType = (dayIndex: number, roundType: RoundType) => {
     const timeInMinutes = roundType === '9-hole' ? 120 : roundType === '18-hole' ? 240 : 0;
-    setWeeklyPlan(prev => ({
-      ...prev,
-      [dayIndex]: {
-        ...prev[dayIndex],
-        roundType: prev[dayIndex].roundType === roundType ? null : roundType,
-        availableTime: prev[dayIndex].roundType === roundType ? (prev[dayIndex].availableTime || 0) : timeInMinutes,
-      },
-    }));
+    setWeeklyPlan(prev => {
+      const existing = prev?.[dayIndex];
+      const base = existing && typeof existing.dayIndex === 'number'
+        ? existing
+        : { dayIndex, dayName: DAY_NAMES[dayIndex], selected: !!(existing?.selected ?? false), availableTime: 0, selectedFacilities: (existing?.selectedFacilities ?? []) as FacilityType[], roundType: null as RoundType, drills: existing?.drills ?? [] };
+      return {
+        ...prev,
+        [dayIndex]: {
+          ...base,
+          roundType: (base?.roundType ?? null) === roundType ? null : roundType,
+          availableTime: (base?.roundType ?? null) === roundType ? (base?.availableTime ?? 0) : timeInMinutes,
+        },
+      };
+    });
   };
 
   // Can generate plan: at least one selected day has time > 0 or a round.
@@ -1028,10 +1035,11 @@ export default function PracticePage() {
       console.log('Current Practice State:', { hours, minutes, total, selectedRound: day.roundType !== null, dayName: day.dayName });
     });
 
-    // Validation: use actual input state (Number(totalTime)) to avoid stale checks
-    const totalTime = selectedDays.reduce((sum, day) => sum + (Number(day?.availableTime) || 0), 0);
-    const isRoundSelected = selectedDays.some(day => day?.roundType != null);
-    if (Number(totalTime) === 0 && !isRoundSelected) {
+    // Validation: check total time from actual input state (Object.values + Number avoids stale state)
+    const practiceData: Record<number, number> = {};
+    selectedDays.forEach((d, i) => { practiceData[i] = Number(d?.availableTime ?? 0); });
+    const selectedRound = selectedDays.some(day => day?.roundType != null);
+    if (Object.values(practiceData).every(v => Number(v) === 0) && !selectedRound) {
       alert('Please set practice time > 0 or select a round for at least one selected day');
       return;
     }

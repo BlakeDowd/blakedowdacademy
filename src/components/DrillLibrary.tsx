@@ -44,7 +44,7 @@ function dbToDrillRecord(db: Record<string, unknown>): DrillRecord {
     title: String(db.title || "Untitled"),
     category: String(db.category || "Practice"),
     focus: String(db.focus || ""),
-    description: (typeof desc === "string" && desc.trim()) ? desc : undefined,
+    description: (typeof desc === "string" && desc.trim()) ? desc : "",
     goal: String(db.goal || ""),
     estimatedMinutes: Number(db.estimated_minutes ?? (db as any).estimatedMinutes ?? 10),
     xpValue: 10,
@@ -179,7 +179,7 @@ export function DrillLibrary({ onAssignToDay }: DrillLibraryProps) {
               ?? (d.title ? dbByTitle.get(d.title.trim().toLowerCase()) : undefined);
             if (db) {
               const desc = db.description && String(db.description).trim() ? db.description : d.description;
-              return { ...d, ...db, id: d.id, drill_id: (d as any).drill_id || db.id, description: (desc && String(desc).trim()) ? desc : undefined } as DrillRecord;
+              return { ...d, ...db, id: d.id, drill_id: (d as any).drill_id || db.id, description: (desc && String(desc).trim()) ? desc : "" } as DrillRecord;
             }
             return d;
           });
