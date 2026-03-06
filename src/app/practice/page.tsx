@@ -443,12 +443,12 @@ export default function PracticePage() {
               const dayOfWeek = targetDate.getDay();
               const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
               
-              if (!loadedPlan[dayIndex]) return;
+              const dayPlan = loadedPlan[dayIndex];
+              if (!dayPlan) return;
               
               const drillDetails = drillDetailsMap[plannedDrill.drill_id];
               
               if (drillDetails) {
-                // Parse drill_levels
                 let levels = null;
                 if (drillDetails.drill_levels) {
                   try {
@@ -467,11 +467,12 @@ export default function PracticePage() {
                   }
                 }
 
-                // Check if drill already exists from localStorage to avoid duplicates
-                const existingIndex = loadedPlan[dayIndex].drills.findIndex((d: any) => d.id === plannedDrill.drill_id);
+                const dayDrills = dayPlan.drills ?? [];
+                const existingIndex = dayDrills.findIndex((d: any) => d?.id === plannedDrill.drill_id);
                 if (existingIndex === -1) {
-                  loadedPlan[dayIndex].selected = true; // Mark day as selected
-                  loadedPlan[dayIndex].drills.push({
+                  dayPlan.selected = true;
+                  dayPlan.drills = dayDrills;
+                  dayPlan.drills.push({
                     id: plannedDrill.drill_id,
                     title: drillDetails.title,
                     category: drillDetails.category,
@@ -1027,13 +1028,14 @@ export default function PracticePage() {
       console.log('Current Practice State:', { hours, minutes, total, selectedRound: day.roundType !== null, dayName: day.dayName });
     });
 
-    // Validation: use totalTime (sum of all selected days) and selectedRound
+    // Validation: use actual input state (Number(totalTime)) to avoid stale checks
     const totalTime = selectedDays.reduce((sum, day) => sum + (Number(day?.availableTime) || 0), 0);
-    const hasSelectedRound = selectedDays.some(day => day?.roundType != null);
-    const validDays = totalTime > 0 || hasSelectedRound
-      ? selectedDays.filter(day => (day?.availableTime ?? 0) > 0 || day?.roundType != null)
-      : [];
-
+    const isRoundSelected = selectedDays.some(day => day?.roundType != null);
+    if (Number(totalTime) === 0 && !isRoundSelected) {
+      alert('Please set practice time > 0 or select a round for at least one selected day');
+      return;
+    }
+    const validDays = selectedDays.filter(day => (Number(day?.availableTime) || 0) > 0 || day?.roundType != null);
     if (validDays.length === 0) {
       alert('Please set practice time > 0 or select a round for at least one selected day');
       return;
@@ -1122,7 +1124,7 @@ export default function PracticePage() {
     // Generate plan for each valid day
     daysToGenerate.forEach(day => {
       const availableTime = day.availableTime || 0;
-      const selectedFacilities = day.selectedFacilities || [];
+      const selectedFacilities = day?.selectedFacilities ?? [];
       const roundType = day.roundType;
       const allSelectedDrills: Array<Drill & { isSet?: boolean; setCount?: number; facility?: FacilityType; isRound?: boolean }> = [];
 
@@ -1823,7 +1825,7 @@ export default function PracticePage() {
     if (!(day?.selected ?? false) || !(day?.drills?.length ?? 0)) return null;
     
     const totalTime = (day.drills ?? []).reduce((sum, d) => sum + (d?.estimatedMinutes ?? 0), 0);
-    const categories = [...new Set(day.drills.map(d => d.category))];
+    const categories = [...new Set((day?.drills ?? []).map(d => d?.category).filter(Boolean))];
     
     return {
       dayName: day.dayName,
@@ -1997,11 +1999,11 @@ export default function PracticePage() {
                     }`}>
                       {abbr}
                     </span>
-                    {day?.availableTime > 0 ? (
+                    {(day?.availableTime ?? 0) > 0 ? (
                       <span className={`text-xs font-bold ${
                         isActive ? 'text-[#014421]' : isSelected ? 'text-[#014421]' : 'text-gray-700'
                       }`}>
-                        {formatTime(day.availableTime)}
+                        {formatTime(day?.availableTime ?? 0)}
                       </span>
                     ) : (
                       <span className={`text-xs ${
@@ -2209,8 +2211,8 @@ export default function PracticePage() {
                 if (!summary) return null;
                 
                 const dayComplete = isDayComplete(day);
-                const completedCount = day.drills.filter((d: DayPlan['drills'][0]) => d.completed).length;
-                const totalDrills = day.drills.length;
+                const completedCount = (day?.drills ?? []).filter((d: DayPlan['drills'][0]) => d?.completed).length;
+                const totalDrills = (day?.drills ?? []).length;
                 
                 return (
                   <div
@@ -2256,8 +2258,8 @@ export default function PracticePage() {
                       )}
                     </p>
                     <div className="space-y-2">
-                      {day.drills.map((drill: DayPlan['drills'][0], idx: number) => {
-                        const actualDrillIndex = day.drills.findIndex((d: any) => d.id === drill.id);
+                      {(day?.drills ?? []).map((drill: DayPlan['drills'][0], idx: number) => {
+                        const actualDrillIndex = (day?.drills ?? []).findIndex((d: any) => d?.id === drill?.id);
                         const isSwapping = swappingDrill?.dayIndex === day.dayIndex && swappingDrill?.drillIndex === actualDrillIndex;
                         const justSwapped = swapSuccess?.dayIndex === day.dayIndex && swapSuccess?.drillIndex === actualDrillIndex;
                         const isExpanded = expandedScheduleDrill?.dayIndex === day.dayIndex && expandedScheduleDrill?.drillIndex === actualDrillIndex;
@@ -2552,7 +2554,7 @@ export default function PracticePage() {
                       
                       {/* Drill Cards - Full List, Vertical */}
                       {dayDrills.map((drill, drillIdx) => {
-                        const actualDrillIndex = day.drills.findIndex((d: any) => d.id === drill.id);
+                        const actualDrillIndex = dayDrills.findIndex((d: any) => d?.id === drill?.id);
                         const isSwapping = swappingDrill?.dayIndex === currentDayView && swappingDrill?.drillIndex === actualDrillIndex;
                         const justSwapped = swapSuccess?.dayIndex === currentDayView && swapSuccess?.drillIndex === actualDrillIndex;
                         // FORCE EXPAND: Keep expanded after swap or if explicitly set
@@ -2598,7 +2600,7 @@ export default function PracticePage() {
                     {DAY_NAMES.map((dayName, dayIndex) => {
                       const day = weeklyPlan[dayIndex];
                       const dayDrills = day?.drills || [];
-                      const completedCount = dayDrills.filter(d => d.completed).length;
+                      const completedCount = dayDrills.filter(d => d?.completed).length;
                       const totalCount = dayDrills.length;
                       
                       if (dayDrills.length === 0) return null;

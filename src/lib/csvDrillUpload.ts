@@ -166,9 +166,9 @@ export interface UpsertDrillsOptions {
 }
 
 /**
- * Upsert drills to Supabase:
- * - If ID exists: upsert (update existing)
- * - If ID null/empty: check drill_name match first; if match found, update that record; else create new
+ * Upsert drills to Supabase by ID (unique key):
+ * - If the CSV row has an ID: Update the record in Supabase (fixes spelling/typos without deleting).
+ * - If the ID is missing: Insert a new record (or link to existing by drill_name to avoid duplicates).
  */
 export async function upsertDrillsFromCSV({
   supabase,
