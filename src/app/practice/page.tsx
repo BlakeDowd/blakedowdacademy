@@ -404,7 +404,7 @@ export default function PracticePage() {
           // Fetch all drills from drills table
           const { data: allDrillsData, error: drillsError } = await supabase
             .from('drills')
-            .select('id, video_url, pdf_url, drill_levels, title, category, estimatedMinutes');
+            .select('id, video_url, pdf_url, drill_levels, title, category, estimatedMinutes, description');
           
           // Create a map of drills by title for matching (CROSS-REFERENCE: match by title)
           const drillDetailsMap: Record<string, any> = {};
@@ -479,6 +479,7 @@ export default function PracticePage() {
                     completed: false,
                     pdf_url: drillDetails.pdf_url,
                     youtube_url: drillDetails.video_url,
+                    description: drillDetails.description || undefined,
                     levels: levels || undefined,
                   });
                 }
@@ -495,17 +496,15 @@ export default function PracticePage() {
 
             if (!loadedPlan[dayIndex]) return;
 
-            // CROSS-REFERENCE: Match drill by title (practice.type or drill_name matches drills.title)
+            // CROSS-REFERENCE: Prefer drill_id for matching (stable; spelling changes don't break old logs)
             let drillDetails: any = null;
-            const matchTitle = practice.type || practice.drill_name || practice.title || '';
-            
-            if (matchTitle) {
-              drillDetails = drillDetailsMap[matchTitle.toLowerCase().trim()];
+            const matchId = practice.drill_id || practice.type;
+            if (matchId) {
+              drillDetails = drillDetailsMap[matchId] ?? drillDetailsMap[(matchId as string).toLowerCase().trim()];
             }
-            
-            // Fallback: try drill_id if title match didn't work
-            if (!drillDetails && practice.drill_id) {
-              drillDetails = drillDetailsMap[practice.drill_id];
+            if (!drillDetails) {
+              const matchTitle = (practice.type || practice.drill_name || practice.title || '').toString().toLowerCase().trim();
+              if (matchTitle) drillDetails = drillDetailsMap[matchTitle];
             }
 
             // MAP THE DATA: Parse drill_levels if it's a JSON string
@@ -538,22 +537,21 @@ export default function PracticePage() {
             );
 
             if (existingDrillIndex >= 0) {
-              // Update existing drill from localStorage with database completion status
               loadedPlan[dayIndex].drills[existingDrillIndex].completed = isCompleted;
               if (levels) loadedPlan[dayIndex].drills[existingDrillIndex].levels = levels;
               if (drillDetails?.pdf_url || practice.pdf_url) loadedPlan[dayIndex].drills[existingDrillIndex].pdf_url = drillDetails?.pdf_url || practice.pdf_url;
               if (drillDetails?.video_url || practice.youtube_url || practice.video_url) loadedPlan[dayIndex].drills[existingDrillIndex].youtube_url = drillDetails?.video_url || practice.youtube_url || practice.video_url;
+              if (drillDetails?.description != null) loadedPlan[dayIndex].drills[existingDrillIndex].description = drillDetails.description;
             } else {
-              // Add new drill from database
               loadedPlan[dayIndex].drills.push({
                 id: generatedDrillId,
                 title: drillTitle,
                 category: drillDetails?.category || practice.category || 'Practice',
                 estimatedMinutes: drillDetails?.estimatedMinutes || practice.estimatedMinutes || 30,
                 completed: isCompleted,
-                // MAP THE DATA: video_url, pdf_url, drill_levels attached here
                 pdf_url: drillDetails?.pdf_url || practice.pdf_url || undefined,
                 youtube_url: drillDetails?.video_url || practice.youtube_url || practice.video_url || undefined,
+                description: drillDetails?.description || practice.description || undefined,
                 levels: levels || undefined,
               });
             }
@@ -681,46 +679,48 @@ export default function PracticePage() {
   }, [rounds]);
 
   const toggleDay = (dayIndex: number) => {
-    // Always set the clicked day as the active day for editing
     setSelectedDay(dayIndex);
-    
-    // Toggle the selected state (for plan generation)
-    setWeeklyPlan(prev => ({
-      ...prev,
-      [dayIndex]: {
-        ...prev[dayIndex],
-        selected: !prev[dayIndex].selected,
-      },
-    }));
+    setWeeklyPlan(prev => {
+      const existing = prev[dayIndex];
+      const base = existing && typeof existing.dayIndex === 'number'
+        ? existing
+        : { dayIndex, dayName: DAY_NAMES[dayIndex], selected: false, availableTime: 0, selectedFacilities: [] as FacilityType[], roundType: null as RoundType, drills: [] };
+      return {
+        ...prev,
+        [dayIndex]: { ...base, selected: !(base.selected) },
+      };
+    });
   };
 
   const updateTime = (dayIndex: number, minutes: number) => {
-    // Ensure the value is a clean integer. 
-    // Sometimes slider input events can act as strings if not handled carefully down the chain.
     const cleanMinutes = Math.max(0, parseInt(minutes.toString(), 10) || 0);
-
-    setWeeklyPlan(prev => ({
-      ...prev,
-      [dayIndex]: {
-        ...prev[dayIndex],
-        availableTime: cleanMinutes,
-      },
-    }));
+    setWeeklyPlan(prev => {
+      const existing = prev[dayIndex];
+      const base = existing && typeof existing.dayIndex === 'number'
+        ? existing
+        : { dayIndex, dayName: DAY_NAMES[dayIndex], selected: !!existing?.selected, availableTime: 0, selectedFacilities: (existing?.selectedFacilities ?? []) as FacilityType[], roundType: (existing?.roundType ?? null) as RoundType, drills: existing?.drills ?? [] };
+      return { ...prev, [dayIndex]: { ...base, availableTime: cleanMinutes } };
+    });
   };
 
   const toggleFacility = (dayIndex: number, facilityType: FacilityType) => {
-    // Original behavior for roadmap facility selection
     setWeeklyPlan(prev => {
-      const currentFacilities = prev[dayIndex].selectedFacilities || [];
+      const dayData = prev[dayIndex];
+      if (!dayData) return prev;
+      const currentFacilities = dayData.selectedFacilities || [];
       const isSelected = currentFacilities.includes(facilityType);
-      
+      const newFacilities = isSelected
+        ? currentFacilities.filter(f => f !== facilityType)
+        : [...currentFacilities, facilityType];
+      const currentTime = dayData.availableTime || 0;
+      const newTime = !isSelected && currentTime === 0 ? 30 : currentTime;
+
       return {
         ...prev,
         [dayIndex]: {
-          ...prev[dayIndex],
-          selectedFacilities: isSelected
-            ? currentFacilities.filter(f => f !== facilityType)
-            : [...currentFacilities, facilityType],
+          ...dayData,
+          selectedFacilities: newFacilities,
+          availableTime: newTime,
         },
       };
     });
@@ -970,6 +970,20 @@ export default function PracticePage() {
     }));
   };
 
+  // Can generate plan: at least one selected day has time > 0 or a round.
+  // Safety: use optional chaining to prevent undefined crash (e.g. e[a].selected).
+  const canGeneratePlan = useMemo(() => {
+    const selectedDays = Object.values(weeklyPlan).filter(day => (day?.selected ?? false));
+    const totalTime = selectedDays.reduce((sum, day) => sum + (Number(day?.availableTime) || 0), 0);
+    const hasSelectedRound = selectedDays.some(day => day?.roundType != null);
+    const hasValidDay = totalTime > 0 || hasSelectedRound;
+    const activeDayHasValidContent = selectedDay != null && (
+      (weeklyPlan[selectedDay]?.availableTime ?? 0) > 0 ||
+      weeklyPlan[selectedDay]?.roundType != null
+    );
+    return selectedDay != null && (hasValidDay || (selectedDays.length === 0 && activeDayHasValidContent));
+  }, [weeklyPlan, selectedDay]);
+
   // Format minutes to hours and minutes
   const formatTime = (minutes: number): string => {
     const hours = Math.floor(minutes / 60);
@@ -986,20 +1000,39 @@ export default function PracticePage() {
   const generatePlan = async () => {
     const newPlan: WeeklyPlan = { ...weeklyPlan };
     
-    // Get all selected days
-    const selectedDays = Object.values(weeklyPlan).filter(day => day.selected);
+    // Get all selected days; if none selected but active day has time/round, include it
+    let selectedDays = Object.values(weeklyPlan).filter(day => (day?.selected ?? false));
+    if (selectedDays.length === 0 && selectedDay !== null) {
+      const activeDay = weeklyPlan[selectedDay];
+      if (activeDay && ((activeDay.availableTime || 0) > 0 || activeDay.roundType !== null)) {
+        selectedDays = [{
+          ...activeDay,
+          selected: true,
+          dayIndex: activeDay.dayIndex ?? selectedDay,
+          dayName: activeDay.dayName ?? DAY_NAMES[selectedDay],
+        }];
+      }
+    }
 
     if (selectedDays.length === 0) {
       alert('Please select at least one day');
       return;
     }
 
-    // Check if any selected day has time > 0 or a round selected
-    // Note: We use parseInt and strict > 0 to ensure slider value is seen properly, even for 5-minute increments.
-    const validDays = selectedDays.filter(day => {
-      const timeVal = parseInt((day.availableTime || 0).toString(), 10);
-      return timeVal >= 5 || day.roundType !== null;
+    // Debug: Log current practice state before validation
+    selectedDays.forEach((day) => {
+      const total = day.availableTime || 0;
+      const hours = Math.floor(total / 60);
+      const minutes = total % 60;
+      console.log('Current Practice State:', { hours, minutes, total, selectedRound: day.roundType !== null, dayName: day.dayName });
     });
+
+    // Validation: use totalTime (sum of all selected days) and selectedRound
+    const totalTime = selectedDays.reduce((sum, day) => sum + (Number(day?.availableTime) || 0), 0);
+    const hasSelectedRound = selectedDays.some(day => day?.roundType != null);
+    const validDays = totalTime > 0 || hasSelectedRound
+      ? selectedDays.filter(day => (day?.availableTime ?? 0) > 0 || day?.roundType != null)
+      : [];
 
     if (validDays.length === 0) {
       alert('Please set practice time > 0 or select a round for at least one selected day');
@@ -1276,78 +1309,74 @@ export default function PracticePage() {
           date: formattedDate,
           drills: allSelectedDrills.map(d => ({
             id: d.id,
+            drill_id: (d as any).drill_id || d.id, // Stable ID for practice references; spelling fixes won't break logs
             title: d.title,
             category: d.category,
             estimatedMinutes: d.isSet ? (d.estimatedMinutes * (d.setCount || 1)) : d.estimatedMinutes,
             isSet: d.isSet,
             setCount: d.setCount,
             facility: d.facility,
-            completed: false, // Always start as not completed (session-based)
-            xpEarned: 0, // Reset XP earned for this session
-            isRound: d.isRound || false, // Preserve round flag
-            contentType: d.contentType, // Preserve content type
-            source: d.source, // Preserve source
-            description: d.description, // Preserve description
-            pdf_url: d.pdf_url, // Preserve PDF URL
-            youtube_url: d.youtube_url, // Preserve YouTube URL
-            video_url: d.video_url, // Preserve video URL
-            levels: d.levels, // Preserve levels
-            goal: d.goal, // Preserve goal
+            completed: false,
+            xpEarned: 0,
+            isRound: d.isRound || false,
+            contentType: d.contentType,
+            source: d.source,
+            description: d.description,
+            pdf_url: d.pdf_url,
+            youtube_url: d.youtube_url,
+            video_url: d.video_url,
+            levels: d.levels,
+            goal: d.goal,
           })),
         };
       }
     });
 
-    // Save to user_drills table in database
+    // Save to user_drills table in database (non-blocking - show plan even if DB fails)
     if (user?.id) {
       try {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
-        
-        // Find which dates we are updating
+
         const datesToUpdate = Object.values(newPlan)
-          .filter(day => day.selected)
-          .map(day => day.date);
-          
+          .filter(day => (day?.selected ?? false) && day?.date)
+          .map(day => day.date!)
+          .filter(Boolean);
+
         if (datesToUpdate.length > 0) {
-          // Delete old drills for these dates to avoid duplicates
           await supabase
             .from('user_drills')
             .delete()
             .eq('user_id', user.id)
             .in('selected_date', datesToUpdate);
-            
-          // Insert new drills
+
           const drillsToInsert: any[] = [];
           Object.values(newPlan).forEach(day => {
-            if (day.selected && day.drills && day.drills.length > 0) {
+            if ((day?.selected ?? false) && day?.date && day?.drills?.length) {
               day.drills.forEach((drill: any) => {
                 drillsToInsert.push({
                   user_id: user.id,
-                  drill_id: drill.id,
+                  drill_id: (drill as any).drill_id || drill.id,
                   selected_date: day.date,
                 });
               });
             }
           });
-          
+
           if (drillsToInsert.length > 0) {
             const { error } = await supabase.from('user_drills').insert(drillsToInsert);
             if (error) {
               console.error('Error inserting to user_drills:', error);
-              alert('Failed to save drills to database. Please try again.');
-              return; // Do not update local state on error
+              alert('Plan generated, but failed to sync to cloud. Your plan is saved locally.');
             }
           }
         }
       } catch (error) {
         console.error('Database connection error:', error);
-        alert('Failed to connect to database. Please try again.');
-        return; // Do not update local state on error
+        alert('Plan generated, but failed to sync to cloud. Your plan is saved locally.');
       }
     }
 
-    // Save to localStorage (only after successful DB operation)
     if (typeof window !== 'undefined') {
       localStorage.setItem('weeklyPracticePlans', JSON.stringify(newPlan));
     }
@@ -1435,14 +1464,14 @@ export default function PracticePage() {
           console.log('Practice: Drill already completed today, skipping duplicate insert and XP.');
         } else {
           // Safe insert: Only use columns known to exist in 'practice' table based on logFreestylePractice
+          const stableDrillId = (drill as any).drill_id || drill.id;
           const { data: practiceData, error: practiceError } = await supabase
             .from('practice')
             .insert({
               user_id: user.id,
-              type: drill.title, // Map the drill title to 'type'
-              duration_minutes: drill.estimatedMinutes, // Use standard duration_minutes column
-              notes: `Completed Drill: ${drill.category}`, // Use notes for extra context
-              // Let the database handle the timestamp via its default created_at/completed_at column
+              type: stableDrillId, // Use drill_id for matching; avoids spelling changes breaking old logs
+              duration_minutes: drill.estimatedMinutes,
+              notes: `Completed Drill: ${drill.category}`,
             })
             .select();
 
@@ -1587,8 +1616,8 @@ export default function PracticePage() {
 
   // Check if all drills for a day are complete
   const isDayComplete = (day: DayPlan): boolean => {
-    if (!day.drills || day.drills.length === 0) return false;
-    return day.drills.every(drill => drill.completed);
+    if (!(day?.drills?.length ?? 0)) return false;
+    return (day.drills ?? []).every(drill => drill?.completed ?? false);
   };
 
   // Swap a drill with a random drill from the same category
@@ -1677,12 +1706,11 @@ export default function PracticePage() {
       
       const { data: dbDrill } = await supabase
         .from('drills')
-        .select('video_url, pdf_url, drill_levels, title, category, estimatedMinutes')
+        .select('video_url, pdf_url, drill_levels, title, category, estimatedMinutes, description')
         .eq('id', newDrill.id)
         .single();
 
       if (dbDrill) {
-        // Parse drill_levels if it's a JSON string
         let levels = null;
         if (dbDrill.drill_levels) {
           try {
@@ -1701,11 +1729,11 @@ export default function PracticePage() {
           }
         }
 
-        // DATA SYNC: Attach video_url, pdf_url, and drill_levels
         drillData = {
           ...newDrill,
           pdf_url: dbDrill.pdf_url || newDrill.pdf_url,
           youtube_url: dbDrill.video_url || newDrill.youtube_url || newDrill.video_url,
+          description: dbDrill.description ?? newDrill.description,
           levels: levels || newDrill.levels,
         };
       }
@@ -1792,9 +1820,9 @@ export default function PracticePage() {
   };
 
   const getDaySummary = (day: DayPlan) => {
-    if (!day.selected || day.drills.length === 0) return null;
+    if (!(day?.selected ?? false) || !(day?.drills?.length ?? 0)) return null;
     
-    const totalTime = day.drills.reduce((sum, d) => sum + d.estimatedMinutes, 0);
+    const totalTime = (day.drills ?? []).reduce((sum, d) => sum + (d?.estimatedMinutes ?? 0), 0);
     const categories = [...new Set(day.drills.map(d => d.category))];
     
     return {
@@ -2160,11 +2188,9 @@ export default function PracticePage() {
         <div className="mb-6">
           <button
             onClick={generatePlan}
-            disabled={selectedDay === null || parseInt((weeklyPlan[selectedDay]?.availableTime || 0).toString(), 10) < 5}
+            disabled={!canGeneratePlan}
             className={`w-full py-4 rounded-xl font-semibold text-white shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 ${
-              selectedDay === null || parseInt((weeklyPlan[selectedDay]?.availableTime || 0).toString(), 10) < 5
-                ? 'opacity-50 cursor-not-allowed'
-                : ''
+              !canGeneratePlan ? 'opacity-50 cursor-not-allowed' : ''
             }`}
             style={{ backgroundColor: '#014421' }}
           >
@@ -2174,10 +2200,10 @@ export default function PracticePage() {
         </div>
 
         {/* Summary Cards */}
-        {generatedPlan && Object.values(generatedPlan).some(day => day.selected && day.drills.length > 0) && (
+        {generatedPlan && Object.values(generatedPlan).some(day => (day?.selected ?? false) && (day?.drills?.length ?? 0) > 0) && (
           <div className="space-y-3 mb-6">
             {Object.values(generatedPlan)
-              .filter(day => day.selected && day.drills.length > 0)
+              .filter(day => (day?.selected ?? false) && (day?.drills?.length ?? 0) > 0)
               .map((day) => {
                 const summary = getDaySummary(day);
                 if (!summary) return null;

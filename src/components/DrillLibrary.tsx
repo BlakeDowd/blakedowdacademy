@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { ChevronDown, ChevronUp, X, UserPlus } from "lucide-react";
 import { OFFICIAL_DRILLS, type DrillRecord } from "@/data/official_drills";
+import { createClient } from "@/lib/supabase/client";
 
 const LIBRARY_CATEGORIES = [
   "Driving",
@@ -16,7 +17,6 @@ const LIBRARY_CATEGORIES = [
   "18-Hole Round",
 ] as const;
 
-// Map drill categories from OFFICIAL_DRILLS to library categories
 const DRILL_TO_LIBRARY: Record<string, string[]> = {
   "Mental/Strategy": ["Mental/Strategy"],
   Driving: ["Driving"],
@@ -29,11 +29,27 @@ const DRILL_TO_LIBRARY: Record<string, string[]> = {
   "18-Hole Round": ["18-Hole Round"],
 };
 
-function getDrillsForCategory(category: string): DrillRecord[] {
-  return OFFICIAL_DRILLS.filter((d) => {
-    const mapped = DRILL_TO_LIBRARY[d.category];
-    return mapped?.includes(category) ?? false;
-  });
+/** Map DB drill to DrillRecord shape - handle various column names */
+function dbToDrillRecord(db: Record<string, unknown>): DrillRecord {
+  const desc = (
+    db.description ??
+    (db as any).drill_description ??
+    (db as any).content ??
+    (db as any).instructions ??
+    ""
+  ) as string;
+  return {
+    id: String(db.id),
+    drill_id: String(db.id),
+    title: String(db.title || "Untitled"),
+    category: String(db.category || "Practice"),
+    focus: String(db.focus || ""),
+    description: (typeof desc === "string" && desc.trim()) ? desc : undefined,
+    goal: String(db.goal || ""),
+    estimatedMinutes: Number(db.estimated_minutes ?? (db as any).estimatedMinutes ?? 10),
+    xpValue: 10,
+    contentType: "text",
+  };
 }
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -140,6 +156,53 @@ interface DrillLibraryProps {
 export function DrillLibrary({ onAssignToDay }: DrillLibraryProps) {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [selectedDrill, setSelectedDrill] = useState<DrillRecord | null>(null);
+  const [drills, setDrills] = useState<DrillRecord[]>(OFFICIAL_DRILLS);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const supabase = createClient();
+        const { data: dbDrills } = await supabase
+          .from("drills")
+          .select("id, title, category, description, focus, goal, estimated_minutes, estimatedMinutes, pdf_url, video_url");
+        if (dbDrills && dbDrills.length > 0) {
+          const dbById = new Map<string, DrillRecord>();
+          const dbByTitle = new Map<string, DrillRecord>();
+          dbDrills.forEach((d) => {
+            const rec = dbToDrillRecord(d);
+            dbById.set(d.id, rec);
+            if (d.title) dbByTitle.set(d.title.trim().toLowerCase(), rec);
+          });
+          const merged: DrillRecord[] = OFFICIAL_DRILLS.map((d) => {
+            const db = dbById.get(d.id)
+              ?? dbById.get((d as any).drill_id)
+              ?? (d.title ? dbByTitle.get(d.title.trim().toLowerCase()) : undefined);
+            if (db) {
+              const desc = db.description && String(db.description).trim() ? db.description : d.description;
+              return { ...d, ...db, id: d.id, drill_id: (d as any).drill_id || db.id, description: (desc && String(desc).trim()) ? desc : undefined } as DrillRecord;
+            }
+            return d;
+          });
+          const dbOnly = dbDrills
+            .filter((d) => !OFFICIAL_DRILLS.some((o) =>
+              o.id === d.id || (o as any).drill_id === d.id || (o.title?.trim().toLowerCase() === d.title?.trim().toLowerCase())
+            ))
+            .map((d) => dbToDrillRecord(d));
+          setDrills([...merged, ...dbOnly]);
+        }
+      } catch (e) {
+        console.warn("DrillLibrary: Could not load drills from database", e);
+      }
+    };
+    load();
+  }, []);
+
+  function getDrillsForCategory(category: string): DrillRecord[] {
+    return drills.filter((d) => {
+      const mapped = DRILL_TO_LIBRARY[d.category];
+      return mapped?.includes(category) ?? false;
+    });
+  }
 
   const handleAssignToDay = (drill: DrillRecord, dayIndex: number) => {
     onAssignToDay?.(drill, dayIndex);
