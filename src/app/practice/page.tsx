@@ -310,21 +310,8 @@ export default function PracticePage() {
   useEffect(() => {
     const loadWeeklySchedule = async () => {
       if (typeof window === 'undefined' || !user?.id) {
-        // Initialize empty plan if no user
-        const initialPlan: WeeklyPlan = {};
-        DAY_ABBREVIATIONS.forEach((_, index) => {
-          initialPlan[index] = {
-            dayIndex: index,
-            dayName: DAY_NAMES[index],
-            selected: false,
-            availableTime: 0,
-            selectedFacilities: [],
-            roundType: null,
-            drills: [],
-            date: new Date().toISOString().split('T')[0],
-          };
-        });
-        setWeeklyPlan(initialPlan);
+        // Initialize to empty - no days selected by default
+        setWeeklyPlan({});
         return;
       }
 
@@ -384,20 +371,7 @@ export default function PracticePage() {
           }
         }
         
-        if (!hasLocalPlan) {
-          DAY_ABBREVIATIONS.forEach((_, index) => {
-            loadedPlan[index] = {
-              dayIndex: index,
-              dayName: DAY_NAMES[index],
-              selected: false,
-              availableTime: 0,
-              selectedFacilities: [],
-              roundType: null,
-              drills: [],
-              date: new Date().toISOString().split('T')[0],
-            };
-          });
-        }
+        // Do NOT pre-populate all days - only load what's in the database or stay empty
 
         // CROSS-REFERENCE: Fetch drill details from drills table and match by title
         if ((practiceData && practiceData.length > 0) || (userDrillsData && userDrillsData.length > 0)) {
@@ -443,8 +417,20 @@ export default function PracticePage() {
               const dayOfWeek = targetDate.getDay();
               const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
               
+              // Create day only when we have DB data for it (no pre-population)
+              if (!loadedPlan[dayIndex]) {
+                loadedPlan[dayIndex] = {
+                  dayIndex,
+                  dayName: DAY_NAMES[dayIndex],
+                  selected: false,
+                  availableTime: 0,
+                  selectedFacilities: [],
+                  roundType: null,
+                  drills: [],
+                  date: new Date().toISOString().split('T')[0],
+                };
+              }
               const dayPlan = loadedPlan[dayIndex];
-              if (!dayPlan) return;
               
               const drillDetails = drillDetailsMap[plannedDrill.drill_id];
               
@@ -495,7 +481,19 @@ export default function PracticePage() {
             const dayOfWeek = practiceDate.getDay();
             const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Convert Sunday=0 to Monday=0
 
-            if (!loadedPlan[dayIndex]) return;
+            // Create day only when we have DB data for it (no pre-population)
+            if (!loadedPlan[dayIndex]) {
+              loadedPlan[dayIndex] = {
+                dayIndex,
+                dayName: DAY_NAMES[dayIndex],
+                selected: false,
+                availableTime: 0,
+                selectedFacilities: [],
+                roundType: null,
+                drills: [],
+                date: new Date().toISOString().split('T')[0],
+              };
+            }
 
             // CROSS-REFERENCE: Prefer drill_id for matching (stable; spelling changes don't break old logs)
             let drillDetails: any = null;
@@ -683,13 +681,14 @@ export default function PracticePage() {
   const toggleDay = (dayIndex: number) => {
     setSelectedDay(dayIndex);
     setWeeklyPlan(prev => {
-      const existing = prev[dayIndex];
+      const existing = prev?.[dayIndex];
       const base = existing && typeof existing.dayIndex === 'number'
         ? existing
         : { dayIndex, dayName: DAY_NAMES[dayIndex], selected: false, availableTime: 0, selectedFacilities: [] as FacilityType[], roundType: null as RoundType, drills: [] };
+      // Pure toggle: if selected, turn off; if not, turn on
       return {
         ...prev,
-        [dayIndex]: { ...base, selected: !(base?.selected ?? false) },
+        [dayIndex]: { ...base, selected: !(prev?.[dayIndex]?.selected ?? false) },
       };
     });
   };
@@ -1988,34 +1987,31 @@ export default function PracticePage() {
               {DAY_ABBREVIATIONS.map((abbr, idx) => {
                 const index = idx;
                 const day = weeklyPlan[index];
-                const isSelected = day?.selected || false;
-                const isActive = selectedDay === index; // Active day being edited
+                const isSelected = day?.selected ?? false;
                 return (
                   <button
                     key={index}
                     onClick={() => toggleDay(index)}
                     className={`flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl transition-all min-h-[70px] ${
-                      isActive
-                        ? 'bg-[#FFA500] border-2 border-[#014421]' // Orange for active day
-                        : isSelected
-                        ? 'bg-[#014421]/10 border-2 border-[#014421]/30' // Subtle green for selected
-                        : 'bg-gray-50 border border-gray-200 hover:border-gray-300'
+                      isSelected
+                        ? 'bg-[#F57C00] border-2 border-[#E65100]' // Signature orange when selected
+                        : 'bg-gray-50 border border-gray-200 hover:border-gray-300' // Light gray when not selected
                     }`}
                   >
                     <span className={`text-sm font-semibold ${
-                      isActive ? 'text-[#014421]' : isSelected ? 'text-[#014421]' : 'text-gray-600'
+                      isSelected ? 'text-white' : 'text-gray-600'
                     }`}>
                       {abbr}
                     </span>
                     {(day?.availableTime ?? 0) > 0 ? (
                       <span className={`text-xs font-bold ${
-                        isActive ? 'text-[#014421]' : isSelected ? 'text-[#014421]' : 'text-gray-700'
+                        isSelected ? 'text-white' : 'text-gray-700'
                       }`}>
                         {formatTime(day?.availableTime ?? 0)}
                       </span>
                     ) : (
                       <span className={`text-xs ${
-                        isActive ? 'text-[#014421]/60' : isSelected ? 'text-[#014421]/40' : 'text-gray-400'
+                        isSelected ? 'text-white/80' : 'text-gray-400'
                       }`}>
                         —
                       </span>
