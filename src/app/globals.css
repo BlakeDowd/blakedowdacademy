@@ -195,8 +195,11 @@ select option {
 /* Library: Print styles for Save as PDF (lesson report) */
 /* Coach: Print styles for Player Deep Dive report */
 @media print {
+  /* 1. Global: explicitly hide nav, sidebars, Generate Report */
   .library-no-print,
-  .coach-deepdive-no-print {
+  .coach-deepdive-no-print,
+  footer,
+  aside {
     display: none !important;
   }
   #lesson-pdf-content {
@@ -220,13 +223,17 @@ select option {
     color: #6b7280;
     text-align: center;
   }
-  /* Coach Deep Dive: print full page of content - expand scroll container and ancestors */
-  html, body {
-    overflow: visible !important;
+  /* 1. Global: body and main container - height auto, overflow visible */
+  html, body, main {
     height: auto !important;
+    overflow: visible !important;
     min-height: auto !important;
   }
-  /* Unconstrain flex/scroll chain so all content prints */
+  /* 3. Scaling: slightly shrink for A4 margins */
+  html, body {
+    zoom: 90%;
+  }
+  /* Coach Deep Dive: expand scroll chain */
   div:has(> div:has(> main:has(#coach-deepdive-scroll))),
   div:has(> main:has(#coach-deepdive-scroll)),
   main:has(#coach-deepdive-scroll) {
@@ -249,15 +256,24 @@ select option {
     height: auto !important;
     min-height: auto !important;
   }
-  /* Ensure dark/colored cards print with background */
+  /* 2. Stats grid (Big Six): use simple grid for print, avoid flex shrink */
+  #coach-deepdive-big-six-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 0.75rem !important;
+    flex: none !important;
+  }
+  /* 2. Stats cards: avoid page breaks within cards */
+  .coach-deepdive-stat-card,
+  #coach-deepdive-pdf-content > div {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  /* 4. Background colors: ensure green/blue/red show on PDF */
+  .coach-deepdive-stat-card,
   #coach-deepdive-pdf-content * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
-  }
-  /* Allow sections to flow across pages; avoid breaking within cards */
-  #coach-deepdive-pdf-content > div {
-    break-inside: avoid;
-    page-break-inside: avoid;
   }
   @page {
     size: A4;

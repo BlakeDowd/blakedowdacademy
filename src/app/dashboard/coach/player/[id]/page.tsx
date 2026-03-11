@@ -730,7 +730,7 @@ export default function PlayerDeepDivePage() {
               <Sparkles className="w-3 h-3 text-[#014421]" />
               The Big Six Scorecard
             </h2>
-            <div className="grid grid-cols-2 gap-3 pb-4">
+            <div id="coach-deepdive-big-six-grid" className="grid grid-cols-2 gap-3 pb-4">
               {[
                 { label: "Scoring Avg", statValue: bigSix.scoringAvg, unit: "", icon: "🎯", color: "text-blue-600" },
                 { label: "GIR %", statValue: bigSix.girPct, unit: "%", icon: "⛳", color: "text-green-600" },
@@ -741,7 +741,7 @@ export default function PlayerDeepDivePage() {
               ].map((stat: any, i) => {
                 const val = (stat as any)?.statValue ?? (stat as any)?.value ?? 0;
                 return (
-                <div key={i} className="bg-white rounded-2xl shadow-md border border-gray-100 p-3 sm:p-4">
+                <div key={i} className="coach-deepdive-stat-card bg-white rounded-2xl shadow-md border border-gray-100 p-3 sm:p-4">
                   <div className="text-xl mb-1">{(stat as any).icon}</div>
                   <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter truncate">{(stat as any).label}</div>
                   <div className={`text-2xl font-black ${(stat as any).color}`}>
@@ -765,17 +765,17 @@ export default function PlayerDeepDivePage() {
                 Strokes Lost Tracker
               </h2>
               <div className="grid grid-cols-3 gap-2">
-                <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                <div className="coach-deepdive-stat-card bg-white/5 rounded-xl p-3 border border-white/10">
                   <div className="text-white/50 text-[10px] uppercase font-bold mb-1">Penalties</div>
                   <div className="text-2xl font-bold text-white leading-none">{penaltyStats.penaltiesPerRound}</div>
                   <div className="text-white/30 text-[9px] mt-1 italic">/ Round</div>
                 </div>
-                <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                <div className="coach-deepdive-stat-card bg-white/5 rounded-xl p-3 border border-white/10">
                   <div className="text-white/50 text-[10px] uppercase font-bold mb-1">3-Putts</div>
                   <div className="text-2xl font-bold text-white leading-none">{penaltyStats.threePuttsPerRound}</div>
                   <div className="text-white/30 text-[9px] mt-1 italic">/ Round</div>
                 </div>
-                <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                <div className="coach-deepdive-stat-card bg-white/5 rounded-xl p-3 border border-white/10">
                   <div className="text-white/50 text-[10px] uppercase font-bold mb-1">DBL+</div>
                   <div className="text-2xl font-bold text-white leading-none">{penaltyStats.doublesPerRound}</div>
                   <div className="text-white/30 text-[9px] mt-1 italic">/ Round</div>
