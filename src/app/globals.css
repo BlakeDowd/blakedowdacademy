@@ -195,12 +195,46 @@ select option {
 /* Library: Print styles for Save as PDF (lesson report) */
 /* Coach: Print styles for Player Deep Dive report */
 @media print {
-  /* 1. Global: explicitly hide nav, sidebars, Generate Report */
+  /* 1. CSS Print Reset - root elements */
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    position: static !important;
+    min-height: auto !important;
+  }
+  /* 1. Main content wrapper - NOT overflow:hidden or flex:1, display block */
+  main,
+  main:has(#lesson-pdf-content),
+  main:has(#coach-deepdive-scroll) {
+    height: auto !important;
+    overflow: visible !important;
+    min-height: auto !important;
+    display: block !important;
+    flex: none !important;
+  }
+  /* 3. Element visibility - hide sidebar, bottom nav, report button */
   .library-no-print,
   .coach-deepdive-no-print,
+  .sidebar,
+  .bottom-nav,
+  .report-button,
   footer,
   aside {
     display: none !important;
+  }
+  /* 2. Scrollable content - Library lesson player */
+  .scrollable-content,
+  div:has(#lesson-pdf-content) {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  /* Expand scroll chain when lesson is shown */
+  div:has(> main:has(#lesson-pdf-content)),
+  main:has(#lesson-pdf-content) {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: auto !important;
   }
   #lesson-pdf-content {
     padding: 0;
@@ -223,11 +257,11 @@ select option {
     color: #6b7280;
     text-align: center;
   }
-  /* 1. Global: body and main container - height auto, overflow visible */
-  html, body, main {
-    height: auto !important;
-    overflow: visible !important;
-    min-height: auto !important;
+  /* 4. Page breaks - stats cards and video player */
+  #lesson-pdf-content .lesson-video-container,
+  #lesson-pdf-content .lesson-stat-card {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
   /* 3. Scaling: slightly shrink for A4 margins */
   html, body {

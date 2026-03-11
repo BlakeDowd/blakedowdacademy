@@ -484,7 +484,7 @@ function LibraryPageContent() {
             onClick={() => setSidebarOpen(false)}
             aria-hidden="true"
           />
-          <aside className="library-no-print fixed inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-md z-[70] bg-white flex flex-col shadow-2xl transition-transform duration-300 ease-out">
+          <aside className="sidebar library-no-print fixed inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-md z-[70] bg-white flex flex-col shadow-2xl transition-transform duration-300 ease-out">
             <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100 bg-gray-50 shrink-0">
               <span className="font-bold text-gray-900 text-lg">Course Curriculum</span>
               <button
@@ -503,7 +503,7 @@ function LibraryPageContent() {
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col w-full max-w-md mx-auto relative overflow-y-auto overflow-x-hidden">
+      <main className="scrollable-content flex-1 flex flex-col w-full max-w-md mx-auto relative overflow-y-auto overflow-x-hidden">
         {!selectedModule && !isViewingLesson ? (
           /* === LIBRARY DASHBOARD === */
           <div className="w-full flex flex-col pb-24">
@@ -733,7 +733,7 @@ function LibraryPageContent() {
           /* === LESSON PLAYER === */
           <div id="lesson-pdf-content" className="relative w-full flex flex-col pb-24">
             {/* Save as PDF - FAB top-right of content */}
-            <div className="library-no-print absolute top-4 right-4 z-30">
+            <div className="report-button library-no-print absolute top-4 right-4 z-30">
               <button
                 type="button"
                 onClick={downloadPlayerReport}
@@ -751,7 +751,7 @@ function LibraryPageContent() {
             </div>
 
             {/* Video Player / Thumbnail Stage */}
-            <div className="w-full bg-black aspect-video shrink-0 shadow-md print:min-h-[120px] relative">
+            <div className="lesson-video-container w-full bg-black aspect-video shrink-0 shadow-md print:min-h-[120px] relative">
               {videoUrl ? (
                 <>
                   <iframe
@@ -792,7 +792,7 @@ function LibraryPageContent() {
               </h2>
 
               {/* Stats row for PDF */}
-              <div className="flex flex-wrap gap-3 text-xs text-gray-500 mb-4">
+              <div className="lesson-stat-card flex flex-wrap gap-3 text-xs text-gray-500 mb-4">
                 <span>+{activeLesson.xpValue} XP</span>
                 {activeLesson.duration && <span>{activeLesson.duration}</span>}
                 <span>{activeLesson.type}</span>
@@ -823,7 +823,7 @@ function LibraryPageContent() {
 
       {/* Floating Action Bar (Fixed above bottom global nav which is usually h-20/5rem) */}
       {activeLesson && (
-        <div className="library-no-print fixed bottom-[5rem] left-1/2 -translate-x-1/2 w-full max-w-md px-4 py-3 bg-white/90 backdrop-blur-md border-t border-gray-200 z-[45] shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
+        <div className="bottom-nav library-no-print fixed bottom-[5rem] left-1/2 -translate-x-1/2 w-full max-w-md px-4 py-3 bg-white/90 backdrop-blur-md border-t border-gray-200 z-[45] shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
           <div className="flex items-center gap-3">
             <button
               onClick={goPrev}
