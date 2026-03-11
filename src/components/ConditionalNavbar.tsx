@@ -6,7 +6,7 @@ import Navbar from "./Navbar";
 export default function ConditionalNavbar() {
   const pathname = usePathname();
 
-  // Only hide on login; no user/loading checks so nav persists on Vercel initial load
+  // Hide on login
   if (pathname === "/login") {
     return null;
   }

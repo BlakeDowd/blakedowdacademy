@@ -1,759 +1,813 @@
 "use client";
 
-import { useState, useEffect, Suspense, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
-import { Search, ExternalLink, Play, FileText, File, Check, ChevronDown, X, Lock, Star, MoreVertical } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Check,
+  Circle,
+  CircleDot,
+  List,
+  Target,
+  X,
+  Play,
+  FileText,
+  Video,
+  HelpCircle,
+  Search,
+} from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { useAuth } from "@/contexts/AuthContext";
 import { logActivity } from "@/lib/activity";
+import { createClient } from "@/lib/supabase/client";
 
-type DrillType = 'video' | 'text' | 'pdf';
-type SkillLevel = 'Foundation' | 'Performance' | 'Elite';
+type LessonType = "video" | "text" | "pdf" | "quiz" | "drill";
 
-interface Drill {
+interface Lesson {
   id: string;
   title: string;
-  type: DrillType;
+  type: LessonType;
   description: string;
-  source: string; // YouTube URL, PDF path, or text content
+  source: string;
+  chapter_name: string;
+  module_name: string;
   category: string;
-  mechanic?: string; // Ball Striking, Short Game, Putting, Strategy
-  practiceMode?: 'Technique' | 'Skill' | 'Performance'; // Practice mode tag
+  sort_order: number;
   duration?: string;
   xpValue: number;
-  estimatedMinutes: number;
-  level: SkillLevel;
-  accessType: 'free' | 'premium';
-  complexity: number; // 1-5 star rating
 }
 
-interface UserProgress {
-  completedDrills: string[];
-  totalXP: number;
-  totalMinutes: number;
-  drillCompletions?: { [drillId: string]: number };
+interface Chapter {
+  name: string;
+  lessons: Lesson[];
+  completedCount: number;
 }
 
-const CATEGORIES = ['All', 'Putting', 'Driving', 'Irons', 'Short Game', 'Wedge Play', 'Skills', 'On-Course', 'Mental Game'];
-const LEVELS: (SkillLevel | 'All')[] = ['All', 'Foundation', 'Performance', 'Elite'];
-const MECHANICS = ['All', 'Ball Striking', 'Short Game', 'Putting', 'Strategy'];
-const PRACTICE_MODES = ['All Modes', 'Technique', 'Skill', 'Performance'];
+interface Module {
+  name: string;
+  chapters: Chapter[];
+  lessons: Lesson[]; // flat for backward compat
+  completedCount: number;
+}
 
-const DRILLS: Drill[] = [
-  {
-    id: '1',
-    title: 'Mastering Your Short Game',
-    type: 'video',
-    description: 'Learn the fundamentals of chipping and putting with Coach Sarah Thompson.',
-    source: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    category: 'Short Game',
-    mechanic: 'Short Game',
-    practiceMode: 'Technique',
-    duration: '8:42',
-    xpValue: 50,
-    estimatedMinutes: 9,
-    level: 'Foundation',
-    accessType: 'free',
-    complexity: 2
-  },
-  {
-    id: '2',
-    title: 'Driving Range Fundamentals',
-    type: 'video',
-    description: 'Perfect your swing mechanics and increase your driving distance.',
-    source: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    category: 'Driving',
-    mechanic: 'Ball Striking',
-    practiceMode: 'Skill',
-    duration: '12:15',
-    xpValue: 75,
-    estimatedMinutes: 12,
-    level: 'Foundation',
-    accessType: 'free',
-    complexity: 2
-  },
-  {
-    id: '3',
-    title: 'Golf Course Strategy Guide',
-    type: 'pdf',
-    description: 'A comprehensive guide to course management and strategic play.',
-    source: '/sample-golf-strategy.pdf',
-    category: 'On-Course',
-    mechanic: 'Strategy',
-    practiceMode: 'Performance',
-    xpValue: 100,
-    estimatedMinutes: 20,
-    level: 'Performance',
-    accessType: 'premium',
-    complexity: 3
-  },
-  {
-    id: '4',
-    title: 'Putting Practice Routine',
-    type: 'text',
-    description: 'A detailed 30-day putting practice routine designed to improve your accuracy and consistency on the green.',
-    source: `Putting is one of the most critical aspects of golf, and consistent practice is key to improvement. This 30-day routine is designed to build muscle memory, improve your stroke, and increase your confidence on the green.
-
-**Week 1: Foundation Building**
-- Day 1-3: Focus on your putting stance and grip. Practice 50 putts from 3 feet.
-- Day 4-5: Work on your backswing and follow-through. Practice 30 putts from 5 feet.
-- Day 6-7: Combine stance, grip, and stroke. Practice 40 putts from various distances.
-
-**Week 2: Distance Control**
-- Day 8-10: Practice lag putting from 20-30 feet. Focus on getting within 3 feet of the hole.
-- Day 11-12: Work on uphill and downhill putts. Practice 25 putts of each.
-- Day 13-14: Practice breaking putts. Set up 5 different break scenarios and practice each.
-
-**Week 3: Pressure Situations**
-- Day 15-17: Practice 3-foot putts under pressure. Set a goal of making 20 in a row.
-- Day 18-19: Practice 5-foot putts with consequences (miss and start over).
-- Day 20-21: Simulate tournament conditions with various putt scenarios.
-
-**Week 4: Refinement**
-- Day 22-24: Focus on your weakest areas identified in previous weeks.
-- Day 25-26: Practice putting from various lies (uphill, downhill, sidehill).
-- Day 27-28: Full course putting practice, simulating real game scenarios.
-- Day 29-30: Review and refine your technique, focusing on consistency.
-
-Remember: Consistency is more important than perfection. Practice daily, even if it's just 15 minutes.`,
-    category: 'Putting',
-    mechanic: 'Putting',
-    practiceMode: 'Technique',
-    xpValue: 150,
-    estimatedMinutes: 30,
-    level: 'Foundation',
-    accessType: 'free',
-    complexity: 1
-  },
-  {
-    id: '5',
-    title: 'Swing Analysis Techniques',
-    type: 'video',
-    description: 'Learn how to analyze and improve your golf swing using video analysis.',
-    source: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    category: 'Skills',
-    mechanic: 'Ball Striking',
-    practiceMode: 'Skill',
-    duration: '15:30',
-    xpValue: 60,
-    estimatedMinutes: 16,
-    level: 'Performance',
-    accessType: 'free',
-    complexity: 3
-  },
-  {
-    id: '6',
-    title: 'Mental Game Workbook',
-    type: 'pdf',
-    description: 'Exercises and strategies to strengthen your mental game on the course.',
-    source: '/mental-game-workbook.pdf',
-    category: 'Mental Game',
-    mechanic: 'Strategy',
-    practiceMode: 'Performance',
-    xpValue: 80,
-    estimatedMinutes: 25,
-    level: 'Elite',
-    accessType: 'premium',
-    complexity: 4
-  },
-  {
-    id: '7',
-    title: 'Advanced Putting Techniques',
-    type: 'video',
-    description: 'Master advanced putting strategies for competitive play.',
-    source: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    category: 'Putting',
-    mechanic: 'Putting',
-    practiceMode: 'Performance',
-    duration: '18:00',
-    xpValue: 120,
-    estimatedMinutes: 18,
-    level: 'Elite',
-    accessType: 'premium',
-    complexity: 5
-  },
-  {
-    id: '8',
-    title: 'Irons Mastery Guide',
-    type: 'text',
-    description: 'Complete guide to mastering your iron shots.',
-    source: 'Learn the fundamentals of iron play...',
-    category: 'Irons',
-    mechanic: 'Ball Striking',
-    practiceMode: 'Technique',
-    xpValue: 90,
-    estimatedMinutes: 25,
-    level: 'Performance',
-    accessType: 'free',
-    complexity: 3
-  },
-  {
-    id: '9',
-    title: 'Power Driving Techniques',
-    type: 'video',
-    description: 'Increase your driving distance with advanced techniques.',
-    source: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    category: 'Driving',
-    mechanic: 'Ball Striking',
-    practiceMode: 'Skill',
-    duration: '20:00',
-    xpValue: 110,
-    estimatedMinutes: 20,
-    level: 'Elite',
-    accessType: 'premium',
-    complexity: 4
-  },
+const FALLBACK_LESSONS: Lesson[] = [
+  { id: "1", title: "Mastering Your Short Game", type: "video", description: "Learn chipping and putting.", source: "https://www.youtube.com/embed/dQw4w9WgXcQ", chapter_name: "Putting Foundations", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 1, duration: "8:42", xpValue: 50 },
+  { id: "2", title: "The Pendulum Stroke", type: "video", description: "The pendulum stroke technique.", source: "https://www.youtube.com/embed/dQw4w9WgXcQ", chapter_name: "Putting Foundations", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 2, duration: "5:20", xpValue: 30 },
+  { id: "3", title: "Putting Practice Routine", type: "drill", description: "A 30-day putting routine.", source: `Focus on stance and grip.`, chapter_name: "Chipping Basics", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 3, xpValue: 75 },
+  { id: "4", title: "Short Game Quiz", type: "quiz", description: "Test your knowledge.", source: "", chapter_name: "Chipping Basics", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 4, xpValue: 100 },
 ];
 
+const COURSE_TITLE = "Golf Fundamentals Course";
+const CATEGORIES = ["All", "Driving", "Short Game", "Putting", "Irons", "Mental"];
+const QUICK_FILTERS = ["Driving", "Short Game", "Putting"];
+const HERO_IMAGE = "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?q=80&w=1200&auto=format&fit=crop";
+
+function getThumbnailUrl(source: string) {
+  if (!source) return null;
+  if (source.includes("youtube.com/embed/")) {
+    const id = source.split("youtube.com/embed/")[1]?.split("?")[0];
+    return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
+  }
+  if (source.includes("youtu.be/")) {
+    const id = source.split("youtu.be/")[1]?.split("?")[0];
+    return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
+  }
+  if (source.includes("youtube.com/watch")) {
+    const m = source.match(/[?&]v=([^&]+)/);
+    return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
+  }
+  return null;
+}
+
+function getLessonTypeTag(type: LessonType) {
+  if (type === "video") return { label: "Video", icon: Video };
+  if (type === "quiz") return { label: "Quiz", icon: HelpCircle };
+  if (type === "drill") return { label: "Drill", icon: Target };
+  return { label: "Text", icon: FileText };
+}
+
 function LibraryPageContent() {
-
   const { user } = useAuth();
-  const searchParams = useSearchParams();
-  const [selectedDrill, setSelectedDrill] = useState<Drill | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
-  const [selectedLevel, setSelectedLevel] = useState<SkillLevel | 'All'>('All');
-  const [selectedMechanic, setSelectedMechanic] = useState<string>('All');
-  const [selectedPracticeMode, setSelectedPracticeMode] = useState<string>('All Modes');
-  const [expandedDrill, setExpandedDrill] = useState<string | null>(null);
-  const [showPaywallModal, setShowPaywallModal] = useState(false);
-  const [premiumDrill, setPremiumDrill] = useState<Drill | null>(null);
   
-  // Read URL params and set category filter
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
+  const [isViewingLesson, setIsViewingLesson] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [collapsedModules, setCollapsedModules] = useState<Set<string>>(() => new Set());
+  const [expandedChapters, setExpandedChapters] = useState<Set<string>>(() => new Set());
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
+  const [completedIds, setCompletedIds] = useState<Set<string>>(() => new Set());
+
   useEffect(() => {
-    if (typeof window === 'undefined' || !searchParams) return;
-    
-    try {
-      const categoryParam = searchParams.get('category');
-      const drillParam = searchParams.get('drill');
-      
-      if (categoryParam) {
-        setSelectedCategory(categoryParam);
-        // If a specific drill is requested, find and select it
-        if (drillParam) {
-          const drill = DRILLS.find(d => d.id === drillParam);
-          if (drill) {
-            setSelectedDrill(drill);
-            // Save recommended drill ID for Coach's Pet trophy
-            const recommendedDrills = JSON.parse(localStorage.getItem('recommendedDrills') || '[]');
-            if (!recommendedDrills.includes(drillParam)) {
-              recommendedDrills.push(drillParam);
-              localStorage.setItem('recommendedDrills', JSON.stringify(recommendedDrills));
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Error reading search params:', e);
-    }
-  }, [searchParams]);
-  
-  // Access Context: Create profile object with totalXP from useAuth
-  // Map Property: Point the display to profile?.totalXP || 0 to match the Home Dashboard
-  const profile = useMemo(() => {
-    return {
-      totalXP: user?.totalXP // Use synchronized totalXP from user object (mapped from database xp column)
-    };
-  }, [user?.totalXP]);
-
-  // Load from localStorage on mount
-  // Remove Hardcoding: Keep userProgress for drill tracking, but use profile.totalXP for display
-  const [userProgress, setUserProgress] = useState<UserProgress>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('userProgress');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return {
-          ...parsed,
-          drillCompletions: parsed.drillCompletions || {}
-        };
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem("libraryCompletedLessons");
+    if (saved) {
+      try {
+        const arr = JSON.parse(saved) as string[];
+        setCompletedIds(new Set(arr));
+      } catch {
+        // ignore
       }
     }
-    return {
-      completedDrills: [],
-      totalXP: 0, // This is used for drill tracking only, display uses profile.totalXP
-      totalMinutes: 0,
-      drillCompletions: {}
-    };
-  });
+  }, []);
 
-  // Save to localStorage whenever progress changes
+  // Fetch Lessons
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('userProgress', JSON.stringify(userProgress));
-      // Also save drill data for stats page
-      localStorage.setItem('drillsData', JSON.stringify(DRILLS));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userProgress]);
+    let cancelled = false;
+    async function fetchLessons() {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("drills")
+          .select("*")
+          .order("sort_order", { ascending: true });
 
-  const markComplete = (drillId: string) => {
-    const drill = DRILLS.find(d => d.id === drillId);
-    if (!drill) return;
-
-    setUserProgress(prev => {
-      const isAlreadyCompleted = prev.completedDrills.includes(drillId);
-      const drillCompletions = prev.drillCompletions || {};
-      
-      // Check if this is a recommended drill (from URL params or localStorage)
-      const recommendedDrills = JSON.parse(localStorage.getItem('recommendedDrills') || '[]');
-      const isRecommended = recommendedDrills.includes(drillId);
-      
-      if (isAlreadyCompleted) {
-        // Remove from completed
-        return {
-          completedDrills: prev.completedDrills.filter(id => id !== drillId),
-          totalXP: prev.totalXP - drill.xpValue,
-          totalMinutes: prev.totalMinutes - drill.estimatedMinutes,
-          drillCompletions: {
-            ...drillCompletions,
-            [drillId]: Math.max(0, (drillCompletions[drillId] || 0) - 1)
-          }
-        };
-      } else {
-        // Add to completed and increment completion count
-        // Check if this is a recommended drill (from URL params or localStorage)
-        const currentRecommended = JSON.parse(localStorage.getItem('recommendedDrills') || '[]');
-        const isRecommendedDrill = currentRecommended.includes(drillId);
-        
-        // If this is a recommended drill, ensure it's tracked
-        if (isRecommendedDrill && !currentRecommended.includes(drillId)) {
-          currentRecommended.push(drillId);
-          localStorage.setItem('recommendedDrills', JSON.stringify(currentRecommended));
+        if (cancelled) return;
+        if (error || !data || data.length === 0) {
+          setLessons(FALLBACK_LESSONS);
+        } else {
+          const mapped: Lesson[] = data.map((row: any) => {
+            const videoUrl = row.video_url || row.source || row.youtube_link || "";
+            const type = (row.type as string) || (videoUrl ? "video" : "text");
+            return {
+              id: String(row.id),
+              title: String(row.title || "Untitled"),
+              type: (type === "quiz" ? "quiz" : type === "drill" ? "drill" : type === "pdf" ? "pdf" : type === "video" ? "video" : "text") as LessonType,
+              description: String(row.description || ""),
+              source: videoUrl || String(row.description || ""),
+              chapter_name: String(row.chapter_name || row.category || "Uncategorized"),
+              module_name: String(row.module_name || row.category || "General"),
+              category: String(row.category || "General"),
+              sort_order: Number(row.sort_order ?? row.estimated_minutes ?? 0),
+              duration: row.duration ? String(row.duration) : undefined,
+              xpValue: Number(row.xp_value ?? row.xp ?? 50),
+            };
+          });
+          setLessons(mapped);
         }
-        
-        // Dispatch event to update Academy trophies
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new Event('userProgressUpdated'));
-        }
-        
-        // Log video/lesson completion
-        if (user?.id) {
-          const actionText = drill.type === 'video' ? 'Watched' : 'Completed';
-          const actionType = drill.type === 'video' ? 'video' : 'drill';
-          logActivity(user.id, actionType as any, `${actionText} ${drill.title}`);
-        }
-        
-        return {
-          completedDrills: [...prev.completedDrills, drillId],
-          totalXP: prev.totalXP + drill.xpValue,
-          totalMinutes: prev.totalMinutes + drill.estimatedMinutes,
-          drillCompletions: {
-            ...drillCompletions,
-            [drillId]: (drillCompletions[drillId] || 0) + 1
-          }
-        };
+      } catch (e) {
+        if (!cancelled) setLessons(FALLBACK_LESSONS);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
+    }
+    fetchLessons();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Filter lessons
+  const filteredLessons = useMemo(() => {
+    return lessons.filter(l => {
+      const matchesSearch = l.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            l.module_name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCat = selectedCategory === "All" || l.category === selectedCategory;
+      return matchesSearch && matchesCat;
     });
-  };
+  }, [lessons, searchQuery, selectedCategory]);
 
-  const isCompleted = (drillId: string) => userProgress.completedDrills.includes(drillId);
+  // Group flat drills into Module -> Chapter -> Lesson hierarchy using Array.reduce
+  const modules = useMemo(() => {
+    type Acc = Record<string, Record<string, Lesson[]>>;
+    const nested = filteredLessons.reduce<Acc>((acc, lesson) => {
+      const mod = lesson.module_name || "General";
+      const ch = lesson.chapter_name || "Uncategorized";
+      if (!acc[mod]) acc[mod] = {};
+      if (!acc[mod][ch]) acc[mod][ch] = [];
+      acc[mod][ch].push(lesson);
+      return acc;
+    }, {});
 
-  // Exponential Growth: Calculate level based on exponential thresholds
-  const getLevelInfo = (xp: number) => {
-    if (xp < 500) {
-      return { level: 1, xpForCurrentLevel: xp, xpNeededForNextLevel: 500, xpRemaining: 500 - xp };
-    } else if (xp < 1500) {
-      return { level: 2, xpForCurrentLevel: xp - 500, xpNeededForNextLevel: 1000, xpRemaining: 1500 - xp };
-    } else if (xp < 3000) {
-      return { level: 3, xpForCurrentLevel: xp - 1500, xpNeededForNextLevel: 1500, xpRemaining: 3000 - xp };
-    } else {
-      // Level 4+ (every 2000 XP after 3000)
-      const level4XP = xp - 3000;
-      const additionalLevels = Math.floor(level4XP / 2000);
-      const level = 4 + additionalLevels;
-      const xpInCurrentLevel = level4XP % 2000;
-      return { level, xpForCurrentLevel: xpInCurrentLevel, xpNeededForNextLevel: 2000, xpRemaining: 2000 - xpInCurrentLevel };
-    }
-  };
-
-  // Use state + useEffect to avoid hydration mismatch (user.totalXP loads client-side only)
-  const [levelDisplay, setLevelDisplay] = useState({ currentLevel: 1, totalXP: 0, levelProgress: 0 });
-  useEffect(() => {
-    const xp = user?.totalXP ?? 0;
-    const info = getLevelInfo(xp);
-    setLevelDisplay({
-      currentLevel: info.level,
-      totalXP: xp,
-      levelProgress: (info.xpForCurrentLevel / info.xpNeededForNextLevel) * 100,
+    return Object.entries(nested).map(([modName, chaptersMap]) => {
+      const chapterList = Object.entries(chaptersMap).map(([chName, chLessons]) => {
+        chLessons.sort((a, b) => a.sort_order - b.sort_order);
+        return {
+          name: chName,
+          lessons: chLessons,
+          completedCount: chLessons.filter(l => completedIds.has(l.id)).length,
+          minSort: Math.min(...chLessons.map(l => l.sort_order)),
+        };
+      });
+      const chapters: Chapter[] = chapterList
+        .sort((a, b) => a.minSort - b.minSort)
+        .map(({ minSort: _, ...ch }) => ch);
+      const lessons = chapters.flatMap(c => c.lessons);
+      const completedCount = lessons.filter(l => completedIds.has(l.id)).length;
+      return { name: modName, chapters, lessons, completedCount };
     });
-  }, [user?.totalXP]);
+  }, [filteredLessons, completedIds]);
 
-  const { currentLevel, totalXP, levelProgress } = levelDisplay;
+  // Flat list of lessons for Prev/Next
+  const flatLessons = useMemo(() => modules.flatMap(m => m.lessons), [modules]);
+  const activeLessonIndex = activeLesson ? flatLessons.findIndex(l => l.id === activeLesson.id) : -1;
 
-  const filteredDrills = DRILLS.filter(drill => {
-    // Search filter
-    const matchesSearch = 
-      drill.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      drill.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      drill.category.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    // Category filter
-    const matchesCategory = selectedCategory === 'All' || drill.category === selectedCategory;
-    
-    // Level filter
-    const matchesLevel = selectedLevel === 'All' || drill.level === selectedLevel;
-    
-    // Mechanic filter
-    const matchesMechanic = selectedMechanic === 'All' || drill.mechanic === selectedMechanic;
-    
-    // Practice Mode filter
-    const matchesPracticeMode = selectedPracticeMode === 'All Modes' || drill.practiceMode === selectedPracticeMode;
-    
-    return matchesSearch && matchesCategory && matchesLevel && matchesMechanic && matchesPracticeMode;
-  });
-
-  // Handle drill selection with premium check
-  const handleDrillClick = (drill: Drill) => {
-    if (drill.accessType === 'premium') {
-      setPremiumDrill(drill);
-      setShowPaywallModal(true);
-    } else {
-      setSelectedDrill(drill);
+  // If URL has ?drill=id, open lesson view and select that lesson
+  useEffect(() => {
+    if (flatLessons.length === 0 || typeof window === "undefined") return;
+    const drillId = new URLSearchParams(window.location.search).get("drill");
+    if (drillId) {
+      const found = flatLessons.find(l => l.id === drillId);
+      if (found) {
+        setSelectedModule(found.module_name);
+        setActiveLesson(found);
+        setIsViewingLesson(true);
+        const initialCollapsed = new Set<string>();
+        modules.forEach(m => {
+          if (m.name !== found.module_name) initialCollapsed.add(m.name);
+        });
+        setCollapsedModules(initialCollapsed);
+      }
     }
-  };
+  }, [flatLessons, modules]);
 
-  // Render complexity stars
-  const renderComplexityStars = (complexity: number) => {
-    return (
-      <div className="flex items-center gap-0.5">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <Star
-            key={star}
-            className={`w-3 h-3 ${
-              star <= complexity
-                ? 'fill-[#FFA500] text-[#FFA500]'
-                : 'fill-gray-300 text-gray-300'
-            }`}
-          />
-        ))}
-      </div>
-    );
-  };
-
-  const getLevelBadge = (level: SkillLevel) => {
-    const badges = {
-      Foundation: { letter: 'F', color: '#014421', bgColor: 'rgba(1, 68, 33, 0.1)' },
-      Performance: { letter: 'P', color: '#3B82F6', bgColor: 'rgba(59, 130, 246, 0.1)' },
-      Elite: { letter: 'E', color: '#FFA500', bgColor: 'rgba(255, 165, 0, 0.1)' }
-    };
-    return badges[level];
-  };
-
-  const getIcon = (type: DrillType) => {
-    switch (type) {
-      case 'video':
-        return <Play className="w-4 h-4" />;
-      case 'pdf':
-        return <File className="w-4 h-4" />;
-      case 'text':
-        return <FileText className="w-4 h-4" />;
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("libraryCompletedLessons", JSON.stringify(Array.from(completedIds)));
     }
-  };
+  }, [completedIds]);
 
-  const openFullscreen = () => {
-    if (selectedDrill?.type === 'pdf') {
-      window.open(selectedDrill.source, '_blank');
-    } else if (selectedDrill?.type === 'video') {
-      window.open(selectedDrill.source.replace('/embed/', '/watch?v='), '_blank');
+  const toggleModule = useCallback((name: string) => {
+    setCollapsedModules(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
+
+  const selectLesson = useCallback((lesson: Lesson) => {
+    setActiveLesson(lesson);
+    setIsViewingLesson(true);
+    setSidebarOpen(false);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("libraryLastWatchedLessonId", lesson.id);
     }
-  };
+    const mainEl = document.querySelector('main');
+    if (mainEl) mainEl.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
-  // Netflix-style drill categorization
-  const continuePracticingDrills = DRILLS.filter(d => userProgress.completedDrills.includes(d.id));
-  const row1Drills = continuePracticingDrills.length > 0 ? continuePracticingDrills : DRILLS.slice(0, 4);
-  
-  const shortGameDrills = DRILLS.filter(d => d.category === 'Short Game' || d.category === 'Putting' || d.category === 'Wedge Play' || d.mechanic === 'Short Game');
-  const longGameDrills = DRILLS.filter(d => d.category === 'Driving' || d.category === 'Irons' || d.mechanic === 'Ball Striking');
-  const strategyDrills = DRILLS.filter(d => d.category === 'Mental Game' || d.category === 'On-Course' || d.mechanic === 'Strategy');
+  const backToDashboard = useCallback(() => {
+    setIsViewingLesson(false);
+  }, []);
 
-  const heroDrill = DRILLS.find(d => d.id === '1') || DRILLS[0];
-  
-  const getThumbnailUrl = (source: string) => {
-    if (source.includes('youtube.com/embed/')) {
-      const videoId = source.split('youtube.com/embed/')[1]?.split('?')[0];
-      return videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : null;
-    } else if (source.includes('youtu.be/')) {
-      const videoId = source.split('youtu.be/')[1]?.split('?')[0];
-      return videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : null;
+  const backToModules = useCallback(() => {
+    setSelectedModule(null);
+    setExpandedChapters(new Set());
+  }, []);
+
+  const selectModule = useCallback((modName: string) => {
+    setSelectedModule(modName);
+  }, []);
+
+  const toggleChapter = useCallback((key: string) => {
+    setExpandedChapters(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const goPrev = useCallback(() => {
+    if (activeLessonIndex > 0) selectLesson(flatLessons[activeLessonIndex - 1]);
+  }, [activeLessonIndex, flatLessons, selectLesson]);
+
+  const goNext = useCallback(() => {
+    if (activeLesson) setCompletedIds(prev => new Set(prev).add(activeLesson.id));
+    if (activeLessonIndex < flatLessons.length - 1) {
+      selectLesson(flatLessons[activeLessonIndex + 1]);
     }
-    return null;
-  };
-  
-  const heroThumbnail = getThumbnailUrl(heroDrill.source) || 'https://images.unsplash.com/photo-1535136104956-6211bc6432f6?q=80&w=2000&auto=format&fit=crop';
+    if (activeLesson && user?.id) {
+      logActivity(user.id, "video", `Completed ${activeLesson.title}`);
+    }
+  }, [activeLesson, activeLessonIndex, flatLessons, user?.id, selectLesson]);
 
-  const isFiltering = searchQuery !== '' || selectedCategory !== 'All' || selectedLevel !== 'All' || selectedMechanic !== 'All' || selectedPracticeMode !== 'All Modes';
+  const progressPercent = flatLessons.length > 0
+    ? Math.round((completedIds.size / flatLessons.length) * 100)
+    : 0;
 
-  const renderNetflixCard = (drill: Drill) => {
-    const isCompletedDrill = isCompleted(drill.id);
-    const thumbnailUrl = getThumbnailUrl(drill.source);
-
-    return (
-      <div
-        key={drill.id}
-        onClick={() => handleDrillClick(drill)}
-        style={{
-          flex: '0 0 280px',
-          minWidth: '280px',
-          maxWidth: '280px',
-          scrollSnapAlign: 'start',
-          cursor: 'pointer',
-        }}
-      >
-        <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', aspectRatio: '16/9', width: '100%', backgroundColor: '#f3f4f6' }}>
-          {thumbnailUrl ? (
-            <img src={thumbnailUrl} alt={drill.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-          ) : drill.type === 'video' ? (
-            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#e5e7eb' }}>
-              <Play className="w-8 h-8 text-gray-400" />
-            </div>
-          ) : (
-            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#eff6ff' }}>
-              <FileText className="w-8 h-8 text-blue-300" />
-            </div>
-          )}
-          {isCompletedDrill && (
-            <div style={{ position: 'absolute', top: '8px', left: '8px', width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#014421', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Check className="w-3 h-3 text-white" />
-            </div>
-          )}
-          {drill.accessType === 'premium' && (
-            <div style={{ position: 'absolute', top: '8px', right: '8px', width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#FFA500', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Lock className="w-3 h-3 text-black" />
-            </div>
-          )}
-        </div>
-        <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#111827', marginTop: '8px', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>{drill.title}</h3>
-        <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{drill.category} &bull; {drill.level}</p>
-      </div>
-    );
+  const getStatusIcon = (lesson: Lesson) => {
+    const done = completedIds.has(lesson.id);
+    const active = activeLesson?.id === lesson.id;
+    if (done) return <Check className="w-4 h-4 text-[#014421]" />;
+    if (active) return <CircleDot className="w-4 h-4 text-[#FFA500]" aria-hidden="true" />;
+    return <Circle className="w-4 h-4 text-gray-300" aria-hidden="true" />;
   };
 
-  const DrillCarousel = ({ title, drills }: { title: string, drills: Drill[] }) => {
-    if (drills.length === 0) return null;
-    return (
-      <div style={{ width: '100%', marginBottom: '24px' }}>
-        <h2 style={{ padding: '12px 16px', fontWeight: 700, color: '#111827', fontSize: '14px', margin: 0 }}>{title}</h2>
-        <div
-          className="netflix-scroll-row"
-          style={{
-            display: 'flex',
-            flexDirection: 'row',
-            flexWrap: 'nowrap',
-            overflowX: 'auto',
-            overflowY: 'hidden',
-            WebkitOverflowScrolling: 'touch',
-            scrollSnapType: 'x mandatory',
-            gap: '16px',
-            padding: '0 16px 16px',
-            cursor: 'grab',
-            scrollbarWidth: 'auto',
-          } as React.CSSProperties}
-        >
-          {drills.map(renderNetflixCard)}
-        </div>
-      </div>
-    );
-  };
+  const videoUrl = (() => {
+    if (!activeLesson || activeLesson.type !== "video") return null;
+    let u = activeLesson.source || "";
+    if (u.includes("youtu.be/")) {
+      const id = u.split("youtu.be/")[1]?.split("?")[0];
+      return id ? `https://www.youtube.com/embed/${id}` : null;
+    }
+    if (u.includes("youtube.com/watch")) {
+      const m = u.match(/[?&]v=([^&]+)/);
+      return m ? `https://www.youtube.com/embed/${m[1]}` : null;
+    }
+    if (u.includes("youtube.com/embed/")) return u;
+    return u || null;
+  })();
 
-  const handleDrillComplete = (drillId: string) => {
-    markComplete(drillId);
-  };
+  const totalXP = useMemo(() => {
+    return flatLessons
+      .filter(l => completedIds.has(l.id))
+      .reduce((sum, l) => sum + l.xpValue, 0);
+  }, [flatLessons, completedIds]);
 
-  const allDrills = isFiltering ? filteredDrills : [...row1Drills, ...shortGameDrills, ...longGameDrills, ...strategyDrills];
+  const continueLesson = useMemo(() => {
+    if (typeof window === "undefined" || flatLessons.length === 0) return null;
+    const id = localStorage.getItem("libraryLastWatchedLessonId");
+    return id ? flatLessons.find(l => l.id === id) ?? flatLessons[0] : flatLessons[0];
+  }, [flatLessons]);
 
-  return (
-    <div className="flex-1 w-full max-w-md mx-auto flex flex-col bg-gray-50 min-w-0 overflow-x-hidden">
-      <style>{`
-        .netflix-scroll-row::-webkit-scrollbar {
-          height: 8px;
-          display: block;
-        }
-        .netflix-scroll-row::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .netflix-scroll-row::-webkit-scrollbar-thumb {
-          background: #ccc;
-          border-radius: 10px;
-        }
-        .netflix-scroll-row::-webkit-scrollbar-thumb:hover {
-          background: #aaa;
-        }
-      `}</style>
-
-      {/* Header */}
-      <div className="shrink-0 w-full px-4 py-3" style={{ backgroundColor: '#054d2b' }}>
-        <div className="flex items-center justify-between">
-          <span className="text-lg font-bold text-white">Library</span>
-          <div className="flex flex-col items-end gap-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-white/90">Level {currentLevel}</span>
-              <span className="text-[10px] text-white/70 font-mono">{totalXP} XP</span>
-            </div>
-            <div className="w-20 h-1 bg-white/20 rounded-full overflow-hidden">
-              <div className="h-full bg-white rounded-full transition-all duration-500" style={{ width: `${levelProgress}%` }} />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Video Player & Main Content Container */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden pb-32 min-w-0">
-        <div className="max-w-md mx-auto w-full min-w-0">
-          {selectedDrill && (
-            <div className="w-full bg-black">
-          <div className="relative w-full pb-[56.25%]">
-            <button
-              onClick={() => setSelectedDrill(null)}
-              className="absolute top-3 right-3 z-50 w-8 h-8 rounded-full bg-black/50 border-none text-white flex items-center justify-center cursor-pointer"
-            >
-              <X className="w-4.5 h-4.5" />
-            </button>
-            <iframe
-              src={selectedDrill.source}
-              className="absolute top-0 left-0 w-full h-full border-none"
-              allowFullScreen
-            />
-          </div>
-          <div className="p-4">
-            <h2 className="text-base font-bold text-white m-0">{selectedDrill.title}</h2>
-            <p className="text-xs text-gray-400 mt-1">{selectedDrill.category} &bull; {selectedDrill.level}</p>
-            <button
-              onClick={() => handleDrillComplete(selectedDrill.id)}
-              className={`mt-3 w-full py-2.5 rounded-lg font-bold text-[13px] text-white transition-colors ${isCompleted(selectedDrill.id) ? 'bg-gray-800' : 'bg-[#16a34a]'}`}
-            >
-              {isCompleted(selectedDrill.id) ? 'Completed' : 'Mark as Complete'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Search */}
-      <div className="px-4 py-3 bg-white w-full border-b border-gray-100">
-        <div className="relative">
+  const sidebarContent = (
+    <div className="flex flex-col h-full w-full">
+      {/* Filters & Search */}
+      <div className="px-4 py-3 border-b border-gray-100 bg-white shrink-0">
+        <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
-            placeholder="Search drills..."
+            placeholder="Search lessons..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 rounded-lg text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#16a34a] border-none"
-            style={{ backgroundColor: '#f3f4f6' }}
+            className="w-full pl-9 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-[#FFA500] outline-none"
           />
         </div>
-        
-        {/* YouTube-style Category Chips */}
-        <div
-          className="netflix-scroll-row"
-          style={{
-            display: 'flex',
-            flexWrap: 'nowrap',
-            overflowX: 'auto',
-            gap: '8px',
-            marginTop: '12px',
-            paddingBottom: '4px',
-            paddingRight: '40px',
-            WebkitOverflowScrolling: 'touch',
-            cursor: 'grab',
-            scrollbarWidth: 'auto',
-          } as React.CSSProperties}
-        >
-          {[
-            { label: 'All', onClick: () => { setSelectedLevel('All'); setSelectedMechanic('All'); }, active: selectedLevel === 'All' && selectedMechanic === 'All' },
-            { label: 'Break 100', onClick: () => { setSelectedLevel('Foundation'); setSelectedMechanic('All'); }, active: selectedLevel === 'Foundation' },
-            { label: 'Break 90', onClick: () => { setSelectedLevel('Performance'); setSelectedMechanic('All'); }, active: selectedLevel === 'Performance' },
-            { label: 'Break 80', onClick: () => { setSelectedLevel('Elite'); setSelectedMechanic('All'); }, active: selectedLevel === 'Elite' },
-            { label: 'Ball Striking', onClick: () => { setSelectedMechanic('Ball Striking'); setSelectedLevel('All'); }, active: selectedMechanic === 'Ball Striking' },
-            { label: 'Short Game', onClick: () => { setSelectedMechanic('Short Game'); setSelectedLevel('All'); }, active: selectedMechanic === 'Short Game' },
-            { label: 'Putting', onClick: () => { setSelectedMechanic('Putting'); setSelectedLevel('All'); }, active: selectedMechanic === 'Putting' },
-            { label: 'Strategy', onClick: () => { setSelectedMechanic('Strategy'); setSelectedLevel('All'); }, active: selectedMechanic === 'Strategy' },
-          ].map((chip) => (
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+          {CATEGORIES.map(cat => (
             <button
-              key={chip.label}
-              onClick={chip.onClick}
-              style={{
-                flexShrink: 0,
-                padding: '6px 16px',
-                borderRadius: '9999px',
-                fontSize: '12px',
-                fontWeight: 500,
-                whiteSpace: 'nowrap',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'background-color 0.15s',
-                backgroundColor: chip.active ? '#111827' : '#f3f4f6',
-                color: chip.active ? '#fff' : '#374151',
-              }}
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                selectedCategory === cat ? 'bg-[#014421] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
             >
-              {chip.label}
+              {cat}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Drill Content */}
-      <div className="w-full pb-8">
-        {isFiltering ? (
-          <div style={{ width: '100%', paddingTop: '16px' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', padding: '0 16px 16px' }}>
-              {filteredDrills.map(renderNetflixCard)}
-            </div>
-            {filteredDrills.length === 0 && (
-              <p className="text-center text-gray-400 py-12 text-sm">No drills match your search.</p>
+      {/* Lesson List: Module -> Chapter -> Lesson */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar w-full py-4">
+        {modules.map((mod) => (
+          <div key={mod.name} className="mb-2">
+            <button
+              onClick={() => toggleModule(mod.name)}
+              className="w-full flex items-center justify-between px-4 py-2.5 text-left bg-white rounded-lg border border-gray-100 shadow-sm hover:border-gray-200 transition-colors"
+            >
+              <div className="flex flex-col gap-1 min-w-0 pr-2">
+                <span className="text-sm font-bold text-gray-900 truncate">{mod.name}</span>
+                <div className="flex items-center gap-2">
+                  <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-[#FFA500]"
+                      style={{ width: `${mod.lessons.length ? Math.round((mod.completedCount / mod.lessons.length) * 100) : 0}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-gray-500 font-medium">{mod.completedCount}/{mod.lessons.length}</span>
+                </div>
+              </div>
+              {collapsedModules.has(mod.name) ? (
+                <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
+              )}
+            </button>
+            {!collapsedModules.has(mod.name) && (
+              <div className="pl-2 space-y-1">
+                {mod.chapters.map((ch) => (
+                  <div key={`${mod.name}::${ch.name}`}>
+                    <div className="px-2 py-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{ch.name}</div>
+                    {ch.lessons.map((lesson) => {
+                      const tag = getLessonTypeTag(lesson.type);
+                      const TagIcon = tag.icon;
+                      const isActive = activeLesson?.id === lesson.id;
+                      return (
+                        <button
+                          key={lesson.id}
+                          onClick={() => { setSelectedModule(mod.name); selectLesson(lesson); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-r-lg text-left transition-colors border-l-4 ${
+                            isActive ? "bg-amber-50/50 border-[#FFA500] pl-2" : "hover:bg-gray-50 border-transparent"
+                          }`}
+                        >
+                          <span className="shrink-0 flex items-center justify-center w-5">{getStatusIcon(lesson)}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className={`text-sm truncate ${isActive ? "font-bold text-gray-900" : "font-medium text-gray-700"}`}>{lesson.title}</div>
+                            <span className="inline-flex items-center gap-1 mt-0.5 text-[10px] text-gray-500">
+                              <TagIcon className="w-3 h-3" />
+                              {tag.label} +{lesson.xpValue} XP {lesson.duration && `• ${lesson.duration}`}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-        ) : (
-          <div className="w-full pt-2">
-            <DrillCarousel title="Continue Practicing" drills={row1Drills} />
-            <DrillCarousel title="Short Game Mastery" drills={shortGameDrills} />
-            <DrillCarousel title="Long Game Power" drills={longGameDrills} />
-            <DrillCarousel title="Mental &amp; Strategy" drills={strategyDrills} />
-          </div>
-        )}
+        ))}
       </div>
+    </div>
+  );
 
-      {/* Paywall Modal */}
-      {showPaywallModal && premiumDrill && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-          <div className="bg-[#111] border border-white/10 rounded-2xl max-w-[400px] w-[90%] p-6 relative">
+  return (
+    <div className="flex flex-col w-full h-full bg-gray-50 relative">
+      {loading && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-gray-50">
+          <div className="text-[#014421] font-semibold">Loading course...</div>
+        </div>
+      )}
+      {/* Header - Sticky */}
+      <header className="sticky top-0 shrink-0 z-40 w-full h-14 px-4 flex items-center justify-between bg-[#014421] text-white shadow-md">
+        <div className="flex items-center gap-3 min-w-0">
+          {isViewingLesson ? (
             <button
-              onClick={() => { setShowPaywallModal(false); setPremiumDrill(null); }}
-              className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/10 border-none text-[#aaa] cursor-pointer flex items-center justify-center"
+              onClick={backToDashboard}
+              className="flex items-center justify-center p-1.5 -ml-1 rounded-lg hover:bg-white/10 text-white"
+              aria-label="Back to Library"
             >
-              <X className="w-4 h-4" />
+              <ChevronLeft className="w-5 h-5" />
             </button>
-            <div className="text-center mb-4">
-              <div className="w-14 h-14 rounded-full bg-[#FFA500] inline-flex items-center justify-center">
-                <Lock className="w-7 h-7 text-black" />
+          ) : selectedModule ? (
+            <button
+              onClick={backToModules}
+              className="flex items-center justify-center p-1.5 -ml-1 rounded-lg hover:bg-white/10 text-white"
+              aria-label="Back to Modules"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+          ) : (
+            <div className="w-9" />
+          )}
+          <h1 className="text-base font-bold truncate">
+            {selectedModule && !isViewingLesson ? selectedModule : COURSE_TITLE}
+          </h1>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="flex items-center justify-center p-1.5 rounded-lg hover:bg-white/10 text-white"
+            aria-label="Browse full curriculum"
+          >
+            <List className="w-5 h-5" />
+          </button>
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] font-medium text-white/80">
+              {progressPercent}% Complete
+            </span>
+            <div className="w-16 h-1.5 bg-black/30 rounded-full overflow-hidden mt-0.5">
+              <div
+                className="h-full bg-[#FFA500] rounded-full transition-all duration-300"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Mobile Drawer Curriculum */}
+      {sidebarOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+          <aside className="fixed inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-md z-[70] bg-white flex flex-col shadow-2xl transition-transform duration-300 ease-out">
+            <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100 bg-gray-50 shrink-0">
+              <span className="font-bold text-gray-900 text-lg">Course Curriculum</span>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="p-2 rounded-full hover:bg-gray-200 text-gray-600 bg-white shadow-sm"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              {sidebarContent}
+            </div>
+          </aside>
+        </>
+      )}
+
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col w-full max-w-md mx-auto relative overflow-y-auto overflow-x-hidden">
+        {!selectedModule && !isViewingLesson ? (
+          /* === LIBRARY DASHBOARD === */
+          <div className="w-full flex flex-col pb-24">
+            {/* Search Bar */}
+            <div className="px-4 py-4 bg-white border-b border-gray-100 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search lessons..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3 bg-gray-50 rounded-xl text-base border-none focus:ring-2 focus:ring-[#FFA500] outline-none"
+                />
+              </div>
+              <div className="flex gap-2 mt-3 overflow-x-auto scrollbar-hide">
+                {QUICK_FILTERS.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(selectedCategory === cat ? "All" : cat)}
+                    className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ${
+                      selectedCategory === cat ? "bg-[#014421] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
               </div>
             </div>
-            <h2 className="text-xl font-extrabold text-center text-white m-0 mb-1">Premium Content</h2>
-            <p className="text-center text-[#888] mb-5 text-[13px]">{premiumDrill.title}</p>
+
+            {/* Hero Section - Logo only */}
+            <div className="relative w-full aspect-[16/9] min-h-[180px] overflow-hidden bg-gray-100 flex flex-col items-center justify-center gap-4 p-6">
+              <img src="/logo.png" alt={COURSE_TITLE} className="w-full max-w-[320px] h-20 sm:h-28 md:h-32 object-contain" />
+              {continueLesson && (
+                <button
+                  onClick={() => { setSelectedModule(continueLesson.module_name); selectLesson(continueLesson); }}
+                  className="w-full py-3 px-4 bg-[#FFA500] hover:bg-amber-500 text-black font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg transition-colors shrink-0"
+                >
+                  <Play className="w-5 h-5 fill-current" />
+                  Continue Learning
+                </button>
+              )}
+            </div>
+
+            {/* Course Stats */}
+            <div className="px-4 py-4 grid grid-cols-3 gap-3">
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-center">
+                <div className="relative w-14 h-14">
+                  <svg className="w-14 h-14 -rotate-90" viewBox="0 0 36 36">
+                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e5e7eb" strokeWidth="2.5" />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="15.9"
+                      fill="none"
+                      stroke="#FFA500"
+                      strokeWidth="2.5"
+                      strokeDasharray={`${progressPercent} 100`}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-gray-900">{progressPercent}%</span>
+                </div>
+                <span className="text-[10px] font-medium text-gray-500 mt-1">Complete</span>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-center justify-center">
+                <span className="text-xl font-bold text-gray-900">{completedIds.size}</span>
+                <span className="text-[10px] font-medium text-gray-500">/ {flatLessons.length}</span>
+                <span className="text-[10px] font-medium text-gray-500 mt-0.5">Lessons Watched</span>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-center justify-center">
+                <span className="text-xl font-bold text-[#014421]">{totalXP}</span>
+                <span className="text-[10px] font-medium text-gray-500 mt-0.5">XP Earned</span>
+              </div>
+            </div>
+
+            {/* Module Cards - Click to open Deep-Dive */}
+            <div className="px-4 pb-8">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-bold text-gray-900">Course Contents</h3>
+                {(searchQuery || selectedCategory !== "All") && (
+                  <button
+                    type="button"
+                    onClick={() => { setSearchQuery(""); setSelectedCategory("All"); }}
+                    className="text-sm font-medium text-[#014421] hover:underline"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+              {modules.length === 0 ? (
+                <div className="py-12 text-center bg-white rounded-xl border border-gray-100">
+                  <Search className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                  <p className="text-gray-600 text-sm font-medium">No lessons match your search</p>
+                  <p className="text-gray-500 text-xs mt-1">Try different keywords or clear filters to see all modules</p>
+                  <button
+                    type="button"
+                    onClick={() => { setSearchQuery(""); setSelectedCategory("All"); }}
+                    className="mt-3 px-4 py-2 rounded-lg bg-[#014421] text-white text-sm font-semibold hover:opacity-90"
+                  >
+                    Show all
+                  </button>
+                </div>
+              ) : (
+              <div className="flex flex-col gap-3">
+                {modules.map(mod => {
+                  const firstLesson = mod.lessons.find(l => l.type === "video") || mod.lessons[0];
+                  const thumbUrl = firstLesson && firstLesson.type === "video"
+                    ? getThumbnailUrl(firstLesson.source)
+                    : HERO_IMAGE;
+                  const chapterCount = mod.chapters.length;
+                  return (
+                    <button
+                      key={mod.name}
+                      type="button"
+                      onClick={() => selectModule(mod.name)}
+                      className="w-full bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100 text-left hover:border-gray-200 transition-colors"
+                    >
+                      <div className="flex">
+                        <div className="w-24 h-20 shrink-0 bg-gray-200 overflow-hidden">
+                          {thumbUrl ? (
+                            <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                              <Play className="w-6 h-6 text-gray-400" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 p-3 flex flex-col justify-center min-w-0">
+                          <span className="text-sm font-bold text-gray-900 truncate block">{mod.name}</span>
+                          <span className="text-xs text-gray-500">{mod.lessons.length} Lessons | {chapterCount} Chapter{chapterCount !== 1 ? "s" : ""}</span>
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-[#FFA500] rounded-full"
+                                style={{ width: `${mod.lessons.length ? Math.round((mod.completedCount / mod.lessons.length) * 100) : 0}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] font-medium text-gray-500">{mod.completedCount}/{mod.lessons.length}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center pr-3">
+                          <ChevronRight className="w-5 h-5 text-gray-400" />
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              )}
+            </div>
+          </div>
+        ) : selectedModule && !isViewingLesson ? (
+          /* === DEEP-DIVE: Chapters & Lessons === */
+          (() => {
+            const mod = modules.find(m => m.name === selectedModule);
+            if (!mod) return null;
+            return (
+              <div className="w-full flex flex-col pb-24">
+                <div className="px-4 py-4 bg-white border-b border-gray-100 shrink-0">
+                  <h2 className="text-lg font-bold text-gray-900">{mod.name}</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">{mod.lessons.length} lessons in {mod.chapters.length} chapter{mod.chapters.length !== 1 ? "s" : ""}</p>
+                </div>
+                <div className="flex-1 px-4 py-4">
+                  {mod.chapters.map(ch => {
+                    const chKey = `${mod.name}::${ch.name}`;
+                    const isExpanded = expandedChapters.has(chKey);
+                    return (
+                      <div key={chKey} className="mb-4 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => toggleChapter(chKey)}
+                          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50/50 transition-colors"
+                        >
+                          <span className="text-sm font-bold text-gray-900">{ch.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-500">{ch.completedCount}/{ch.lessons.length}</span>
+                            {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                          </div>
+                        </button>
+                        {isExpanded && (
+                          <div className="border-t border-gray-100 pl-4">
+                            {ch.lessons.map((lesson, idx) => {
+                              const tag = getLessonTypeTag(lesson.type);
+                              const TagIcon = tag.icon;
+                              const done = completedIds.has(lesson.id);
+                              const isActive = activeLesson?.id === lesson.id;
+                              const isLast = idx === ch.lessons.length - 1;
+                              return (
+                                <div key={lesson.id} className="relative flex">
+                                  <div className="relative flex flex-col items-center pr-3">
+                                    <div className={`absolute top-5 left-[9px] w-0.5 bg-gray-200 ${isLast ? "h-0" : "h-[calc(100%+8px)]"}`} aria-hidden />
+                                    <span className="relative z-10 shrink-0 w-5 h-5 flex items-center justify-center mt-2.5">
+                                      {done ? <Check className="w-4 h-4 text-[#014421]" /> : <Circle className="w-4 h-4 text-gray-300" />}
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => selectLesson(lesson)}
+                                    className={`flex-1 flex flex-col sm:flex-row sm:items-center gap-2 py-3 pr-4 text-left border-b border-gray-50 last:border-b-0 hover:bg-gray-50/50 transition-colors ${isActive ? "bg-amber-50/50" : ""}`}
+                                  >
+                                    <div className="flex-1 min-w-0">
+                                      <span className={`text-sm block truncate ${isActive ? "font-bold text-gray-900" : "font-medium text-gray-700"}`}>{lesson.title}</span>
+                                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 text-[10px] font-medium text-gray-600">
+                                          <TagIcon className="w-3 h-3" />
+                                          {tag.label}
+                                        </span>
+                                        <span className="text-[10px] font-semibold text-[#014421]">+{lesson.xpValue} XP</span>
+                                        {lesson.duration && <span className="text-[10px] text-gray-500">{lesson.duration}</span>}
+                                      </div>
+                                    </div>
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()
+        ) : activeLesson ? (
+          /* === LESSON PLAYER === */
+          <div className="w-full flex flex-col pb-24">
+            {/* Video Player Stage */}
+            <div className="w-full bg-black aspect-video shrink-0 shadow-md">
+              {videoUrl ? (
+                <iframe
+                  src={videoUrl}
+                  className="w-full h-full border-0"
+                  allowFullScreen
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  title={activeLesson.title}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gray-900">
+                  {activeLesson.type === "quiz" ? (
+                    <HelpCircle className="w-12 h-12 text-gray-600" />
+                  ) : (
+                    <FileText className="w-12 h-12 text-gray-600" />
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Content Body */}
+            <div className="flex-1 bg-white px-5 py-6">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 text-[#FFA500] text-[10px] font-bold uppercase tracking-wider mb-3">
+                {activeLesson.type === "video" && <Play className="w-3 h-3" />}
+                {activeLesson.type === "text" && <FileText className="w-3 h-3" />}
+                {activeLesson.type === "quiz" && <HelpCircle className="w-3 h-3" />}
+                {activeLesson.type === "drill" && <Target className="w-3 h-3" />}
+                {activeLesson.type === "pdf" && <FileText className="w-3 h-3" />}
+                {activeLesson.type} Lesson
+              </div>
+              
+              <h2 className="text-2xl font-black text-gray-900 mb-2 leading-tight">
+                {activeLesson.title}
+              </h2>
+              
+              <div className="w-full h-px bg-gray-100 my-4" />
+
+              {activeLesson.description && (
+                <div className="prose prose-sm max-w-none text-gray-600 leading-relaxed [&>p]:mb-4">
+                  <ReactMarkdown>{activeLesson.description}</ReactMarkdown>
+                </div>
+              )}
+              
+              {activeLesson.type === "text" && activeLesson.source && (
+                <div className="mt-4 prose prose-sm max-w-none text-gray-800 leading-relaxed [&>p]:mb-4">
+                  <ReactMarkdown>{activeLesson.source}</ReactMarkdown>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </main>
+
+      {/* Floating Action Bar (Fixed above bottom global nav which is usually h-20/5rem) */}
+      {activeLesson && (
+        <div className="fixed bottom-[5rem] left-1/2 -translate-x-1/2 w-full max-w-md px-4 py-3 bg-white/90 backdrop-blur-md border-t border-gray-200 z-[45] shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
+          <div className="flex items-center gap-3">
             <button
-              onClick={() => { setShowPaywallModal(false); setPremiumDrill(null); }}
-              className="w-full py-3 rounded-lg border-none font-bold text-sm cursor-pointer bg-[#FFA500] text-black mb-2"
+              onClick={goPrev}
+              disabled={activeLessonIndex === 0}
+              className="flex-[0.4] py-3 px-2 rounded-xl font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm text-center flex items-center justify-center gap-1"
             >
-              Upgrade to Premium
+              Previous
             </button>
             <button
-              onClick={() => { setShowPaywallModal(false); setPremiumDrill(null); }}
-              className="w-full py-3 rounded-lg border-none font-medium text-sm cursor-pointer bg-white/10 text-white"
+              onClick={goNext}
+              className="flex-[0.6] py-3 px-2 rounded-xl font-bold text-white bg-[#FFA500] shadow-[0_4px_14px_rgba(255,165,0,0.3)] hover:opacity-90 transition-opacity text-sm text-center flex items-center justify-center gap-1"
             >
-              Maybe Later
+              {activeLessonIndex < flatLessons.length - 1
+                ? "Next Lesson"
+                : "Complete Course"}
             </button>
           </div>
         </div>
       )}
-        </div>
-      </div>
     </div>
   );
 }
 
 export default function LibraryPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-[#050505] flex items-center justify-center text-[#FFA500] font-bold">Loading...</div>}>
-      <LibraryPageContent />
-    </Suspense>
-  );
+  return <LibraryPageContent />;
 }
-
