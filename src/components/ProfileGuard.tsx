@@ -17,7 +17,7 @@ export default function ProfileGuard({ children }: { children: React.ReactNode }
     if (!isAuthenticated || !user) return;
 
     // Paths that don't require a complete profile
-    const allowedPaths = ["/login", "/finish-profile", "/auth/signout"];
+    const allowedPaths = ["/login", "/finish-profile", "/auth/signout", "/reset-password"];
     if (allowedPaths.includes(pathname)) return;
 
     // Check if profile is incomplete

@@ -237,7 +237,6 @@ export default function StatsPage() {
   const [skillAssessmentFilter, setSkillAssessmentFilter] = useState<'WEEK' | 'MONTH' | 'ALL'>('ALL');
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   
   // Safety Net Mock Data
   const safetyNetData: {val: number, date: string}[] = [
@@ -680,104 +679,6 @@ export default function StatsPage() {
     };
   }, [personalPractice, skillAssessmentFilter]);
 
-  const handleGenerateReport = async () => {
-    if (!user) return;
-    setIsGeneratingPDF(true);
-    try {
-      // 1. Prepare Rounds Data (latest 10 rounds)
-      const sortedRounds = [...safeRounds].sort((a, b) => 
-        new Date(b.date || b.created_at || 0).getTime() - new Date(a.date || a.created_at || 0).getTime()
-      );
-      
-      const pdfRounds = sortedRounds.slice(0, 10).map((r: any, idx) => {
-        const totalHoles = r.holes || 18;
-        const girPercent = totalHoles > 0 ? ((r.totalGir || 0) / totalHoles) * 100 : 0;
-        
-        let displayDate = `Round ${idx + 1}`;
-        if (r.date || r.created_at) {
-          const d = new Date(r.date || r.created_at);
-          displayDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        }
-        
-        return {
-          date: displayDate,
-          score: r.score || 0,
-          girPercent,
-          putts: r.totalPutts || 0,
-        };
-      });
-
-      // 2. Prepare Practice Data (matches radar chart order)
-      const practiceData = [
-        { category: 'Mental/Strategy', minutes: practiceAllocationData.mentalStrategy },
-        { category: 'Short Game', minutes: practiceAllocationData.chipping + practiceAllocationData.bunkers },
-        { category: 'Putting', minutes: practiceAllocationData.putting },
-        { category: 'Approach', minutes: practiceAllocationData.irons + practiceAllocationData.wedges },
-        { category: 'Driving', minutes: practiceAllocationData.driving },
-        { category: 'On-Course', minutes: practiceAllocationData.onCourse },
-      ];
-
-      // 3. Prepare Trends
-      const trends = [];
-      if (sortedRounds.length >= 5) {
-        const last5 = sortedRounds.slice(0, 5);
-        const prev5 = sortedRounds.slice(5, 10);
-        
-        if (prev5.length > 0) {
-          // GIR Trend
-          const last5GIR = last5.reduce((sum, r) => sum + (r.totalGir || 0) / (r.holes || 18), 0) / last5.length * 100;
-          const prev5GIR = prev5.reduce((sum, r) => sum + (r.totalGir || 0) / (r.holes || 18), 0) / prev5.length * 100;
-          const girDiff = last5GIR - prev5GIR;
-          if (Math.abs(girDiff) >= 1) {
-            trends.push({ text: `GIR has ${girDiff > 0 ? 'increased' : 'decreased'} by ${Math.abs(girDiff).toFixed(1)}% over the last 5 rounds compared to the previous ${prev5.length}.` });
-          }
-
-          // Putts Trend
-          const last5Putts = last5.reduce((sum, r) => sum + (r.totalPutts || 0), 0) / last5.length;
-          const prev5Putts = prev5.reduce((sum, r) => sum + (r.totalPutts || 0), 0) / prev5.length;
-          const puttsDiff = last5Putts - prev5Putts;
-          if (Math.abs(puttsDiff) >= 0.5) {
-            trends.push({ text: `Putting average has ${puttsDiff < 0 ? 'improved' : 'worsened'} by ${Math.abs(puttsDiff).toFixed(1)} putts over the last 5 rounds.` });
-          }
-        }
-      }
-      
-      if (trends.length === 0) {
-        trends.push({ text: 'Not enough comparable round data to generate trends.' });
-      }
-
-      // 4. Generate PDF
-      const { pdf } = await import('@react-pdf/renderer');
-      const { StudentReportPDF } = await import('@/components/StudentReportPDF');
-      
-      const studentName = user.fullName || user.email.split('@')[0];
-      const blob = await pdf(
-        <StudentReportPDF 
-          studentName={studentName}
-          rounds={pdfRounds}
-          practiceData={practiceData}
-          trends={trends}
-        />
-      ).toBlob();
-
-      // 5. Trigger Download
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${studentName.replace(/\s+/g, '_')}_Golf_Report.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      alert('Failed to generate report. Please try again.');
-    } finally {
-      setIsGeneratingPDF(false);
-    }
-  };
-
   // ============================================
   // NOW WE CAN DO CONDITIONAL RETURNS
   // ============================================
@@ -809,17 +710,6 @@ export default function StatsPage() {
               </p>
             )}
           </div>
-          {/* Generate Report Button */}
-          <button
-            onClick={handleGenerateReport}
-            disabled={isGeneratingPDF}
-            className={`shrink-0 px-3 py-2 rounded-lg border-2 border-white text-white text-xs font-semibold transition-all whitespace-nowrap ${
-              isGeneratingPDF ? 'opacity-70 cursor-not-allowed' : 'hover:bg-white/10'
-            }`}
-            style={{ backgroundColor: '#05412B' }}
-          >
-            {isGeneratingPDF ? 'Generating...' : 'Generate Report'}
-          </button>
         </div>
         
         {/* Stat Slider */}

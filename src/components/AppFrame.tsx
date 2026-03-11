@@ -25,7 +25,7 @@ export default function AppFrame({
         >
           {children}
         </main>
-        <footer className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-50">
+        <footer className="print:hidden fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-50">
           <ConditionalNavbar />
         </footer>
       </div>

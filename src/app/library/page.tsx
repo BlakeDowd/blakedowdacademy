@@ -324,6 +324,10 @@ function LibraryPageContent() {
     return id ? flatLessons.find(l => l.id === id) ?? flatLessons[0] : flatLessons[0];
   }, [flatLessons]);
 
+  const downloadPlayerReport = useCallback(() => {
+    window.print();
+  }, []);
+
   const sidebarContent = (
     <div className="flex flex-col h-full w-full">
       {/* Filters & Search */}
@@ -425,7 +429,7 @@ function LibraryPageContent() {
         </div>
       )}
       {/* Header - Sticky */}
-      <header className="sticky top-0 shrink-0 z-40 w-full h-14 px-4 flex items-center justify-between bg-[#014421] text-white shadow-md">
+      <header className="library-no-print sticky top-0 shrink-0 z-40 w-full h-14 px-4 flex items-center justify-between bg-[#014421] text-white shadow-md">
         <div className="flex items-center gap-3 min-w-0">
           {isViewingLesson ? (
             <button
@@ -476,11 +480,11 @@ function LibraryPageContent() {
       {sidebarOpen && (
         <>
           <div
-            className="fixed inset-0 z-[60] bg-black/60"
+            className="library-no-print fixed inset-0 z-[60] bg-black/60"
             onClick={() => setSidebarOpen(false)}
             aria-hidden="true"
           />
-          <aside className="fixed inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-md z-[70] bg-white flex flex-col shadow-2xl transition-transform duration-300 ease-out">
+          <aside className="library-no-print fixed inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-md z-[70] bg-white flex flex-col shadow-2xl transition-transform duration-300 ease-out">
             <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100 bg-gray-50 shrink-0">
               <span className="font-bold text-gray-900 text-lg">Course Curriculum</span>
               <button
@@ -727,17 +731,40 @@ function LibraryPageContent() {
           })()
         ) : activeLesson ? (
           /* === LESSON PLAYER === */
-          <div className="w-full flex flex-col pb-24">
-            {/* Video Player Stage */}
-            <div className="w-full bg-black aspect-video shrink-0 shadow-md">
+          <div id="lesson-pdf-content" className="relative w-full flex flex-col pb-24">
+            {/* Save as PDF - FAB top-right of content */}
+            <div className="library-no-print absolute top-4 right-4 z-30">
+              <button
+                type="button"
+                onClick={downloadPlayerReport}
+                className="flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-lg border-2 border-gray-200 bg-white/95 backdrop-blur-sm text-gray-700 hover:bg-gray-50 hover:border-[#014421] transition-colors shadow-sm text-sm font-semibold"
+                aria-label="Save as PDF"
+              >
+                <FileText className="w-4 h-4" />
+                Save as PDF
+              </button>
+            </div>
+
+            {/* Print-only header */}
+            <div className="lesson-print-header hidden print:block">
+              Player Report — {activeLesson.title}
+            </div>
+
+            {/* Video Player / Thumbnail Stage */}
+            <div className="w-full bg-black aspect-video shrink-0 shadow-md print:min-h-[120px] relative">
               {videoUrl ? (
-                <iframe
-                  src={videoUrl}
-                  className="w-full h-full border-0"
-                  allowFullScreen
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  title={activeLesson.title}
-                />
+                <>
+                  <iframe
+                    src={videoUrl}
+                    className="w-full h-full border-0 print:hidden"
+                    allowFullScreen
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    title={activeLesson.title}
+                  />
+                  <div className="hidden print:block absolute inset-0 min-h-[120px] bg-gray-800 flex items-center justify-center text-gray-400 text-sm">
+                    [Video: {activeLesson.title}]
+                  </div>
+                </>
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-gray-900">
                   {activeLesson.type === "quiz" ? (
@@ -750,7 +777,7 @@ function LibraryPageContent() {
             </div>
 
             {/* Content Body */}
-            <div className="flex-1 bg-white px-5 py-6">
+            <div className="flex-1 bg-white px-5 py-6 relative">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 text-[#FFA500] text-[10px] font-bold uppercase tracking-wider mb-3">
                 {activeLesson.type === "video" && <Play className="w-3 h-3" />}
                 {activeLesson.type === "text" && <FileText className="w-3 h-3" />}
@@ -763,6 +790,13 @@ function LibraryPageContent() {
               <h2 className="text-2xl font-black text-gray-900 mb-2 leading-tight">
                 {activeLesson.title}
               </h2>
+
+              {/* Stats row for PDF */}
+              <div className="flex flex-wrap gap-3 text-xs text-gray-500 mb-4">
+                <span>+{activeLesson.xpValue} XP</span>
+                {activeLesson.duration && <span>{activeLesson.duration}</span>}
+                <span>{activeLesson.type}</span>
+              </div>
               
               <div className="w-full h-px bg-gray-100 my-4" />
 
@@ -777,6 +811,11 @@ function LibraryPageContent() {
                   <ReactMarkdown>{activeLesson.source}</ReactMarkdown>
                 </div>
               )}
+
+              {/* Print-only footer */}
+              <div className="lesson-print-footer hidden print:block">
+                Blake Dowd Golf — blakedowdgolf.com
+              </div>
             </div>
           </div>
         ) : null}
@@ -784,7 +823,7 @@ function LibraryPageContent() {
 
       {/* Floating Action Bar (Fixed above bottom global nav which is usually h-20/5rem) */}
       {activeLesson && (
-        <div className="fixed bottom-[5rem] left-1/2 -translate-x-1/2 w-full max-w-md px-4 py-3 bg-white/90 backdrop-blur-md border-t border-gray-200 z-[45] shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
+        <div className="library-no-print fixed bottom-[5rem] left-1/2 -translate-x-1/2 w-full max-w-md px-4 py-3 bg-white/90 backdrop-blur-md border-t border-gray-200 z-[45] shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
           <div className="flex items-center gap-3">
             <button
               onClick={goPrev}

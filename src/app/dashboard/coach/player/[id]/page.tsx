@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
-import { ArrowLeft, Sparkles, Loader2, Target, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
+import { ArrowLeft, Sparkles, Loader2, Target, ArrowUpRight, ArrowDownRight, Minus, FileText } from "lucide-react";
 import { getBenchmarkGoals } from "@/app/stats/page";
 
 class CoachDeepDiveErrorBoundary extends Component<
@@ -632,18 +632,31 @@ export default function PlayerDeepDivePage() {
     );
   }
 
+  const downloadPlayerReport = () => window.print();
+
   return (
     <CoachDeepDiveErrorBoundary>
     <div className="w-full max-w-md mx-auto min-w-0 flex flex-col bg-gray-50 overflow-x-hidden">
       {/* Header */}
-      <header className="shrink-0 w-full bg-[#014421] text-white pt-3 pb-4 px-4">
-        <Link
-          href="/dashboard/coach"
-          className="inline-flex items-center text-green-100 hover:text-white mb-2 transition-colors text-sm min-w-0 truncate"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2 shrink-0" />
-          Back to Coach Dashboard
-        </Link>
+      <header className="coach-deepdive-no-print shrink-0 w-full bg-[#014421] text-white pt-3 pb-4 px-4">
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <Link
+            href="/dashboard/coach"
+            className="inline-flex items-center text-green-100 hover:text-white transition-colors text-sm min-w-0 truncate"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2 shrink-0" />
+            Back to Coach Dashboard
+          </Link>
+          <button
+            type="button"
+            onClick={downloadPlayerReport}
+            className="shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-white/50 bg-white/10 text-white hover:bg-white/20 transition-colors text-xs font-semibold"
+            aria-label="Generate Report"
+          >
+            <FileText className="w-4 h-4" />
+            Generate Report
+          </button>
+        </div>
         <h1 className="text-lg font-bold truncate min-w-0 mb-3">
           {playerName || "Player"} — Deep Dive
         </h1>
@@ -674,7 +687,11 @@ export default function PlayerDeepDivePage() {
       </header>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
-        <div className="w-full min-w-0">
+        <div className="w-full min-w-0" id="coach-deepdive-pdf-content">
+          {/* Print-only header */}
+          <div className="hidden print:block text-sm font-bold text-gray-900 mb-4 pb-2 border-b border-gray-200">
+            Player Report — {playerName || "Player"}
+          </div>
         {error && (
           <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6">
             {error}
@@ -1112,6 +1129,10 @@ export default function PlayerDeepDivePage() {
             </div>
           )}
         </div>
+          {/* Print-only footer */}
+          <div className="hidden print:block mt-8 pt-4 border-t border-gray-200 text-center text-xs text-gray-500">
+            Blake Dowd Golf — blakedowdgolf.com
+          </div>
         </div>
       </div>
     </div>

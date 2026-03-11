@@ -133,15 +133,10 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       console.log('StatsContext: Query - fetching ALL rounds (no user_id filter, no profile join)');
 
       if (error) {
-        // Set the Guard: Inside the if (error) block (line 100), add hasAttemptedFetch.current = true; before the console error
         hasAttemptedFetch.current = true;
-        console.error('StatsContext: Error loading rounds from database:', error);
-        console.error('StatsContext: Error details:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
+        const err = error as { message?: string; code?: string; details?: string };
+        const errMsg = err?.message ?? err?.details ?? (typeof error === 'object' && Object.keys(error as object).length > 0 ? JSON.stringify(error) : 'Failed to load rounds (check RLS policies for rounds table)');
+        console.error('StatsContext: Error loading rounds:', errMsg, err?.code ? `(code: ${err.code})` : '');
         // Safe Fallback: If an error occurs, set setRounds([]) so the rest of the app doesn't stay 'loading' forever
         setRounds([]);
         // Set Guard on Error: Inside the if (error) block (line 100), add roundsFetched.current = true;. This stops the console from spamming errors and freezing the CPU.
@@ -238,9 +233,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       roundsFetched.current = true;
       hasAttemptedFetch.current = true;
     } catch (error) {
-      // Silent Errors: Modify the data fetch so it simply returns an empty array [] on error instead of throwing
-      console.error('StatsContext: Error loading rounds from database:', error);
-      console.error('StatsContext: Returning empty array to prevent UI freeze');
+      const errMsg = error instanceof Error ? error.message : (error as { message?: string })?.message ?? JSON.stringify(error);
+      console.error('StatsContext: Error loading rounds:', errMsg);
       // Safe Fallback: If an error occurs, set setRounds([]) so the rest of the app doesn't stay 'loading' forever
       setRounds([]);
       // Set Guard on Error: Even if there is an error, set roundsFetched.current = true;. This prevents the app from DDoS-ing the database when a request fails.

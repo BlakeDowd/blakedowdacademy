@@ -191,3 +191,37 @@ select option {
   overflow-wrap: break-word !important;
   white-space: normal !important;
 }
+
+/* Library: Print styles for Save as PDF (lesson report) */
+/* Coach: Print styles for Player Deep Dive report */
+@media print {
+  .library-no-print,
+  .coach-deepdive-no-print {
+    display: none !important;
+  }
+  #lesson-pdf-content {
+    padding: 0;
+    margin: 0;
+    max-width: 100%;
+  }
+  #lesson-pdf-content .lesson-print-header {
+    font-size: 14px;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  #lesson-pdf-content .lesson-print-footer {
+    margin-top: 24px;
+    padding-top: 12px;
+    border-top: 1px solid #e5e7eb;
+    font-size: 11px;
+    color: #6b7280;
+    text-align: center;
+  }
+  @page {
+    size: A4;
+    margin: 16mm;
+  }
+}
