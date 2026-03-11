@@ -36,7 +36,12 @@ interface AttemptCounts {
   putts: number;
 }
 
+/** Optional: pass your real drill list (e.g. from Supabase / Library). If omitted, falls back to static DRILLS. */
+export type DrillOption = { id: string; title: string; category: string };
+
 interface AIPlayerInsightsProps {
+  /** When provided, recommendations use this list instead of the static drill list */
+  drills?: DrillOption[] | null;
   performanceMetrics: {
     firPercent: number;
     girPercent: number;
@@ -79,10 +84,14 @@ const DRILL_CATEGORY_MAP: Record<string, string[]> = {
   'Mental':     ['Mental Game', 'Strategy'],
 };
 
-function findDrillForCategory(drillCategory: string): typeof DRILLS[number] | null {
+function findDrillForCategory(
+  drillCategory: string,
+  drillList: DrillOption[] | null | undefined
+): DrillOption | null {
   const searchCategories = DRILL_CATEGORY_MAP[drillCategory] || [drillCategory];
-  const matches = DRILLS.filter(d =>
-    searchCategories.some(cat => d.category.toLowerCase() === cat.toLowerCase())
+  const list = drillList && drillList.length > 0 ? drillList : DRILLS.map(d => ({ id: d.id, title: d.title, category: d.category }));
+  const matches = list.filter(d =>
+    searchCategories.some(cat => (d.category || '').toLowerCase().includes(cat.toLowerCase()))
   );
   if (matches.length > 0) {
     const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
@@ -91,7 +100,7 @@ function findDrillForCategory(drillCategory: string): typeof DRILLS[number] | nu
   return null;
 }
 
-export function AIPlayerInsights({ performanceMetrics, goals, roundCount = -1 }: AIPlayerInsightsProps) {
+export function AIPlayerInsights({ drills: drillsProp, performanceMetrics, goals, roundCount = -1 }: AIPlayerInsightsProps) {
   const hasData = roundCount > 0 || (roundCount === -1 && Object.entries(performanceMetrics).some(([k, v]) => k !== '_attempts' && (v as number) > 0));
 
   const { weaknesses, identityItems, noDataMetrics } = useMemo(() => {
@@ -226,7 +235,7 @@ export function AIPlayerInsights({ performanceMetrics, goals, roundCount = -1 }:
           {weaknesses.length > 0 ? (
             <div className="grid gap-3">
               {weaknesses.map((w, idx) => {
-                const drill = findDrillForCategory(w.drillCategory);
+                const drill = findDrillForCategory(w.drillCategory, drillsProp);
                 return (
                   <div key={idx} className="bg-white/5 rounded-2xl p-4 border border-white/10">
                     <div className="flex justify-between items-start mb-2">

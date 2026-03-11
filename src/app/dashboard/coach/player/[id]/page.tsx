@@ -686,11 +686,11 @@ export default function PlayerDeepDivePage() {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
+      <div id="coach-deepdive-scroll" className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
         <div className="w-full min-w-0" id="coach-deepdive-pdf-content">
           {/* Print-only header */}
           <div className="hidden print:block text-sm font-bold text-gray-900 mb-4 pb-2 border-b border-gray-200">
-            Player Report — {playerName || "Player"}
+            Player Report — {playerName || "Player"} ({dateRange.start} to {dateRange.end})
           </div>
         {error && (
           <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6">
@@ -1111,7 +1111,7 @@ export default function PlayerDeepDivePage() {
           <button
             onClick={generateAIAnalysis}
             disabled={isGeneratingAi}
-            className="w-full py-3 bg-[#014421] hover:bg-[#013320] text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all disabled:opacity-50"
+            className="print:hidden w-full py-3 bg-[#014421] hover:bg-[#013320] text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all disabled:opacity-50"
           >
             {isGeneratingAi ? "Processing..." : "Generate Deep Analysis"}
           </button>

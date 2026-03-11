@@ -2314,7 +2314,7 @@ export default function PracticePage() {
         )}
 
         {/* AI Player Insights */}
-        <AIPlayerInsights performanceMetrics={performanceMetrics} goals={goals} roundCount={myRounds.length} />
+        <AIPlayerInsights drills={drills} performanceMetrics={performanceMetrics} goals={goals} roundCount={myRounds.length} />
 
         {/* Log Freestyle Practice Section */}
         <div className="mb-6">

@@ -220,6 +220,45 @@ select option {
     color: #6b7280;
     text-align: center;
   }
+  /* Coach Deep Dive: print full page of content - expand scroll container and ancestors */
+  html, body {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: auto !important;
+  }
+  /* Unconstrain flex/scroll chain so all content prints */
+  div:has(> div:has(> main:has(#coach-deepdive-scroll))),
+  div:has(> main:has(#coach-deepdive-scroll)),
+  main:has(#coach-deepdive-scroll) {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: auto !important;
+  }
+  #coach-deepdive-scroll,
+  #coach-deepdive-scroll * {
+    overflow: visible !important;
+  }
+  #coach-deepdive-scroll {
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    padding-bottom: 0 !important;
+  }
+  #coach-deepdive-pdf-content {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: auto !important;
+  }
+  /* Ensure dark/colored cards print with background */
+  #coach-deepdive-pdf-content * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  /* Allow sections to flow across pages; avoid breaking within cards */
+  #coach-deepdive-pdf-content > div {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   @page {
     size: A4;
     margin: 16mm;
