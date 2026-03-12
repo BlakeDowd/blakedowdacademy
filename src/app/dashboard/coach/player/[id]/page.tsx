@@ -636,7 +636,7 @@ export default function PlayerDeepDivePage() {
 
   return (
     <CoachDeepDiveErrorBoundary>
-    <div className="w-full max-w-md mx-auto min-w-0 flex flex-col bg-gray-50 overflow-x-hidden">
+    <div className="coach-deepdive-root w-full max-w-md mx-auto min-w-0 flex flex-col bg-gray-50 overflow-x-hidden">
       {/* Header */}
       <header className="coach-deepdive-no-print shrink-0 w-full bg-[#014421] text-white pt-3 pb-4 px-4">
         <div className="flex items-start justify-between gap-2 mb-2">

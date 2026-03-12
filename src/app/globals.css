@@ -195,22 +195,48 @@ select option {
 /* Library: Print styles for Save as PDF (lesson report) */
 /* Coach: Print styles for Player Deep Dive report */
 @media print {
-  /* 1. CSS Print Reset - root elements */
-  html, body {
+  /* 1. CSS Print Reset - root elements and wrappers */
+  html, body,
+  body > * {
     height: auto !important;
     overflow: visible !important;
     position: static !important;
     min-height: auto !important;
+    max-height: none !important;
   }
-  /* 1. Main content wrapper - NOT overflow:hidden or flex:1, display block */
+  /* 1. Main content wrapper + AppFrame - override inline overflow/clip */
+  .app-frame-outer,
+  .app-frame-inner,
+  .app-frame-main,
   main,
   main:has(#lesson-pdf-content),
   main:has(#coach-deepdive-scroll) {
     height: auto !important;
     overflow: visible !important;
+    overflow-x: visible !important;
     min-height: auto !important;
+    max-height: none !important;
     display: block !important;
     flex: none !important;
+  }
+  /* Dashboard + Coach layout wrappers - remove overflow/scroll */
+  .coach-mobile-frame,
+  .coach-deepdive-root {
+    height: auto !important;
+    overflow: visible !important;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
+    min-height: auto !important;
+    max-height: none !important;
+    display: block !important;
+    flex: none !important;
+  }
+  /* Dashboard layout root - remove clip/scroll */
+  .dashboard-layout {
+    overflow: visible !important;
+    overflow-x: visible !important;
+    height: auto !important;
+    min-height: auto !important;
   }
   /* 3. Element visibility - hide sidebar, bottom nav, report button */
   .library-no-print,
@@ -267,13 +293,17 @@ select option {
   html, body {
     zoom: 90%;
   }
-  /* Coach Deep Dive: expand scroll chain */
+  /* Coach Deep Dive: expand scroll chain + remove padding for footer */
+  .app-frame-main {
+    padding-bottom: 0 !important;
+  }
   div:has(> div:has(> main:has(#coach-deepdive-scroll))),
   div:has(> main:has(#coach-deepdive-scroll)),
   main:has(#coach-deepdive-scroll) {
     overflow: visible !important;
     height: auto !important;
     min-height: auto !important;
+    max-height: none !important;
   }
   #coach-deepdive-scroll,
   #coach-deepdive-scroll * {
@@ -284,6 +314,10 @@ select option {
     min-height: auto !important;
     max-height: none !important;
     padding-bottom: 0 !important;
+    position: static !important;
+  }
+  .coach-deepdive-root {
+    position: static !important;
   }
   #coach-deepdive-pdf-content {
     overflow: visible !important;
