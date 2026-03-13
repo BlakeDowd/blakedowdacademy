@@ -25,6 +25,7 @@ export interface ParsedDrillRow {
 export interface DrillUpsertPayload {
   id: string;
   drill_name: string;
+  title: string; // Alias for drill_name (Supabase may use title)
   description: string;
   category: string;
   focus: string | null;
@@ -180,6 +181,7 @@ function toSupabasePayload(
   return {
     id: resolvedId,
     drill_name: row.drillName,
+    title: row.drillName,
     description: (row.description && String(row.description).trim()) ? row.description.trim() : "",
     category: row.category,
     focus: row.focus || null,
@@ -268,7 +270,7 @@ export async function upsertDrillsFromCSV({
     toUpsert.push(payload);
   }
 
-  // Batch upsert (Supabase upsert uses onConflict)
+  // Single upsert: id is unique key (drill_id from CSV). Updates existing, inserts new. Zero duplicates.
   const { data, error } = await supabase
     .from("drills")
     .upsert(toUpsert, {
@@ -281,20 +283,7 @@ export async function upsertDrillsFromCSV({
     throw new Error(`Failed to upsert drills: ${error.message}`);
   }
 
-  // Ensure description is written: explicit update for drills with non-empty descriptions
-  // (handles cases where batch upsert may not update all columns)
-  const withDesc = toUpsert.filter((p) => p.description && p.description.trim());
-  if (withDesc.length > 0) {
-    for (const p of withDesc) {
-      await supabase
-        .from("drills")
-        .update({ description: p.description })
-        .eq("id", p.id);
-    }
-  }
-
   // Determine added vs updated
-  const insertedIds = new Set((data || []).map((r: { id: string }) => r.id));
   for (const p of toUpsert) {
     if (existingById.has(p.id)) {
       result.updated++;

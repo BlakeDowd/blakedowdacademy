@@ -17,7 +17,7 @@ export async function fetchLessons(): Promise<Lesson[]> {
     const type = (row.type as string) || (videoUrl ? "video" : "text");
     return {
       id: String(row.id),
-      title: String(row.title || "Untitled"),
+      title: String(row.drill_name || row.title || "Untitled"),
       type: (type === "quiz" ? "quiz" : type === "pdf" ? "pdf" : type === "video" ? "video" : "text") as LessonType,
       description: String(row.description || ""),
       source: videoUrl || String(row.description || ""),

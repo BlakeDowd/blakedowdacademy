@@ -135,7 +135,7 @@ function LibraryPageContent() {
             const type = (row.type as string) || (videoUrl ? "video" : "text");
             return {
               id: String(row.id),
-              title: String(row.title || "Untitled"),
+              title: String(row.drill_name || row.title || "Untitled"),
               type: (type === "quiz" ? "quiz" : type === "drill" ? "drill" : type === "pdf" ? "pdf" : type === "video" ? "video" : "text") as LessonType,
               description: String(row.description || ""),
               source: videoUrl || String(row.description || ""),
@@ -801,8 +801,8 @@ function LibraryPageContent() {
               <div className="w-full h-px bg-gray-100 my-4" />
 
               {activeLesson.description && (
-                <div className="prose prose-sm max-w-none text-gray-600 leading-relaxed [&>p]:mb-4">
-                  <ReactMarkdown>{activeLesson.description}</ReactMarkdown>
+                <div className="text-base text-gray-600 leading-relaxed whitespace-pre-wrap">
+                  {activeLesson.description}
                 </div>
               )}
               

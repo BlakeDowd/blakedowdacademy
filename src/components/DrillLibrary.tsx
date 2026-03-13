@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronDown, ChevronUp, X, UserPlus } from "lucide-react";
-import { OFFICIAL_DRILLS, type DrillRecord } from "@/data/official_drills";
+import { ChevronDown, ChevronUp, X, UserPlus, FileText, Youtube } from "lucide-react";
+import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
 import { createClient } from "@/lib/supabase/client";
 
 const LIBRARY_CATEGORIES = [
@@ -39,6 +39,8 @@ function dbToDrillRecord(db: Record<string, unknown>): DrillRecord {
     (db as any).instructions ??
     ""
   ) as string;
+  const pdfUrl = ((db as any).pdf_url ?? "").toString().trim() || undefined;
+  const videoUrl = ((db as any).video_url ?? (db as any).youtube_url ?? "").toString().trim() || undefined;
   return {
     id: String(db.id),
     drill_id: String(db.id),
@@ -48,6 +50,8 @@ function dbToDrillRecord(db: Record<string, unknown>): DrillRecord {
     focus: String(db.focus || ""),
     description: (typeof desc === "string" && desc.trim()) ? desc : "",
     goal: String(db.goal || ""),
+    pdf_url: pdfUrl,
+    video_url: videoUrl,
     estimatedMinutes: Number(db.estimated_minutes ?? (db as any).estimatedMinutes ?? 10),
     xpValue: 10,
     contentType: "text",
@@ -98,9 +102,17 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
         </div>
         <div className="p-4 overflow-y-auto flex-1">
           <div className="text-sm text-gray-700 whitespace-pre-wrap">
-            {(drill.description && String(drill.description).trim()) || "No description available."}
+            {(drill.description && String(drill.description).trim()) ||
+              (() => {
+                const parts: string[] = [];
+                if (drill.focus?.trim()) parts.push(`Focus: ${drill.focus.trim()}`);
+                if (drill.goal?.trim()) parts.push(`Goal: ${drill.goal.trim()}`);
+                return parts.length
+                  ? parts.join(" · ")
+                  : "No description available.";
+              })()}
           </div>
-          {drill.goal && (
+          {drill.goal && drill.description?.trim() && (
             <p className="mt-3 text-sm text-gray-600">
               <span className="font-medium">Goal:</span> {drill.goal}
             </p>
@@ -108,6 +120,33 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
           <p className="mt-1 text-sm text-gray-500">
             ~{drill.estimatedMinutes} min · {drill.category}
           </p>
+
+          {((drill.pdf_url || drill.video_url || (drill as any).youtube_url)) && (
+            <div className="mt-4 flex flex-wrap gap-3">
+              {drill.pdf_url && (
+                <a
+                  href={drill.pdf_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm font-medium text-[#054d2b] hover:underline"
+                >
+                  <FileText className="w-4 h-4" />
+                  View PDF
+                </a>
+              )}
+              {(drill.video_url || (drill as any).youtube_url) && (
+                <a
+                  href={drill.video_url || (drill as any).youtube_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm font-medium text-[#054d2b] hover:underline"
+                >
+                  <Youtube className="w-4 h-4" />
+                  Watch Video
+                </a>
+              )}
+            </div>
+          )}
 
           {showDayPicker && (
             <div className="mt-4 pt-4 border-t border-gray-200">
@@ -168,24 +207,60 @@ export function DrillLibrary({ onAssignToDay }: DrillLibraryProps) {
           .from("drills")
           .select("id, drill_name, title, description, category, focus, goal, estimated_minutes, estimatedMinutes, pdf_url, video_url");
         if (dbDrills && dbDrills.length > 0) {
-          // Use DB as primary source so descriptions from the database are always shown
           const fromDb = dbDrills.map((d: any) => dbToDrillRecord(d));
-          const fromDbById = new Map(fromDb.map((r) => [r.id, r]));
-          const fromDbByName = new Map(
-            fromDb.map((r) => [(r.drill_name ?? r.title ?? "").trim().toLowerCase(), r])
+          const officialByDrillId = new Map(OFFICIAL_DRILLS.map((o) => [(o as any).drill_id, o]));
+          const officialById = new Map(OFFICIAL_DRILLS.map((o) => [o.id, o]));
+          const officialByName = new Map(
+            OFFICIAL_DRILLS.map((o) => [(o.drill_name ?? o.title ?? "").trim().toLowerCase(), o])
           );
-          const combined: DrillRecord[] = [...fromDb];
+          // Enrich DB drills: use official description when DB description is empty
+          const enriched: DrillRecord[] = fromDb.map((r) => {
+            if ((r.description || "").trim()) return r;
+            const official =
+              officialByDrillId.get(r.id) ??
+              officialByDrillId.get((r as any).drill_id) ??
+              officialById.get(r.id) ??
+              (r.drill_name ?? r.title
+                ? officialByName.get((r.drill_name ?? r.title ?? "").trim().toLowerCase())
+                : undefined);
+            const fallbackDesc =
+              official?.description?.trim() ??
+              DESCRIPTION_BY_DRILL_ID[r.id] ??
+              DESCRIPTION_BY_DRILL_ID[(r as any).drill_id];
+            if (fallbackDesc) return { ...r, description: fallbackDesc };
+            return r;
+          });
+          const fromDbById = new Map(enriched.map((r) => [r.id, r]));
+          const fromDbByName = new Map(
+            enriched.map((r) => [(r.drill_name ?? r.title ?? "").trim().toLowerCase(), r])
+          );
+          const combined: DrillRecord[] = [...enriched];
           OFFICIAL_DRILLS.forEach((d) => {
             const byId = fromDbById.has(d.id) || (!!(d as any).drill_id && fromDbById.has((d as any).drill_id));
             const byName = (d.drill_name ?? d.title)
               ? fromDbByName.has((d.drill_name ?? d.title ?? "").trim().toLowerCase())
               : false;
-            if (!byId && !byName) combined.push(d);
+            if (!byId && !byName) {
+              const desc = (d.description || "").trim() || DESCRIPTION_BY_DRILL_ID[(d as any).drill_id];
+              combined.push(desc ? { ...d, description: desc } : d);
+            }
           });
           setDrills(combined);
+        } else {
+          // No DB data: use OFFICIAL_DRILLS and enrich with DESCRIPTION_BY_DRILL_ID
+          const withDescriptions = OFFICIAL_DRILLS.map((d) => {
+            const desc = (d.description || "").trim() || DESCRIPTION_BY_DRILL_ID[(d as any).drill_id];
+            return desc ? { ...d, description: desc } : d;
+          });
+          setDrills(withDescriptions);
         }
       } catch (e) {
         console.warn("DrillLibrary: Could not load drills from database", e);
+        const withDescriptions = OFFICIAL_DRILLS.map((d) => {
+          const desc = (d.description || "").trim() || DESCRIPTION_BY_DRILL_ID[(d as any).drill_id];
+          return desc ? { ...d, description: desc } : d;
+        });
+        setDrills(withDescriptions);
       }
     };
     load();
