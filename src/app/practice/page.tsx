@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File } from "lucide-react";
-import { OFFICIAL_DRILLS, type DrillRecord } from "@/data/official_drills";
+import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
 import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
 import { DrillLibrary } from "@/components/DrillLibrary";
@@ -33,8 +33,10 @@ interface DayPlan {
     contentType?: 'video' | 'pdf' | 'text'; // Content type for display
     source?: string; // Source URL or content
     description?: string; // Description for text-based drills
+    drill_id?: string; // Drill code for lookup (e.g. PUTT-GATE-001)
     pdf_url?: string; // PDF resource URL
     youtube_url?: string; // YouTube video URL
+    video_url?: string; // Video URL (alias)
     levels?: Array<{ id: string; name: string; completed?: boolean }>; // Drill levels/checklist
     goal?: string; // Goal/Reps for this drill
   }>;
@@ -203,6 +205,7 @@ export default function PracticePage() {
   const [swappingDrill, setSwappingDrill] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track which drill is being swapped
   const [swapSuccess, setSwapSuccess] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track successful swap for feedback
   const [expandedScheduleDrill, setExpandedScheduleDrill] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track expanded drill in schedule
+  const [expandedWeeklyDrill, setExpandedWeeklyDrill] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track expanded drill in weekly view
   const [youtubeModal, setYoutubeModal] = useState<{ open: boolean; url: string }>({ open: false, url: '' }); // YouTube modal state
   
   // Name editing state
@@ -456,15 +459,18 @@ export default function PracticePage() {
                 if (existingIndex === -1) {
                   dayPlan.selected = true;
                   dayPlan.drills = dayDrills;
+                  const desc = (drillDetails.description && String(drillDetails.description).trim()) || DESCRIPTION_BY_DRILL_ID[plannedDrill.drill_id] || undefined;
                   dayPlan.drills.push({
                     id: plannedDrill.drill_id,
+                    drill_id: plannedDrill.drill_id,
                     title: drillDetails.drill_name ?? drillDetails.title ?? "Untitled",
                     category: drillDetails.category,
                     estimatedMinutes: drillDetails.estimatedMinutes || 30,
                     completed: false,
                     pdf_url: drillDetails.pdf_url,
-                    youtube_url: drillDetails.video_url,
-                    description: drillDetails.description || undefined,
+                    youtube_url: drillDetails.video_url ?? drillDetails.youtube_url,
+                    video_url: drillDetails.video_url ?? drillDetails.youtube_url,
+                    description: desc,
                     levels: levels || undefined,
                   });
                 }
@@ -811,8 +817,10 @@ export default function PracticePage() {
 
     const facility = categoryToFacility(drill.category);
 
+    const desc = (drill.description && String(drill.description).trim()) || DESCRIPTION_BY_DRILL_ID[(drill as any).drill_id ?? drill.id] || undefined;
     const drillToAdd = {
       id: drill.id,
+      drill_id: (drill as any).drill_id ?? drill.id,
       title: drill.drill_name ?? drill.title ?? "Untitled",
       category: drill.category,
       estimatedMinutes: drill.estimatedMinutes,
@@ -820,9 +828,10 @@ export default function PracticePage() {
       xpEarned: 0,
       isRound: drill.category === "9-Hole Round" || drill.category === "18-Hole Round",
       contentType: drill.contentType,
-      description: drill.description,
+      description: desc ?? drill.description,
       pdf_url: drill.pdf_url,
       youtube_url: drill.youtube_url || drill.video_url,
+      video_url: drill.video_url || drill.youtube_url,
       goal: drill.goal,
       facility,
     };
@@ -1795,12 +1804,14 @@ export default function PracticePage() {
           }
         }
 
+        const desc = (dbDrill.description && String(dbDrill.description).trim()) || DESCRIPTION_BY_DRILL_ID[newDrill.id] || newDrill.description;
         drillData = {
           ...newDrill,
           title: dbDrill.drill_name ?? dbDrill.title ?? newDrill.title,
           pdf_url: dbDrill.pdf_url || newDrill.pdf_url,
           youtube_url: dbDrill.video_url || newDrill.youtube_url || newDrill.video_url,
-          description: dbDrill.description ?? newDrill.description,
+          video_url: dbDrill.video_url || newDrill.video_url || newDrill.youtube_url,
+          description: desc,
           levels: levels || newDrill.levels,
         };
       }
@@ -2350,7 +2361,7 @@ export default function PracticePage() {
                                 setExpandedScheduleDrill({ dayIndex: dayIdx, drillIndex: drillIdx });
                               }
                             }}
-                            defaultExpanded={false} // Default to collapsed
+                            defaultExpanded={isExpanded}
                           />
                         );
                       })}
@@ -2646,7 +2657,7 @@ export default function PracticePage() {
                                 setExpandedScheduleDrill({ dayIndex: dayIdx, drillIndex: drillIdx });
                               }
                             }}
-                            defaultExpanded={false} // Default to collapsed
+                            defaultExpanded={isExpanded}
                           />
                         );
                       })}
@@ -2658,7 +2669,7 @@ export default function PracticePage() {
 
                 {/* Weekly Summary View */}
                 {viewMode === 'weekly' && (
-                  <div className="space-y-4 w-full">
+                  <div className="space-y-2 w-full">
                     {DAY_NAMES.map((dayName, dayIndex) => {
                       const day = weeklyPlan[dayIndex];
                       const dayDrills = day?.drills || [];
@@ -2668,9 +2679,9 @@ export default function PracticePage() {
                       if (dayDrills.length === 0) return null;
                       
                       return (
-                        <div key={dayIndex} className="border border-gray-200 rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-lg font-semibold text-gray-900">{dayName}</h3>
+                        <div key={dayIndex} className="border border-gray-200 rounded-lg p-2.5">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <h3 className="text-base font-semibold text-gray-900">{dayName}</h3>
                             {totalCount > 0 && (
                               <span className={`text-sm font-medium ${
                                 completedCount === totalCount ? 'text-green-600' : 'text-gray-600'
@@ -2679,54 +2690,41 @@ export default function PracticePage() {
                               </span>
                             )}
                           </div>
-                          <div className="space-y-2">
-                            {dayDrills.map((drill, idx) => (
-                              <div
-                                key={`weekly-${dayIndex}-${drill.id}-${idx}`}
-                                className={`flex items-center justify-between p-2 rounded ${
-                                  drill.completed ? 'bg-green-50 border border-green-200' : 'bg-gray-50'
-                                }`}
-                              >
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  {drill.completed && (
-                                    <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
-                                  )}
-                                  <span className={`text-sm flex-1 truncate ${
-                                    drill.completed ? 'text-green-700 line-through' : 'text-gray-700'
-                                  }`}>
-                                    {drill.title}
-                                  </span>
-                                  {/* Media Icons - Small in Weekly View */}
-                                  <div className="flex items-center gap-1 flex-shrink-0">
-                                    {drill.pdf_url && (
-                                      <a
-                                        href={drill.pdf_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="p-1 rounded hover:bg-gray-200 transition-colors"
-                                        title="View PDF"
-                                      >
-                                        <File className="w-3 h-3 text-gray-600" />
-                                      </a>
-                                    )}
-                                    {drill.youtube_url && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setYoutubeModal({ open: true, url: drill.youtube_url || '' });
-                                        }}
-                                        className="p-1 rounded hover:bg-gray-200 transition-colors"
-                                        title="Watch Video"
-                                      >
-                                        <PlayCircle className="w-3 h-3 text-red-600" />
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
+                          <div className="space-y-1.5">
+                            {dayDrills.map((drill, idx) => {
+                              const actualDrillIndex = dayDrills.findIndex((d: any) => d?.id === drill?.id);
+                              const isSwapping = swappingDrill?.dayIndex === dayIndex && swappingDrill?.drillIndex === actualDrillIndex;
+                              const justSwapped = swapSuccess?.dayIndex === dayIndex && swapSuccess?.drillIndex === actualDrillIndex;
+                              const isExpanded = expandedWeeklyDrill?.dayIndex === dayIndex && expandedWeeklyDrill?.drillIndex === idx;
+                              return (
+                                <DrillCard
+                                  key={`weekly-${dayIndex}-${drill.id}-${idx}`}
+                                  drill={drill}
+                                  dayIndex={dayIndex}
+                                  drillIndex={idx}
+                                  actualDrillIndex={actualDrillIndex}
+                                  isSwapping={isSwapping}
+                                  justSwapped={justSwapped}
+                                  facilityInfo={facilityInfo}
+                                  onComplete={(dayIdx, drillIdx) => {
+                                    markDrillComplete(dayIdx, drillIdx);
+                                    setExpandedWeeklyDrill(null);
+                                  }}
+                                  onSwap={swapDrill}
+                                  onLevelToggle={updateLevelCompletion}
+                                  onYoutubeOpen={(url) => setYoutubeModal({ open: true, url })}
+                                  onExpandToggle={(dayIdx, drillIdx) => {
+                                    if (isExpanded) {
+                                      setExpandedWeeklyDrill(null);
+                                    } else {
+                                      setExpandedWeeklyDrill({ dayIndex: dayIdx, drillIndex: drillIdx });
+                                    }
+                                  }}
+                                  defaultExpanded={isExpanded}
+                                  compact
+                                />
+                              );
+                            })}
                           </div>
                         </div>
                       );

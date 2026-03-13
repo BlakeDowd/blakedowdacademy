@@ -137,6 +137,17 @@ export const DESCRIPTION_BY_DRILL_ID: Record<string, string> = {
   "18HO-EVCL-121": "Only playing even clubs excluding putter on course to get creative with distance control.",
 };
 
+/** Map OFFICIAL_DRILLS id (UUID) to description - for schedule drills that use UUID as id */
+export const DESCRIPTION_BY_ID: Record<string, string> = {};
+// Populated after OFFICIAL_DRILLS is defined
+export function initDescriptionById() {
+  if (Object.keys(DESCRIPTION_BY_ID).length > 0) return;
+  for (const d of OFFICIAL_DRILLS) {
+    const desc = (d.description && d.description.trim()) || DESCRIPTION_BY_DRILL_ID[(d as any).drill_id];
+    if (desc) DESCRIPTION_BY_ID[d.id] = desc;
+  }
+}
+
 export const OFFICIAL_DRILLS: DrillRecord[] = [
   {
     "id": "86e49480-54e6-42e1-8cf4-06b76ef5c75d",
@@ -1591,3 +1602,5 @@ export const OFFICIAL_DRILLS: DrillRecord[] = [
     "contentType": "text"
   }
 ];
+
+initDescriptionById();

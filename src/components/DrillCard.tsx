@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { CheckCircle2, Check, PlayCircle, File, RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
+import { DESCRIPTION_BY_DRILL_ID, DESCRIPTION_BY_ID } from "@/data/official_drills";
 
 export type FacilityType = 'Driving' | 'Irons' | 'Wedges' | 'Chipping' | 'Bunkers' | 'Putting' | 'Mental/Strategy' | 'On-Course';
 
@@ -14,6 +15,7 @@ interface DrillLevel {
 interface DrillCardProps {
   drill: {
     id: string;
+    drill_id?: string;
     title: string;
     category: string;
     estimatedMinutes: number;
@@ -40,6 +42,7 @@ interface DrillCardProps {
   onYoutubeOpen: (url: string) => void;
   onExpandToggle?: (dayIndex: number, drillIndex: number) => void;
   defaultExpanded?: boolean; // FORCE VISIBILITY: Default to expanded
+  compact?: boolean; // Smaller layout for Weekly view
 }
 
 export default function DrillCard({
@@ -56,6 +59,7 @@ export default function DrillCard({
   onYoutubeOpen,
   onExpandToggle,
   defaultExpanded = false, // FORCE VISIBILITY: Default to false
+  compact = false,
 }: DrillCardProps) {
   // FIX THE TOGGLE: Default to collapsed
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
@@ -87,16 +91,18 @@ export default function DrillCard({
     <div className="relative w-full">
       <div
         onClick={handleExpandToggle}
-        className={`w-full p-3 rounded-lg border-2 transition-all cursor-pointer ${
+        className={`w-full rounded-lg border-2 transition-all cursor-pointer ${
+          compact ? "p-2" : "p-3"
+        } ${
           isCompleted
             ? 'bg-green-50 border-green-300'
             : 'bg-white border-gray-200 hover:border-[#FFA500]'
         } ${justSwapped ? 'ring-2 ring-green-400' : ''} ${isExpanded ? 'border-[#014421]' : ''}`}
       >
-        <div className="flex items-start justify-between gap-3">
+        <div className={`flex items-start justify-between ${compact ? "gap-2" : "gap-3"}`}>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-              <h4 className={`text-lg font-semibold flex-1 ${
+            <div className={`flex items-center gap-2 flex-wrap ${compact ? "mb-0" : "mb-1"}`}>
+              <h4 className={`${compact ? "text-sm" : "text-lg"} font-semibold flex-1 ${
                 isCompleted ? 'text-green-700 line-through' : 'text-gray-900'
               }`}>
                 {isCompleted && (
@@ -108,7 +114,7 @@ export default function DrillCard({
               </h4>
             </div>
             
-            <div className="flex items-center gap-3 text-sm text-gray-600">
+            <div className={`flex items-center gap-3 ${compact ? "text-xs" : "text-sm"} text-gray-600`}>
               <span className="flex items-center gap-1">
                 <span>{drill.estimatedMinutes} min</span>
               </span>
@@ -136,7 +142,7 @@ export default function DrillCard({
         
         {/* CORE UPGRADES: Show content only when expanded */}
         {shouldShowContent && (
-          <div className="mt-3 pt-3 border-t border-gray-200 space-y-3">
+          <div className={`border-t border-gray-200 ${compact ? "mt-2 pt-2 space-y-2" : "mt-3 pt-3 space-y-3"}`}>
             
             {/* Target/Category Details Moved Inside Expanded */}
             <div className="space-y-1 mb-2">
@@ -148,12 +154,10 @@ export default function DrillCard({
               )}
             </div>
 
-            {drill.description && (
-              <div className="text-sm text-gray-700 leading-relaxed">
-                <span className="font-semibold text-gray-900 block mb-1">Instructions:</span>
-                {drill.description}
-              </div>
-            )}
+            <div className={`${compact ? "text-xs" : "text-sm"} text-gray-700 leading-relaxed whitespace-pre-wrap`}>
+              <span className="font-semibold text-gray-900 block mb-1">Instructions:</span>
+              {(drill.description && String(drill.description).trim()) || DESCRIPTION_BY_ID[drill.id] || DESCRIPTION_BY_DRILL_ID[(drill as any).drill_id ?? drill.id] || "No description available."}
+            </div>
             
             {/* CORE UPGRADE: Watch Video Button (YouTube icon) */}
             <div className="flex gap-2 flex-wrap">
