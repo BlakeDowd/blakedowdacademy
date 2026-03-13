@@ -1,9 +1,13 @@
 export interface DrillRecord {
   id: string;
   drill_id: string;
-  title: string;
+  /** Display name - matches Supabase column drill_name exactly */
+  drill_name?: string;
+  /** Fallback when drill_name not set (OFFICIAL_DRILLS) */
+  title?: string;
   category: string;
   focus: string;
+  /** Matches Supabase column description exactly */
   description: string;
   pdf_url?: string;
   youtube_url?: string;

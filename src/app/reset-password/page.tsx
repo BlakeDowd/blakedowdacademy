@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
+import { type EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 
 export default function ResetPasswordPage() {
@@ -13,18 +14,64 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [hasSession, setHasSession] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
-    const check = async () => {
+    const establishSession = async () => {
       const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      setHasSession(!!session);
-      if (!session) {
-        router.replace("/login");
+      const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+
+      // Handle token_hash + type (password recovery - works cross-device)
+      const token_hash = params.get("token_hash");
+      const type = params.get("type") as EmailOtpType | null;
+      if (token_hash && type) {
+        const { error: verifyError } = await supabase.auth.verifyOtp({ type, token_hash });
+        if (!verifyError) {
+          window.history.replaceState({}, "", "/reset-password");
+          setHasSession(true);
+          setAuthChecked(true);
+          return;
+        }
       }
+
+      // Handle code (PKCE - same device only)
+      const code = params.get("code");
+      if (code) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        if (!exchangeError) {
+          window.history.replaceState({}, "", "/reset-password");
+          setHasSession(true);
+          setAuthChecked(true);
+          return;
+        }
+      }
+
+      // Check for existing session (covers hash-based redirect - detectSessionInUrl processes it)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setHasSession(true);
+      } else {
+        // Brief delay for hash processing (Supabase may need a moment to parse URL fragment)
+        await new Promise((r) => setTimeout(r, 500));
+        const { data: { session: retrySession } } = await supabase.auth.getSession();
+        if (retrySession) {
+          setHasSession(true);
+        } else {
+          router.replace("/login");
+        }
+      }
+      setAuthChecked(true);
     };
-    check();
+    establishSession();
   }, [router]);
+
+  if (!authChecked || !hasSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 py-12" style={{ backgroundColor: "#ffffff" }}>
+        <p className="text-gray-500">{!authChecked ? "Loading..." : "Redirecting..."}</p>
+      </div>
+    );
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

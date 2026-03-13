@@ -29,10 +29,11 @@ const DRILL_TO_LIBRARY: Record<string, string[]> = {
   "18-Hole Round": ["18-Hole Round"],
 };
 
-/** Map DB drill to DrillRecord shape - handle various column names */
+/** Map DB drill to DrillRecord - supports both drill_name/title and description (Supabase columns) */
 function dbToDrillRecord(db: Record<string, unknown>): DrillRecord {
+  const name = (db.drill_name ?? (db as any).title ?? "") as string;
   const desc = (
-    db.description ??
+    (db as any).description ??
     (db as any).drill_description ??
     (db as any).content ??
     (db as any).instructions ??
@@ -41,7 +42,8 @@ function dbToDrillRecord(db: Record<string, unknown>): DrillRecord {
   return {
     id: String(db.id),
     drill_id: String(db.id),
-    title: String(db.title || "Untitled"),
+    drill_name: name && String(name).trim() ? name : undefined,
+    title: name && String(name).trim() ? name : "Untitled",
     category: String(db.category || "Practice"),
     focus: String(db.focus || ""),
     description: (typeof desc === "string" && desc.trim()) ? desc : "",
@@ -85,7 +87,7 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">{drill.title}</h3>
+          <h3 className="text-lg font-semibold text-gray-900">{drill.drill_name ?? drill.title ?? "Untitled"}</h3>
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -96,7 +98,7 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
         </div>
         <div className="p-4 overflow-y-auto flex-1">
           <div className="text-sm text-gray-700 whitespace-pre-wrap">
-            {drill.description || "No description available."}
+            {(drill.description && String(drill.description).trim()) || "No description available."}
           </div>
           {drill.goal && (
             <p className="mt-3 text-sm text-gray-600">
@@ -164,31 +166,23 @@ export function DrillLibrary({ onAssignToDay }: DrillLibraryProps) {
         const supabase = createClient();
         const { data: dbDrills } = await supabase
           .from("drills")
-          .select("id, title, category, description, focus, goal, estimated_minutes, estimatedMinutes, pdf_url, video_url");
+          .select("id, drill_name, title, description, category, focus, goal, estimated_minutes, estimatedMinutes, pdf_url, video_url");
         if (dbDrills && dbDrills.length > 0) {
-          const dbById = new Map<string, DrillRecord>();
-          const dbByTitle = new Map<string, DrillRecord>();
-          dbDrills.forEach((d) => {
-            const rec = dbToDrillRecord(d);
-            dbById.set(d.id, rec);
-            if (d.title) dbByTitle.set(d.title.trim().toLowerCase(), rec);
+          // Use DB as primary source so descriptions from the database are always shown
+          const fromDb = dbDrills.map((d: any) => dbToDrillRecord(d));
+          const fromDbById = new Map(fromDb.map((r) => [r.id, r]));
+          const fromDbByName = new Map(
+            fromDb.map((r) => [(r.drill_name ?? r.title ?? "").trim().toLowerCase(), r])
+          );
+          const combined: DrillRecord[] = [...fromDb];
+          OFFICIAL_DRILLS.forEach((d) => {
+            const byId = fromDbById.has(d.id) || (!!(d as any).drill_id && fromDbById.has((d as any).drill_id));
+            const byName = (d.drill_name ?? d.title)
+              ? fromDbByName.has((d.drill_name ?? d.title ?? "").trim().toLowerCase())
+              : false;
+            if (!byId && !byName) combined.push(d);
           });
-          const merged: DrillRecord[] = OFFICIAL_DRILLS.map((d) => {
-            const db = dbById.get(d.id)
-              ?? dbById.get((d as any).drill_id)
-              ?? (d.title ? dbByTitle.get(d.title.trim().toLowerCase()) : undefined);
-            if (db) {
-              const desc = db.description && String(db.description).trim() ? db.description : d.description;
-              return { ...d, ...db, id: d.id, drill_id: (d as any).drill_id || db.id, description: (desc && String(desc).trim()) ? desc : "" } as DrillRecord;
-            }
-            return d;
-          });
-          const dbOnly = dbDrills
-            .filter((d) => !OFFICIAL_DRILLS.some((o) =>
-              o.id === d.id || (o as any).drill_id === d.id || (o.title?.trim().toLowerCase() === d.title?.trim().toLowerCase())
-            ))
-            .map((d) => dbToDrillRecord(d));
-          setDrills([...merged, ...dbOnly]);
+          setDrills(combined);
         }
       } catch (e) {
         console.warn("DrillLibrary: Could not load drills from database", e);
@@ -261,7 +255,7 @@ export function DrillLibrary({ onAssignToDay }: DrillLibraryProps) {
                               onClick={() => setSelectedDrill(drill)}
                               className="w-full text-left text-sm py-2 px-3 rounded-lg hover:bg-gray-100 text-gray-700 transition-colors"
                             >
-                              {drill.title}
+                              {drill.drill_name ?? drill.title ?? "Untitled"}
                             </button>
                           </li>
                         ))

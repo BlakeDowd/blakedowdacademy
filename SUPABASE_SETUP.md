@@ -195,7 +195,16 @@ CREATE INDEX idx_drills_category ON drills(category);
 CREATE INDEX idx_drills_level ON drills(level);
 ```
 
-## 5. Test Your Setup
+## 5. Configure Password Reset Redirect URL
+
+For "Forgot password" to work, add your reset URL to Supabase's allowed redirect URLs:
+
+1. In Supabase Dashboard, go to **Authentication** → **URL Configuration**
+2. Under **Redirect URLs**, add:
+   - `http://localhost:3000/reset-password` (for local dev)
+   - `https://yourdomain.com/reset-password` (for production)
+
+## 6. Test Your Setup
 
 1. Start your development server:
    ```bash
@@ -205,10 +214,12 @@ CREATE INDEX idx_drills_level ON drills(level);
 2. Navigate to `/login` and try signing up with a new account
 3. After signing up, you should be redirected to the home page
 4. Try logging a round to verify database connectivity
+5. Test "Forgot password" on the login page
 
 ## Troubleshooting
 
 - **"Missing Supabase environment variables"**: Make sure your `.env.local` file exists and contains both `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - **Authentication errors**: Verify your Supabase project is active and the API keys are correct
 - **Database errors**: Make sure you've run all the SQL commands above to create the tables and policies
+- **Password reset not working**: Ensure `/reset-password` is in your Supabase project's Redirect URLs (Authentication → URL Configuration)
 

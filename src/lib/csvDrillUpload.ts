@@ -1,6 +1,10 @@
 /**
  * CSV Drill Upload - ID-based upsert with duplicate prevention
  * CSV columns: Drill id, Drill Name, Category, Location, Focus, Duration (min), Description, PDF URL, YouTube Link, Goal/Reps, XP, Equipment
+ *
+ * Unique key: Drill id (or Drill Name when id is missing).
+ * - Upsert: If drill exists in DB, overwrite. If new, add.
+ * - CSV deduplication: Exact duplicate rows (same unique key) are collapsed; only the last occurrence is imported.
  */
 
 export interface ParsedDrillRow {
@@ -20,14 +24,15 @@ export interface ParsedDrillRow {
 
 export interface DrillUpsertPayload {
   id: string;
-  title: string;
+  drill_name: string;
+  description: string;
   category: string;
   focus: string | null;
-  description: string | null;
   pdf_url: string | null;
   video_url: string | null;
   goal: string | null;
   estimated_minutes: number;
+  xp_value: number;
   drill_levels: string | null;
   created_at: string;
 }
@@ -84,8 +89,45 @@ function parseCSV(text: string): string[][] {
 }
 
 /**
+ * Get the unique key for a parsed row (Drill id if present, else Drill Name).
+ */
+function getUniqueKey(row: ParsedDrillRow): string {
+  if (row.id && row.id.trim()) return row.id.trim();
+  return row.drillName.trim().toLowerCase();
+}
+
+/**
+ * Deduplicate parsed rows by unique key. For duplicate keys, keep the last occurrence (last wins).
+ */
+function deduplicateByUniqueKey(drills: ParsedDrillRow[]): ParsedDrillRow[] {
+  const byKey = new Map<string, ParsedDrillRow>();
+  for (const row of drills) {
+    const key = getUniqueKey(row);
+    byKey.set(key, row);
+  }
+  return Array.from(byKey.values());
+}
+
+/** Column indices for CSV (0-based). Description is column 6. */
+const CSV_COLS = {
+  DRILL_ID: 0,
+  DRILL_NAME: 1,
+  CATEGORY: 2,
+  LOCATION: 3,
+  FOCUS: 4,
+  DURATION: 5,
+  DESCRIPTION: 6,
+  PDF_URL: 7,
+  YOUTUBE_LINK: 8,
+  GOAL_REPS: 9,
+  XP: 10,
+  EQUIPMENT: 11,
+} as const;
+
+/**
  * Parse CSV file content into drill rows.
  * Expected columns: Drill id, Drill Name, Category, Location, Focus, Duration (min), Description, PDF URL, YouTube Link, Goal/Reps, XP, Equipment
+ * Duplicate rows (same Drill id or Drill Name) are collapsed; only the last occurrence is kept.
  */
 export function parseDrillCSV(csvText: string): ParsedDrillRow[] {
   const rows = parseCSV(csvText);
@@ -97,30 +139,31 @@ export function parseDrillCSV(csvText: string): ParsedDrillRow[] {
     const row = rows[i];
     if (!row || row.length < 2) continue;
 
-    const rawId = (row[0] || "").trim();
-    const drillName = (row[1] || "").trim();
+    const rawId = (row[CSV_COLS.DRILL_ID] || "").trim();
+    const drillName = (row[CSV_COLS.DRILL_NAME] || "").trim();
     if (!drillName) continue;
 
-    const duration = parseInt((row[5] || "10").toString(), 10) || 10;
-    const xp = parseInt((row[10] || "10").toString(), 10) || 10;
+    const duration = parseInt((row[CSV_COLS.DURATION] || "10").toString(), 10) || 10;
+    const xp = parseInt((row[CSV_COLS.XP] || "10").toString(), 10) || 10;
+    const description = (row[CSV_COLS.DESCRIPTION] ?? "").trim();
 
     drills.push({
       id: rawId || null,
       drillName,
-      category: (row[2] || "").trim() || "Practice",
-      location: (row[3] || "").trim(),
-      focus: (row[4] || "").trim(),
+      category: (row[CSV_COLS.CATEGORY] || "").trim() || "Practice",
+      location: (row[CSV_COLS.LOCATION] || "").trim(),
+      focus: (row[CSV_COLS.FOCUS] || "").trim(),
       durationMinutes: Math.max(1, Math.min(480, duration)),
-      description: (row[6] || "").trim(),
-      pdfUrl: (row[7] || "").trim() || null,
-      youtubeUrl: (row[8] || "").trim() || null,
-      goal: (row[9] || "").trim(),
+      description,
+      pdfUrl: (row[CSV_COLS.PDF_URL] || "").trim() || null,
+      youtubeUrl: (row[CSV_COLS.YOUTUBE_LINK] || "").trim() || null,
+      goal: (row[CSV_COLS.GOAL_REPS] || "").trim(),
       xp,
-      equipment: (row[11] || "").trim(),
+      equipment: (row[CSV_COLS.EQUIPMENT] || "").trim(),
     });
   }
 
-  return drills;
+  return deduplicateByUniqueKey(drills);
 }
 
 /**
@@ -136,14 +179,15 @@ function toSupabasePayload(
 
   return {
     id: resolvedId,
-    title: row.drillName,
+    drill_name: row.drillName,
+    description: (row.description && String(row.description).trim()) ? row.description.trim() : "",
     category: row.category,
     focus: row.focus || null,
-    description: row.description || null,
     pdf_url: row.pdfUrl,
     video_url: row.youtubeUrl,
     goal: row.goal || null,
     estimated_minutes: row.durationMinutes,
+    xp_value: row.xp,
     drill_levels: drillLevels,
     created_at: new Date().toISOString(),
   };
@@ -178,22 +222,23 @@ export async function upsertDrillsFromCSV({
 
   if (parsed.length === 0) return result;
 
-  // Fetch existing drills: id and title for duplicate/lookup
+  // Fetch existing drills: id and drill_name for duplicate/lookup
   const { data: existingDrills, error: fetchError } = await supabase
     .from("drills")
-    .select("id, title");
+    .select("id, drill_name");
 
   if (fetchError) {
     throw new Error(`Failed to fetch existing drills: ${fetchError.message}`);
   }
 
-  const existingById = new Map<string, { id: string; title: string }>();
-  const existingByTitle = new Map<string, string>(); // title (lower) -> id
+  const existingById = new Map<string, { id: string; drill_name: string }>();
+  const existingByDrillName = new Map<string, string>(); // drill_name (lower) -> id
 
-  (existingDrills || []).forEach((d: { id: string; title: string }) => {
-    existingById.set(d.id, d);
-    if (d.title) {
-      existingByTitle.set(d.title.trim().toLowerCase(), d.id);
+  (existingDrills || []).forEach((d: { id: string; drill_name?: string }) => {
+    const name = d.drill_name ?? (d as any).title;
+    existingById.set(d.id, { id: d.id, drill_name: name || "" });
+    if (name && String(name).trim()) {
+      existingByDrillName.set(String(name).trim().toLowerCase(), d.id);
     }
   });
 
@@ -209,7 +254,7 @@ export async function upsertDrillsFromCSV({
     } else {
       // No ID: check for exact drill_name match
       const nameKey = row.drillName.trim().toLowerCase();
-      const matchedId = existingByTitle.get(nameKey);
+      const matchedId = existingByDrillName.get(nameKey);
       if (matchedId) {
         // Link to existing record - update instead of insert
         resolvedId = matchedId;
@@ -234,6 +279,18 @@ export async function upsertDrillsFromCSV({
 
   if (error) {
     throw new Error(`Failed to upsert drills: ${error.message}`);
+  }
+
+  // Ensure description is written: explicit update for drills with non-empty descriptions
+  // (handles cases where batch upsert may not update all columns)
+  const withDesc = toUpsert.filter((p) => p.description && p.description.trim());
+  if (withDesc.length > 0) {
+    for (const p of withDesc) {
+      await supabase
+        .from("drills")
+        .update({ description: p.description })
+        .eq("id", p.id);
+    }
   }
 
   // Determine added vs updated

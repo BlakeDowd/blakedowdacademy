@@ -48,20 +48,21 @@ interface WeeklyPlan {
 interface Drill {
   id: string;
   title: string;
+  drill_name?: string; // Matches Supabase column drill_name
   category: string;
   sub_category?: string;
   focus?: string;
   estimatedMinutes: number;
   xpValue: number;
-  contentType?: 'video' | 'pdf' | 'text'; // Content type for display
-  source?: string; // Source URL or content
-  description?: string; // Description for text-based drills
-  video_url?: string; // Video URL from database
-  pdf_url?: string; // PDF URL from database
-  youtube_url?: string; // YouTube URL (mapped from video_url)
-  drill_levels?: any; // Drill levels from database
-  levels?: Array<{ id: string; name: string; completed?: boolean }>; // Parsed drill levels
-  goal?: string; // Goal/Reps from database
+  contentType?: 'video' | 'pdf' | 'text';
+  source?: string;
+  description?: string; // Matches Supabase column description
+  video_url?: string;
+  pdf_url?: string;
+  youtube_url?: string;
+  drill_levels?: any;
+  levels?: Array<{ id: string; name: string; completed?: boolean }>;
+  goal?: string;
 }
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -378,33 +379,30 @@ export default function PracticePage() {
           // Fetch all drills from drills table
           const { data: allDrillsData, error: drillsError } = await supabase
             .from('drills')
-            .select('id, video_url, pdf_url, drill_levels, title, category, estimatedMinutes, description');
+            .select('id, drill_name, description, video_url, pdf_url, drill_levels, title, category, estimatedMinutes');
           
-          // Create a map of drills by title for matching (CROSS-REFERENCE: match by title)
           const drillDetailsMap: Record<string, any> = {};
           
-          // Add library drills first
           if (typeof OFFICIAL_DRILLS !== 'undefined') {
             OFFICIAL_DRILLS.forEach((drill: any) => {
               if (drill.id) drillDetailsMap[drill.id] = drill;
-              if (drill.title) drillDetailsMap[drill.title.toLowerCase().trim()] = drill;
+              const name = drill.drill_name ?? drill.title;
+              if (name) drillDetailsMap[name.toLowerCase().trim()] = drill;
             });
           }
 
-          // Merge database drills
           if (allDrillsData && !drillsError) {
             allDrillsData.forEach((drill: any) => {
-              // Index by id
               if (drill.id) {
                 drillDetailsMap[drill.id] = drillDetailsMap[drill.id] 
                   ? { ...drillDetailsMap[drill.id], ...drill } 
                   : drill;
               }
-              // Index by title (lowercase for case-insensitive matching)
-              if (drill.title) {
-                const normalizedTitle = drill.title.toLowerCase().trim();
-                drillDetailsMap[normalizedTitle] = drillDetailsMap[normalizedTitle]
-                  ? { ...drillDetailsMap[normalizedTitle], ...drill }
+              const name = drill.drill_name ?? drill.title;
+              if (name) {
+                const key = String(name).toLowerCase().trim();
+                drillDetailsMap[key] = drillDetailsMap[key]
+                  ? { ...drillDetailsMap[key], ...drill }
                   : drill;
               }
             });
@@ -460,7 +458,7 @@ export default function PracticePage() {
                   dayPlan.drills = dayDrills;
                   dayPlan.drills.push({
                     id: plannedDrill.drill_id,
-                    title: drillDetails.title,
+                    title: drillDetails.drill_name ?? drillDetails.title ?? "Untitled",
                     category: drillDetails.category,
                     estimatedMinutes: drillDetails.estimatedMinutes || 30,
                     completed: false,
@@ -527,7 +525,7 @@ export default function PracticePage() {
 
             // MAP THE DATA: Attach video_url, pdf_url, and drill_levels to drill object
             const generatedDrillId = drillDetails?.id || practice.drill_id || `practice-${practice.id}`;
-            const drillTitle = drillDetails?.title || practice.drill_name || practice.type || practice.title || 'Practice Session';
+            const drillTitle = drillDetails?.drill_name ?? drillDetails?.title ?? practice.drill_name ?? practice.type ?? practice.title ?? 'Practice Session';
             const isCompleted = practice.completed || false;
             
             // Check if this drill is already in our local plan (optional chaining prevents e[a].selected-style crash)
@@ -578,35 +576,94 @@ export default function PracticePage() {
     loadWeeklySchedule();
   }, [user?.id]);
 
-  // Fetch drills directly from local data
+  // Fetch drills from Supabase + merge with OFFICIAL_DRILLS (DB description takes precedence)
   useEffect(() => {
-    const loadDrills = () => {
-      if (typeof window !== 'undefined') {
-        try {
-          // Map local static drills directly to state, bypassing Supabase RLS completely
-          const fetchedDrills: Drill[] = OFFICIAL_DRILLS.map(d => {
-            return {
-              id: d.id,
-              title: d.title,
-              category: d.category,
-              sub_category: '', // Not strictly needed
-              focus: d.focus,
-              estimatedMinutes: d.estimatedMinutes,
-              xpValue: d.xpValue,
-              contentType: d.contentType,
-              source: d.video_url || d.youtube_url || d.pdf_url || d.description || '',
-              description: d.description,
-              pdf_url: d.pdf_url,
-              youtube_url: d.youtube_url || d.video_url,
-              goal: d.goal,
-            };
+    const loadDrills = async () => {
+      if (typeof window === 'undefined') return;
+      try {
+        const { createClient } = await import('@/lib/supabase/client');
+        const supabase = createClient();
+        const { data: dbDrills } = await supabase
+          .from('drills')
+          .select('id, drill_name, description, category, focus, goal, estimated_minutes, estimatedMinutes, pdf_url, video_url');
+
+        const dbById = new Map<string, any>();
+        const dbByName = new Map<string, any>();
+        if (dbDrills?.length) {
+          dbDrills.forEach((d: any) => {
+            dbById.set(d.id, d);
+            const name = d.drill_name ?? d.title;
+            if (name && String(name).trim()) dbByName.set(String(name).trim().toLowerCase(), d);
           });
-          
-          setDrills(fetchedDrills);
-          localStorage.setItem('drillsData', JSON.stringify(fetchedDrills));
-        } catch (err) {
-          console.error('Error loading drills:', err);
         }
+
+        const merged: Drill[] = OFFICIAL_DRILLS.map((d: any) => {
+          const db = dbById.get(d.id) ?? dbById.get(d.drill_id) ?? ((d.title || d.drill_name) ? dbByName.get((d.drill_name ?? d.title ?? '').trim().toLowerCase()) : undefined);
+          const desc = (db?.description && String(db.description).trim()) || (d.description && String(d.description).trim()) || '';
+          const displayName = db?.drill_name ?? db?.title ?? d.drill_name ?? d.title;
+          return {
+            id: d.id,
+            title: displayName,
+            drill_name: displayName,
+            category: d.category,
+            sub_category: '',
+            focus: d.focus,
+            estimatedMinutes: db?.estimated_minutes ?? db?.estimatedMinutes ?? d.estimatedMinutes,
+            xpValue: d.xpValue,
+            contentType: d.contentType,
+            source: db?.video_url || db?.pdf_url || d.video_url || d.youtube_url || d.pdf_url || desc || '',
+            description: desc,
+            pdf_url: db?.pdf_url ?? d.pdf_url,
+            youtube_url: db?.video_url ?? d.youtube_url ?? d.video_url,
+            goal: db?.goal ?? d.goal,
+          };
+        });
+
+        const dbOnly = dbDrills?.filter((d: any) =>
+          !OFFICIAL_DRILLS.some((o: any) => {
+            const oName = (o.drill_name ?? o.title ?? '').trim().toLowerCase();
+            const dName = (d.drill_name ?? d.title ?? '').trim().toLowerCase();
+            return o.id === d.id || (o as any).drill_id === d.id || (oName && oName === dName);
+          })
+        ) ?? [];
+        const dbOnlyMapped: Drill[] = dbOnly.map((d: any) => ({
+          id: d.id,
+          title: d.drill_name ?? d.title,
+          drill_name: d.drill_name ?? d.title,
+          category: d.category,
+          sub_category: '',
+          focus: d.focus || '',
+          estimatedMinutes: d.estimated_minutes ?? d.estimatedMinutes ?? 10,
+          xpValue: 10,
+          contentType: 'text' as const,
+          source: d.video_url || d.pdf_url || (d.description || ''),
+          description: (d.description && String(d.description).trim()) || '',
+          pdf_url: d.pdf_url,
+          youtube_url: d.video_url,
+          goal: d.goal || '',
+        }));
+
+        const fetchedDrills = [...merged, ...dbOnlyMapped];
+        setDrills(fetchedDrills);
+        localStorage.setItem('drillsData', JSON.stringify(fetchedDrills));
+      } catch (err) {
+        console.error('Error loading drills:', err);
+        const fallback = OFFICIAL_DRILLS.map((d: any) => ({
+          id: d.id,
+          title: d.title,
+          category: d.category,
+          sub_category: '',
+          focus: d.focus,
+          estimatedMinutes: d.estimatedMinutes,
+          xpValue: d.xpValue,
+          contentType: d.contentType,
+          source: d.video_url || d.youtube_url || d.pdf_url || d.description || '',
+          description: d.description || '',
+          pdf_url: d.pdf_url,
+          youtube_url: d.youtube_url || d.video_url,
+          goal: d.goal,
+        }));
+        setDrills(fallback);
       }
     };
 
@@ -756,7 +813,7 @@ export default function PracticePage() {
 
     const drillToAdd = {
       id: drill.id,
-      title: drill.title,
+      title: drill.drill_name ?? drill.title ?? "Untitled",
       category: drill.category,
       estimatedMinutes: drill.estimatedMinutes,
       completed: false,
@@ -1715,7 +1772,7 @@ export default function PracticePage() {
       
       const { data: dbDrill } = await supabase
         .from('drills')
-        .select('video_url, pdf_url, drill_levels, title, category, estimatedMinutes, description')
+        .select('drill_name, description, video_url, pdf_url, drill_levels, title, category, estimatedMinutes')
         .eq('id', newDrill.id)
         .single();
 
@@ -1740,6 +1797,7 @@ export default function PracticePage() {
 
         drillData = {
           ...newDrill,
+          title: dbDrill.drill_name ?? dbDrill.title ?? newDrill.title,
           pdf_url: dbDrill.pdf_url || newDrill.pdf_url,
           youtube_url: dbDrill.video_url || newDrill.youtube_url || newDrill.video_url,
           description: dbDrill.description ?? newDrill.description,

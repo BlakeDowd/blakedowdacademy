@@ -166,7 +166,7 @@ export default function AdminPage() {
             Upsert Drill Library via CSV
           </h2>
           <p className="text-gray-600 mb-4">
-            Use <strong>Drill id</strong> as primary key. Rows with an ID will be updated; rows without an ID will create new drills unless a matching drill name exists (then that record is updated). Expected columns: Drill id, Drill Name, Category, Location, Focus, Duration (min), Description, PDF URL, YouTube Link, Goal/Reps, XP, Equipment.
+            <strong>Unique key:</strong> Drill id (or Drill Name when id is missing). <strong>Upsert:</strong> Existing drills are overwritten; new drills are added. <strong>Deduplication:</strong> Duplicate rows within the CSV (same Drill id) are collapsed—only the last occurrence is imported. Expected columns: Drill id, Drill Name, Category, Location, Focus, Duration (min), Description, PDF URL, YouTube Link, Goal/Reps, XP, Equipment.
           </p>
           <label className="inline-flex items-center gap-2 px-4 py-3 rounded-lg font-semibold text-white cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: '#014421' }}>
             <Upload className="w-5 h-5" />
