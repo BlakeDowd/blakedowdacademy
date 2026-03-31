@@ -40,6 +40,7 @@ interface DrillCardProps {
   onSwap: (dayIndex: number, drillIndex: number) => void;
   onLevelToggle: (dayIndex: number, drillIndex: number, levelId: string, completed: boolean) => void;
   onYoutubeOpen: (url: string) => void;
+  onClear?: (dayIndex: number, drillIndex: number) => void;
   onExpandToggle?: (dayIndex: number, drillIndex: number) => void;
   defaultExpanded?: boolean; // FORCE VISIBILITY: Default to expanded
   compact?: boolean; // Smaller layout for Weekly view
@@ -57,6 +58,7 @@ export default function DrillCard({
   onSwap,
   onLevelToggle,
   onYoutubeOpen,
+  onClear,
   onExpandToggle,
   defaultExpanded = false, // FORCE VISIBILITY: Default to false
   compact = false,
@@ -304,6 +306,23 @@ export default function DrillCard({
                 </button>
               )}
             </div>
+
+            {compact && onClear && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (actualDrillIndex !== -1) {
+                      onClear(dayIndex, actualDrillIndex);
+                    }
+                  }}
+                  className="text-xs text-red-600 hover:text-red-700 underline underline-offset-2"
+                >
+                  Clear Drill
+                </button>
+              </div>
+            )}
           </div>
         )}
         

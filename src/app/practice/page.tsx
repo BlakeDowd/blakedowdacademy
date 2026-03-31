@@ -192,6 +192,22 @@ export default function PracticePage() {
   const [xpNotification, setXpNotification] = useState<{ show: boolean; amount: number }>({ show: false, amount: 0 });
   const [expandedDrill, setExpandedDrill] = useState<string | null>(null); // Track which drill is expanded
   const [durationModal, setDurationModal] = useState<{ open: boolean; facility: FacilityType | null }>({ open: false, facility: null });
+  const [onCourseConfirm, setOnCourseConfirm] = useState<{ open: boolean; duration: number; label: string }>({
+    open: false,
+    duration: 0,
+    label: '',
+  });
+  const [clearDrillConfirm, setClearDrillConfirm] = useState<{
+    open: boolean;
+    dayIndex: number | null;
+    drillIndex: number | null;
+    drillTitle: string;
+  }>({
+    open: false,
+    dayIndex: null,
+    drillIndex: null,
+    drillTitle: '',
+  });
   const [totalPracticeMinutes, setTotalPracticeMinutes] = useState<number>(0);
   const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(true); // Weekly schedule expanded state
   // SINGLE DAY VIEW: Initialize to today's day index
@@ -309,6 +325,8 @@ export default function PracticePage() {
     'Mental/Strategy': 5,
     'On-Course': 50,
   };
+
+  const freestyleDurationOptions: number[] = [15, 30, 45, 60, 90, 120];
 
   // Initialize weekly plan and load from database (DATA JOIN: practice table + drills table)
   useEffect(() => {
@@ -1766,6 +1784,76 @@ export default function PracticePage() {
     }, 2000);
   };
 
+  const clearDrillFromDay = async (dayIndex: number, drillIndex: number) => {
+    const day = weeklyPlan[dayIndex];
+    if (!day?.drills || drillIndex < 0 || drillIndex >= day.drills.length) return;
+
+    const drillToRemove = day.drills[drillIndex];
+
+    const updatedPlan: WeeklyPlan = {
+      ...weeklyPlan,
+      [dayIndex]: {
+        ...day,
+        drills: day.drills.filter((_, idx) => idx !== drillIndex),
+      },
+    };
+
+    setWeeklyPlan(updatedPlan);
+    setGeneratedPlan(updatedPlan);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('weeklyPracticePlans', JSON.stringify(updatedPlan));
+    }
+
+    if (!user?.id) return;
+
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+
+      const today = new Date();
+      const currentDay = today.getDay();
+      const monday = new Date(today);
+      monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+      monday.setHours(12, 0, 0, 0);
+      const targetDate = new Date(monday);
+      targetDate.setDate(monday.getDate() + dayIndex);
+      const fallbackDate = targetDate.toISOString().split('T')[0];
+
+      const selectedDate = day.date || fallbackDate;
+      const drillIdA = drillToRemove.drill_id || drillToRemove.id;
+      const drillIdB = drillToRemove.id;
+
+      let deleteQuery = supabase
+        .from('user_drills')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('selected_date', selectedDate);
+
+      if (drillIdA && drillIdB && drillIdA !== drillIdB) {
+        deleteQuery = deleteQuery.or(`drill_id.eq.${drillIdA},drill_id.eq.${drillIdB}`);
+      } else if (drillIdA) {
+        deleteQuery = deleteQuery.eq('drill_id', drillIdA);
+      }
+
+      const { error } = await deleteQuery;
+      if (error) {
+        console.error('Error clearing drill from user_drills:', error);
+      }
+    } catch (error) {
+      console.error('Error clearing drill from database:', error);
+    }
+  };
+
+  const requestClearDrillFromDay = (dayIndex: number, drillIndex: number) => {
+    const drillTitle = weeklyPlan[dayIndex]?.drills?.[drillIndex]?.title || 'this drill';
+    setClearDrillConfirm({
+      open: true,
+      dayIndex,
+      drillIndex,
+      drillTitle,
+    });
+  };
+
   // Replace a drill in the plan
   const replaceDrill = async (dayIndex: number, drillIndex: number, newDrill: Drill) => {
     const day = weeklyPlan[dayIndex];
@@ -2434,7 +2522,7 @@ export default function PracticePage() {
               </button>
               <button
                 type="button"
-                onClick={() => logFreestylePractice('On-Course', 135)}
+                onClick={() => setOnCourseConfirm({ open: true, duration: 135, label: '9-Hole Round' })}
                 className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
               >
                 <FlagTriangleRight className="w-5 h-5 text-gray-600" />
@@ -2442,7 +2530,7 @@ export default function PracticePage() {
               </button>
               <button
                 type="button"
-                onClick={() => logFreestylePractice('On-Course', 270)}
+                onClick={() => setOnCourseConfirm({ open: true, duration: 270, label: '18-Hole Round' })}
                 className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
               >
                 <FlagTriangleRight className="w-5 h-5 text-gray-600" />
@@ -2462,7 +2550,7 @@ export default function PracticePage() {
               <p className="text-sm text-gray-600 mb-4">Select practice duration</p>
               
               <div className="grid grid-cols-2 gap-3 mb-4">
-                {[15, 30, 45, 60].map((minutes) => {
+                {freestyleDurationOptions.map((minutes) => {
                   const blocks = Math.floor(minutes / 15);
                   const baseXP = facilityBaseXP[durationModal.facility!];
                   const xp = baseXP * blocks;
@@ -2486,6 +2574,76 @@ export default function PracticePage() {
               >
                 Cancel
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* On-Course Round Confirmation Modal */}
+        {onCourseConfirm.open && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Confirm Round Log
+              </h3>
+              <p className="text-sm text-gray-600 mb-5">
+                Log {onCourseConfirm.label} as {onCourseConfirm.duration} minutes of practice time?
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setOnCourseConfirm({ open: false, duration: 0, label: '' })}
+                  className="py-2 px-4 rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const { duration } = onCourseConfirm;
+                    setOnCourseConfirm({ open: false, duration: 0, label: '' });
+                    logFreestylePractice('On-Course', duration);
+                  }}
+                  className="py-2 px-4 rounded-lg bg-[#014421] text-white font-medium hover:opacity-90 transition-opacity"
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Clear Drill Confirmation Modal */}
+        {clearDrillConfirm.open && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Remove Drill
+              </h3>
+              <p className="text-sm text-gray-600 mb-5">
+                Remove "{clearDrillConfirm.drillTitle}" from this day?
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setClearDrillConfirm({ open: false, dayIndex: null, drillIndex: null, drillTitle: '' })}
+                  className="py-2 px-4 rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const { dayIndex, drillIndex } = clearDrillConfirm;
+                    setClearDrillConfirm({ open: false, dayIndex: null, drillIndex: null, drillTitle: '' });
+                    if (dayIndex != null && drillIndex != null) {
+                      clearDrillFromDay(dayIndex, drillIndex);
+                    }
+                  }}
+                  className="py-2 px-4 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -2711,6 +2869,7 @@ export default function PracticePage() {
                                     setExpandedWeeklyDrill(null);
                                   }}
                                   onSwap={swapDrill}
+                                  onClear={requestClearDrillFromDay}
                                   onLevelToggle={updateLevelCompletion}
                                   onYoutubeOpen={(url) => setYoutubeModal({ open: true, url })}
                                   onExpandToggle={(dayIdx, drillIdx) => {

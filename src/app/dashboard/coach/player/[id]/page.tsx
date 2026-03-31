@@ -68,7 +68,6 @@ export default function PlayerDeepDivePage() {
   const [skillTrendData, setSkillTrendData] = useState<any[]>([]);
   const [roundsData, setRoundsData] = useState<any[]>([]);
   const [perfStatsData, setPerfStatsData] = useState<any[]>([]);
-  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [aiSummary, setAiSummary] = useState<string[] | null>(null);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
@@ -536,7 +535,7 @@ export default function PlayerDeepDivePage() {
     setIsGeneratingAi(true);
     setAiSummary(null);
 
-    // Rule-based analysis from practice + rounds data (no external AI API)
+    // Coach-style, opinionated analysis from existing stats (no external AI API)
     const bullets: string[] = [];
     const totalSessions = practiceData.reduce((a, d) => a + (d.sessions || 0), 0);
     const totalMinutes = practiceData.reduce((a, d) => a + (d.minutes || 0), 0);
@@ -551,35 +550,50 @@ export default function PlayerDeepDivePage() {
 
     if (totalSessions === 0 && !hasRounds) {
       bullets.push(
-        "No practice or round data in this period. Encourage the player to log practice sessions and rounds to unlock personalized insights."
+        "Coach take: I do not have enough logged work in this date window to coach properly yet. Log practice sessions and rounds consistently so I can identify real scoring patterns."
       );
     } else {
+      if (strokeOpportunityRows.length > 0) {
+        const top = strokeOpportunityRows[0];
+        const second = strokeOpportunityRows[1];
+        if (top) {
+          bullets.push(
+            `Coach priority: the fastest scoring gain is ${top.name}. You are currently at ${top.current} vs goal ${top.goal}, with an estimated ${top.estimatedGain.toFixed(2)} strokes/round available. Make this your main focus until the gap tightens.`
+          );
+          if (second) {
+            bullets.push(
+              `Secondary focus: ${second.name} (${second.category}). Treat this as your #2 priority after ${top.name}; stacking these two improvements gives the best chance to lower scores quickly.`
+            );
+          }
+        }
+      }
+
       const startD = new Date(dateRange.start);
       const endD = new Date(dateRange.end);
       const rangeDays = Math.max(1, Math.ceil((endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24)));
-      if (totalSessions < 3 && rangeDays >= 30) {
+      const avgPerWeek = rangeDays > 0 ? (totalMinutes / rangeDays) * 7 : 0;
+      if (avgPerWeek < 90) {
         bullets.push(
-          `Practice frequency is low (${totalSessions} session${totalSessions !== 1 ? "s" : ""} in ${rangeDays} days). Recommend at least 3 practice sessions per week to see measurable improvement.`
+          `Workload check: you are averaging about ${Math.round(avgPerWeek)} minutes/week (${totalSessions} session${totalSessions !== 1 ? "s" : ""} in ${rangeDays} days). I would push this toward 90-120 focused minutes weekly, with extra short-game reps if you want scores to move.`
         );
       } else if (totalMinutes > 0) {
-        const avgPerWeek = (totalMinutes / rangeDays) * 7;
         bullets.push(
-          `Averaging ${Math.round(avgPerWeek)} minutes of practice per week. ${avgPerWeek >= 90 ? "Solid consistency—maintain this volume." : "Consider increasing to 90+ minutes per week for faster progress."}`
+          `Training consistency is solid at about ${Math.round(avgPerWeek)} minutes/week. Keep this volume, but direct more of it into your top stroke-opportunity categories to convert practice into lower scores.`
         );
       }
 
       if (skillTrendData.length > 0) {
         if (avgSuccess >= 70) {
           bullets.push(
-            "Shot quality trend is strong. Focus on maintaining consistency and addressing any remaining weak spots (e.g., bunkers or long putts)."
+            "Ball-striking trend is strong overall. As your coach, I would protect this strength and use practice time to clean up scoring leaks around the green and in penalty situations."
           );
         } else if (avgSuccess >= 50) {
           bullets.push(
-            "Shot quality is improving. Prioritize drills that target the lowest-performing areas from recent rounds or practice logs."
+            "Your shot-quality trend is moving in the right direction, but not yet reliable under pressure. Prioritize repeatable drills with clear pass/fail targets, not just volume."
           );
         } else {
           bullets.push(
-            "Shot quality has room to grow. Recommend more deliberate practice with specific drills and clear success criteria rather than unstructured range time."
+            "Shot quality needs a reset. I would run a tighter structure: fewer random balls, more purposeful reps, and measurable goals each session."
           );
         }
       }
@@ -589,7 +603,7 @@ export default function PlayerDeepDivePage() {
           roundsData.reduce((a: number, r: any) => a + (r.score || 0), 0) /
           roundsData.length;
         bullets.push(
-          `Rounds logged: ${roundsData.length}. ${avgScore < 95 ? "Scoring is trending well." : "Focus on course management and short game to lower scores."}`
+          `Rounds logged: ${roundsData.length}. Current scoring average is ${Math.round(avgScore * 10) / 10}. ${avgScore < 95 ? "You are on a solid path; now squeeze out mistakes." : "The fastest route down is reducing costly mistakes and improving conversion inside scoring range."}`
         );
       }
     }
@@ -602,6 +616,58 @@ export default function PlayerDeepDivePage() {
     setAiSummary(bullets.slice(0, 3));
     setIsGeneratingAi(false);
   };
+
+  const strokeOpportunityRows = useMemo(() => {
+    if (!metricMatrix || metricMatrix.length === 0) return [];
+
+    const impactConfig: Record<string, { strokesPerUnit: number; unit: string; category: string }> = {
+      "Total Penalties": { strokesPerUnit: 1.0, unit: "strokes/penalty", category: "Driving + Approach" },
+      "3-Putts / Round": { strokesPerUnit: 1.0, unit: "strokes/3-putt", category: "Putting" },
+      "Double Bogeys+ / Round": { strokesPerUnit: 1.0, unit: "strokes/double+", category: "Course Management" },
+      "Putts Per 18": { strokesPerUnit: 0.8, unit: "strokes/putt", category: "Putting" },
+      "Tee Penalties": { strokesPerUnit: 1.0, unit: "strokes/penalty", category: "Driving" },
+      "Approach Penalties": { strokesPerUnit: 1.0, unit: "strokes/penalty", category: "Approach" },
+      "Scrambling %": { strokesPerUnit: 0.05, unit: "strokes/%", category: "Short Game" },
+      "Bunker Save %": { strokesPerUnit: 0.035, unit: "strokes/%", category: "Bunkers" },
+      "Chips Inside 6ft %": { strokesPerUnit: 0.03, unit: "strokes/%", category: "Chipping" },
+      "Putts Under 6ft %": { strokesPerUnit: 0.035, unit: "strokes/%", category: "Putting" },
+      "GIR %": { strokesPerUnit: 0.02, unit: "strokes/%", category: "Approach" },
+      "FIR %": { strokesPerUnit: 0.01, unit: "strokes/%", category: "Driving" },
+      "GIR 8ft %": { strokesPerUnit: 0.01, unit: "strokes/%", category: "Approach" },
+      "GIR 20ft %": { strokesPerUnit: 0.008, unit: "strokes/%", category: "Approach" },
+      "Scoring Avg": { strokesPerUnit: 1.0, unit: "strokes", category: "Overall" },
+    };
+
+    return metricMatrix
+      .map((stat: any) => {
+        const name = String(stat?.name ?? "");
+        const current = Number(stat?.current ?? stat?.value ?? 0);
+        const goal = Number(stat?.goal ?? 0);
+        const isLowerBetter = Boolean(stat?.isLowerBetter);
+        const config = impactConfig[name];
+
+        if (!config) return null;
+
+        const improvementUnits = isLowerBetter
+          ? Math.max(0, current - goal)
+          : Math.max(0, goal - current);
+        const estimatedGain = improvementUnits * config.strokesPerUnit;
+
+        if (estimatedGain <= 0) return null;
+
+        return {
+          name,
+          current: Math.round(current * 10) / 10,
+          goal: Math.round(goal * 10) / 10,
+          category: config.category,
+          estimatedGain: Math.round(estimatedGain * 100) / 100,
+          unit: config.unit,
+        };
+      })
+      .filter(Boolean)
+      .sort((a: any, b: any) => b.estimatedGain - a.estimatedGain)
+      .slice(0, 3);
+  }, [metricMatrix]);
 
   // Role check removed - app stays on page even if user isn't a coach
   if (!role) console.log("REDIRECTION BLOCKED");
@@ -788,6 +854,34 @@ export default function PlayerDeepDivePage() {
           </div>
         )}
 
+        {strokeOpportunityRows.length > 0 && (
+          <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 mb-6">
+            <h2 className="text-lg font-black text-gray-900 mb-5 flex items-center gap-2 uppercase tracking-tighter">
+              <span className="w-2 h-6 bg-[#FF9800] rounded-full" />
+              Top 3 Stroke Opportunities
+            </h2>
+            <div className="space-y-3">
+              {strokeOpportunityRows.map((row: any, idx: number) => (
+                <div key={`${row.name}-${idx}`} className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-bold text-gray-900">{row.name}</div>
+                      <div className="text-xs text-gray-500">{row.category} focus</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-base font-black text-[#014421]">-{row.estimatedGain.toFixed(2)}</div>
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wide">strokes / round</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-gray-600">
+                    Current: {row.current} | Goal: {row.goal} ({row.unit})
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 3. "Full Metric Matrix" - Data Grid */}
         {metricMatrix.length > 0 && (
           <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 mb-6">
@@ -833,260 +927,58 @@ export default function PlayerDeepDivePage() {
           </div>
         )}
 
-        {/* 4. Practice Allocation Chart */}
+        {/* 4. Practice Allocation */}
         <div className="flex flex-col gap-4 mb-6 w-full min-w-0">
           <div className="bg-white rounded-xl p-6 shadow-sm mb-8 w-full overflow-hidden">
             <h2 className="font-bold text-lg uppercase tracking-wider italic text-gray-900 mb-4 text-center" style={{ textDecoration: 'underline', textDecorationColor: '#FF9800', textDecorationThickness: '2px', textUnderlineOffset: '8px' }}>
               PRACTICE ALLOCATION
             </h2>
-            <div className="w-full aspect-square flex justify-center items-center relative overflow-hidden">
-              <svg 
-                viewBox="-80 -80 660 660" 
-                className="w-full h-full max-w-full max-h-full"
-                preserveAspectRatio="xMidYMid meet"
-                onMouseLeave={() => setHoveredCategory(null)}
-              >
-                <defs>
-                  <linearGradient id="practiceGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="#FF9800" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="#FF9800" stopOpacity="0.1" />
-                  </linearGradient>
-                </defs>
-                
-                {/* Grid polygons (Octagons - 8 categories) */}
-                {[42, 84, 126, 168, 210].map((radius, idx) => {
-                  const points = [0, 1, 2, 3, 4, 5, 6, 7].map(i => {
-                    // Mental/Strategy at top (12 o'clock), clockwise
-                    const angle = (i * (360/8) - 90) * (Math.PI / 180);
-                    const x = 250 + radius * Math.cos(angle);
-                    const y = 250 + radius * Math.sin(angle);
-                    return `${x},${y}`;
-                  }).join(' ');
+            <div className="grid gap-3">
+              {(() => {
+                const activityRows = [
+                  { category: 'Driving', minutes: Number(practiceAllocationData.driving ?? 0) },
+                  { category: 'Irons', minutes: Number(practiceAllocationData.irons ?? 0) },
+                  { category: 'Wedges', minutes: Number(practiceAllocationData.wedges ?? 0) },
+                  { category: 'Chipping', minutes: Number(practiceAllocationData.chipping ?? 0) },
+                  { category: 'Bunkers', minutes: Number(practiceAllocationData.bunkers ?? 0) },
+                  { category: 'Putting', minutes: Number(practiceAllocationData.putting ?? 0) },
+                  { category: 'On-Course', minutes: Number(practiceAllocationData.onCourse ?? 0) },
+                  { category: 'Mental/Strategy', minutes: Number(practiceAllocationData.mentalStrategy ?? 0) },
+                ];
+                const maxMinutes = Math.max(1, ...activityRows.map((row) => row.minutes));
+                const totalMinutes = activityRows.reduce((sum, row) => sum + row.minutes, 0);
+                const start = new Date(`${dateRange.start}T00:00:00`);
+                const end = new Date(`${dateRange.end}T23:59:59`);
+                const rangeDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+                const weeksInRange = Math.max(1 / 7, rangeDays / 7);
+                const monthsInRange = Math.max(1 / 30, rangeDays / 30.44);
+
+                return activityRows.map((row) => {
+                  const fillPercent = Math.round((row.minutes / maxMinutes) * 100);
+                  const practiceShare = totalMinutes > 0 ? Math.round((row.minutes / totalMinutes) * 100) : 0;
+                  const avgWeekly = Math.round((row.minutes / weeksInRange) * 10) / 10;
+                  const avgMonthly = Math.round((row.minutes / monthsInRange) * 10) / 10;
                   return (
-                    <polygon
-                      key={`grid-${idx}`}
-                      points={points}
-                      fill="none"
-                      stroke="#4B5563"
-                      strokeWidth="1"
-                      strokeOpacity="0.4"
-                    />
-                  );
-                })}
-                
-                {/* Grid lines (8 axes) */}
-                {[0, 1, 2, 3, 4, 5, 6, 7].map((idx) => {
-                  const angle = (idx * (360/8) - 90) * (Math.PI / 180);
-                  const x = 250 + 210 * Math.cos(angle);
-                  const y = 250 + 210 * Math.sin(angle);
-                  return (
-                    <line
-                      key={`axis-${idx}`}
-                      x1="250"
-                      y1="250"
-                      x2={x}
-                      y2={y}
-                      stroke="#4B5563"
-                      strokeWidth="1"
-                      strokeOpacity="0.4"
-                    />
-                  );
-                })}
-                
-                {/* Practice Allocation Area - 8 categories, Mental/Strategy at top */}
-                {(() => {
-                  const categories = ['Mental/Strategy', 'Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'On-Course'];
-                  const values = [
-                    practiceAllocationData.mentalStrategy ?? 0,
-                    practiceAllocationData.driving ?? 0,
-                    practiceAllocationData.irons ?? 0,
-                    practiceAllocationData.wedges ?? 0,
-                    practiceAllocationData.chipping ?? 0,
-                    practiceAllocationData.bunkers ?? 0,
-                    practiceAllocationData.putting ?? 0,
-                    practiceAllocationData.onCourse ?? 0,
-                  ];
-                  
-                  // Consistent maxDomain (like 120 minutes) across all axes so the data forms a clear 'web' shape.
-                  const maxDataValue = Math.max(120, ...values);
-                  
-                  const dPath = values.map((val, idx) => {
-                    const angle = (idx * (360/8) - 90) * (Math.PI / 180);
-                    const v = (val ?? 0) as number;
-                    const radius = maxDataValue > 0 ? (v / maxDataValue) * 210 : 0;
-                    const x = 250 + radius * Math.cos(angle);
-                    const y = 250 + radius * Math.sin(angle);
-                    return `${idx === 0 ? 'M' : 'L'} ${x} ${y}`;
-                  }).join(' ') + ' Z';
-                  
-                  return (
-                    <>
-                      <path
-                        d={dPath}
-                        fill="rgba(1, 68, 33, 0.4)"
-                        fillOpacity={0.4}
-                        stroke="#014421"
-                        strokeWidth={2}
-                        strokeLinejoin="round"
-                      />
-                      {categories.map((category, idx) => {
-                        const angle = (idx * (360/8) - 90) * (Math.PI / 180);
-                        const minsVal = values[idx] ?? 0;
-                        const radius = maxDataValue > 0 ? (minsVal / maxDataValue) * 210 : 0;
-                        const labelX = 250 + 235 * Math.cos(angle);
-                        const labelY = 250 + 235 * Math.sin(angle);
-                        
-                        let textAnchor: "start" | "middle" | "end" = "middle";
-                        if (Math.cos(angle) > 0.1) textAnchor = "start";
-                        else if (Math.cos(angle) < -0.1) textAnchor = "end";
-                        
-                        const prevAngle = ((idx - 1 + 8) % 8 * (360/8) - 90) * (Math.PI / 180);
-                        const nextAngle = ((idx + 1) % 8 * (360/8) - 90) * (Math.PI / 180);
-                        const midPrevAngle = (angle + prevAngle) / 2;
-                        const midNextAngle = (angle + nextAngle) / 2;
-                        const hoverRadius = 210;
-                        
-                        const hoverPoints = [
-                          '250,250',
-                          `${250 + hoverRadius * Math.cos(midPrevAngle)},${250 + hoverRadius * Math.sin(midPrevAngle)}`,
-                          `${250 + radius * Math.cos(angle)},${250 + radius * Math.sin(angle)}`,
-                          `${250 + hoverRadius * Math.cos(midNextAngle)},${250 + hoverRadius * Math.sin(midNextAngle)}`,
-                        ].join(' ');
-                        
-                        const isHovered = hoveredCategory === category;
-                        
-                        return (
-                          <g key={`category-${idx}`}>
-                            {/* Invisible hover area */}
-                            <polygon
-                              points={hoverPoints}
-                              fill="transparent"
-                              onMouseEnter={() => setHoveredCategory(category)}
-                              className="cursor-pointer"
-                            />
-                            
-                            {/* Value point */}
-                            <circle
-                              cx={250 + radius * Math.cos(angle)}
-                              cy={250 + radius * Math.sin(angle)}
-                              r={isHovered ? "6" : "4"}
-                              fill="#FF9800"
-                              stroke="#374151"
-                              strokeWidth="2"
-                              className="transition-all duration-300 pointer-events-none"
-                            />
-                            
-                            {/* Category Label - high-contrast gray-900, legible on mobile */}
-                            {category === 'Mental/Strategy' ? (
-                              <text
-                                x={labelX}
-                                y={labelY}
-                                textAnchor={textAnchor}
-                                dominantBaseline="middle"
-                                fill={isHovered ? "#FF9800" : "#111827"}
-                                fontSize="15"
-                                fontWeight="bold"
-                                className="transition-all duration-300 pointer-events-none uppercase tracking-wider"
-                              >
-                                <tspan x={labelX} dy="-0.6em">Mental</tspan>
-                                <tspan x={labelX} dy="1.2em">Strategy</tspan>
-                              </text>
-                            ) : (
-                              <text
-                                x={labelX}
-                                y={labelY}
-                                textAnchor={textAnchor}
-                                dominantBaseline="middle"
-                                fill={isHovered ? "#FF9800" : "#111827"}
-                                fontSize="15"
-                                fontWeight="bold"
-                                className="transition-all duration-300 pointer-events-none uppercase tracking-wider"
-                              >
-                                {category}
-                              </text>
-                            )}
-                            
-                            {/* Tooltip (only show if hovered) */}
-                            {isHovered && (
-                              <g className="pointer-events-none transition-opacity duration-300">
-                                <rect
-                                  x="200"
-                                  y="220"
-                                  width="100"
-                                  height="60"
-                                  rx="8"
-                                  fill="#1e293b"
-                                  stroke="#334155"
-                                  strokeWidth="1"
-                                />
-                                <text
-                                  x="250"
-                                  y="245"
-                                  textAnchor="middle"
-                                  fill="#94a3b8"
-                                  fontSize="12"
-                                  fontWeight="bold"
-                                  className="uppercase"
-                                >
-                                  {category}
-                                </text>
-                                <text
-                                  x="250"
-                                  y="265"
-                                  textAnchor="middle"
-                                  fill="white"
-                                  fontSize="16"
-                                  fontWeight="black"
-                                >
-                                  {(minsVal ?? 0)}m
-                                </text>
-                              </g>
-                            )}
-                          </g>
-                        );
-                      })}
-                    </>
-                  );
-                })()}
-              </svg>
-            </div>
-          </div>
-          
-          {/* Practice Breakdown - Below Spider Chart */}
-          <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-md">
-            <h2 className="text-sm font-black text-gray-900 mb-6 uppercase tracking-wider">
-              PRACTICE BREAKDOWN
-            </h2>
-            <div className="space-y-4">
-              {[
-                { category: 'Driving', minutes: practiceAllocationData.driving },
-                { category: 'Irons', minutes: practiceAllocationData.irons },
-                { category: 'Wedges', minutes: practiceAllocationData.wedges },
-                { category: 'Chipping', minutes: practiceAllocationData.chipping },
-                { category: 'Bunkers', minutes: practiceAllocationData.bunkers },
-                { category: 'Putting', minutes: practiceAllocationData.putting },
-                { category: 'Mental/Strategy', minutes: practiceAllocationData.mentalStrategy },
-                { category: 'On-Course', minutes: practiceAllocationData.onCourse },
-              ].map((item) => {
-                const minsDisplay = Number(item.minutes ?? 0);
-                const totalMinutes = (practiceAllocationData.driving ?? 0) + (practiceAllocationData.irons ?? 0) + (practiceAllocationData.wedges ?? 0) +
-                  (practiceAllocationData.chipping ?? 0) + (practiceAllocationData.bunkers ?? 0) + (practiceAllocationData.putting ?? 0) +
-                  (practiceAllocationData.mentalStrategy ?? 0) + (practiceAllocationData.onCourse ?? 0);
-                const pct = totalMinutes > 0 ? Math.round((minsDisplay / totalMinutes) * 100) : 0;
-                
-                return (
-                  <div key={item.category} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
-                    <div className="text-sm font-medium text-gray-900">{item.category}</div>
-                    <div className="flex items-center gap-4 text-right">
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-lg font-bold text-[#FF9800]">{minsDisplay}</span>
-                        <span className="text-[10px] text-gray-400 font-medium">mins</span>
+                    <div key={row.category} className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-bold text-gray-900">{row.category}</h3>
+                        <span className="text-sm font-bold text-gray-700">{row.minutes}m</span>
                       </div>
-                      <div className="w-12 text-sm font-bold text-gray-400">{pct}%</div>
+                      <div className="w-full h-4 rounded-full bg-gray-200 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-[#014421] transition-all duration-500"
+                          style={{ width: `${Math.max(0, Math.min(100, fillPercent))}%` }}
+                        />
+                      </div>
+                      <div className="mt-2 text-xs text-gray-500 font-medium">{row.minutes} min logged</div>
+                      <div className="mt-1 text-xs font-semibold text-[#014421]">{practiceShare}% of selected period</div>
+                      <div className="mt-1 text-xs text-gray-600">
+                        Avg/week: {avgWeekly} min  |  Avg/month: {avgMonthly} min
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>

@@ -235,8 +235,6 @@ export default function StatsPage() {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [forceLoaded, setForceLoaded] = useState(false);
   const [skillAssessmentFilter, setSkillAssessmentFilter] = useState<'WEEK' | 'MONTH' | 'ALL'>('ALL');
-  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
-  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   
   // Safety Net Mock Data
   const safetyNetData: {val: number, date: string}[] = [
@@ -1290,261 +1288,75 @@ export default function StatsPage() {
                 ))}
               </div>
             </div>
-            <div className="w-full aspect-square flex justify-center items-center relative overflow-hidden">
-              <svg 
-                viewBox="-80 -80 660 660" 
-                className="w-full h-full max-w-full max-h-full"
-                preserveAspectRatio="xMidYMid meet"
-                overflow="visible"
-                onMouseLeave={() => setHoveredCategory(null)}
-              >
-                <defs>
-                  <linearGradient id="practiceGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="#FF9800" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="#FF9800" stopOpacity="0.1" />
-                  </linearGradient>
-                </defs>
-                
-                {/* Grid polygons (Hexagons - 6 categories) */}
-                {[42, 84, 126, 168, 210].map((radius, idx) => {
-                  const points = [0, 1, 2, 3, 4, 5].map(i => {
-                    // Mental/Strategy at top (12 o'clock), clockwise
-                    const angle = (i * (360/6) - 90) * (Math.PI / 180);
-                    const x = 250 + radius * Math.cos(angle);
-                    const y = 250 + radius * Math.sin(angle);
-                    return `${x},${y}`;
-                  }).join(' ');
-                  return (
-                    <polygon
-                      key={`grid-${idx}`}
-                      points={points}
-                      fill="none"
-                      stroke="#4B5563"
-                      strokeWidth="1"
-                      strokeOpacity="0.4"
-                    />
-                  );
-                })}
-                
-                {/* Grid lines (6 axes) */}
-                {[0, 1, 2, 3, 4, 5].map((idx) => {
-                  const angle = (idx * (360/6) - 90) * (Math.PI / 180);
-                  const x = 250 + 210 * Math.cos(angle);
-                  const y = 250 + 210 * Math.sin(angle);
-                  return (
-                    <line
-                      key={`axis-${idx}`}
-                      x1="250"
-                      y1="250"
-                      x2={x}
-                      y2={y}
-                      stroke="#4B5563"
-                      strokeWidth="1"
-                      strokeOpacity="0.4"
-                    />
-                  );
-                })}
-                
-                {/* Practice Allocation Area - Order: Mental/Strategy, Short Game, Putting, Approach, Driving, On-Course */}
-                {(() => {
-                  const categories = ['Mental/Strategy', 'Short Game', 'Putting', 'Approach', 'Driving', 'On-Course'];
-                  const values = [
-                    practiceAllocationData.mentalStrategy,
-                    practiceAllocationData.chipping + practiceAllocationData.bunkers,
-                    practiceAllocationData.putting,
-                    practiceAllocationData.irons + practiceAllocationData.wedges,
-                    practiceAllocationData.driving,
-                    practiceAllocationData.onCourse,
-                  ];
-                  
-                  // Consistent maxDomain (like 120 minutes) across all axes so the data forms a clear 'web' shape.
-                  const maxDataValue = Math.max(120, ...values);
-                  
-                  const dPath = values.map((val, idx) => {
-                    const angle = (idx * (360/6) - 90) * (Math.PI / 180);
-                    const radius = (val / maxDataValue) * 210;
-                    const x = 250 + radius * Math.cos(angle);
-                    const y = 250 + radius * Math.sin(angle);
-                    return `${idx === 0 ? 'M' : 'L'} ${x} ${y}`;
-                  }).join(' ') + ' Z';
-                  
-                  return (
-                    <>
-                      <path
-                        d={dPath}
-                        fill="rgba(1, 68, 33, 0.4)"
-                        fillOpacity={0.4}
-                        stroke="#014421"
-                        strokeWidth={2}
-                        strokeLinejoin="round"
-                      />
-                      {/* Interactive category segments with hover */}
-                      {categories.map((category, idx) => {
-                        const angle = (idx * (360/6) - 90) * (Math.PI / 180);
-                        const minsVal = values[idx];
-                        const radius = (minsVal / maxDataValue) * 210;
-                        const labelX = 250 + 250 * Math.cos(angle);
-                        const labelY = 250 + 250 * Math.sin(angle);
-                        
-                        let textAnchor: "start" | "middle" | "end" = "middle";
-                        if (Math.cos(angle) > 0.1) textAnchor = "start";
-                        else if (Math.cos(angle) < -0.1) textAnchor = "end";
-                        
-                        const prevAngle = ((idx - 1 + 6) % 6 * (360/6) - 90) * (Math.PI / 180);
-                        const nextAngle = ((idx + 1) % 6 * (360/6) - 90) * (Math.PI / 180);
-                        const midPrevAngle = (angle + prevAngle) / 2;
-                        const midNextAngle = (angle + nextAngle) / 2;
-                        const hoverRadius = 210;
-                        
-                        const hoverPoints = [
-                          '250,250',
-                          `${250 + hoverRadius * Math.cos(midPrevAngle)},${250 + hoverRadius * Math.sin(midPrevAngle)}`,
-                          `${250 + radius * Math.cos(angle)},${250 + radius * Math.sin(angle)}`,
-                          `${250 + hoverRadius * Math.cos(midNextAngle)},${250 + hoverRadius * Math.sin(midNextAngle)}`,
-                        ].join(' ');
-                        
-                        const isHovered = hoveredCategory === category;
-                        
-                        return (
-                          <g key={`category-${idx}`}>
-                            {/* Invisible hover area */}
-                            <polygon
-                              points={hoverPoints}
-                              fill="transparent"
-                              onMouseEnter={(e) => {
-                                setHoveredCategory(category);
-                                const svgElement = e.currentTarget.closest('svg');
-                                const rect = svgElement?.getBoundingClientRect();
-                                const svgRect = svgElement?.viewBox?.baseVal || { width: 500, height: 500 };
-                                if (rect && svgElement) {
-                                  const scaleX = rect.width / svgRect.width;
-                                  const scaleY = rect.height / svgRect.height;
-                                  setTooltipPosition({
-                                    x: rect.left + labelX * scaleX,
-                                    y: rect.top + labelY * scaleY,
-                                  });
-                                }
-                              }}
-                              style={{ cursor: 'pointer' }}
-                            />
-                            {/* Category labels */}
-                            {category === 'Mental/Strategy' ? (
-                              <text
-                                x={labelX}
-                                y={labelY}
-                                textAnchor={textAnchor}
-                                dominantBaseline="middle"
-                                fill={isHovered ? "#FF9800" : "#111827"}
-                                fontSize="15"
-                                fontWeight="bold"
-                                opacity={isHovered ? 1 : 0.95}
-                                className="uppercase tracking-wider"
-                              >
-                                <tspan x={labelX} dy="-0.6em">Mental</tspan>
-                                <tspan x={labelX} dy="1.2em">Strategy</tspan>
-                              </text>
-                            ) : (
-                              <text
-                                x={labelX}
-                                y={labelY}
-                                textAnchor={textAnchor}
-                                dominantBaseline="middle"
-                                fill={isHovered ? "#FF9800" : "#111827"}
-                                fontSize="15"
-                                fontWeight="bold"
-                                opacity={isHovered ? 1 : 0.95}
-                                className="uppercase tracking-wider"
-                              >
-                                {category}
-                              </text>
-                            )}
-                            {/* Value indicator on hover */}
-                            {isHovered && (
-                              <circle
-                                cx={250 + radius * Math.cos(angle)}
-                                cy={250 + radius * Math.sin(angle)}
-                                r="6"
-                                fill="#FF9800"
-                                stroke="#374151"
-                                strokeWidth="2"
-                              />
-                            )}
-                          </g>
-                        );
-                      })}
-                    </>
-                  );
-                })()}
-              </svg>
-              
-              {/* Hover Tooltip */}
-              {hoveredCategory && (() => {
-                const categories = ['Mental/Strategy', 'Short Game', 'Putting', 'Approach', 'Driving', 'On-Course'];
-                const categoryValues = [
-                  practiceAllocationData.mentalStrategy,
-                  practiceAllocationData.chipping + practiceAllocationData.bunkers,
-                  practiceAllocationData.putting,
-                  practiceAllocationData.irons + practiceAllocationData.wedges,
-                  practiceAllocationData.driving,
-                  practiceAllocationData.onCourse,
-                ];
-                const categoryIndex = categories.indexOf(hoveredCategory);
-                const currentValue = categoryValues[categoryIndex] ?? 0;
-                
-                return (
-                  <div 
-                    className="fixed bg-white rounded-lg shadow-xl p-3 z-50 border-2 border-[#FF9800] pointer-events-none max-w-[200px] whitespace-normal break-words"
-                    style={{
-                      left: `${tooltipPosition.x}px`,
-                      top: `${tooltipPosition.y - 100}px`,
-                      transform: 'translateX(-50%)',
-                      minWidth: '120px',
-                    }}
-                  >
-                    <div className="text-xs font-bold text-gray-900 mb-2 break-words">{hoveredCategory}</div>
-                    <div className="text-xs text-gray-700 whitespace-normal">
-                      <span className="font-semibold">Practice Logged:</span> {currentValue} mins
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-
-          {/* Numeric Breakdown Section */}
-          <div className="bg-white rounded-2xl p-4 mt-4 shadow-sm">
-            <div className="text-xs font-bold text-gray-900 uppercase tracking-wide mb-3">PRACTICE BREAKDOWN</div>
-            <div className="space-y-0">
+            <div className="grid gap-3">
               {(() => {
-                const categories = ['Mental/Strategy', 'Short Game', 'Putting', 'Approach', 'Driving', 'On-Course'];
-                const values = [
-                  practiceAllocationData.mentalStrategy,
-                  practiceAllocationData.chipping + practiceAllocationData.bunkers,
-                  practiceAllocationData.putting,
-                  practiceAllocationData.irons + practiceAllocationData.wedges,
-                  practiceAllocationData.driving,
-                  practiceAllocationData.onCourse,
+                const activityRows = [
+                  { category: 'Driving', minutes: Number(practiceAllocationData.driving ?? 0) },
+                  { category: 'Irons', minutes: Number(practiceAllocationData.irons ?? 0) },
+                  { category: 'Wedges', minutes: Number(practiceAllocationData.wedges ?? 0) },
+                  { category: 'Chipping', minutes: Number(practiceAllocationData.chipping ?? 0) },
+                  { category: 'Bunkers', minutes: Number(practiceAllocationData.bunkers ?? 0) },
+                  { category: 'Putting', minutes: Number(practiceAllocationData.putting ?? 0) },
+                  { category: 'On-Course', minutes: Number(practiceAllocationData.onCourse ?? 0) },
+                  { category: 'Mental/Strategy', minutes: Number(practiceAllocationData.mentalStrategy ?? 0) },
                 ];
-                const totalMins = values.reduce((sum, val) => sum + val, 0);
-                
-                return categories.map((category, idx) => {
-                  const mins = values[idx];
-                  const percentage = totalMins > 0 ? Math.round((mins / totalMins) * 100) : 0;
-                  
+                const weeklyRecommended: Record<string, { min: number; max: number }> = {
+                  'Putting': { min: 90, max: 120 },
+                  'Chipping': { min: 60, max: 90 },
+                  'Bunkers': { min: 30, max: 45 },
+                  'Irons': { min: 60, max: 90 },
+                  'Wedges': { min: 45, max: 75 },
+                  'Driving': { min: 60, max: 90 },
+                  'Mental/Strategy': { min: 30, max: 45 },
+                  'On-Course': { min: 120, max: 240 },
+                };
+                const totalMinutes = activityRows.reduce((sum, row) => sum + row.minutes, 0);
+                const rangeMultiplier = skillAssessmentFilter === 'MONTH' ? 4 : skillAssessmentFilter === 'ALL' ? 8 : 1;
+                const rangeLabel = skillAssessmentFilter === 'MONTH' ? 'this month' : skillAssessmentFilter === 'ALL' ? 'this period' : 'this week';
+                const maxMinutes = Math.max(1, ...activityRows.map((row) => row.minutes));
+                const isAllTimeView = skillAssessmentFilter === 'ALL';
+
+                return activityRows.map((row) => {
+                  const fillPercent = Math.round((row.minutes / maxMinutes) * 100);
+                  const rec = weeklyRecommended[row.category] || { min: 0, max: 0 };
+                  const recMin = rec.min * rangeMultiplier;
+                  const recMax = rec.max * rangeMultiplier;
+                  const practiceShare = totalMinutes > 0 ? Math.round((row.minutes / totalMinutes) * 100) : 0;
+                  const status =
+                    row.minutes < recMin ? 'Needs attention' :
+                    row.minutes > recMax ? 'Strong focus' :
+                    'On track';
                   return (
-                    <div key={category}>
-                      <div className="flex items-center justify-between py-2">
-                        <div className="text-sm font-medium text-gray-900">{category}</div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-xl font-bold" style={{ color: '#FF9800' }}>
-                            {mins} <span className="text-xs text-gray-500 font-normal">mins</span>
-                          </div>
-                          <div className="text-sm font-semibold text-gray-400 w-12 text-right">
-                            {percentage}%
-                          </div>
-                        </div>
+                    <div key={row.category} className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-bold text-gray-900">{row.category}</h3>
+                        <span className="text-sm font-bold text-gray-700">{row.minutes}m</span>
                       </div>
-                      {idx < categories.length - 1 && <div className="border-t border-gray-200"></div>}
+                      <div className="w-full h-4 rounded-full bg-gray-200 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-[#05412B] transition-all duration-500"
+                          style={{ width: `${Math.max(0, Math.min(100, fillPercent))}%` }}
+                        />
+                      </div>
+                      <div className="mt-2 text-xs text-gray-500 font-medium">{row.minutes} min logged {rangeLabel}</div>
+                      {isAllTimeView ? (
+                        <div className="mt-1 text-xs font-semibold text-[#05412B]">
+                          {practiceShare}% of all logged practice
+                        </div>
+                      ) : (
+                        <>
+                          <div className="mt-1 text-xs text-gray-600">Recommended: {recMin}-{recMax} min</div>
+                          <div className={`mt-1 text-xs font-semibold ${
+                            status === 'Needs attention'
+                              ? 'text-red-600'
+                              : status === 'Strong focus'
+                                ? 'text-[#014421]'
+                                : 'text-amber-600'
+                          }`}>
+                            {status}
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 });
