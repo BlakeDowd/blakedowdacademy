@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
 import { Save, Loader2, Upload, FileSpreadsheet } from "lucide-react";
-import { parseDrillCSV, upsertDrillsFromCSV } from "@/lib/csvDrillUpload";
 
 // Admin email - update this to your email
 const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || "your-email@example.com";
@@ -26,7 +25,12 @@ export default function AdminPage() {
   });
 
   const [csvUploading, setCsvUploading] = useState(false);
-  const [csvResult, setCsvResult] = useState<{ updated: number; added: number } | null>(null);
+  const [csvResult, setCsvResult] = useState<{
+    updated: number;
+    added: number;
+    removed: number;
+    totalRowsInTable: number | null;
+  } | null>(null);
   const [csvError, setCsvError] = useState("");
 
   useEffect(() => {
@@ -115,24 +119,43 @@ export default function AdminPage() {
     setCsvResult(null);
 
     try {
-      const text = await file.text();
-      const parsed = parseDrillCSV(text);
-      if (parsed.length === 0) {
-        setCsvError("No valid drills found in CSV. Expected columns: Drill id, Drill Name, Category, Location, Focus, Duration (min), Description, PDF URL, YouTube Link, Goal/Reps, XP, Equipment");
+      const body = new FormData();
+      body.append("file", file);
+
+      const res = await fetch("/api/admin/import-drills", {
+        method: "POST",
+        body,
+        credentials: "same-origin",
+      });
+
+      const data = (await res.json()) as {
+        error?: string;
+        ok?: boolean;
+        added?: number;
+        updated?: number;
+        removed?: number;
+        totalRowsInTable?: number | null;
+      };
+
+      if (!res.ok) {
+        setCsvError(data.error || `Upload failed (${res.status}).`);
         return;
       }
 
-      const supabase = createClient();
-      const result = await upsertDrillsFromCSV({ supabase, parsed });
-      setCsvResult({ updated: result.updated, added: result.added });
-      e.target.value = "";
-    } catch (err: any) {
-      const msg = err.message?.toLowerCase() || "";
-      if (msg.includes("row-level security") || msg.includes("permission denied") || msg.includes("rls")) {
-        setCsvError("Permission denied. Ensure you have admin privileges to upload drills.");
-      } else {
-        setCsvError(err.message || "Failed to upload CSV.");
+      setCsvResult({
+        updated: data.updated ?? 0,
+        added: data.added ?? 0,
+        removed: data.removed ?? 0,
+        totalRowsInTable:
+          data.totalRowsInTable === undefined ? null : data.totalRowsInTable,
+      });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("drillLibraryRefresh"));
       }
+      e.target.value = "";
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to upload CSV.";
+      setCsvError(message);
     } finally {
       setCsvUploading(false);
     }
@@ -165,8 +188,14 @@ export default function AdminPage() {
             <FileSpreadsheet className="w-5 h-5" style={{ color: '#014421' }} />
             Upsert Drill Library via CSV
           </h2>
-          <p className="text-gray-600 mb-4">
-            <strong>Unique key:</strong> Drill id (or Drill Name when id is missing). <strong>Upsert:</strong> Existing drills are overwritten; new drills are added. <strong>Deduplication:</strong> Duplicate rows within the CSV (same Drill id) are collapsed—only the last occurrence is imported. Expected columns: Drill id, Drill Name, Category, Location, Focus, Duration (min), Description, PDF URL, YouTube Link, Goal/Reps, XP, Equipment.
+          <p className="text-gray-600 mb-2 text-sm">
+            Pick your CSV — the server imports it into the same database the app uses. You need{" "}
+            <code className="text-xs bg-gray-100 px-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code> in{" "}
+            <code className="text-xs bg-gray-100 px-1 rounded">.env.local</code> once (never commit it).
+          </p>
+          <p className="text-gray-500 mb-4 text-xs">
+            Columns: Drill id, Drill Name, Category, Location, Focus, Duration (min), Description, PDF URL,
+            YouTube Link, Goal/Reps, XP, Equipment.
           </p>
           <label className="inline-flex items-center gap-2 px-4 py-3 rounded-lg font-semibold text-white cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: '#014421' }}>
             <Upload className="w-5 h-5" />
@@ -180,10 +209,16 @@ export default function AdminPage() {
             />
           </label>
           {csvResult && (
-            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg space-y-1">
               <p className="text-sm font-semibold text-green-800">
-                {csvResult.updated} Drills Updated, {csvResult.added} New Drills Added.
+                Done: {csvResult.added} added, {csvResult.updated} updated
+                {csvResult.removed > 0 ? `, ${csvResult.removed} duplicate rows removed` : ""}.
               </p>
+              {csvResult.totalRowsInTable != null && (
+                <p className="text-xs text-green-700">
+                  Drills table now has {csvResult.totalRowsInTable} rows total.
+                </p>
+              )}
             </div>
           )}
           {csvError && (

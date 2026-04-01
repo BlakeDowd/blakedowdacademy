@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "drills:upsert": "tsx scripts/upsert-drills-from-csv.ts"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.2",
@@ -16,6 +17,7 @@
     "framer-motion": "^12.23.26",
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.562.0",
+    "md5": "^2.3.0",
     "next": "16.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -25,12 +27,14 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/html2canvas": "^0.5.35",
+    "@types/md5": "^2.3.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "tailwindcss": "^4",
+    "tsx": "^4.19.2",
     "typescript": "^5"
   }
 }

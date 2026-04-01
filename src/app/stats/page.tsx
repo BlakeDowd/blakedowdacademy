@@ -1266,18 +1266,18 @@ export default function StatsPage() {
 
         {/* Practice Allocation Chart - At the bottom */}
         <div className="px-3 sm:px-4 mb-6 min-w-0">
-          <div className="bg-white rounded-xl shadow-sm p-6 mb-8 w-full overflow-hidden">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-lg uppercase tracking-wider italic text-gray-900" style={{ textDecoration: 'underline', textDecorationColor: '#FF9800', textDecorationThickness: '2px', textUnderlineOffset: '8px' }}>
+          <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6 mb-8 w-full overflow-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+              <h2 className="font-bold text-base sm:text-lg uppercase tracking-wider italic text-gray-900 pr-2" style={{ textDecoration: 'underline', textDecorationColor: '#FF9800', textDecorationThickness: '2px', textUnderlineOffset: '8px' }}>
                 PRACTICE ALLOCATION
               </h2>
               {/* Time Filter */}
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1.5">
                 {(['WEEK', 'MONTH', 'ALL'] as const).map(filter => (
                   <button 
                     key={filter} 
                     onClick={() => setSkillAssessmentFilter(filter)} 
-                    className={`px-3 py-1 rounded-lg text-xs font-bold uppercase transition-all ${
+                    className={`px-2.5 sm:px-3 py-1 rounded-lg text-[11px] sm:text-xs font-bold uppercase transition-all ${
                       skillAssessmentFilter === filter 
                         ? 'bg-[#05412B] text-white border-2 border-[#05412B]' 
                         : 'bg-gray-100 text-gray-600 border border-gray-200'

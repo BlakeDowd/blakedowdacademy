@@ -9,6 +9,10 @@ import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
 import { DrillLibrary } from "@/components/DrillLibrary";
 import { getBenchmarkGoals } from "@/app/stats/page";
+import {
+  fetchDrillsCatalogRows,
+  fetchDrillRowById,
+} from "@/lib/fetchDrillsCatalog";
 
 type RoundType = '9-hole' | '18-hole' | null;
 
@@ -397,11 +401,17 @@ export default function PracticePage() {
 
         // CROSS-REFERENCE: Fetch drill details from drills table and match by title
         if ((practiceData && practiceData.length > 0) || (userDrillsData && userDrillsData.length > 0)) {
-          // Fetch all drills from drills table
-          const { data: allDrillsData, error: drillsError } = await supabase
-            .from('drills')
-            .select('id, drill_name, description, video_url, pdf_url, drill_levels, title, category, estimatedMinutes');
-          
+          let allDrillsData = await fetchDrillsCatalogRows();
+          if (allDrillsData === null) {
+            const { data, error: drillsError } = await supabase
+              .from('drills')
+              .select('id, drill_name, description, video_url, pdf_url, drill_levels, title, category, estimatedMinutes');
+            if (drillsError) {
+              console.warn('Practice: drills lookup failed', drillsError.message);
+            }
+            allDrillsData = (data ?? []) as Record<string, unknown>[];
+          }
+
           const drillDetailsMap: Record<string, any> = {};
           
           if (typeof OFFICIAL_DRILLS !== 'undefined') {
@@ -412,8 +422,8 @@ export default function PracticePage() {
             });
           }
 
-          if (allDrillsData && !drillsError) {
-            allDrillsData.forEach((drill: any) => {
+          if (allDrillsData && allDrillsData.length > 0) {
+            (allDrillsData as any[]).forEach((drill: any) => {
               if (drill.id) {
                 drillDetailsMap[drill.id] = drillDetailsMap[drill.id] 
                   ? { ...drillDetailsMap[drill.id], ...drill } 
@@ -600,16 +610,24 @@ export default function PracticePage() {
     loadWeeklySchedule();
   }, [user?.id]);
 
-  // Fetch drills from Supabase + merge with OFFICIAL_DRILLS (DB description takes precedence)
+  // Fetch drills from DB + merge with OFFICIAL_DRILLS (prefers server catalog so RLS cannot hide rows)
   useEffect(() => {
+    let cancelled = false;
+
     const loadDrills = async () => {
       if (typeof window === 'undefined') return;
       try {
-        const { createClient } = await import('@/lib/supabase/client');
-        const supabase = createClient();
-        const { data: dbDrills } = await supabase
-          .from('drills')
-          .select('id, drill_name, description, category, focus, goal, estimated_minutes, estimatedMinutes, pdf_url, video_url');
+        let dbDrills: any[] | null = await fetchDrillsCatalogRows();
+        if (dbDrills === null) {
+          const { createClient } = await import('@/lib/supabase/client');
+          const supabase = createClient();
+          const { data } = await supabase
+            .from('drills')
+            .select('id, drill_name, description, category, focus, goal, estimated_minutes, estimatedMinutes, pdf_url, video_url');
+          dbDrills = data ?? [];
+        }
+
+        if (cancelled) return;
 
         const dbById = new Map<string, any>();
         const dbByName = new Map<string, any>();
@@ -671,6 +689,7 @@ export default function PracticePage() {
         setDrills(fetchedDrills);
         localStorage.setItem('drillsData', JSON.stringify(fetchedDrills));
       } catch (err) {
+        if (cancelled) return;
         console.error('Error loading drills:', err);
         const fallback = OFFICIAL_DRILLS.map((d: any) => ({
           id: d.id,
@@ -691,7 +710,13 @@ export default function PracticePage() {
       }
     };
 
-    loadDrills();
+    void loadDrills();
+    const onLibraryRefresh = () => void loadDrills();
+    window.addEventListener('drillLibraryRefresh', onLibraryRefresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('drillLibraryRefresh', onLibraryRefresh);
+    };
   }, []);
 
   // Calculate most needed improvement (similar to Stats page)
@@ -1864,22 +1889,26 @@ export default function PracticePage() {
     // DATA SYNC: Fetch fresh drill data from database to get video_url and drill_levels
     let drillData = { ...newDrill };
     try {
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-      
-      const { data: dbDrill } = await supabase
-        .from('drills')
-        .select('drill_name, description, video_url, pdf_url, drill_levels, title, category, estimatedMinutes')
-        .eq('id', newDrill.id)
-        .single();
+      let dbDrill: Record<string, unknown> | null = await fetchDrillRowById(newDrill.id);
+      if (!dbDrill) {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const { data } = await supabase
+          .from('drills')
+          .select('drill_name, description, video_url, pdf_url, drill_levels, title, category, estimatedMinutes')
+          .eq('id', newDrill.id)
+          .single();
+        dbDrill = data ?? null;
+      }
 
       if (dbDrill) {
+        const d = dbDrill as Record<string, any>;
         let levels = null;
-        if (dbDrill.drill_levels) {
+        if (d.drill_levels) {
           try {
-            levels = typeof dbDrill.drill_levels === 'string' 
-              ? JSON.parse(dbDrill.drill_levels)
-              : dbDrill.drill_levels;
+            levels = typeof d.drill_levels === 'string' 
+              ? JSON.parse(d.drill_levels)
+              : d.drill_levels;
             if (Array.isArray(levels)) {
               levels = levels.map((level: any, idx: number) => ({
                 id: level.id || `level-${idx}`,
@@ -1892,13 +1921,13 @@ export default function PracticePage() {
           }
         }
 
-        const desc = (dbDrill.description && String(dbDrill.description).trim()) || DESCRIPTION_BY_DRILL_ID[newDrill.id] || newDrill.description;
+        const desc = (d.description && String(d.description).trim()) || DESCRIPTION_BY_DRILL_ID[newDrill.id] || newDrill.description;
         drillData = {
           ...newDrill,
-          title: dbDrill.drill_name ?? dbDrill.title ?? newDrill.title,
-          pdf_url: dbDrill.pdf_url || newDrill.pdf_url,
-          youtube_url: dbDrill.video_url || newDrill.youtube_url || newDrill.video_url,
-          video_url: dbDrill.video_url || newDrill.video_url || newDrill.youtube_url,
+          title: String(d.drill_name ?? d.title ?? newDrill.title),
+          pdf_url: d.pdf_url || newDrill.pdf_url,
+          youtube_url: d.video_url || newDrill.youtube_url || newDrill.video_url,
+          video_url: d.video_url || newDrill.video_url || newDrill.youtube_url,
           description: desc,
           levels: levels || newDrill.levels,
         };

@@ -5,7 +5,11 @@
  * Unique key: Drill id (or Drill Name when id is missing).
  * - Upsert: If drill exists in DB, overwrite. If new, add.
  * - CSV deduplication: Exact duplicate rows (same unique key) are collapsed; only the last occurrence is imported.
+ *
+ * Database `id` is UUID: CSV codes like PUTT-GATE-001 are converted with the same MD5→UUID mapping as import_drills.mjs.
  */
+
+import md5 from "md5";
 
 export interface ParsedDrillRow {
   id: string | null;
@@ -24,6 +28,8 @@ export interface ParsedDrillRow {
 
 export interface DrillUpsertPayload {
   id: string;
+  /** Stable human drill code from CSV (e.g. PUTT-GATE-001), when table has drill_id column */
+  drill_id?: string | null;
   drill_name: string;
   title: string; // Alias for drill_name (Supabase may use title)
   description: string;
@@ -42,6 +48,8 @@ export interface UploadResult {
   updated: number;
   added: number;
   skipped: number;
+  /** Rows removed to avoid duplicate drill_name with a different id (e.g. old UUID vs CSV code id) */
+  removed?: number;
 }
 
 function parseCSV(text: string): string[][] {
@@ -95,6 +103,28 @@ function parseCSV(text: string): string[][] {
 function getUniqueKey(row: ParsedDrillRow): string {
   if (row.id && row.id.trim()) return row.id.trim();
   return row.drillName.trim().toLowerCase();
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Same mapping as import_drills.mjs / legacy seed (deterministic per drill code). */
+export function drillCsvCodeToUuid(code: string): string {
+  const hash = md5(code.trim());
+  return [
+    hash.substring(0, 8),
+    hash.substring(8, 12),
+    "4" + hash.substring(13, 16),
+    "8" + hash.substring(17, 20),
+    hash.substring(20, 32),
+  ].join("-");
+}
+
+export function resolveDrillPrimaryKey(csvId: string | null): string {
+  if (!csvId || !csvId.trim()) return "";
+  const raw = csvId.trim();
+  if (UUID_RE.test(raw)) return raw;
+  return drillCsvCodeToUuid(raw);
 }
 
 /**
@@ -178,8 +208,13 @@ function toSupabasePayload(
     ? JSON.stringify([{ id: "goal-1", name: `Goal: ${row.goal}`, completed: false }])
     : null;
 
+  const csvCode = row.id?.trim() || null;
+  const humanDrillId =
+    csvCode && !UUID_RE.test(csvCode) ? csvCode : null;
+
   return {
     id: resolvedId,
+    drill_id: humanDrillId,
     drill_name: row.drillName,
     title: row.drillName,
     description: (row.description && String(row.description).trim()) ? row.description.trim() : "",
@@ -211,6 +246,65 @@ export interface UpsertDrillsOptions {
   parsed: ParsedDrillRow[];
 }
 
+/** Columns used when the drills table is empty (no sample row to inspect). Omit drill_name for legacy schemas. */
+const DRILL_COLUMNS_WHEN_EMPTY = new Set([
+  "id",
+  "title",
+  "drill_id",
+  "description",
+  "category",
+  "focus",
+  "pdf_url",
+  "video_url",
+  "goal",
+  "estimated_minutes",
+  "estimatedMinutes",
+  "xp_value",
+  "xpValue",
+  "drill_levels",
+  "created_at",
+]);
+
+function getDisplayNameFromRow(d: Record<string, unknown>): string {
+  const dn = d.drill_name ?? d.title;
+  return dn != null ? String(dn).trim() : "";
+}
+
+/**
+ * Build upsert object from full payload, only including columns that exist in the table.
+ */
+function filterDrillPayloadForSchema(
+  p: DrillUpsertPayload,
+  colSet: Set<string>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (colSet.has("id")) out.id = p.id;
+  if (colSet.has("drill_id") && p.drill_id != null) {
+    out.drill_id = p.drill_id;
+  }
+  if (colSet.has("drill_name")) out.drill_name = p.drill_name;
+  if (colSet.has("title")) out.title = p.title;
+  if (colSet.has("description")) out.description = p.description;
+  if (colSet.has("category")) out.category = p.category;
+  if (colSet.has("focus")) out.focus = p.focus;
+  if (colSet.has("pdf_url")) out.pdf_url = p.pdf_url;
+  if (colSet.has("video_url")) out.video_url = p.video_url;
+  if (colSet.has("goal")) out.goal = p.goal;
+  if (colSet.has("estimated_minutes")) {
+    out.estimated_minutes = p.estimated_minutes;
+  } else if (colSet.has("estimatedMinutes")) {
+    out.estimatedMinutes = p.estimated_minutes;
+  }
+  if (colSet.has("xp_value")) {
+    out.xp_value = p.xp_value;
+  } else if (colSet.has("xpValue")) {
+    out.xpValue = p.xp_value;
+  }
+  if (colSet.has("drill_levels")) out.drill_levels = p.drill_levels;
+  if (colSet.has("created_at")) out.created_at = p.created_at;
+  return out;
+}
+
 /**
  * Upsert drills to Supabase by ID (unique key):
  * - If the CSV row has an ID: Update the record in Supabase (fixes spelling/typos without deleting).
@@ -224,23 +318,48 @@ export async function upsertDrillsFromCSV({
 
   if (parsed.length === 0) return result;
 
-  // Fetch existing drills: id and drill_name for duplicate/lookup
+  const { data: sampleRows, error: sampleError } = await supabase
+    .from("drills")
+    .select("*")
+    .limit(1);
+
+  if (sampleError) {
+    throw new Error(`Failed to read drills schema: ${sampleError.message}`);
+  }
+
+  const colSet: Set<string> =
+    sampleRows && sampleRows.length > 0
+      ? new Set(Object.keys(sampleRows[0] as object))
+      : DRILL_COLUMNS_WHEN_EMPTY;
+
+  const nameSelectFields = ["drill_name", "title"].filter((f) => colSet.has(f));
+  const selectExisting =
+    nameSelectFields.length > 0
+      ? `id,${nameSelectFields.join(",")}`
+      : "id";
+
   const { data: existingDrills, error: fetchError } = await supabase
     .from("drills")
-    .select("id, drill_name");
+    .select(selectExisting);
 
   if (fetchError) {
     throw new Error(`Failed to fetch existing drills: ${fetchError.message}`);
   }
 
   const existingById = new Map<string, { id: string; drill_name: string }>();
-  const existingByDrillName = new Map<string, string>(); // drill_name (lower) -> id
+  const existingByDrillName = new Map<string, string>(); // drill_name (lower) -> id (one representative)
+  const idsByDrillName = new Map<string, string[]>(); // all ids sharing the same display name
 
-  (existingDrills || []).forEach((d: { id: string; drill_name?: string }) => {
-    const name = d.drill_name ?? (d as any).title;
-    existingById.set(d.id, { id: d.id, drill_name: name || "" });
-    if (name && String(name).trim()) {
-      existingByDrillName.set(String(name).trim().toLowerCase(), d.id);
+  (existingDrills || []).forEach((d: Record<string, unknown>) => {
+    const id = String(d.id ?? "");
+    const name = getDisplayNameFromRow(d);
+    existingById.set(id, { id, drill_name: name });
+    if (name) {
+      const key = name.toLowerCase();
+      existingByDrillName.set(key, id);
+      const list = idsByDrillName.get(key) ?? [];
+      list.push(id);
+      idsByDrillName.set(key, list);
     }
   });
 
@@ -251,8 +370,7 @@ export async function upsertDrillsFromCSV({
     let resolvedId: string;
 
     if (row.id && row.id.trim()) {
-      // ID provided: use it (upsert)
-      resolvedId = row.id.trim();
+      resolvedId = resolveDrillPrimaryKey(row.id);
     } else {
       // No ID: check for exact drill_name match
       const nameKey = row.drillName.trim().toLowerCase();
@@ -262,7 +380,7 @@ export async function upsertDrillsFromCSV({
         resolvedId = matchedId;
       } else {
         // New drill - generate ID
-        resolvedId = generateSlugId(row.drillName, i);
+        resolvedId = resolveDrillPrimaryKey(generateSlugId(row.drillName, i));
       }
     }
 
@@ -270,10 +388,62 @@ export async function upsertDrillsFromCSV({
     toUpsert.push(payload);
   }
 
+  // One payload per id (last wins if CSV somehow repeated the same id)
+  const uniqueById = new Map<string, DrillUpsertPayload>();
+  for (const p of toUpsert) {
+    uniqueById.set(p.id, p);
+  }
+  const uniqueUpsertsById = Array.from(uniqueById.values());
+
+  // DB enforces unique title (e.g. unique_drill_title_v2). Different CSV ids can share the same
+  // drill name — keep one row per title (last occurrence in batch wins) so the batch upsert succeeds.
+  const byTitle = new Map<string, DrillUpsertPayload>();
+  const noTitlePayloads: DrillUpsertPayload[] = [];
+  for (const p of uniqueUpsertsById) {
+    const tk = String(p.drill_name || p.title || "").trim().toLowerCase();
+    if (!tk) {
+      noTitlePayloads.push(p);
+      continue;
+    }
+    byTitle.set(tk, p);
+  }
+  const finalUpserts = [...noTitlePayloads, ...byTitle.values()];
+
+  const filteredUpserts = finalUpserts.map((p) =>
+    filterDrillPayloadForSchema(p, colSet)
+  );
+
+  // Remove stale rows: same drill_name as an incoming row but different id (prevents UUID + code-id duplicates)
+  const idsToDelete = new Set<string>();
+  const finalIds = new Set(finalUpserts.map((p) => p.id));
+  for (const p of uniqueUpsertsById) {
+    if (!finalIds.has(p.id)) idsToDelete.add(p.id);
+  }
+  for (const p of finalUpserts) {
+    const nameKey = String(p.drill_name || p.title || "").trim().toLowerCase();
+    if (!nameKey) continue;
+    for (const existingId of idsByDrillName.get(nameKey) ?? []) {
+      if (existingId !== p.id) {
+        idsToDelete.add(existingId);
+      }
+    }
+  }
+
+  if (idsToDelete.size > 0) {
+    const { error: delError } = await supabase
+      .from("drills")
+      .delete()
+      .in("id", [...idsToDelete]);
+    if (delError) {
+      throw new Error(`Failed to remove duplicate-name drills: ${delError.message}`);
+    }
+    result.removed = idsToDelete.size;
+  }
+
   // Single upsert: id is unique key (drill_id from CSV). Updates existing, inserts new. Zero duplicates.
   const { data, error } = await supabase
     .from("drills")
-    .upsert(toUpsert, {
+    .upsert(filteredUpserts, {
       onConflict: "id",
       ignoreDuplicates: false,
     })
@@ -284,7 +454,7 @@ export async function upsertDrillsFromCSV({
   }
 
   // Determine added vs updated
-  for (const p of toUpsert) {
+  for (const p of finalUpserts) {
     if (existingById.has(p.id)) {
       result.updated++;
     } else {

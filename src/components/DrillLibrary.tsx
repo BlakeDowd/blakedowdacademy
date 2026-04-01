@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ChevronDown, ChevronUp, X, UserPlus, FileText, Youtube } from "lucide-react";
 import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
 import { createClient } from "@/lib/supabase/client";
+import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 
 const LIBRARY_CATEGORIES = [
   "Driving",
@@ -29,6 +30,74 @@ const DRILL_TO_LIBRARY: Record<string, string[]> = {
   "18-Hole Round": ["18-Hole Round"],
 };
 
+/** Normalize DB category strings so library sections match (case / minor variants). */
+function normalizeLibraryCategory(cat: unknown): string {
+  if (cat == null || !String(cat).trim()) return "Practice";
+  const s = String(cat).trim();
+  const key = s.toLowerCase();
+  const aliases: Record<string, string> = {
+    putting: "Putting",
+    driving: "Driving",
+    irons: "Irons",
+    wedges: "Wedges",
+    chipping: "Chipping",
+    bunkers: "Bunkers",
+    "mental/strategy": "Mental/Strategy",
+    "mental strategy": "Mental/Strategy",
+    "9-hole round": "9-Hole Round",
+    "18-hole round": "18-Hole Round",
+    "9 hole round": "9-Hole Round",
+    "18 hole round": "18-Hole Round",
+  };
+  return aliases[key] ?? s;
+}
+
+/** UUID shape (DB id) — not a CSV drill code */
+const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Which library accordion a drill belongs in. Uses drill_id prefix (9HOL-/18HO-) and
+ * official list so DB rows with wrong category (e.g. On-Course) still show under 9/18 Hole Round.
+ */
+function librarySectionKeyForDrill(d: DrillRecord): string | null {
+  const code = String(d.drill_id ?? "").trim().toUpperCase();
+  if (code.startsWith("9HOL-")) return "9-Hole Round";
+  if (code.startsWith("18HO-")) return "18-Hole Round";
+
+  const c = normalizeLibraryCategory(d.category);
+  if (DRILL_TO_LIBRARY[c]) return c;
+
+  const n = (d.drill_name ?? d.title ?? "").trim().toLowerCase();
+  if (n) {
+    const match = OFFICIAL_DRILLS.find(
+      (o) => (o.drill_name ?? o.title ?? "").trim().toLowerCase() === n
+    );
+    if (match?.category === "9-Hole Round" || match?.category === "18-Hole Round") {
+      return match.category;
+    }
+  }
+  return null;
+}
+
+function drillBelongsInLibraryCategory(d: DrillRecord, category: string): boolean {
+  const section = librarySectionKeyForDrill(d);
+  if (section === category) return true;
+  const c = normalizeLibraryCategory(d.category);
+  return DRILL_TO_LIBRARY[c]?.includes(category) ?? false;
+}
+
+function roundDrillDedupeKey(d: DrillRecord): string {
+  const code = String(d.drill_id ?? "").trim();
+  if (code && !UUID_LIKE.test(code)) return code.toLowerCase();
+  return `id:${d.id}`;
+}
+
+function roundOfficialDedupeKey(o: (typeof OFFICIAL_DRILLS)[number]): string {
+  const code = (o as { drill_id?: string }).drill_id;
+  if (code && String(code).trim()) return String(code).trim().toLowerCase();
+  return `id:${o.id}`;
+}
+
 /** Map DB drill to DrillRecord - supports both drill_name/title and description (Supabase columns) */
 function dbToDrillRecord(db: Record<string, unknown>): DrillRecord {
   const name = (db.drill_name ?? (db as any).title ?? "") as string;
@@ -41,12 +110,13 @@ function dbToDrillRecord(db: Record<string, unknown>): DrillRecord {
   ) as string;
   const pdfUrl = ((db as any).pdf_url ?? "").toString().trim() || undefined;
   const videoUrl = ((db as any).video_url ?? (db as any).youtube_url ?? "").toString().trim() || undefined;
+  const humanCode = (db as { drill_id?: string }).drill_id;
   return {
     id: String(db.id),
-    drill_id: String(db.id),
+    drill_id: humanCode != null && String(humanCode).trim() ? String(humanCode).trim() : String(db.id),
     drill_name: name && String(name).trim() ? name : undefined,
     title: name && String(name).trim() ? name : "Untitled",
-    category: String(db.category || "Practice"),
+    category: normalizeLibraryCategory(db.category),
     focus: String(db.focus || ""),
     description: (typeof desc === "string" && desc.trim()) ? desc : "",
     goal: String(db.goal || ""),
@@ -199,78 +269,143 @@ export function DrillLibrary({ onAssignToDay }: DrillLibraryProps) {
   const [selectedDrill, setSelectedDrill] = useState<DrillRecord | null>(null);
   const [drills, setDrills] = useState<DrillRecord[]>(OFFICIAL_DRILLS);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
+  const loadDrillsFromDb = useCallback(async () => {
+    try {
+      let dbDrills: any[] | null = await fetchDrillsCatalogRows();
+      if (dbDrills === null) {
         const supabase = createClient();
-        const { data: dbDrills } = await supabase
+        const { data } = await supabase
           .from("drills")
-          .select("id, drill_name, title, description, category, focus, goal, estimated_minutes, estimatedMinutes, pdf_url, video_url");
-        if (dbDrills && dbDrills.length > 0) {
-          const fromDb = dbDrills.map((d: any) => dbToDrillRecord(d));
-          const officialByDrillId = new Map(OFFICIAL_DRILLS.map((o) => [(o as any).drill_id, o]));
-          const officialById = new Map(OFFICIAL_DRILLS.map((o) => [o.id, o]));
-          const officialByName = new Map(
-            OFFICIAL_DRILLS.map((o) => [(o.drill_name ?? o.title ?? "").trim().toLowerCase(), o])
-          );
-          // Enrich DB drills: use official description when DB description is empty
-          const enriched: DrillRecord[] = fromDb.map((r) => {
-            if ((r.description || "").trim()) return r;
-            const official =
-              officialByDrillId.get(r.id) ??
-              officialByDrillId.get((r as any).drill_id) ??
-              officialById.get(r.id) ??
-              (r.drill_name ?? r.title
-                ? officialByName.get((r.drill_name ?? r.title ?? "").trim().toLowerCase())
-                : undefined);
-            const fallbackDesc =
-              official?.description?.trim() ??
-              DESCRIPTION_BY_DRILL_ID[r.id] ??
-              DESCRIPTION_BY_DRILL_ID[(r as any).drill_id];
-            if (fallbackDesc) return { ...r, description: fallbackDesc };
-            return r;
-          });
-          const fromDbById = new Map(enriched.map((r) => [r.id, r]));
-          const fromDbByName = new Map(
-            enriched.map((r) => [(r.drill_name ?? r.title ?? "").trim().toLowerCase(), r])
-          );
-          const combined: DrillRecord[] = [...enriched];
-          OFFICIAL_DRILLS.forEach((d) => {
-            const byId = fromDbById.has(d.id) || (!!(d as any).drill_id && fromDbById.has((d as any).drill_id));
-            const byName = (d.drill_name ?? d.title)
-              ? fromDbByName.has((d.drill_name ?? d.title ?? "").trim().toLowerCase())
-              : false;
-            if (!byId && !byName) {
-              const desc = (d.description || "").trim() || DESCRIPTION_BY_DRILL_ID[(d as any).drill_id];
-              combined.push(desc ? { ...d, description: desc } : d);
-            }
-          });
-          setDrills(combined);
-        } else {
-          // No DB data: use OFFICIAL_DRILLS and enrich with DESCRIPTION_BY_DRILL_ID
-          const withDescriptions = OFFICIAL_DRILLS.map((d) => {
-            const desc = (d.description || "").trim() || DESCRIPTION_BY_DRILL_ID[(d as any).drill_id];
-            return desc ? { ...d, description: desc } : d;
-          });
-          setDrills(withDescriptions);
+          .select("id, drill_id, drill_name, title, description, category, focus, goal, estimated_minutes, estimatedMinutes, pdf_url, video_url");
+        dbDrills = data ?? [];
+      }
+      if (dbDrills && dbDrills.length > 0) {
+        const officialByDrillCode = new Map<string, (typeof OFFICIAL_DRILLS)[number]>();
+        const officialById = new Map(OFFICIAL_DRILLS.map((o) => [o.id, o]));
+        const officialByName = new Map<string, (typeof OFFICIAL_DRILLS)[number]>();
+        for (const o of OFFICIAL_DRILLS) {
+          const code = (o as { drill_id?: string }).drill_id;
+          if (code && String(code).trim()) {
+            officialByDrillCode.set(String(code).trim().toLowerCase(), o);
+          }
+          const n = (o.drill_name ?? o.title ?? "").trim().toLowerCase();
+          if (n) officialByName.set(n, o);
         }
-      } catch (e) {
-        console.warn("DrillLibrary: Could not load drills from database", e);
+
+        const fromDb = dbDrills.map((d: any) => {
+          let r = dbToDrillRecord(d);
+          const rawCode = String(d.drill_id ?? "").trim().toLowerCase();
+          const nameKey = (r.drill_name ?? r.title ?? "").trim().toLowerCase();
+          const officialMatch =
+            (rawCode ? officialByDrillCode.get(rawCode) : undefined) ??
+            (nameKey ? officialByName.get(nameKey) : undefined) ??
+            officialById.get(r.id);
+          if (officialMatch?.category) {
+            r = { ...r, category: officialMatch.category };
+          }
+          return r;
+        });
+
+        const enriched: DrillRecord[] = fromDb.map((r) => {
+          if ((r.description || "").trim()) return r;
+          const codeKey = String(r.drill_id ?? "").trim().toLowerCase();
+          const official =
+            officialByDrillCode.get(codeKey) ??
+            officialById.get(r.id) ??
+            (r.drill_name ?? r.title
+              ? officialByName.get((r.drill_name ?? r.title ?? "").trim().toLowerCase())
+              : undefined);
+          const fallbackDesc =
+            official?.description?.trim() ??
+            DESCRIPTION_BY_DRILL_ID[r.id] ??
+            DESCRIPTION_BY_DRILL_ID[(r as { drill_id?: string }).drill_id ?? ""];
+          if (fallbackDesc) return { ...r, description: fallbackDesc };
+          return r;
+        });
+        const fromDbById = new Map(enriched.map((r) => [r.id, r]));
+        const fromDbByName = new Map(
+          enriched.map((r) => [(r.drill_name ?? r.title ?? "").trim().toLowerCase(), r])
+        );
+        const combined: DrillRecord[] = [...enriched];
+        OFFICIAL_DRILLS.forEach((d) => {
+          const oid = (d as { drill_id?: string }).drill_id;
+          const byId =
+            fromDbById.has(d.id) ||
+            (!!oid &&
+              enriched.some(
+                (row) => String(row.drill_id ?? "").toLowerCase() === String(oid).toLowerCase()
+              ));
+          const byName = (d.drill_name ?? d.title)
+            ? fromDbByName.has((d.drill_name ?? d.title ?? "").trim().toLowerCase())
+            : false;
+          if (!byId && !byName) {
+            const desc = (d.description || "").trim() || DESCRIPTION_BY_DRILL_ID[(d as any).drill_id];
+            combined.push(desc ? { ...d, description: desc } : d);
+          }
+        });
+        setDrills(combined);
+      } else {
         const withDescriptions = OFFICIAL_DRILLS.map((d) => {
           const desc = (d.description || "").trim() || DESCRIPTION_BY_DRILL_ID[(d as any).drill_id];
           return desc ? { ...d, description: desc } : d;
         });
         setDrills(withDescriptions);
       }
-    };
-    load();
+    } catch (e) {
+      console.warn("DrillLibrary: Could not load drills from database", e);
+      const withDescriptions = OFFICIAL_DRILLS.map((d) => {
+        const desc = (d.description || "").trim() || DESCRIPTION_BY_DRILL_ID[(d as any).drill_id];
+        return desc ? { ...d, description: desc } : d;
+      });
+      setDrills(withDescriptions);
+    }
   }, []);
 
+  useEffect(() => {
+    void loadDrillsFromDb();
+  }, [loadDrillsFromDb]);
+
+  useEffect(() => {
+    const onRefresh = () => void loadDrillsFromDb();
+    window.addEventListener("drillLibraryRefresh", onRefresh);
+    return () => window.removeEventListener("drillLibraryRefresh", onRefresh);
+  }, [loadDrillsFromDb]);
+
   function getDrillsForCategory(category: string): DrillRecord[] {
-    return drills.filter((d) => {
-      const mapped = DRILL_TO_LIBRARY[d.category];
-      return mapped?.includes(category) ?? false;
-    });
+    const matched = drills.filter((d) => drillBelongsInLibraryCategory(d, category));
+
+    if (category !== "9-Hole Round" && category !== "18-Hole Round") {
+      return matched;
+    }
+
+    const seen = new Set(matched.map(roundDrillDedupeKey));
+    const out: DrillRecord[] = matched.map((d) => ({ ...d, category }));
+
+    for (const o of OFFICIAL_DRILLS) {
+      if (o.category !== category) continue;
+      const k = roundOfficialDedupeKey(o);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const oid = (o as { drill_id?: string }).drill_id;
+      out.push({
+        ...o,
+        drill_id: oid && String(oid).trim() ? String(oid).trim() : o.id,
+        drill_name: o.drill_name ?? o.title,
+        title: o.title ?? o.drill_name ?? "Untitled",
+        category,
+        description:
+          (o.description && o.description.trim()) ||
+          DESCRIPTION_BY_DRILL_ID[oid ?? ""] ||
+          "",
+        focus: o.focus ?? "",
+        goal: o.goal ?? "",
+        estimatedMinutes: o.estimatedMinutes ?? 10,
+        xpValue: o.xpValue ?? 10,
+        contentType: o.contentType ?? "text",
+      });
+    }
+
+    return out;
   }
 
   const handleAssignToDay = (drill: DrillRecord, dayIndex: number) => {
@@ -287,7 +422,7 @@ export function DrillLibrary({ onAssignToDay }: DrillLibraryProps) {
         </div>
         <div className="divide-y divide-gray-100">
           {LIBRARY_CATEGORIES.map((category) => {
-            const drills = getDrillsForCategory(category);
+            const categoryDrills = getDrillsForCategory(category);
             const isExpanded = expandedCategory === category;
 
             return (
@@ -307,8 +442,8 @@ export function DrillLibrary({ onAssignToDay }: DrillLibraryProps) {
                   </span>
                   <span className="flex items-center gap-2 shrink-0 text-sm text-gray-500">
                     <span className="flex items-center justify-end gap-1 tabular-nums">
-                      <span className="min-w-[2ch] text-right">{drills.length}</span>
-                      <span>drill{drills.length !== 1 ? "s" : ""}</span>
+                      <span className="min-w-[2ch] text-right">{categoryDrills.length}</span>
+                      <span>drill{categoryDrills.length !== 1 ? "s" : ""}</span>
                     </span>
                     {isExpanded ? (
                       <ChevronUp className="w-5 h-5 text-gray-500 shrink-0" />
@@ -320,11 +455,11 @@ export function DrillLibrary({ onAssignToDay }: DrillLibraryProps) {
                 {isExpanded && (
                   <div className="px-4 pb-4">
                     <ul className="space-y-1">
-                      {drills.length === 0 ? (
+                      {categoryDrills.length === 0 ? (
                         <li className="text-sm text-gray-400 py-2">No drills in this category yet.</li>
                       ) : (
-                        drills.map((drill) => (
-                          <li key={drill.id}>
+                        categoryDrills.map((drill) => (
+                          <li key={`${category}-${roundDrillDedupeKey(drill)}`}>
                             <button
                               type="button"
                               onClick={() => setSelectedDrill(drill)}

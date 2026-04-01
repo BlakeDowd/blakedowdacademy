@@ -21,6 +21,7 @@ import ReactMarkdown from "react-markdown";
 import { useAuth } from "@/contexts/AuthContext";
 import { logActivity } from "@/lib/activity";
 import { createClient } from "@/lib/supabase/client";
+import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 
 type LessonType = "video" | "text" | "pdf" | "quiz" | "drill";
 
@@ -120,14 +121,30 @@ function LibraryPageContent() {
     let cancelled = false;
     async function fetchLessons() {
       try {
-        const supabase = createClient();
-        const { data, error } = await supabase
-          .from("drills")
-          .select("*")
-          .order("sort_order", { ascending: true });
+        let data: any[] | null = await fetchDrillsCatalogRows();
+        if (data === null) {
+          const supabase = createClient();
+          const res = await supabase
+            .from("drills")
+            .select("*")
+            .order("sort_order", { ascending: true });
+          data = res.data ?? [];
+          if (res.error) {
+            if (cancelled) return;
+            setLessons(FALLBACK_LESSONS);
+            setLoading(false);
+            return;
+          }
+        } else {
+          data = [...data].sort(
+            (a, b) =>
+              Number((a as any).sort_order ?? (a as any).estimated_minutes ?? 0) -
+              Number((b as any).sort_order ?? (b as any).estimated_minutes ?? 0)
+          );
+        }
 
         if (cancelled) return;
-        if (error || !data || data.length === 0) {
+        if (!data || data.length === 0) {
           setLessons(FALLBACK_LESSONS);
         } else {
           const mapped: Lesson[] = data.map((row: any) => {
