@@ -401,16 +401,7 @@ export default function PracticePage() {
 
         // CROSS-REFERENCE: Fetch drill details from drills table and match by title
         if ((practiceData && practiceData.length > 0) || (userDrillsData && userDrillsData.length > 0)) {
-          let allDrillsData = await fetchDrillsCatalogRows();
-          if (allDrillsData === null) {
-            const { data, error: drillsError } = await supabase
-              .from('drills')
-              .select('id, drill_name, description, video_url, pdf_url, drill_levels, title, category, estimatedMinutes');
-            if (drillsError) {
-              console.warn('Practice: drills lookup failed', drillsError.message);
-            }
-            allDrillsData = (data ?? []) as Record<string, unknown>[];
-          }
+          const allDrillsData = await fetchDrillsCatalogRows();
 
           const drillDetailsMap: Record<string, any> = {};
           
@@ -617,15 +608,7 @@ export default function PracticePage() {
     const loadDrills = async () => {
       if (typeof window === 'undefined') return;
       try {
-        let dbDrills: any[] | null = await fetchDrillsCatalogRows();
-        if (dbDrills === null) {
-          const { createClient } = await import('@/lib/supabase/client');
-          const supabase = createClient();
-          const { data } = await supabase
-            .from('drills')
-            .select('id, drill_name, description, category, focus, goal, estimated_minutes, estimatedMinutes, pdf_url, video_url');
-          dbDrills = data ?? [];
-        }
+        const dbDrills = await fetchDrillsCatalogRows();
 
         if (cancelled) return;
 

@@ -1,17 +1,19 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { createServiceRoleSupabase } from "@/lib/supabaseServiceRole";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Full drill catalog for the app UI. Uses service role so reads work even when
- * Supabase RLS blocks the anon key (imports still land in DB via admin API).
+ * Fallback catalog when the browser cannot read `drills` (RLS). Optional on Vercel if you run
+ * supabase/migrations/20260401120000_drills_public_select.sql once.
  */
 export async function GET(request: Request) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const admin = createServiceRoleSupabase();
 
-  if (!url || !serviceKey) {
+  if (!admin) {
+    console.warn(
+      "[drills/catalog] No SUPABASE_SERVICE_ROLE_KEY — this route is optional if public SELECT on drills is enabled (see supabase/migrations/20260401120000_drills_public_select.sql)."
+    );
     return NextResponse.json(
       { drills: null, drill: null, degraded: true },
       { status: 200 }
@@ -20,8 +22,6 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
-
-  const admin = createClient(url, serviceKey);
 
   if (id) {
     const { data, error } = await admin.from("drills").select("*").eq("id", id).maybeSingle();

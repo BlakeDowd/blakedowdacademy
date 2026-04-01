@@ -189,9 +189,12 @@ export default function AdminPage() {
             Upsert Drill Library via CSV
           </h2>
           <p className="text-gray-600 mb-2 text-sm">
-            Pick your CSV — the server imports it into the same database the app uses. You need{" "}
-            <code className="text-xs bg-gray-100 px-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code> in{" "}
-            <code className="text-xs bg-gray-100 px-1 rounded">.env.local</code> once (never commit it).
+            Upload runs on the server with{" "}
+            <code className="text-xs bg-gray-100 px-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code> (set in
+            Vercel too). For the app to <em>show</em> drills with only the public Supabase keys, run the SQL
+            file{" "}
+            <code className="text-xs bg-gray-100 px-1 rounded">20260401120000_drills_public_select.sql</code>{" "}
+            once in the Supabase SQL editor.
           </p>
           <p className="text-gray-500 mb-4 text-xs">
             Columns: Drill id, Drill Name, Category, Location, Focus, Duration (min), Description, PDF URL,

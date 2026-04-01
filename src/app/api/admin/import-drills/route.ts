@@ -1,8 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
-import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { parseDrillCSV, upsertDrillsFromCSV } from "@/lib/csvDrillUpload";
+import { createServiceRoleSupabase } from "@/lib/supabaseServiceRole";
 
 export const dynamic = "force-dynamic";
 
@@ -50,12 +50,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 403 });
   }
 
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!serviceKey) {
+  const adminClient = createServiceRoleSupabase();
+  if (!adminClient) {
     return NextResponse.json(
       {
         error:
-          "Add SUPABASE_SERVICE_ROLE_KEY to .env.local (Supabase → Settings → API → service_role), restart npm run dev, then upload again.",
+          "Set SUPABASE_SERVICE_ROLE_KEY in Vercel (or .env.local), redeploy, then upload again.",
       },
       { status: 503 }
     );
@@ -82,7 +82,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const adminClient = createClient(url, serviceKey);
   try {
     const result = await upsertDrillsFromCSV({ supabase: adminClient, parsed });
     const { count: tableCount, error: countErr } = await adminClient

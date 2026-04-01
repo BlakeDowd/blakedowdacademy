@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { ChevronDown, ChevronUp, X, UserPlus, FileText, Youtube } from "lucide-react";
 import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
-import { createClient } from "@/lib/supabase/client";
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 
 const LIBRARY_CATEGORIES = [
@@ -271,15 +270,8 @@ export function DrillLibrary({ onAssignToDay }: DrillLibraryProps) {
 
   const loadDrillsFromDb = useCallback(async () => {
     try {
-      let dbDrills: any[] | null = await fetchDrillsCatalogRows();
-      if (dbDrills === null) {
-        const supabase = createClient();
-        const { data } = await supabase
-          .from("drills")
-          .select("id, drill_id, drill_name, title, description, category, focus, goal, estimated_minutes, estimatedMinutes, pdf_url, video_url");
-        dbDrills = data ?? [];
-      }
-      if (dbDrills && dbDrills.length > 0) {
+      const dbDrills = await fetchDrillsCatalogRows();
+      if (dbDrills.length > 0) {
         const officialByDrillCode = new Map<string, (typeof OFFICIAL_DRILLS)[number]>();
         const officialById = new Map(OFFICIAL_DRILLS.map((o) => [o.id, o]));
         const officialByName = new Map<string, (typeof OFFICIAL_DRILLS)[number]>();
