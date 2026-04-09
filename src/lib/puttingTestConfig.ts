@@ -1,4 +1,6 @@
 export const puttingTestConfig = {
+  /** Display name (title case) for headers and Combine Tests UI */
+  testName: "Putting Test 18 Holes",
   distances: [3, 3, 4, 4, 5, 6, 8, 8, 10, 12, 12, 15, 18, 20, 25, 30, 35, 40],
   shapes: ["Straight", "Left-to-Right", "Right-to-Left"],
   points: {

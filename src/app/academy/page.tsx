@@ -29,6 +29,22 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { GOLF_ICONS } from "@/components/IconPicker";
 import TrophyCard from "@/components/TrophyCard";
+import { puttingTestConfig } from "@/lib/puttingTestConfig";
+import {
+  type ParsedPuttingHole,
+  parsePuttingHoleSession,
+  bestPuttingCombineScoreForUser,
+  parsePutting9HoleSession,
+  bestPutting9HolesScoreForUser,
+  parsePuttingTest3To6ftSession,
+  bestPuttingTest3To6ftScoreForUser,
+  userIsPuttingTestLeader,
+} from "@/lib/puttingTestLeaderboard";
+import { puttingTest9Config } from "@/lib/puttingTest9Config";
+import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
+
+/** Display + DB trophy_name (must match HomeDashboard ACADEMY_TROPHIES). */
+const PUTTING_TEST_CHAMPION_TROPHY_NAME = `Champion: ${puttingTestConfig.testName}`;
 
 interface LeaderboardEntry {
   id: string;
@@ -118,6 +134,8 @@ interface TrophyData {
     roundsData?: any[]; // Full rounds data for score/birdie/eagle checking
     practiceHistory?: any[]; // Practice activity history
     libraryCategories?: Record<string, number>; // Completed drills by category
+    userId?: string;
+    practiceSessions?: any[];
   }) => boolean;
   getProgress: (stats: {
     totalXP: number;
@@ -128,6 +146,8 @@ interface TrophyData {
     roundsData?: any[];
     practiceHistory?: any[];
     libraryCategories?: Record<string, number>;
+    userId?: string;
+    practiceSessions?: any[];
   }) => { current: number; target: number; percentage: number };
   isRare?: boolean; // For special styling (e.g., Eagle Eye)
 }
@@ -738,6 +758,28 @@ const TROPHY_LIST: TrophyData[] = [
       }
     },
   },
+  {
+    id: "champion-putting-test-18",
+    name: PUTTING_TEST_CHAMPION_TROPHY_NAME,
+    requirement: `Hold #1 on the ${puttingTestConfig.testName} leaderboard (all-time best session; ties count)`,
+    category: "Performance",
+    icon: Crown,
+    checkUnlocked: (stats) => {
+      if (!stats.userId || !stats.practiceSessions?.length) return false;
+      return userIsPuttingTestLeader(stats.userId, stats.practiceSessions);
+    },
+    getProgress: (stats) => {
+      const unlocked =
+        !!stats.userId &&
+        !!stats.practiceSessions?.length &&
+        userIsPuttingTestLeader(stats.userId, stats.practiceSessions);
+      return {
+        current: unlocked ? 1 : 0,
+        target: 1,
+        percentage: unlocked ? 100 : 0,
+      };
+    },
+  },
 ];
 
 // Helper function to get timeframe dates
@@ -825,72 +867,6 @@ function drillPassesLeaderboardTimeFilter(
   const ms = drillLeaderboardTimeMs(drill);
   if (!Number.isFinite(ms)) return false;
   return ms >= getTimeframeDates(timeFilter).startDate.getTime();
-}
-
-type ParsedPuttingHole = {
-  createdMs: number;
-  holeIndex: number;
-  points: number;
-};
-
-function parsePuttingHoleSession(session: any): ParsedPuttingHole | null {
-  try {
-    const notes = session.notes;
-    if (!notes || typeof notes !== "string") return null;
-    const parsed = JSON.parse(notes);
-    if (parsed?.kind !== "putting_test_hole") return null;
-    if (typeof parsed.points !== "number" || typeof parsed.holeIndex !== "number") {
-      return null;
-    }
-    const raw = session.created_at;
-    if (!raw) return null;
-    const createdMs = new Date(raw).getTime();
-    if (!Number.isFinite(createdMs)) return null;
-    return {
-      createdMs,
-      holeIndex: parsed.holeIndex,
-      points: parsed.points,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function clusterPuttingCombineSessions(holes: ParsedPuttingHole[]): ParsedPuttingHole[][] {
-  const sorted = [...holes].sort(
-    (a, b) => a.createdMs - b.createdMs || a.holeIndex - b.holeIndex,
-  );
-  const sessions: ParsedPuttingHole[][] = [];
-  let cur: ParsedPuttingHole[] = [];
-  for (const h of sorted) {
-    if (h.holeIndex === 0 && cur.length > 0) {
-      sessions.push(cur);
-      cur = [h];
-    } else {
-      cur.push(h);
-    }
-  }
-  if (cur.length) sessions.push(cur);
-  return sessions;
-}
-
-function isCompletePuttingCombineSession(holes: ParsedPuttingHole[]): boolean {
-  if (holes.length !== 18) return false;
-  const idx = holes.map((h) => h.holeIndex).sort((a, b) => a - b);
-  for (let i = 0; i < 18; i++) {
-    if (idx[i] !== i) return false;
-  }
-  return true;
-}
-
-function bestPuttingCombineScoreForUser(holes: ParsedPuttingHole[]): number {
-  let best = 0;
-  for (const session of clusterPuttingCombineSessions(holes)) {
-    if (!isCompletePuttingCombineSession(session)) continue;
-    const total = session.reduce((s, h) => s + h.points, 0);
-    if (total > best) best = total;
-  }
-  return best;
 }
 
 function ensureCurrentUserOnLeaderboard(
@@ -1838,6 +1814,8 @@ function formatLeaderboardValue(
     | "library"
     | "practice"
     | "puttingCombine"
+    | "puttingTest9Holes"
+    | "puttingTest3To6ft"
     | "rounds"
     | "drills"
     | "lowGross"
@@ -1867,7 +1845,11 @@ function formatLeaderboardValue(
     case "practice":
       return `${value.toFixed(1)} hrs`;
     case "puttingCombine":
-      return `${Math.round(value)} pts`;
+      return `${Math.round(value)} Test Pts`;
+    case "puttingTest9Holes":
+      return `${Math.round(value)} Test Pts`;
+    case "puttingTest3To6ft":
+      return `${Math.round(value)} Test Pts`;
     case "rounds":
       return `${value} Round${value !== 1 ? "s" : ""}`;
     case "drills":
@@ -1906,6 +1888,8 @@ function getLeaderboardData(
     | "library"
     | "practice"
     | "puttingCombine"
+    | "puttingTest9Holes"
+    | "puttingTest3To6ft"
     | "rounds"
     | "drills"
     | "lowGross"
@@ -1980,6 +1964,188 @@ function getLeaderboardData(
     let meBest = 0;
     if (user?.id) {
       meBest = bestPuttingCombineScoreForUser(holesByUser.get(user.id) || []);
+    }
+    const withPinned = ensureCurrentUserOnLeaderboard(
+      allEntries,
+      user,
+      userProfiles,
+      meBest,
+    );
+    withPinned.sort((a, b) => b.value - a.value);
+
+    if (withPinned.length === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0,
+      };
+    }
+
+    const userEntryInRanks = withPinned.find((entry) => entry.isCurrentUser);
+    const finalUserValue = userEntryInRanks?.value ?? 0;
+    const withRanks = withPinned.map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+      rankChange: 0,
+      movedUp: false,
+      movedDown: false,
+      previousRank: undefined,
+      lowRound: undefined,
+      lowNett: undefined,
+      birdieCount: 0,
+      eagleCount: 0,
+    }));
+
+    return {
+      top3: withRanks.slice(0, 3),
+      all: withRanks,
+      userRank: userEntryInRanks
+        ? withRanks.findIndex((entry) => entry.isCurrentUser) + 1
+        : 0,
+      userValue: finalUserValue,
+    };
+  }
+
+  if (metric === "puttingTest9Holes") {
+    const allPractice = practiceSessions || [];
+    const nineRows = allPractice.filter((session: any) => {
+      if (String(session.type || "") !== puttingTest9Config.practiceType) return false;
+      return practicePassesLeaderboardTimeFilter(session, timeFilter);
+    });
+
+    const holesByUser = new Map<string, ParsedPuttingHole[]>();
+    nineRows.forEach((session: any) => {
+      const uid = session.user_id;
+      if (!uid) return;
+      const parsed = parsePutting9HoleSession(session);
+      if (!parsed) return;
+      if (!holesByUser.has(uid)) holesByUser.set(uid, []);
+      holesByUser.get(uid)!.push(parsed);
+    });
+
+    const allEntries: any[] = [];
+    holesByUser.forEach((holes, userId) => {
+      const best = bestPutting9HolesScoreForUser(holes);
+      if (best <= 0) return;
+      const profile = userProfiles?.get(userId);
+      if (!profile || !profile.full_name) return;
+      const displayName = profile.full_name;
+      let nameForAvatar = "U";
+      if (profile.full_name) {
+        nameForAvatar =
+          profile.full_name
+            .split(" ")
+            .map((n: string) => n[0])
+            .join("")
+            .toUpperCase() || "U";
+      }
+      const userIcon = profile.preferred_icon_id || nameForAvatar;
+      allEntries.push({
+        id: userId,
+        name: displayName,
+        avatar: userIcon,
+        value: best,
+        isCurrentUser: user?.id === userId,
+      });
+    });
+
+    allEntries.sort((a, b) => b.value - a.value);
+
+    let meBest = 0;
+    if (user?.id) {
+      meBest = bestPutting9HolesScoreForUser(holesByUser.get(user.id) || []);
+    }
+    const withPinned = ensureCurrentUserOnLeaderboard(
+      allEntries,
+      user,
+      userProfiles,
+      meBest,
+    );
+    withPinned.sort((a, b) => b.value - a.value);
+
+    if (withPinned.length === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0,
+      };
+    }
+
+    const userEntryInRanks = withPinned.find((entry) => entry.isCurrentUser);
+    const finalUserValue = userEntryInRanks?.value ?? 0;
+    const withRanks = withPinned.map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+      rankChange: 0,
+      movedUp: false,
+      movedDown: false,
+      previousRank: undefined,
+      lowRound: undefined,
+      lowNett: undefined,
+      birdieCount: 0,
+      eagleCount: 0,
+    }));
+
+    return {
+      top3: withRanks.slice(0, 3),
+      all: withRanks,
+      userRank: userEntryInRanks
+        ? withRanks.findIndex((entry) => entry.isCurrentUser) + 1
+        : 0,
+      userValue: finalUserValue,
+    };
+  }
+
+  if (metric === "puttingTest3To6ft") {
+    const allPractice = practiceSessions || [];
+    const rows = allPractice.filter((session: any) => {
+      if (String(session.type || "") !== puttingTest3To6ftConfig.practiceType) return false;
+      return practicePassesLeaderboardTimeFilter(session, timeFilter);
+    });
+
+    const holesByUser = new Map<string, ParsedPuttingHole[]>();
+    rows.forEach((session: any) => {
+      const uid = session.user_id;
+      if (!uid) return;
+      const parsed = parsePuttingTest3To6ftSession(session);
+      if (!parsed) return;
+      if (!holesByUser.has(uid)) holesByUser.set(uid, []);
+      holesByUser.get(uid)!.push(parsed);
+    });
+
+    const allEntries: any[] = [];
+    holesByUser.forEach((holes, userId) => {
+      const best = bestPuttingTest3To6ftScoreForUser(holes);
+      if (best <= 0) return;
+      const profile = userProfiles?.get(userId);
+      if (!profile || !profile.full_name) return;
+      const displayName = profile.full_name;
+      let nameForAvatar = "U";
+      if (profile.full_name) {
+        nameForAvatar =
+          profile.full_name
+            .split(" ")
+            .map((n: string) => n[0])
+            .join("")
+            .toUpperCase() || "U";
+      }
+      const userIcon = profile.preferred_icon_id || nameForAvatar;
+      allEntries.push({
+        id: userId,
+        name: displayName,
+        avatar: userIcon,
+        value: best,
+        isCurrentUser: user?.id === userId,
+      });
+    });
+
+    allEntries.sort((a, b) => b.value - a.value);
+
+    let meBest = 0;
+    if (user?.id) {
+      meBest = bestPuttingTest3To6ftScoreForUser(holesByUser.get(user.id) || []);
     }
     const withPinned = ensureCurrentUserOnLeaderboard(
       allEntries,
@@ -3318,6 +3484,8 @@ export default function AcademyPage() {
     | "library"
     | "practice"
     | "puttingCombine"
+    | "puttingTest9Holes"
+    | "puttingTest3To6ft"
     | "rounds"
     | "drills"
     | "lowGross"
@@ -3900,9 +4068,17 @@ export default function AcademyPage() {
         leaderboardMetric === "highestAvgBirdies" ||
         leaderboardMetric === "bogeyFreeRounds" ||
         leaderboardMetric === "doubleFreeRounds" ||
-        leaderboardMetric === "puttingCombine") {
-      // Don't use cache for xp or putting combine (always derive from practice rows)
-      if (cachedLeaderboard && leaderboardMetric !== "xp" && leaderboardMetric !== "puttingCombine") {
+        leaderboardMetric === "puttingCombine" ||
+        leaderboardMetric === "puttingTest9Holes" ||
+        leaderboardMetric === "puttingTest3To6ft") {
+      // Don't use cache for xp or putting tests (always derive from practice rows)
+      if (
+        cachedLeaderboard &&
+        leaderboardMetric !== "xp" &&
+        leaderboardMetric !== "puttingCombine" &&
+        leaderboardMetric !== "puttingTest9Holes" &&
+        leaderboardMetric !== "puttingTest3To6ft"
+      ) {
         return cachedLeaderboard;
       }
       // Calculate on-demand if not cached yet
@@ -4373,6 +4549,7 @@ export default function AcademyPage() {
                 "putting-professor": BookOpen,
                 "wedge-wizard": BookOpen,
                 "coachs-pet": Award,
+                "champion-putting-test-18": Crown,
               };
               return iconMap[id] || Trophy;
             };
@@ -4518,7 +4695,9 @@ export default function AcademyPage() {
                   >
                     <option value="xp">Overall (Total XP)</option>
                     <option value="practice">Practice Hours</option>
-                    <option value="puttingCombine">Putting Combine</option>
+                    <option value="puttingCombine">{puttingTestConfig.testName}</option>
+                    <option value="puttingTest9Holes">{puttingTest9Config.testName}</option>
+                    <option value="puttingTest3To6ft">{puttingTest3To6ftConfig.testName}</option>
                     <option value="library">Library Lessons</option>
                     <option value="rounds">Rounds Entered</option>
                     <option value="drills">Drills</option>

@@ -49,7 +49,8 @@ const getTrophyIcon = (trophyId: string) => {
     'monthly-legend': Crown,
     'putting-professor': BookOpen,
     'wedge-wizard': BookOpen,
-    'coachs-pet': Award
+    'coachs-pet': Award,
+    'champion-putting-test-18': Crown,
   };
   return iconMap[trophyId] || Trophy;
 };

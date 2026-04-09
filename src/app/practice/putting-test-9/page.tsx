@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { ChevronLeft, Target } from "lucide-react";
-import { PuttingTestRunner } from "@/components/PuttingTestRunner";
-import { puttingTestConfig } from "@/lib/puttingTestConfig";
+import { PuttingTest9Runner } from "@/components/PuttingTest9Runner";
+import { puttingTest9Config } from "@/lib/puttingTest9Config";
 
-export default function PuttingTestPage() {
+export default function PuttingTest9Page() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-lg mx-auto px-4 py-6 pb-24">
@@ -26,13 +26,14 @@ export default function PuttingTestPage() {
               <Target className="w-5 h-5 text-gray-600" />
             </div>
             <h1 className="text-xl font-semibold leading-snug text-gray-900">
-              {puttingTestConfig.testName}
+              {puttingTest9Config.testName}
             </h1>
           </div>
           <p className="text-sm text-gray-600 mt-2">
-            Shuffled 18-footer sequence with break shape mix. Log each hole for points and putt count.
+            Nine-hole combine: shuffled distances and break mix. Highest single-session score appears on
+            the Academy leaderboard.
           </p>
-          <PuttingTestRunner />
+          <PuttingTest9Runner />
         </div>
       </div>
     </div>

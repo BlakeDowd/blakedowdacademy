@@ -14,6 +14,9 @@ import {
   fetchDrillsCatalogRows,
   fetchDrillRowById,
 } from "@/lib/fetchDrillsCatalog";
+import { puttingTestConfig } from "@/lib/puttingTestConfig";
+import { puttingTest9Config } from "@/lib/puttingTest9Config";
+import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
 
 type RoundType = '9-hole' | '18-hole' | null;
 
@@ -44,6 +47,8 @@ interface DayPlan {
     video_url?: string; // Video URL (alias)
     levels?: Array<{ id: string; name: string; completed?: boolean }>; // Drill levels/checklist
     goal?: string; // Goal/Reps for this drill
+    /** Set when this row was loaded from a `practice` table completion (one row per log). */
+    practiceLogId?: string;
   }>;
   date?: string; // Date this plan was generated
 }
@@ -74,6 +79,47 @@ interface Drill {
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const DAY_ABBREVIATIONS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+/** Calendar date in the user's local timezone (matches `selected_date` / planner `date`). */
+function toLocalDateString(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Weekly planner slots are keyed 0–6 (Mon–Sun). localStorage kept slider state without a week id,
+ * so "Tuesday" could show last week's 55m. Reset slots whose `date` is missing or not in this week.
+ */
+function sanitizeWeeklyPlanToCurrentWeek(plan: WeeklyPlan, weekMonday: Date): void {
+  const weekStartStr = toLocalDateString(weekMonday);
+  const sunday = new Date(weekMonday);
+  sunday.setDate(weekMonday.getDate() + 6);
+  const weekEndStr = toLocalDateString(sunday);
+
+  for (let idx = 0; idx <= 6; idx++) {
+    const day = plan[idx];
+    if (!day) continue;
+
+    const ds = day.date;
+    const inWeek = !!(ds && ds >= weekStartStr && ds <= weekEndStr);
+    if (inWeek) continue;
+
+    const slotDate = new Date(weekMonday);
+    slotDate.setDate(weekMonday.getDate() + idx);
+    plan[idx] = {
+      dayIndex: idx,
+      dayName: DAY_NAMES[idx],
+      selected: false,
+      availableTime: 0,
+      selectedFacilities: [],
+      roundType: null,
+      drills: [],
+      date: toLocalDateString(slotDate),
+    };
+  }
+}
 
 // Map Stats categories to Drill categories
 const categoryMapping: Record<string, string[]> = {
@@ -368,12 +414,15 @@ export default function PracticePage() {
           .order('completed_at', { ascending: true });
 
         // FETCH PLANNED DRILLS from user_drills
+        const weekStartLocal = toLocalDateString(monday);
+        const weekEndLocal = toLocalDateString(sunday);
+
         const { data: userDrillsData } = await supabase
           .from('user_drills')
           .select('*')
           .eq('user_id', user.id)
-          .gte('selected_date', monday.toISOString().split('T')[0])
-          .lte('selected_date', sunday.toISOString().split('T')[0]);
+          .gte('selected_date', weekStartLocal)
+          .lte('selected_date', weekEndLocal);
 
         // FIX LINE 338: Handle error gracefully without crashing
         if (error) {
@@ -383,7 +432,6 @@ export default function PracticePage() {
 
         // Initialize plan structure from localStorage
         const loadedPlan: WeeklyPlan = {};
-        let hasLocalPlan = false;
         if (typeof window !== 'undefined') {
           const savedPlans = localStorage.getItem('weeklyPracticePlans');
           if (savedPlans) {
@@ -391,14 +439,15 @@ export default function PracticePage() {
               const parsedPlans = JSON.parse(savedPlans);
               if (Object.keys(parsedPlans).length > 0) {
                 Object.assign(loadedPlan, parsedPlans);
-                hasLocalPlan = true;
               }
             } catch (e) {
               console.error('Error parsing localStorage plans:', e);
             }
           }
         }
-        
+
+        sanitizeWeeklyPlanToCurrentWeek(loadedPlan, monday);
+
         // Do NOT pre-populate all days - only load what's in the database or stay empty
 
         // CROSS-REFERENCE: Fetch drill details from drills table and match by title
@@ -449,11 +498,14 @@ export default function PracticePage() {
                   selectedFacilities: [],
                   roundType: null,
                   drills: [],
-                  date: new Date().toISOString().split('T')[0],
+                  date: plannedDrill.selected_date,
                 };
               }
               const dayPlan = loadedPlan[dayIndex];
-              
+              if (plannedDrill.selected_date) {
+                dayPlan.date = plannedDrill.selected_date;
+              }
+
               const drillDetails = drillDetailsMap[plannedDrill.drill_id];
               
               if (drillDetails) {
@@ -505,6 +557,7 @@ export default function PracticePage() {
             const practiceDate = new Date(practice.completed_at);
             const dayOfWeek = practiceDate.getDay();
             const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Convert Sunday=0 to Monday=0
+            const completedDateStr = toLocalDateString(practiceDate);
 
             // Create day only when we have DB data for it (no pre-population)
             if (!loadedPlan[dayIndex]) {
@@ -516,8 +569,10 @@ export default function PracticePage() {
                 selectedFacilities: [],
                 roundType: null,
                 drills: [],
-                date: new Date().toISOString().split('T')[0],
+                date: completedDateStr,
               };
+            } else if (!loadedPlan[dayIndex].date || loadedPlan[dayIndex].date !== completedDateStr) {
+              loadedPlan[dayIndex].date = completedDateStr;
             }
 
             // CROSS-REFERENCE: Prefer drill_id for matching (stable; spelling changes don't break old logs)
@@ -554,34 +609,70 @@ export default function PracticePage() {
             const generatedDrillId = drillDetails?.id || practice.drill_id || `practice-${practice.id}`;
             const drillTitle = drillDetails?.drill_name ?? drillDetails?.title ?? practice.drill_name ?? practice.type ?? practice.title ?? 'Practice Session';
             const isCompleted = practice.completed || false;
-            
-            // Check if this drill is already in our local plan (optional chaining prevents e[a].selected-style crash)
             const dayPlanRef = loadedPlan?.[dayIndex];
-            const existingDrillIndex = (dayPlanRef?.drills ?? []).findIndex(d => 
-              d?.id === generatedDrillId || d?.title === drillTitle
-            );
+            const logId =
+              practice.id !== undefined && practice.id !== null
+                ? String(practice.id)
+                : undefined;
 
-            if (existingDrillIndex >= 0 && dayPlanRef?.drills) {
-              dayPlanRef.drills[existingDrillIndex].completed = isCompleted;
-              if (levels) dayPlanRef.drills[existingDrillIndex].levels = levels;
-              if (drillDetails?.pdf_url || practice.pdf_url) dayPlanRef.drills[existingDrillIndex].pdf_url = drillDetails?.pdf_url || practice.pdf_url;
-              if (drillDetails?.video_url || practice.youtube_url || practice.video_url) dayPlanRef.drills[existingDrillIndex].youtube_url = drillDetails?.video_url || practice.youtube_url || practice.video_url;
-              if (drillDetails?.description != null) dayPlanRef.drills[existingDrillIndex].description = drillDetails.description;
-            } else if (dayPlanRef?.drills) {
-              dayPlanRef.drills.push({
-                id: generatedDrillId,
-                title: drillTitle,
-                category: drillDetails?.category || practice.category || 'Practice',
-                estimatedMinutes: drillDetails?.estimatedMinutes || practice.estimatedMinutes || 30,
-                completed: isCompleted,
-                pdf_url: drillDetails?.pdf_url || practice.pdf_url || undefined,
-                youtube_url: drillDetails?.video_url || practice.youtube_url || practice.video_url || undefined,
-                description: drillDetails?.description || practice.description || undefined,
-                levels: levels || undefined,
-              });
+            if (!dayPlanRef?.drills) return;
+
+            // One UI row per `practice` row: update by log id, or merge into an unclaimed planned slot, or push.
+            let existingDrillIndex = logId
+              ? dayPlanRef.drills.findIndex((d) => d?.practiceLogId === logId)
+              : -1;
+
+            const applyRowFields = (idx: number) => {
+              const row = dayPlanRef.drills[idx];
+              row.completed = isCompleted;
+              if (logId) row.practiceLogId = logId;
+              row.drill_id = generatedDrillId;
+              if (levels) row.levels = levels;
+              if (drillDetails?.pdf_url || practice.pdf_url) {
+                row.pdf_url = drillDetails?.pdf_url || practice.pdf_url;
+              }
+              if (drillDetails?.video_url || practice.youtube_url || practice.video_url) {
+                row.youtube_url = drillDetails?.video_url || practice.youtube_url || practice.video_url;
+              }
+              if (drillDetails?.description != null) {
+                row.description = drillDetails.description;
+              }
+            };
+
+            if (existingDrillIndex >= 0) {
+              applyRowFields(existingDrillIndex);
+            } else {
+              existingDrillIndex = dayPlanRef.drills.findIndex(
+                (d) =>
+                  !d?.practiceLogId &&
+                  (d?.drill_id === generatedDrillId || d?.id === generatedDrillId)
+              );
+              if (existingDrillIndex >= 0) {
+                applyRowFields(existingDrillIndex);
+              } else {
+                dayPlanRef.drills.push({
+                  id: logId ? `p-${logId}` : generatedDrillId,
+                  drill_id: generatedDrillId,
+                  practiceLogId: logId,
+                  title: drillTitle,
+                  category: drillDetails?.category || practice.category || 'Practice',
+                  estimatedMinutes:
+                    drillDetails?.estimatedMinutes || practice.estimatedMinutes || 30,
+                  completed: isCompleted,
+                  pdf_url: drillDetails?.pdf_url || practice.pdf_url || undefined,
+                  youtube_url:
+                    drillDetails?.video_url || practice.youtube_url || practice.video_url || undefined,
+                  description: drillDetails?.description || practice.description || undefined,
+                  levels: levels || undefined,
+                });
+              }
             }
           });
         }
+        }
+
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('weeklyPracticePlans', JSON.stringify(loadedPlan));
         }
 
         setWeeklyPlan(loadedPlan);
@@ -591,7 +682,16 @@ export default function PracticePage() {
         const savedPlans = localStorage.getItem('weeklyPracticePlans');
         if (savedPlans) {
           try {
-            const parsedPlans = JSON.parse(savedPlans);
+            const parsedPlans = JSON.parse(savedPlans) as WeeklyPlan;
+            const today = new Date();
+            const currentDay = today.getDay();
+            const mondayFb = new Date(today);
+            mondayFb.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+            mondayFb.setHours(0, 0, 0, 0);
+            sanitizeWeeklyPlanToCurrentWeek(parsedPlans, mondayFb);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('weeklyPracticePlans', JSON.stringify(parsedPlans));
+            }
             setWeeklyPlan(parsedPlans);
           } catch (e) {
             console.error('Error loading saved plans:', e);
@@ -1549,51 +1649,34 @@ export default function PracticePage() {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
 
-        // Check if already completed today to prevent duplicates
-        const startOfDay = new Date(day.date + 'T00:00:00').toISOString();
-        const endOfDay = new Date(day.date + 'T23:59:59').toISOString();
-        
-        const { data: existing } = await supabase
+        // One insert per completion (multiple same drill / same day allowed). XP stacks via updateUserXP.
+        const stableDrillId = (drill as any).drill_id || drill.id;
+        const completedAt = new Date().toISOString();
+        const { data: practiceData, error: practiceError } = await supabase
           .from('practice')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('type', drill.title)
-          .gte('completed_at', startOfDay)
-          .lte('completed_at', endOfDay)
-          .limit(1)
-          .maybeSingle();
+          .insert({
+            user_id: user.id,
+            type: stableDrillId,
+            duration_minutes: drill.estimatedMinutes,
+            notes: `Completed Drill: ${drill.category}`,
+            completed_at: completedAt,
+          })
+          .select();
 
-        if (existing) {
-          console.log('Practice: Drill already completed today, skipping duplicate insert and XP.');
+        if (practiceError) {
+          console.error('Practice: Error saving to practice table:', practiceError);
         } else {
-          // Safe insert: Only use columns known to exist in 'practice' table based on logFreestylePractice
-          const stableDrillId = (drill as any).drill_id || drill.id;
-          const { data: practiceData, error: practiceError } = await supabase
-            .from('practice')
-            .insert({
-              user_id: user.id,
-              type: stableDrillId, // Use drill_id for matching; avoids spelling changes breaking old logs
-              duration_minutes: drill.estimatedMinutes,
-              notes: `Completed Drill: ${drill.category}`,
-            })
-            .select();
+          console.log('Practice: Drill saved to practice table:', practiceData);
 
-          if (practiceError) {
-            console.error('Practice: Error saving to practice table:', practiceError);
-          } else {
-            console.log('Practice: Drill saved to practice table:', practiceData);
-            
-            // Trigger on Drill: Add XP to the user ONLY ONCE per drill per day
-            await updateUserXP(user.id, xpEarned);
-            console.log(`Practice: Added ${xpEarned} XP for drill completion`);
-            
-            // Trigger Global Sync
-            await refreshDrills();
-            window.dispatchEvent(new Event('drillsUpdated'));
-            
-            // Log activity to database
-            await logActivity(user.id, 'drill', `Completed ${drill.title} (+${xpEarned} XP)`);
-          }
+          await updateUserXP(user.id, xpEarned);
+          console.log(`Practice: Added ${xpEarned} XP for drill completion`);
+
+          await refreshDrills();
+          await refreshPracticeSessions();
+          window.dispatchEvent(new Event('drillsUpdated'));
+          window.dispatchEvent(new Event('practiceSessionsUpdated'));
+
+          await logActivity(user.id, 'drill', `Completed ${drill.title} (+${xpEarned} XP)`);
         }
       } catch (error) {
         console.error('Practice: Error in markDrillComplete database save:', error);
@@ -2917,14 +3000,36 @@ export default function PracticePage() {
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
             <h3 className="font-semibold text-gray-900 mb-4">Combine Tests</h3>
             <p className="text-xs text-gray-600 mb-4">Tap a test to start a session</p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <button
                 type="button"
                 onClick={() => router.push("/practice/putting-test")}
-                className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                className="flex min-h-[5.25rem] flex-col items-center justify-center gap-1.5 px-2 py-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
               >
-                <Target className="w-5 h-5 text-gray-600" />
-                <span className="text-xs font-medium text-center text-gray-700">Putting Test</span>
+                <Target className="w-5 h-5 shrink-0 text-gray-600" />
+                <span className="text-[11px] font-medium leading-tight text-center text-gray-700 sm:text-xs max-w-full">
+                  {puttingTestConfig.testName}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/practice/putting-test-9")}
+                className="flex min-h-[5.25rem] flex-col items-center justify-center gap-1.5 px-2 py-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+              >
+                <Target className="w-5 h-5 shrink-0 text-gray-600" />
+                <span className="text-[11px] font-medium leading-tight text-center text-gray-700 sm:text-xs max-w-full">
+                  {puttingTest9Config.testName}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/practice/putting-test-3-6ft")}
+                className="flex min-h-[5.25rem] flex-col items-center justify-center gap-1.5 px-2 py-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+              >
+                <Target className="w-5 h-5 shrink-0 text-gray-600" />
+                <span className="text-[11px] font-medium leading-tight text-center text-gray-700 sm:text-xs max-w-full">
+                  {puttingTest3To6ftConfig.testName}
+                </span>
               </button>
             </div>
           </div>

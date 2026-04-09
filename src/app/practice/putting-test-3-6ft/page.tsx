@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { ChevronLeft, Target } from "lucide-react";
-import { PuttingTestRunner } from "@/components/PuttingTestRunner";
-import { puttingTestConfig } from "@/lib/puttingTestConfig";
+import { PuttingTest3To6ftRunner } from "@/components/PuttingTest3To6ftRunner";
+import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
 
-export default function PuttingTestPage() {
+export default function PuttingTest3To6ftPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-lg mx-auto px-4 py-6 pb-24">
@@ -26,13 +26,14 @@ export default function PuttingTestPage() {
               <Target className="w-5 h-5 text-gray-600" />
             </div>
             <h1 className="text-xl font-semibold leading-snug text-gray-900">
-              {puttingTestConfig.testName}
+              {puttingTest3To6ftConfig.testName}
             </h1>
           </div>
           <p className="text-sm text-gray-600 mt-2">
-            Shuffled 18-footer sequence with break shape mix. Log each hole for points and putt count.
+            Ten putts from three to six feet. Best full-session score appears on the Academy leaderboard
+            under this test name.
           </p>
-          <PuttingTestRunner />
+          <PuttingTest3To6ftRunner />
         </div>
       </div>
     </div>

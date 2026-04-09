@@ -34,6 +34,8 @@ import IconPicker, { GOLF_ICONS } from "@/components/IconPicker";
 import Toast from "@/components/Toast";
 import TrophyCard from "@/components/TrophyCard";
 import { logActivity } from "@/lib/activity";
+import { puttingTestConfig } from "@/lib/puttingTestConfig";
+import { userIsPuttingTestLeader } from "@/lib/puttingTestLeaderboard";
 
 // Video drills for Daily Focus rotation
 const VIDEO_DRILLS = [
@@ -769,7 +771,8 @@ export default function HomeDashboard() {
       'monthly-legend': Crown,
       'putting-professor': BookOpen,
       'wedge-wizard': BookOpen,
-      'coachs-pet': Award
+      'coachs-pet': Award,
+      'champion-putting-test-18': Crown,
     };
     return iconMap[trophyId] || Trophy;
   };
@@ -867,6 +870,16 @@ export default function HomeDashboard() {
         return false;
       }
     }},
+    {
+      id: 'champion-putting-test-18',
+      name: `Champion: ${puttingTestConfig.testName}`,
+      description: `Hold #1 on the ${puttingTestConfig.testName} leaderboard (all-time best session; ties count)`,
+      icon: Crown,
+      checkUnlocked: (stats: any) => {
+        if (!stats.userId || !stats.practiceSessions?.length) return false;
+        return userIsPuttingTestLeader(stats.userId, stats.practiceSessions);
+      },
+    },
   ];
 
   // Fetch Trophies: State for combined trophies (from user_trophies table + Academy unlocked checks)
@@ -953,6 +966,8 @@ export default function HomeDashboard() {
           roundsData: safeRounds || [],
           practiceHistory,
           libraryCategories,
+          userId: user.id,
+          practiceSessions: practiceSessions || [],
         };
         
         // Check on Load: Every time the dashboard loads, compare current userStats against Academy milestone requirements
