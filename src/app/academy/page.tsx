@@ -759,6 +759,174 @@ function getTimeframeDates(timeFilter: "week" | "month" | "year" | "allTime") {
   return { startDate, endDate: now };
 }
 
+/** Rounds: prefer created_at, fall back to date for older rows */
+function roundLeaderboardTimeMs(round: { created_at?: string; date?: string }): number {
+  if (round.created_at) {
+    const t = new Date(round.created_at).getTime();
+    if (Number.isFinite(t)) return t;
+  }
+  if (round.date) {
+    const t = new Date(round.date).getTime();
+    if (Number.isFinite(t)) return t;
+  }
+  return NaN;
+}
+
+function roundPassesLeaderboardTimeFilter(
+  round: { created_at?: string; date?: string },
+  timeFilter: "week" | "month" | "year" | "allTime",
+): boolean {
+  if (timeFilter === "allTime") return true;
+  const ms = roundLeaderboardTimeMs(round);
+  if (!Number.isFinite(ms)) return false;
+  return ms >= getTimeframeDates(timeFilter).startDate.getTime();
+}
+
+function holesPlayedCount(round: any): number {
+  const h = round.holes ?? round.holes_played;
+  if (typeof h === "number" && Number.isFinite(h)) return h;
+  const n = Number(h);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function isEighteenHoleRound(round: any): boolean {
+  return holesPlayedCount(round) === 18;
+}
+
+function practiceLeaderboardTimeMs(session: any): number {
+  const raw = session.created_at || session.completed_at || session.practice_date;
+  if (!raw) return NaN;
+  const t = new Date(raw).getTime();
+  return Number.isFinite(t) ? t : NaN;
+}
+
+function practicePassesLeaderboardTimeFilter(
+  session: any,
+  timeFilter: "week" | "month" | "year" | "allTime",
+): boolean {
+  if (timeFilter === "allTime") return true;
+  const ms = practiceLeaderboardTimeMs(session);
+  if (!Number.isFinite(ms)) return false;
+  return ms >= getTimeframeDates(timeFilter).startDate.getTime();
+}
+
+function drillLeaderboardTimeMs(drill: any): number {
+  const raw = drill.created_at || drill.completed_at;
+  if (!raw) return NaN;
+  const t = new Date(raw).getTime();
+  return Number.isFinite(t) ? t : NaN;
+}
+
+function drillPassesLeaderboardTimeFilter(
+  drill: any,
+  timeFilter: "week" | "month" | "year" | "allTime",
+): boolean {
+  if (timeFilter === "allTime") return true;
+  const ms = drillLeaderboardTimeMs(drill);
+  if (!Number.isFinite(ms)) return false;
+  return ms >= getTimeframeDates(timeFilter).startDate.getTime();
+}
+
+type ParsedPuttingHole = {
+  createdMs: number;
+  holeIndex: number;
+  points: number;
+};
+
+function parsePuttingHoleSession(session: any): ParsedPuttingHole | null {
+  try {
+    const notes = session.notes;
+    if (!notes || typeof notes !== "string") return null;
+    const parsed = JSON.parse(notes);
+    if (parsed?.kind !== "putting_test_hole") return null;
+    if (typeof parsed.points !== "number" || typeof parsed.holeIndex !== "number") {
+      return null;
+    }
+    const raw = session.created_at;
+    if (!raw) return null;
+    const createdMs = new Date(raw).getTime();
+    if (!Number.isFinite(createdMs)) return null;
+    return {
+      createdMs,
+      holeIndex: parsed.holeIndex,
+      points: parsed.points,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function clusterPuttingCombineSessions(holes: ParsedPuttingHole[]): ParsedPuttingHole[][] {
+  const sorted = [...holes].sort(
+    (a, b) => a.createdMs - b.createdMs || a.holeIndex - b.holeIndex,
+  );
+  const sessions: ParsedPuttingHole[][] = [];
+  let cur: ParsedPuttingHole[] = [];
+  for (const h of sorted) {
+    if (h.holeIndex === 0 && cur.length > 0) {
+      sessions.push(cur);
+      cur = [h];
+    } else {
+      cur.push(h);
+    }
+  }
+  if (cur.length) sessions.push(cur);
+  return sessions;
+}
+
+function isCompletePuttingCombineSession(holes: ParsedPuttingHole[]): boolean {
+  if (holes.length !== 18) return false;
+  const idx = holes.map((h) => h.holeIndex).sort((a, b) => a - b);
+  for (let i = 0; i < 18; i++) {
+    if (idx[i] !== i) return false;
+  }
+  return true;
+}
+
+function bestPuttingCombineScoreForUser(holes: ParsedPuttingHole[]): number {
+  let best = 0;
+  for (const session of clusterPuttingCombineSessions(holes)) {
+    if (!isCompletePuttingCombineSession(session)) continue;
+    const total = session.reduce((s, h) => s + h.points, 0);
+    if (total > best) best = total;
+  }
+  return best;
+}
+
+function ensureCurrentUserOnLeaderboard(
+  entries: any[],
+  user: { id?: string; preferredIconId?: string } | null | undefined,
+  userProfiles: Map<
+    string,
+    { full_name?: string; preferred_icon_id?: string; xp?: number }
+  > | undefined,
+  pinnedValue: number,
+): any[] {
+  if (!user?.id || entries.some((e) => e.id === user.id)) return entries;
+  const profile = userProfiles?.get(user.id);
+  if (!profile?.full_name) return entries;
+  let nameForAvatar = "U";
+  if (profile.full_name) {
+    nameForAvatar =
+      profile.full_name
+        .split(" ")
+        .map((n: string) => n[0])
+        .join("")
+        .toUpperCase() || "U";
+  }
+  const userIcon = profile.preferred_icon_id || nameForAvatar;
+  return [
+    ...entries,
+    {
+      id: user.id,
+      name: profile.full_name,
+      avatar: userIcon,
+      value: pinnedValue,
+      isCurrentUser: true,
+    },
+  ];
+}
+
 // Calculate rounds count for a specific user
 function calculateUserRounds(
   rounds: any[],
@@ -775,7 +943,6 @@ function calculateUserRounds(
     return 0;
   }
 
-  const { startDate } = getTimeframeDates(timeFilter);
   // Find the Top 3 Render: Replace placeholder with actual count of rounds for that user
   // Verify StatsContext: Ensure the data coming from StatsContext is being passed into the leaderboard calculation correctly
   const userRounds = rounds.filter((round) => {
@@ -789,16 +956,13 @@ function calculateUserRounds(
       );
       return false;
     }
-    // Filter by timeframe
+    // Filter by timeframe (prefer created_at via shared helper)
     if (timeFilter === "allTime") return true;
-    const roundDate = new Date(round.date || round.created_at);
-    const isInTimeframe = roundDate >= startDate;
+    const isInTimeframe = roundPassesLeaderboardTimeFilter(round, timeFilter);
     if (!isInTimeframe) {
       console.log(
         "calculateUserRounds: Round filtered out - outside timeframe:",
-        roundDate,
-        "vs",
-        startDate,
+        round.created_at || round.date,
       );
     }
     return isInTimeframe;
@@ -1199,15 +1363,9 @@ function getMockLeaderboard(
     // Remove User Filters: Process ALL drills from all users, not just current user
     const allDrills = drills || [];
 
-    // Filter by timeframe if needed
-    const { startDate } = getTimeframeDates(timeFilter);
-    const filteredDrills = allDrills.filter((drill: any) => {
-      if (timeFilter === "allTime") return true;
-      const drillDate = new Date(
-        drill.completed_at || drill.created_at || Date.now(),
-      );
-      return drillDate >= startDate;
-    });
+    const filteredDrills = allDrills.filter((drill: any) =>
+      drillPassesLeaderboardTimeFilter(drill, timeFilter),
+    );
 
     // Group drills by user_id to count drills per user
     const drillsByUser = new Map<string, any[]>();
@@ -1308,15 +1466,9 @@ function getMockLeaderboard(
     // Remove User Filters: Process ALL practice_sessions from all users, not just current user
     const allPracticeSessions = practiceSessions || [];
 
-    // Filter by timeframe if needed
-    const { startDate } = getTimeframeDates(timeFilter);
-    const filteredSessions = allPracticeSessions.filter((session: any) => {
-      if (timeFilter === "allTime") return true;
-      const sessionDate = new Date(
-        session.practice_date || session.created_at || Date.now(),
-      );
-      return sessionDate >= startDate;
-    });
+    const filteredSessions = allPracticeSessions.filter((session: any) =>
+      practicePassesLeaderboardTimeFilter(session, timeFilter),
+    );
 
     // Group practice_sessions by user_id to sum hours per user
     const sessionsByUser = new Map<string, any[]>();
@@ -1685,14 +1837,28 @@ function formatLeaderboardValue(
     | "xp"
     | "library"
     | "practice"
+    | "puttingCombine"
     | "rounds"
     | "drills"
     | "lowGross"
     | "lowNett"
     | "birdies"
     | "eagles"
-    | "putts",
+    | "putts"
+    | "lowestPutts"
+    | "lowestAvgBogeys"
+    | "lowestAvgDoubleBogeys"
+    | "highestAvgBirdies"
+    | "bogeyFreeRounds"
+    | "doubleFreeRounds",
 ) {
+  if (
+    (metric === "putts" || metric === "lowestPutts") &&
+    typeof value === "number" &&
+    Number.isNaN(value)
+  ) {
+    return "—";
+  }
   switch (metric) {
     case "xp":
       return `${value.toLocaleString()} XP`;
@@ -1700,6 +1866,8 @@ function formatLeaderboardValue(
       return `${value} Lesson${value !== 1 ? "s" : ""}`;
     case "practice":
       return `${value.toFixed(1)} hrs`;
+    case "puttingCombine":
+      return `${Math.round(value)} pts`;
     case "rounds":
       return `${value} Round${value !== 1 ? "s" : ""}`;
     case "drills":
@@ -1714,6 +1882,18 @@ function formatLeaderboardValue(
       return `${value} Eagle${value !== 1 ? "s" : ""}`;
     case "putts":
       return `${value} Avg Putts`;
+    case "lowestPutts":
+      return `${value} putts`;
+    case "lowestAvgBogeys":
+      return `${value}`;
+    case "lowestAvgDoubleBogeys":
+      return `${value}`;
+    case "highestAvgBirdies":
+      return `${value} avg birdies`;
+    case "bogeyFreeRounds":
+      return `${value} round${value !== 1 ? "s" : ""}`;
+    case "doubleFreeRounds":
+      return `${value} round${value !== 1 ? "s" : ""}`;
     default:
       return `${value}`;
   }
@@ -1725,13 +1905,20 @@ function getLeaderboardData(
     | "xp"
     | "library"
     | "practice"
+    | "puttingCombine"
     | "rounds"
     | "drills"
     | "lowGross"
     | "lowNett"
     | "birdies"
     | "eagles"
-    | "putts",
+    | "putts"
+    | "lowestPutts"
+    | "lowestAvgBogeys"
+    | "lowestAvgDoubleBogeys"
+    | "highestAvgBirdies"
+    | "bogeyFreeRounds"
+    | "doubleFreeRounds",
   timeFilter: "week" | "month" | "year" | "allTime",
   rounds: any[],
   totalXP: number,
@@ -1744,6 +1931,98 @@ function getLeaderboardData(
   practiceSessions?: any[],
   drills?: any[],
 ) {
+  if (metric === "puttingCombine") {
+    const allPractice = practiceSessions || [];
+    const puttingRows = allPractice.filter((session: any) => {
+      const t = String(session.type || "").toLowerCase();
+      if (t !== "putting-test") return false;
+      return practicePassesLeaderboardTimeFilter(session, timeFilter);
+    });
+
+    const holesByUser = new Map<string, ParsedPuttingHole[]>();
+    puttingRows.forEach((session: any) => {
+      const uid = session.user_id;
+      if (!uid) return;
+      const parsed = parsePuttingHoleSession(session);
+      if (!parsed) return;
+      if (!holesByUser.has(uid)) holesByUser.set(uid, []);
+      holesByUser.get(uid)!.push(parsed);
+    });
+
+    const allEntries: any[] = [];
+    holesByUser.forEach((holes, userId) => {
+      const best = bestPuttingCombineScoreForUser(holes);
+      if (best <= 0) return;
+      const profile = userProfiles?.get(userId);
+      if (!profile || !profile.full_name) return;
+      const displayName = profile.full_name;
+      let nameForAvatar = "U";
+      if (profile.full_name) {
+        nameForAvatar =
+          profile.full_name
+            .split(" ")
+            .map((n: string) => n[0])
+            .join("")
+            .toUpperCase() || "U";
+      }
+      const userIcon = profile.preferred_icon_id || nameForAvatar;
+      allEntries.push({
+        id: userId,
+        name: displayName,
+        avatar: userIcon,
+        value: best,
+        isCurrentUser: user?.id === userId,
+      });
+    });
+
+    allEntries.sort((a, b) => b.value - a.value);
+
+    let meBest = 0;
+    if (user?.id) {
+      meBest = bestPuttingCombineScoreForUser(holesByUser.get(user.id) || []);
+    }
+    const withPinned = ensureCurrentUserOnLeaderboard(
+      allEntries,
+      user,
+      userProfiles,
+      meBest,
+    );
+    withPinned.sort((a, b) => b.value - a.value);
+
+    if (withPinned.length === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0,
+      };
+    }
+
+    const userEntryInRanks = withPinned.find((entry) => entry.isCurrentUser);
+    const finalUserValue = userEntryInRanks?.value ?? 0;
+    const withRanks = withPinned.map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+      rankChange: 0,
+      movedUp: false,
+      movedDown: false,
+      previousRank: undefined,
+      lowRound: undefined,
+      lowNett: undefined,
+      birdieCount: 0,
+      eagleCount: 0,
+    }));
+
+    return {
+      top3: withRanks.slice(0, 3),
+      all: withRanks,
+      userRank: userEntryInRanks
+        ? withRanks.findIndex((entry) => entry.isCurrentUser) + 1
+        : 0,
+      userValue: finalUserValue,
+    };
+  }
+
   // Debug: Log leaderboard calculation inputs
   // Debug Logs: Keep console.log to see if Stuart's round is in the raw data
   console.log("Leaderboard Data Debug:", {
@@ -1809,20 +2088,13 @@ function getLeaderboardData(
     );
   }
 
-  // Filter rounds by timeframe first - use created_at if available, otherwise fall back to date
-  const filteredRounds = rounds.filter((round) => {
-    if (timeFilter === "allTime") return true;
-    const { startDate } = getTimeframeDates(timeFilter);
-    // Use created_at for filtering (more accurate for when round was logged)
-    const roundTimestamp = round.created_at
-      ? new Date(round.created_at)
-      : new Date(round.date);
-    return roundTimestamp >= startDate;
-  });
+  const filteredRounds = (rounds || []).filter((round) =>
+    roundPassesLeaderboardTimeFilter(round, timeFilter),
+  );
 
   // For Low Gross and Low Nett: Filter to only 18-hole rounds
-  const eighteenHoleRounds = filteredRounds.filter(
-    (round) => round.holes === 18,
+  const eighteenHoleRounds = filteredRounds.filter((round) =>
+    isEighteenHoleRound(round),
   );
   const valid18HoleScores = eighteenHoleRounds
     .map((r) => r.score)
@@ -1896,6 +2168,13 @@ function getLeaderboardData(
       break;
     case "eagles":
       userValue = eagleCount;
+      break;
+    case "lowestAvgBogeys":
+    case "lowestAvgDoubleBogeys":
+    case "highestAvgBirdies":
+    case "bogeyFreeRounds":
+    case "doubleFreeRounds":
+      userValue = 0;
       break;
     default:
       userValue = 0;
@@ -2063,6 +2342,108 @@ function getLeaderboardData(
     );
     console.log("Birdies/Eagles: All entries count:", result.all?.length);
     return result;
+  }
+
+  if (
+    metric === "lowestAvgBogeys" ||
+    metric === "lowestAvgDoubleBogeys" ||
+    metric === "highestAvgBirdies" ||
+    metric === "bogeyFreeRounds" ||
+    metric === "doubleFreeRounds"
+  ) {
+    const roundsByUser = new Map<string, any[]>();
+    filteredRounds.forEach((round) => {
+      if (!round.user_id) return;
+      if (!roundsByUser.has(round.user_id)) {
+        roundsByUser.set(round.user_id, []);
+      }
+      roundsByUser.get(round.user_id)!.push(round);
+    });
+
+    const allEntries: any[] = [];
+    roundsByUser.forEach((userRounds, userId) => {
+      const n = userRounds.length;
+      if (n === 0) return;
+      const profile = userProfiles?.get(userId);
+      if (!profile?.full_name) return;
+
+      let value: number;
+      if (metric === "lowestAvgBogeys") {
+        const sum = userRounds.reduce((s, r) => s + (r.bogeys || 0), 0);
+        value = Number((sum / n).toFixed(2));
+      } else if (metric === "lowestAvgDoubleBogeys") {
+        const sum = userRounds.reduce((s, r) => s + (r.doubleBogeys || 0), 0);
+        value = Number((sum / n).toFixed(2));
+      } else if (metric === "highestAvgBirdies") {
+        const sum = userRounds.reduce((s, r) => s + (r.birdies || 0), 0);
+        value = Number((sum / n).toFixed(2));
+      } else if (metric === "bogeyFreeRounds") {
+        value = userRounds.filter(
+          (r) => (r.bogeys || 0) === 0 && (r.doubleBogeys || 0) === 0,
+        ).length;
+      } else {
+        value = userRounds.filter((r) => (r.doubleBogeys || 0) === 0).length;
+      }
+
+      let nameForAvatar = "U";
+      if (profile.full_name) {
+        nameForAvatar =
+          profile.full_name
+            .split(" ")
+            .map((x: string) => x[0])
+            .join("")
+            .toUpperCase() || "U";
+      }
+      const userIcon = profile.preferred_icon_id || nameForAvatar;
+
+      allEntries.push({
+        id: userId,
+        name: profile.full_name,
+        avatar: userIcon,
+        value,
+        isCurrentUser: user?.id === userId,
+      });
+    });
+
+    const sortDesc =
+      metric === "highestAvgBirdies" ||
+      metric === "bogeyFreeRounds" ||
+      metric === "doubleFreeRounds";
+    allEntries.sort((a, b) =>
+      sortDesc ? b.value - a.value || a.name.localeCompare(b.name) : a.value - b.value || a.name.localeCompare(b.name),
+    );
+
+    if (allEntries.length === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0,
+      };
+    }
+
+    const withRanks = allEntries.map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+      rankChange: 0,
+      movedUp: false,
+      movedDown: false,
+      previousRank: undefined,
+      lowRound: undefined,
+      lowNett: undefined,
+    }));
+
+    const userEntryInRanks = withRanks.find((entry) => entry.isCurrentUser);
+    const finalUserValue = userEntryInRanks?.value || 0;
+
+    return {
+      top3: withRanks.slice(0, 3),
+      all: withRanks,
+      userRank: userEntryInRanks
+        ? withRanks.findIndex((entry) => entry.isCurrentUser) + 1
+        : 0,
+      userValue: finalUserValue,
+    };
   }
 
   // Fix 'Low Gross' and 'Low Nett': Find the single lowest score among all users' rounds, not just mine
@@ -2253,12 +2634,13 @@ function getLeaderboardData(
 
   // Check Database: Column name is total_putts in database, mapped to totalPutts in TypeScript
   // Hard-Code the Link: Use round.totalPutts (camelCase from RoundData interface)
-  // Sort & Label: Sort Lowest (Ascending) and label 'X Putts'
-  if (metric === "putts") {
-    // Fetch entire row: filteredRounds contains all data from golf_rounds table
+  // Sort: ascending (lower is better) for both average and lowest single-round putts
+  if (metric === "putts" || metric === "lowestPutts") {
+    const eighteenForPutts = filteredRounds.filter(
+      (r) => r.user_id && isEighteenHoleRound(r),
+    );
     const roundsByUser = new Map<string, any[]>();
-    filteredRounds.forEach((round) => {
-      if (!round.user_id) return;
+    eighteenForPutts.forEach((round) => {
       if (!roundsByUser.has(round.user_id)) {
         roundsByUser.set(round.user_id, []);
       }
@@ -2267,13 +2649,8 @@ function getLeaderboardData(
 
     const allEntries: any[] = [];
     roundsByUser.forEach((userRounds, userId) => {
-      // Hard-Code the Link: Use exact column name totalPutts (from RoundData interface)
       const puttsValues = userRounds
-        .map((round) => {
-          // Hard-Code the Link: round.totalPutts (camelCase from StatsContext transformation)
-          const score = round.totalPutts || 0;
-          return Number(score) || 0;
-        })
+        .map((round) => Number(round.totalPutts) || 0)
         .filter((val) => val > 0);
 
       if (puttsValues.length === 0) {
@@ -2281,7 +2658,10 @@ function getLeaderboardData(
       }
 
       const sumPutts = puttsValues.reduce((sum, val) => sum + val, 0);
-      const userAvgPutts = Number((sumPutts / puttsValues.length).toFixed(1));
+      const userStat =
+        metric === "putts"
+          ? Number((sumPutts / puttsValues.length).toFixed(1))
+          : Math.min(...puttsValues);
 
       const profile = userProfiles?.get(userId);
       if (!profile || !profile.full_name) return; // Skip if no profile or name exists
@@ -2312,15 +2692,58 @@ function getLeaderboardData(
         id: userId,
         name: displayName,
         avatar: userIcon,
-        value: userAvgPutts,
+        value: userStat,
         isCurrentUser: user?.id === userId,
       });
     });
 
-    // Sort Lowest to Highest
+    // Sort lowest first (better average or better single-round total)
     allEntries.sort((a, b) => a.value - b.value);
 
-    if (allEntries.length === 0) {
+    const puttValsForUser = (uid: string) => {
+      const urs = eighteenForPutts.filter((r) => r.user_id === uid);
+      return urs
+        .map((round) => Number(round.totalPutts) || 0)
+        .filter((val) => val > 0);
+    };
+    let mePuttPinned = NaN;
+    if (user?.id) {
+      const pv = puttValsForUser(user.id);
+      if (pv.length > 0) {
+        mePuttPinned =
+          metric === "putts"
+            ? Number(
+                (pv.reduce((s, v) => s + v, 0) / pv.length).toFixed(1),
+              )
+            : Math.min(...pv);
+      }
+    }
+
+    let ordered = [...allEntries];
+    if (user?.id && !ordered.some((e) => e.id === user.id)) {
+      const profile = userProfiles?.get(user.id);
+      if (profile?.full_name) {
+        let nameForAvatar = "U";
+        if (profile.full_name) {
+          nameForAvatar =
+            profile.full_name
+              .split(" ")
+              .map((n: string) => n[0])
+              .join("")
+              .toUpperCase() || "U";
+        }
+        const userIcon = profile.preferred_icon_id || nameForAvatar;
+        ordered.push({
+          id: user.id,
+          name: profile.full_name,
+          avatar: userIcon,
+          value: mePuttPinned,
+          isCurrentUser: true,
+        });
+      }
+    }
+
+    if (ordered.length === 0) {
       return {
         top3: [],
         all: [],
@@ -2329,7 +2752,7 @@ function getLeaderboardData(
       };
     }
 
-    const withRanks = allEntries.map((entry, index) => {
+    const withRanks = ordered.map((entry, index) => {
       const currentRank = index + 1;
       return {
         ...entry,
@@ -2344,9 +2767,11 @@ function getLeaderboardData(
     });
 
     const userEntryInRanks = withRanks.find((entry) => entry.isCurrentUser);
-    const finalUserValue = userEntryInRanks?.value || 0;
+    const finalUserValue = Number.isFinite(userEntryInRanks?.value)
+      ? userEntryInRanks!.value
+      : 0;
 
-    const result = {
+    return {
       top3: withRanks.slice(0, 3),
       all: withRanks,
       userRank: userEntryInRanks
@@ -2354,23 +2779,12 @@ function getLeaderboardData(
         : 0,
       userValue: finalUserValue,
     };
-
-    return result;
   }
 
   // For rounds metric, group all rounds by user_id and create leaderboard entries for each user
   if (metric === "rounds") {
-    // Filter by timeframe first (no user_id filter - get all users' rounds)
-    const timeFilteredRounds = filteredRounds.filter((round) => {
-      if (timeFilter === "allTime") return true;
-      const { startDate } = getTimeframeDates(timeFilter);
-      const roundDate = new Date(round.date || round.created_at);
-      return roundDate >= startDate;
-    });
-
-    // Group rounds by user_id to count rounds per user
     const roundsByUser = new Map<string, any[]>();
-    timeFilteredRounds.forEach((round) => {
+    filteredRounds.forEach((round) => {
       if (!round.user_id) return; // Skip rounds without user_id
       if (!roundsByUser.has(round.user_id)) {
         roundsByUser.set(round.user_id, []);
@@ -2516,15 +2930,9 @@ function getLeaderboardData(
       ),
     );
 
-    // Filter by timeframe if needed
-    const { startDate } = getTimeframeDates(timeFilter);
-    const filteredSessions = allPracticeSessions.filter((session: any) => {
-      if (timeFilter === "allTime") return true;
-      const sessionDate = new Date(
-        session.practice_date || session.created_at || Date.now(),
-      );
-      return sessionDate >= startDate;
-    });
+    const filteredSessions = allPracticeSessions.filter((session: any) =>
+      practicePassesLeaderboardTimeFilter(session, timeFilter),
+    );
 
     // Group practice sessions by user_id to sum hours per user
     const sessionsByUser = new Map<string, any[]>();
@@ -2656,45 +3064,27 @@ function getLeaderboardData(
     // Update XP Leaderboard: Use XP from profiles instead of localStorage
     const allEntries: any[] = [];
 
-    // Get all user IDs from rounds, drills, and practice sessions to ensure we have all users
-    const roundUserIds = (rounds || [])
-      .map((r: any) => r.user_id)
-      .filter(Boolean);
-    const drillUserIds = (drills || [])
-      .map((d: any) => d.user_id)
-      .filter(Boolean);
-    const practiceUserIds = (practiceSessions || [])
-      .map((p: any) => p.user_id)
-      .filter(Boolean);
-    const allUserIds = Array.from(
-      new Set([...roundUserIds, ...drillUserIds, ...practiceUserIds]),
-    );
-
     // Create entries from userProfiles map (which includes XP)
     // Fallback to All-Time: Ensure XP is always fetched correctly, regardless of filter
     // Filter Logic: XP is cumulative - don't filter by date, always show total XP
     if (userProfiles && userProfiles.size > 0) {
       console.log("XP Leaderboard: Creating entries from", userProfiles.size, "profiles");
-      console.log("XP Leaderboard: Time filter is", timeFilter, "- XP is cumulative, not filtered by date");
+      console.log(
+        "XP Leaderboard: Time filter is",
+        timeFilter,
+        "- total XP is lifetime from profile; time buttons do not change XP totals",
+      );
       userProfiles.forEach((profile, userId) => {
-        // Column Mapping: In the leaderboard mapping logic, change the reference from profile.total_xp or profile.value to exactly profile.xp
-        // Default Zero: Use profile.xp || 0 in the display so it registers a number even for new players
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/cc9628f8-b6b7-4cad-8d2c-8aad59e6d1dc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'academy/page.tsx:2464',message:'XP value extraction',data:{userId,profileKeys:Object.keys(profile||{}),hasXp:'xp' in (profile||{}),xpValue:profile?.xp,rawProfile:profile},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         const xpValue = profile.xp || 0;
-        // Inner Join: Skip if no profile or name exists
         if (!profile || !profile.full_name) return;
+        if (xpValue <= 0) return;
+
         const displayName = profile.full_name;
-        
-        // Debug: Log XP values to verify they're being fetched
+
         if (xpValue > 0) {
           console.log(`XP Leaderboard: ${displayName} has ${xpValue} XP`);
-        } else {
-          console.warn(`XP Leaderboard: ${displayName} has 0 XP (check database column name)`);
         }
 
-        // Fix Avatars: Update the avatar circles to show the first letter of their names
         let nameForAvatar = "A";
         if (profile.full_name) {
           nameForAvatar =
@@ -2717,27 +3107,40 @@ function getLeaderboardData(
       });
     }
 
-    // Sort by XP descending (highest XP first)
-    allEntries.sort((a, b) => b.value - a.value);
+    const meXp = user?.id ? userProfiles?.get(user.id)?.xp || 0 : 0;
+    const withPinnedXp = ensureCurrentUserOnLeaderboard(
+      allEntries,
+      user,
+      userProfiles,
+      meXp,
+    );
+    withPinnedXp.sort((a, b) => b.value - a.value);
 
-    // Fallback to All-Time: If no entries or all entries have 0 XP, log warning
-    if (allEntries.length === 0) {
+    if (withPinnedXp.length === 0) {
       console.warn("XP Leaderboard: No entries created - check if userProfiles is populated");
-    } else if (allEntries.every(e => e.value === 0)) {
-      console.warn("XP Leaderboard: All entries have 0 XP - check database column name (xp vs points)");
-    } else {
-      console.log("XP Leaderboard: Created", allEntries.length, "entries, top XP:", allEntries[0]?.value);
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0,
+      };
     }
 
-    // Find current user's entry
-    const userEntryInSorted = allEntries.find((entry) => entry.isCurrentUser);
-    const finalUserValue = userEntryInSorted?.value || userValue;
+    console.log(
+      "XP Leaderboard: Created",
+      withPinnedXp.length,
+      "entries, top XP:",
+      withPinnedXp[0]?.value,
+    );
+
+    const userEntryInSorted = withPinnedXp.find((entry) => entry.isCurrentUser);
+    const finalUserValue = userEntryInSorted?.value ?? userValue;
 
     return {
-      top3: allEntries.slice(0, 3),
-      all: allEntries,
+      top3: withPinnedXp.slice(0, 3),
+      all: withPinnedXp,
       userRank: userEntryInSorted
-        ? allEntries.findIndex((entry) => entry.isCurrentUser) + 1
+        ? withPinnedXp.findIndex((entry) => entry.isCurrentUser) + 1
         : 0,
       userValue: finalUserValue,
     };
@@ -2914,6 +3317,7 @@ export default function AcademyPage() {
     | "xp"
     | "library"
     | "practice"
+    | "puttingCombine"
     | "rounds"
     | "drills"
     | "lowGross"
@@ -2921,6 +3325,12 @@ export default function AcademyPage() {
     | "birdies"
     | "eagles"
     | "putts"
+    | "lowestPutts"
+    | "lowestAvgBogeys"
+    | "lowestAvgDoubleBogeys"
+    | "highestAvgBirdies"
+    | "bogeyFreeRounds"
+    | "doubleFreeRounds"
   >("xp");
 
   // Database-First Academy: Fetch trophies from user_trophies table instead of calculating from live scores
@@ -3414,7 +3824,19 @@ export default function AcademyPage() {
       const totalXP = user?.totalXP || 0;
       
       // Calculate all score-based metrics and cache them
-      const metrics = ["lowGross", "lowNett", "birdies", "eagles", "putts"] as const;
+      const metrics = [
+        "lowGross",
+        "lowNett",
+        "birdies",
+        "eagles",
+        "putts",
+        "lowestPutts",
+        "lowestAvgBogeys",
+        "lowestAvgDoubleBogeys",
+        "highestAvgBirdies",
+        "bogeyFreeRounds",
+        "doubleFreeRounds",
+      ] as const;
       const scoreBasedLeaderboards: Record<string, any> = {};
       
       metrics.forEach((metric) => {
@@ -3435,7 +3857,13 @@ export default function AcademyPage() {
       // Update cache for currently selected metric (circuit breaker prevents infinite loops)
       const currentMetric = leaderboardMetric;
       if (currentMetric === "lowGross" || currentMetric === "lowNett" || 
-          currentMetric === "birdies" || currentMetric === "eagles" || currentMetric === "putts") {
+          currentMetric === "birdies" || currentMetric === "eagles" || currentMetric === "putts" ||
+          currentMetric === "lowestPutts" ||
+          currentMetric === "lowestAvgBogeys" ||
+          currentMetric === "lowestAvgDoubleBogeys" ||
+          currentMetric === "highestAvgBirdies" ||
+          currentMetric === "bogeyFreeRounds" ||
+          currentMetric === "doubleFreeRounds") {
         const scoreBasedLeaderboard = scoreBasedLeaderboards[currentMetric];
         
         // Circuit breaker: Prevent infinite loop with JSON.stringify comparison
@@ -3465,9 +3893,16 @@ export default function AcademyPage() {
   const currentLeaderboard = useMemo(() => {
     // Use getLeaderboardData for score-based metrics and xp
     if (leaderboardMetric === "xp" || leaderboardMetric === "lowGross" || leaderboardMetric === "lowNett" || 
-        leaderboardMetric === "birdies" || leaderboardMetric === "eagles" || leaderboardMetric === "putts") {
-      // Don't use cache for xp as we need it to be live
-      if (cachedLeaderboard && leaderboardMetric !== "xp") {
+        leaderboardMetric === "birdies" || leaderboardMetric === "eagles" || leaderboardMetric === "putts" ||
+        leaderboardMetric === "lowestPutts" ||
+        leaderboardMetric === "lowestAvgBogeys" ||
+        leaderboardMetric === "lowestAvgDoubleBogeys" ||
+        leaderboardMetric === "highestAvgBirdies" ||
+        leaderboardMetric === "bogeyFreeRounds" ||
+        leaderboardMetric === "doubleFreeRounds" ||
+        leaderboardMetric === "puttingCombine") {
+      // Don't use cache for xp or putting combine (always derive from practice rows)
+      if (cachedLeaderboard && leaderboardMetric !== "xp" && leaderboardMetric !== "puttingCombine") {
         return cachedLeaderboard;
       }
       // Calculate on-demand if not cached yet
@@ -4059,14 +4494,17 @@ export default function AcademyPage() {
         {/* Overall Academy Leaderboard */}
         <div className="mb-6 w-full">
           <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full flex flex-col">
-            <div className="flex flex-col md:flex-row gap-4 md:items-center md:justify-between mb-6 w-full">
-              <h3 className="text-xl font-bold text-gray-900 text-center md:text-left">
+            <div className="flex flex-col gap-3 mb-6 w-full min-w-0 items-center text-center">
+              <h3 className="text-xl font-bold text-gray-900 w-full min-w-0 px-1">
                 Overall Academy Leaderboard
               </h3>
-              {/* Category Dropdown */}
-              <div className="w-full md:w-auto">
-                <div className="flex items-center justify-center md:justify-end gap-2 sm:gap-4 flex-wrap w-full">
-                  <label htmlFor="category-select" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+              {/* Category row centered under title; max-width keeps long options readable */}
+              <div className="w-full max-w-xl min-w-0 mx-auto">
+                <div className="flex flex-col gap-2 w-full min-w-0 sm:flex-row sm:items-center sm:justify-center sm:gap-3">
+                  <label
+                    htmlFor="category-select"
+                    className="text-sm font-medium text-gray-700 shrink-0 sm:pt-0.5"
+                  >
                     Category:
                   </label>
                   <select
@@ -4076,11 +4514,11 @@ export default function AcademyPage() {
                       const selectedMetric = e.target.value as typeof leaderboardMetric;
                       setLeaderboardMetric(selectedMetric);
                     }}
-                    className="px-4 py-2 rounded-lg text-sm font-medium text-gray-900 bg-white border border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#014421] focus:border-[#014421] transition-colors cursor-pointer w-full sm:w-auto"
-                    style={{ minWidth: '180px' }}
+                    className="min-w-0 w-full sm:flex-1 sm:max-w-md box-border px-4 py-2 rounded-lg text-sm font-medium text-gray-900 bg-white border border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#014421] focus:border-[#014421] transition-colors cursor-pointer text-left"
                   >
                     <option value="xp">Overall (Total XP)</option>
                     <option value="practice">Practice Hours</option>
+                    <option value="puttingCombine">Putting Combine</option>
                     <option value="library">Library Lessons</option>
                     <option value="rounds">Rounds Entered</option>
                     <option value="drills">Drills</option>
@@ -4088,7 +4526,13 @@ export default function AcademyPage() {
                     <option value="lowNett">Low Nett</option>
                     <option value="birdies">Birdies</option>
                     <option value="eagles">Eagles</option>
-                    <option value="putts">Putts</option>
+                    <option value="putts">Average Putts</option>
+                    <option value="lowestPutts">Lowest Putts</option>
+                    <option value="lowestAvgBogeys">Lowest Average Bogeys</option>
+                    <option value="lowestAvgDoubleBogeys">Lowest Average Double Bogeys</option>
+                    <option value="highestAvgBirdies">Highest Average Birdies</option>
+                    <option value="bogeyFreeRounds">Bogey Free Rounds</option>
+                    <option value="doubleFreeRounds">Double Free Rounds</option>
                   </select>
                 </div>
               </div>
@@ -4151,54 +4595,110 @@ export default function AcademyPage() {
                 );
               }
 
-              // Top 20 list
+              // Top 20 list (full ranking stays in dataToRender.all for correct "You" rank)
               const top20 = dataToRender.all.slice(0, 20);
+              const meEntry = dataToRender.all.find((e: any) => e.isCurrentUser);
+              const meInTop20 = top20.some((e: any) => e.isCurrentUser);
+              const meRank =
+                meEntry != null
+                  ? dataToRender.all.findIndex((e: any) => e.isCurrentUser) + 1
+                  : 0;
 
-              return (
-                <div className="flex flex-col gap-3">
-                  {top20.map((entry: any, index: number) => {
-                    const rank = index + 1;
-                    const displayName = entry.full_name || entry.display_name || (entry.email?.includes("@") ? entry.email.split("@")[0] : entry.email) || (entry.name?.includes("@") ? entry.name.split("@")[0] : entry.name) || "Academy Member";
-                    
-                    // Highlight the current user
-                    const isMe = entry.isCurrentUser;
-                    const displayValue = leaderboardMetric === "xp" ? entry.value : formatLeaderboardValue(entry.value, leaderboardMetric);
-
-                    return (
-                      <div 
-                        key={entry.id || `rank-${rank}`} 
-                        className={`flex items-center justify-between p-3 rounded-xl transition-all ${
-                          isMe 
-                            ? "bg-green-50 border-2 border-[#014421] shadow-sm" 
-                            : "bg-gray-50 border border-transparent hover:border-gray-200"
+              const renderRow = (entry: any, rank: number, keySuffix: string) => {
+                const displayName =
+                  entry.full_name ||
+                  entry.display_name ||
+                  (entry.email?.includes("@")
+                    ? entry.email.split("@")[0]
+                    : entry.email) ||
+                  (entry.name?.includes("@")
+                    ? entry.name.split("@")[0]
+                    : entry.name) ||
+                  "Academy Member";
+                const isMe = entry.isCurrentUser;
+                const displayValue = formatLeaderboardValue(
+                  entry.value,
+                  leaderboardMetric as Parameters<typeof formatLeaderboardValue>[1],
+                );
+                return (
+                  <div
+                    key={entry.id ? `${entry.id}-${keySuffix}` : `rank-${rank}-${keySuffix}`}
+                    className={`flex items-center justify-between p-3 rounded-xl transition-all ${
+                      isMe
+                        ? "bg-green-50 border-2 border-[#014421] shadow-sm"
+                        : "bg-gray-50 border border-transparent hover:border-gray-200"
+                    }`}
+                  >
+                    <div className="flex items-center gap-4 min-w-0 flex-1">
+                      <div
+                        className={`text-lg font-bold w-8 shrink-0 text-center ${
+                          rank === 1
+                            ? "text-[#FFA500]"
+                            : rank === 2
+                              ? "text-[#C0C0C0]"
+                              : rank === 3
+                                ? "text-[#CD7F32]"
+                                : "text-gray-500"
                         }`}
                       >
-                        <div className="flex items-center gap-4 min-w-0 flex-1">
-                          <div className={`text-lg font-bold w-8 shrink-0 text-center ${
-                            rank === 1 ? 'text-[#FFA500]' : rank === 2 ? 'text-[#C0C0C0]' : rank === 3 ? 'text-[#CD7F32]' : 'text-gray-500'
-                          }`}>
-                            #{rank}
-                          </div>
-                          <div className="shrink-0 relative">
-                            {rank === 1 && <Crown className="w-5 h-5 absolute -top-3 -right-2 text-[#FFA500]" />}
-                            <CircularAvatar
-                              initial={displayName[0]}
-                              iconId={entry.avatar && GOLF_ICONS.some((icon: any) => icon.id === entry.avatar) ? entry.avatar : undefined}
-                              size={44}
-                              bgColor={isMe ? "#014421" : rank === 1 ? "#FFA500" : rank === 2 ? "#C0C0C0" : rank === 3 ? "#CD7F32" : "#9CA3AF"}
-                            />
-                          </div>
-                          <div className="text-base font-semibold text-gray-900 truncate pr-2 flex-1" title={displayName}>
-                            {displayName} {isMe && <span className="text-xs font-bold text-[#014421] ml-1">(You)</span>}
-                          </div>
-                        </div>
-                        <div className="text-lg font-bold text-[#014421] shrink-0 pl-2 text-right">
-                          {displayValue}
-                          {leaderboardMetric === "xp" && <span className="text-xs font-normal text-gray-500 ml-1">XP</span>}
-                        </div>
+                        #{rank}
                       </div>
-                    );
-                  })}
+                      <div className="shrink-0 relative">
+                        {rank === 1 && keySuffix === "top" && (
+                          <Crown className="w-5 h-5 absolute -top-3 -right-2 text-[#FFA500]" />
+                        )}
+                        <CircularAvatar
+                          initial={displayName[0]}
+                          iconId={
+                            entry.avatar &&
+                            GOLF_ICONS.some((icon: any) => icon.id === entry.avatar)
+                              ? entry.avatar
+                              : undefined
+                          }
+                          size={44}
+                          bgColor={
+                            isMe
+                              ? "#014421"
+                              : rank === 1
+                                ? "#FFA500"
+                                : rank === 2
+                                  ? "#C0C0C0"
+                                  : rank === 3
+                                    ? "#CD7F32"
+                                    : "#9CA3AF"
+                          }
+                        />
+                      </div>
+                      <div
+                        className="text-base font-semibold text-gray-900 truncate pr-2 flex-1"
+                        title={displayName}
+                      >
+                        {displayName}{" "}
+                        {isMe && (
+                          <span className="text-xs font-bold text-[#014421] ml-1">(You)</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-lg font-bold text-[#014421] shrink-0 pl-2 text-right">
+                      {displayValue}
+                    </div>
+                  </div>
+                );
+              };
+
+              return (
+                <div className="flex flex-col gap-3 mx-auto w-full max-w-xl">
+                  {top20.map((entry: any, index: number) =>
+                    renderRow(entry, index + 1, "top"),
+                  )}
+                  {user?.id && meEntry && !meInTop20 && meRank > 0 ? (
+                    <div className="pt-2 mt-1 border-t border-gray-200">
+                      <p className="text-xs text-gray-500 mb-2 text-center">
+                        Your rank (#{meRank}) — not in the top 20 for this filter
+                      </p>
+                      {renderRow(meEntry, meRank, "you")}
+                    </div>
+                  ) : null}
                 </div>
               );
             })()}

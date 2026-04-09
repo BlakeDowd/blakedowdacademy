@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File } from "lucide-react";
@@ -186,6 +187,7 @@ async function updateUserXP(userId: string, points: number): Promise<void> {
 }
 
 export default function PracticePage() {
+  const router = useRouter();
   const { rounds, refreshPracticeSessions, refreshDrills } = useStats();
   const { user, refreshUser } = useAuth();
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({});
@@ -2909,6 +2911,24 @@ export default function PracticePage() {
 
         {/* Drill Library */}
         <DrillLibrary onAssignToDay={addDrillToDay} />
+
+        {/* Combine Tests */}
+        <div className="mb-6">
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+            <h3 className="font-semibold text-gray-900 mb-4">Combine Tests</h3>
+            <p className="text-xs text-gray-600 mb-4">Tap a test to start a session</p>
+            <div className="grid grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={() => router.push("/practice/putting-test")}
+                className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+              >
+                <Target className="w-5 h-5 text-gray-600" />
+                <span className="text-xs font-medium text-center text-gray-700">Putting Test</span>
+              </button>
+            </div>
+          </div>
+        </div>
 
         {/* YouTube Modal */}
         {youtubeModal.open && (

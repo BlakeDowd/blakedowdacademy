@@ -1,0 +1,382 @@
+"use client";
+
+import { useCallback, useMemo, useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { puttingTestConfig } from "@/lib/puttingTestConfig";
+
+type ShapeKey = (typeof puttingTestConfig.shapes)[number];
+type MissCategory = "highLong" | "highShort" | "lowLong" | "lowShort";
+
+export type PuttingHoleRecord = {
+  holeIndex: number;
+  distance: number;
+  shape: ShapeKey;
+  outcome: "make" | "miss";
+  missReason: MissCategory | null;
+  secondPuttDistanceFt: number | null;
+  putts: 1 | 2 | 3;
+  points: number;
+  isThreePutt: boolean;
+};
+
+type HoleSetup = { distance: number; shape: ShapeKey };
+
+type ActivePhase = "first-putt" | "miss-category" | "second-putt";
+
+function shuffle<T>(items: T[]): T[] {
+  const a = [...items];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function buildHoles(): HoleSetup[] {
+  const distances = shuffle([...puttingTestConfig.distances]);
+  const shapePool: ShapeKey[] = [
+    ...Array(6).fill("Straight" as const),
+    ...Array(6).fill("Left-to-Right" as const),
+    ...Array(6).fill("Right-to-Left" as const),
+  ];
+  const shapes = shuffle(shapePool);
+  return distances.map((distance, i) => ({
+    distance,
+    shape: shapes[i],
+  }));
+}
+
+function shapeLabel(shape: ShapeKey): string {
+  if (shape === "Left-to-Right") return "L-to-R";
+  if (shape === "Right-to-Left") return "R-to-L";
+  return shape;
+}
+
+function categoryPoints(cat: MissCategory): number {
+  const p = puttingTestConfig.points;
+  switch (cat) {
+    case "highLong":
+      return p.highLong;
+    case "highShort":
+      return p.highShort;
+    case "lowLong":
+      return p.lowLong;
+    case "lowShort":
+      return p.lowShort;
+  }
+}
+
+async function persistHoleToSupabase(userId: string, record: PuttingHoleRecord) {
+  try {
+    const { createClient } = await import("@/lib/supabase/client");
+    const supabase = createClient();
+    const { error } = await supabase.from("practice").insert({
+      user_id: userId,
+      type: "putting-test",
+      duration_minutes: 0,
+      notes: JSON.stringify({
+        kind: "putting_test_hole",
+        holeIndex: record.holeIndex,
+        distance: record.distance,
+        shape: record.shape,
+        outcome: record.outcome,
+        missReason: record.missReason,
+        secondPuttDistanceFt: record.secondPuttDistanceFt,
+        putts: record.putts,
+        points: record.points,
+        isThreePutt: record.isThreePutt,
+      }),
+    });
+    if (error) {
+      console.warn("[PuttingTest] Supabase save:", error.message);
+    }
+  } catch (e) {
+    console.warn("[PuttingTest] Supabase save failed", e);
+  }
+}
+
+export function PuttingTestRunner() {
+  const { user } = useAuth();
+  const [status, setStatus] = useState<"intro" | "active" | "complete">("intro");
+  const [holes, setHoles] = useState<HoleSetup[]>([]);
+  const [currentHoleIndex, setCurrentHoleIndex] = useState(0);
+  const [totalPoints, setTotalPoints] = useState(0);
+  const [totalPutts, setTotalPutts] = useState(0);
+  const [holeLog, setHoleLog] = useState<PuttingHoleRecord[]>([]);
+  const [phase, setPhase] = useState<ActivePhase>("first-putt");
+  const [missCategory, setMissCategory] = useState<MissCategory | null>(null);
+  const [secondPuttDistanceInput, setSecondPuttDistanceInput] = useState("");
+
+  const currentHole = holes[currentHoleIndex];
+  const secondPuttDistanceNum = parseFloat(secondPuttDistanceInput);
+  const secondDistanceValid =
+    secondPuttDistanceInput.trim() !== "" &&
+    !Number.isNaN(secondPuttDistanceNum) &&
+    secondPuttDistanceNum > 0;
+
+  const benchmarks = puttingTestConfig.benchmarks;
+
+  const startTest = useCallback(() => {
+    setHoles(buildHoles());
+    setCurrentHoleIndex(0);
+    setTotalPoints(0);
+    setTotalPutts(0);
+    setHoleLog([]);
+    setPhase("first-putt");
+    setMissCategory(null);
+    setSecondPuttDistanceInput("");
+    setStatus("active");
+  }, []);
+
+  const finishHole = useCallback(
+    (record: PuttingHoleRecord) => {
+      setHoleLog((prev) => [...prev, record]);
+      setTotalPoints((p) => p + record.points);
+      setTotalPutts((p) => p + record.putts);
+      if (user?.id) {
+        void persistHoleToSupabase(user.id, record);
+      }
+      setMissCategory(null);
+      setSecondPuttDistanceInput("");
+      setPhase("first-putt");
+
+      const nextIndex = currentHoleIndex + 1;
+      if (nextIndex >= 18) {
+        setStatus("complete");
+      } else {
+        setCurrentHoleIndex(nextIndex);
+      }
+    },
+    [user?.id, currentHoleIndex]
+  );
+
+  const onMake = useCallback(() => {
+    if (!currentHole || status !== "active") return;
+    const pts = puttingTestConfig.points.make;
+    finishHole({
+      holeIndex: currentHoleIndex,
+      distance: currentHole.distance,
+      shape: currentHole.shape,
+      outcome: "make",
+      missReason: null,
+      secondPuttDistanceFt: null,
+      putts: 1,
+      points: pts,
+      isThreePutt: false,
+    });
+  }, [currentHole, currentHoleIndex, finishHole, status]);
+
+  const onFirstMiss = useCallback(() => {
+    setPhase("miss-category");
+  }, []);
+
+  const onPickCategory = useCallback((cat: MissCategory) => {
+    setMissCategory(cat);
+    setPhase("second-putt");
+  }, []);
+
+  const onSecondPuttResult = useCallback(
+    (made: boolean) => {
+      if (!currentHole || missCategory == null || !secondDistanceValid) return;
+      const base = categoryPoints(missCategory);
+      let putts: 2 | 3;
+      let points: number;
+      let isThreePutt: boolean;
+      if (made) {
+        putts = 2;
+        points = base;
+        isThreePutt = false;
+      } else {
+        putts = 3;
+        points = base + puttingTestConfig.points.threePutt;
+        isThreePutt = true;
+      }
+      finishHole({
+        holeIndex: currentHoleIndex,
+        distance: currentHole.distance,
+        shape: currentHole.shape,
+        outcome: "miss",
+        missReason: missCategory,
+        secondPuttDistanceFt: secondPuttDistanceNum,
+        putts,
+        points,
+        isThreePutt,
+      });
+    },
+    [
+      currentHole,
+      currentHoleIndex,
+      finishHole,
+      missCategory,
+      secondDistanceValid,
+      secondPuttDistanceNum,
+    ]
+  );
+
+  const summary = useMemo(() => {
+    if (holeLog.length === 0) return null;
+    return {
+      holes: holeLog.length,
+      points: holeLog.reduce((s, h) => s + h.points, 0),
+      putts: holeLog.reduce((s, h) => s + h.putts, 0),
+    };
+  }, [holeLog]);
+
+  if (status === "intro") {
+    return (
+      <div className="mt-6 space-y-4">
+        <p className="text-sm text-gray-600">
+          18 putts, shuffled distances. Six straight, six left-to-right, six right-to-left. Track makes,
+          miss direction, and second putt to score.
+        </p>
+        <button
+          type="button"
+          onClick={startTest}
+          className="w-full py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity"
+        >
+          Start Putting Test
+        </button>
+      </div>
+    );
+  }
+
+  if (status === "complete" && summary) {
+    return (
+      <div className="mt-6 space-y-4">
+        <h2 className="text-lg font-semibold text-gray-900">Test complete</h2>
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm space-y-2">
+          <p>
+            <span className="text-gray-600">Total points:</span>{" "}
+            <span className="font-semibold text-gray-900">{summary.points}</span>
+            <span className="text-gray-500">
+              {" "}
+              (scratch benchmark {benchmarks.scratchPoints})
+            </span>
+          </p>
+          <p>
+            <span className="text-gray-600">Total putts:</span>{" "}
+            <span className="font-semibold text-gray-900">{summary.putts}</span>
+            <span className="text-gray-500">
+              {" "}
+              (scratch benchmark {benchmarks.scratchPutts})
+            </span>
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={startTest}
+          className="w-full py-3 rounded-xl border-2 border-[#014421] text-[#014421] font-semibold hover:bg-[#014421]/5 transition-colors"
+        >
+          Run again
+        </button>
+      </div>
+    );
+  }
+
+  if (!currentHole) {
+    return null;
+  }
+
+  const holeDisplay = currentHoleIndex + 1;
+
+  return (
+    <div className="mt-6 space-y-6">
+      <div className="flex justify-between gap-3 text-sm">
+        <div className="text-gray-600">
+          Points: <span className="font-semibold text-gray-900">{totalPoints}</span>
+        </div>
+        <div className="text-gray-600">
+          Putts: <span className="font-semibold text-gray-900">{totalPutts}</span>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <p className="text-base font-medium text-gray-900">
+          Hole {holeDisplay}/18: {currentHole.distance}ft - {shapeLabel(currentHole.shape)}
+        </p>
+      </div>
+
+      {phase === "first-putt" && (
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={onMake}
+            className="py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity"
+          >
+            MAKE
+          </button>
+          <button
+            type="button"
+            onClick={onFirstMiss}
+            className="py-3 rounded-xl border-2 border-gray-300 text-gray-800 font-semibold hover:border-[#F57C00] hover:bg-orange-50 transition-colors"
+          >
+            MISS
+          </button>
+        </div>
+      )}
+
+      {phase === "miss-category" && (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">First putt miss — pick category</p>
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                ["highLong", "High / Long"],
+                ["highShort", "High / Short"],
+                ["lowLong", "Low / Long"],
+                ["lowShort", "Low / Short"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onPickCategory(key)}
+                className="py-2.5 px-3 rounded-lg border-2 border-gray-200 text-sm font-medium text-gray-800 hover:border-[#014421] hover:bg-[#014421]/5 transition-colors"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {phase === "second-putt" && missCategory != null && (
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="second-putt-dist" className="block text-sm font-medium text-gray-700 mb-1">
+              Second putt distance (ft)
+            </label>
+            <input
+              id="second-putt-dist"
+              type="text"
+              inputMode="decimal"
+              placeholder="e.g. 3"
+              value={secondPuttDistanceInput}
+              onChange={(e) => setSecondPuttDistanceInput(e.target.value)}
+              className="w-full max-w-[120px] rounded-lg border-2 border-gray-200 px-3 py-2 text-sm focus:border-[#014421] focus:outline-none focus:ring-2 focus:ring-[#014421]/30"
+            />
+          </div>
+          <p className="text-sm text-gray-600">Second putt result</p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              disabled={!secondDistanceValid}
+              onClick={() => onSecondPuttResult(true)}
+              className="py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Made 2nd
+            </button>
+            <button
+              type="button"
+              disabled={!secondDistanceValid}
+              onClick={() => onSecondPuttResult(false)}
+              className="py-3 rounded-xl border-2 border-gray-300 text-gray-800 font-semibold hover:border-red-400 hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Missed 2nd (3-putt)
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
