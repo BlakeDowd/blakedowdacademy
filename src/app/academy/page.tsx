@@ -38,10 +38,16 @@ import {
   bestPutting9HolesScoreForUser,
   parsePuttingTest3To6ftSession,
   bestPuttingTest3To6ftScoreForUser,
+  parsePuttingTest8To20Session,
+  bestPuttingTest8To20ScoreForUser,
+  parsePuttingTest20To40Session,
+  bestPuttingTest20To40ScoreForUser,
   userIsPuttingTestLeader,
 } from "@/lib/puttingTestLeaderboard";
 import { puttingTest9Config } from "@/lib/puttingTest9Config";
 import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
+import { puttingTest8To20Config } from "@/lib/puttingTest8To20Config";
+import { puttingTest20To40Config } from "@/lib/puttingTest20To40Config";
 
 /** Display + DB trophy_name (must match HomeDashboard ACADEMY_TROPHIES). */
 const PUTTING_TEST_CHAMPION_TROPHY_NAME = `Champion: ${puttingTestConfig.testName}`;
@@ -801,6 +807,36 @@ function getTimeframeDates(timeFilter: "week" | "month" | "year" | "allTime") {
   return { startDate, endDate: now };
 }
 
+/**
+ * True if event time falls in the selected range using the user's local calendar (fixes month/year
+ * mismatches vs comparing raw ms to startDate only).
+ */
+function eventMsMatchesLeaderboardTimeFilter(
+  ms: number,
+  timeFilter: "week" | "month" | "year" | "allTime",
+): boolean {
+  if (timeFilter === "allTime") return true;
+  if (!Number.isFinite(ms)) return false;
+  const now = new Date();
+  const event = new Date(ms);
+
+  if (timeFilter === "week") {
+    const start = new Date(now);
+    start.setDate(now.getDate() - 7);
+    return ms >= start.getTime();
+  }
+  if (timeFilter === "month") {
+    return (
+      event.getFullYear() === now.getFullYear() &&
+      event.getMonth() === now.getMonth()
+    );
+  }
+  if (timeFilter === "year") {
+    return event.getFullYear() === now.getFullYear();
+  }
+  return true;
+}
+
 /** Rounds: prefer created_at, fall back to date for older rows */
 function roundLeaderboardTimeMs(round: { created_at?: string; date?: string }): number {
   if (round.created_at) {
@@ -835,11 +871,91 @@ function isEighteenHoleRound(round: any): boolean {
   return holesPlayedCount(round) === 18;
 }
 
+/**
+ * Normalize Postgres / PostgREST timestamp strings so Date.parse succeeds (fixes "This Month" dropping rows).
+ * - Space between date and time → "T"
+ * - Whitespace before numeric TZ offset → removed (e.g. ".123 +10" → ".123+10")
+ * - Trailing ±HH without minutes → ±HH:00 (many engines reject "+00", "+10")
+ * - Bare YYYY-MM-DD (10 chars) → YYYY-MM-DDT12:00:00 (local noon)
+ */
+function normalizePostgresTimestampString(s: string): string {
+  let out = s.trim();
+  if (!out) return out;
+  if (out.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(out)) {
+    return `${out}T12:00:00`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}\s/.test(out)) {
+    out = out.replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T");
+  }
+  // "2026-04-10T14:30:00.123 +10" / "2026-04-10T14:30 +00" — space before offset only
+  out = out.replace(
+    /(\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s+([+-])(?=\d)/g,
+    "$1$2",
+  );
+  // Require ±HH:MM; extend ±HH at end of string only
+  if (/[+-]\d{2}$/.test(out) && !/[+-]\d{2}:\d{2}$/.test(out)) {
+    out = out.replace(/([+-])(\d{2})$/, "$1$2:00");
+  }
+  return out;
+}
+
+/**
+ * Parse timestamps from Supabase/Postgres for leaderboard time filters (week/month/year).
+ */
+function parseLeaderboardEventMs(raw: unknown): number | null {
+  if (raw == null) return null;
+  if (raw instanceof Date) {
+    const t = raw.getTime();
+    return Number.isFinite(t) ? t : null;
+  }
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const ms = raw > 1e12 ? raw : raw * 1000;
+    const t = new Date(ms).getTime();
+    return Number.isFinite(t) ? t : null;
+  }
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+  if (!s) return null;
+
+  // Epoch as string (ms or seconds)
+  if (/^\d{10,13}$/.test(s)) {
+    const n = Number(s);
+    const ms = s.length >= 13 ? n : n * 1000;
+    const t = new Date(ms).getTime();
+    if (Number.isFinite(t)) return t;
+  }
+
+  const normalized = normalizePostgresTimestampString(s);
+  let t = new Date(normalized).getTime();
+  if (Number.isFinite(t)) return t;
+
+  // Last resort: leading calendar date (Postgres may append unparsable fragments)
+  const m = normalized.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) {
+    t = new Date(`${m[1]}T12:00:00`).getTime();
+    if (Number.isFinite(t)) return t;
+  }
+  return null;
+}
+
 function practiceLeaderboardTimeMs(session: any): number {
-  const raw = session.created_at || session.completed_at || session.practice_date;
-  if (!raw) return NaN;
-  const t = new Date(raw).getTime();
-  return Number.isFinite(t) ? t : NaN;
+  // Order: completed_at → created_at → practice_date → updated_at (snake + camel for PostgREST / adapters)
+  // allTime counts rows even when every parse fails; week/month/year need at least one good timestamp.
+  const candidates = [
+    session.completed_at,
+    session.completedAt,
+    session.created_at,
+    session.createdAt,
+    session.practice_date,
+    session.practiceDate,
+    session.updated_at,
+    session.updatedAt,
+  ];
+  for (const raw of candidates) {
+    const ms = parseLeaderboardEventMs(raw);
+    if (ms != null) return ms;
+  }
+  return NaN;
 }
 
 function practicePassesLeaderboardTimeFilter(
@@ -848,15 +964,23 @@ function practicePassesLeaderboardTimeFilter(
 ): boolean {
   if (timeFilter === "allTime") return true;
   const ms = practiceLeaderboardTimeMs(session);
-  if (!Number.isFinite(ms)) return false;
-  return ms >= getTimeframeDates(timeFilter).startDate.getTime();
+  return eventMsMatchesLeaderboardTimeFilter(ms, timeFilter);
 }
 
 function drillLeaderboardTimeMs(drill: any): number {
-  const raw = drill.created_at || drill.completed_at;
-  if (!raw) return NaN;
-  const t = new Date(raw).getTime();
-  return Number.isFinite(t) ? t : NaN;
+  const candidates = [
+    drill.completed_at,
+    drill.completedAt,
+    drill.created_at,
+    drill.createdAt,
+    drill.updated_at,
+    drill.updatedAt,
+  ];
+  for (const raw of candidates) {
+    const ms = parseLeaderboardEventMs(raw);
+    if (ms != null) return ms;
+  }
+  return NaN;
 }
 
 function drillPassesLeaderboardTimeFilter(
@@ -865,8 +989,117 @@ function drillPassesLeaderboardTimeFilter(
 ): boolean {
   if (timeFilter === "allTime") return true;
   const ms = drillLeaderboardTimeMs(drill);
-  if (!Number.isFinite(ms)) return false;
-  return ms >= getTimeframeDates(timeFilter).startDate.getTime();
+  return eventMsMatchesLeaderboardTimeFilter(ms, timeFilter);
+}
+
+function practiceNotesPlainText(session: any): string {
+  const n = session?.notes;
+  if (n == null) return "";
+  if (typeof n === "string") return n;
+  try {
+    return JSON.stringify(n);
+  } catch {
+    return String(n);
+  }
+}
+
+/** Putting tests + freestyle facility rows — not roadmap drill completions. */
+function isPuttingOrFreestylePracticeRow(session: any): boolean {
+  const typeRaw = String(session?.type ?? "").trim();
+  const tl = typeRaw.toLowerCase();
+  if (tl === "putting-test") return true;
+  if (
+    typeRaw === puttingTest9Config.practiceType ||
+    typeRaw === puttingTest3To6ftConfig.practiceType ||
+    typeRaw === puttingTest8To20Config.practiceType ||
+    typeRaw === puttingTest20To40Config.practiceType
+  ) {
+    return true;
+  }
+
+  const text = practiceNotesPlainText(session);
+  if (text.startsWith("{")) {
+    try {
+      const j = JSON.parse(text) as { kind?: string };
+      const k = j?.kind;
+      if (
+        k === "putting_test_hole" ||
+        k === puttingTest9Config.noteKind ||
+        k === puttingTest3To6ftConfig.noteKind ||
+        k === puttingTest8To20Config.noteKind ||
+        k === puttingTest20To40Config.noteKind
+      ) {
+        return true;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const freestyleExact = new Set([
+    "driving",
+    "irons",
+    "wedges",
+    "chipping",
+    "bunkers",
+    "putting",
+    "mental/strategy",
+  ]);
+  if (freestyleExact.has(tl)) return true;
+
+  return false;
+}
+
+/**
+ * Roadmap drill completions: usually `notes` contains "Completed Drill" (practice/page). Also count
+ * rows whose `type` is a drill id (uuid/slug) — not putting tests or freestyle facility types.
+ */
+function isRoadmapDrillCompletionPracticeRow(session: any): boolean {
+  if (isPuttingOrFreestylePracticeRow(session)) return false;
+  const text = practiceNotesPlainText(session);
+  if (text.includes("Completed Drill")) return true;
+  const typeRaw = String(session?.type ?? "").trim();
+  return typeRaw.length > 0;
+}
+
+/**
+ * Estimated XP from one `practice` row — aligned with practice/page updateUserXP (freestyle uses
+ * floor(minutes/10)*10; roadmap drills use minutes×10 or 500 for on-course). Putting tests → 0.
+ */
+function estimatedXpFromPracticeRow(session: any): number {
+  const dm = Number(session.duration_minutes) || 0;
+  if (isPuttingOrFreestylePracticeRow(session)) {
+    const text = practiceNotesPlainText(session).trim();
+    if (text.startsWith("{")) return 0;
+    return Math.floor(dm / 10) * 10;
+  }
+  const t = practiceNotesPlainText(session).toLowerCase();
+  if (t.includes("on-course challenge")) return 500;
+  return dm * 10;
+}
+
+/**
+ * Per-user XP in the selected window from `practice` rows only — same sources as updateUserXP on
+ * the practice page (freestyle + roadmap drills). Rounds are NOT included: logging a round does not
+ * call updateUserXP, so adding XP_PER_ROUND per round would exceed profiles.total_xp (e.g. 11k "this
+ * year" vs 3k all-time).
+ */
+function accumulateXpByUserForTimeFilter(
+  timeFilter: "week" | "month" | "year" | "allTime",
+  practiceSessions: any[],
+): Map<string, number> {
+  const out = new Map<string, number>();
+  if (timeFilter === "allTime") return out;
+
+  for (const session of practiceSessions || []) {
+    const uid = session?.user_id;
+    if (!uid) continue;
+    if (!practicePassesLeaderboardTimeFilter(session, timeFilter)) continue;
+    const add = estimatedXpFromPracticeRow(session);
+    if (add <= 0) continue;
+    out.set(uid, (out.get(uid) || 0) + add);
+  }
+  return out;
 }
 
 function ensureCurrentUserOnLeaderboard(
@@ -1319,7 +1552,8 @@ function getMockLeaderboard(
       userValue = calculateUserRounds(rounds, timeFilter, user?.id);
       break;
     case "drills":
-      userValue = calculateUserDrills(timeFilter);
+      // Final value set in drills branch below (practice + drill_scores)
+      userValue = 0;
       break;
     default:
       userValue = 0;
@@ -1333,40 +1567,44 @@ function getMockLeaderboard(
   // Remove User Filters: Just like we did for Rounds, remove any .eq('user_id', user.id) from the Drills and Practice fetch calls so the leaderboard can see everyone's progress
 
   // The Practice sync is working perfectly! Now apply the same logic to Drills
-  // For drills metric, group all drills by user_id and create leaderboard entries for each user
+  // For drills metric, count per user: drill_scores rows + roadmap completions on `practice`
   if (metric === "drills") {
-    // Global Fetch: Use drills from database (StatsContext) - already fetching all records without user_id filter
-    // Remove User Filters: Process ALL drills from all users, not just current user
     const allDrills = drills || [];
+    const allPractice = practiceSessions || [];
 
     const filteredDrills = allDrills.filter((drill: any) =>
       drillPassesLeaderboardTimeFilter(drill, timeFilter),
     );
 
-    // Group drills by user_id to count drills per user
-    const drillsByUser = new Map<string, any[]>();
+    const filteredPracticeDrillRows = allPractice.filter(
+      (session: any) =>
+        isRoadmapDrillCompletionPracticeRow(session) &&
+        practicePassesLeaderboardTimeFilter(session, timeFilter),
+    );
+
+    const drillCountByUser = new Map<string, number>();
     filteredDrills.forEach((drill: any) => {
-      if (!drill.user_id) return; // Skip drills without user_id
-      if (!drillsByUser.has(drill.user_id)) {
-        drillsByUser.set(drill.user_id, []);
-      }
-      drillsByUser.get(drill.user_id)!.push(drill);
+      if (!drill.user_id) return;
+      drillCountByUser.set(
+        drill.user_id,
+        (drillCountByUser.get(drill.user_id) || 0) + 1,
+      );
+    });
+    filteredPracticeDrillRows.forEach((session: any) => {
+      if (!session.user_id) return;
+      drillCountByUser.set(
+        session.user_id,
+        (drillCountByUser.get(session.user_id) || 0) + 1,
+      );
     });
 
-    // Create leaderboard entries for all users
-    // Name Mapping: Match the user_id in the drill data to the full_name in the profiles table so we see 'Stuart' instead of a code
     const allEntries: any[] = [];
-    drillsByUser.forEach((userDrills, userId) => {
-      const drillCount = userDrills.length;
-
-      // Map the IDs: Use the profiles data from StatsContext to map every user_id in the leaderboard to a full_name
-      // Fallback Logic: If a profile isn't found for an ID, show 'Academy Member' instead of the long code
+    drillCountByUser.forEach((drillCount, userId) => {
+      if (drillCount <= 0) return;
       const profile = userProfiles?.get(userId);
-      // Inner Join: Skip if no profile or name exists
       if (!profile || !profile.full_name) return;
       const displayName = profile.full_name;
 
-      // Fix Avatars: Update the avatar circles to show the first letter of their names
       let nameForAvatar = "U";
       if (profile?.full_name) {
         nameForAvatar =
@@ -1397,11 +1635,21 @@ function getMockLeaderboard(
       });
     });
 
-    // Sort by drill count descending (most drills first)
     allEntries.sort((a, b) => b.value - a.value);
 
-    // If no drills exist, return empty leaderboard
-    if (allEntries.length === 0) {
+    const meCount = user?.id ? drillCountByUser.get(user.id) || 0 : 0;
+    const withPinned = ensureCurrentUserOnLeaderboard(
+      allEntries,
+      user,
+      userProfiles,
+      meCount,
+    );
+    withPinned.forEach((e: any) => {
+      e.isCurrentUser = user?.id === e.id;
+    });
+    withPinned.sort((a, b) => b.value - a.value);
+
+    if (withPinned.length === 0) {
       return {
         top3: [],
         all: [],
@@ -1410,27 +1658,25 @@ function getMockLeaderboard(
       };
     }
 
-    // Find current user's entry and value
-    const currentUserEntry = allEntries.find((entry) => entry.isCurrentUser);
-    userValue = currentUserEntry?.value || 0;
-
-    const userEntryInSorted = allEntries.find((entry) => entry.isCurrentUser);
-    const finalUserValue = userEntryInSorted?.value || userValue;
+    const userEntryInSorted = withPinned.find((entry) => entry.isCurrentUser);
+    const finalUserValue = userEntryInSorted?.value ?? meCount;
 
     console.log("getMockLeaderboard - drills metric (global):", {
-      totalDrillsInDatabase: allDrills.length,
-      totalUsers: allEntries.length,
-      top3Values: allEntries
+      drillScoresRows: allDrills.length,
+      practiceDrillCompletionRows: filteredPracticeDrillRows.length,
+      mergedUserCount: drillCountByUser.size,
+      leaderboardEntries: withPinned.length,
+      top3Values: withPinned
         .slice(0, 3)
         .map((e) => ({ name: e.name, value: e.value, id: e.id })),
       currentUserValue: finalUserValue,
     });
 
     return {
-      top3: allEntries.slice(0, 3),
-      all: allEntries,
+      top3: withPinned.slice(0, 3),
+      all: withPinned,
       userRank: userEntryInSorted
-        ? allEntries.findIndex((entry) => entry.isCurrentUser) + 1
+        ? withPinned.findIndex((entry) => entry.isCurrentUser) + 1
         : 0,
       userValue: finalUserValue,
     };
@@ -1816,6 +2062,8 @@ function formatLeaderboardValue(
     | "puttingCombine"
     | "puttingTest9Holes"
     | "puttingTest3To6ft"
+    | "puttingTest8To20"
+    | "puttingTest20To40"
     | "rounds"
     | "drills"
     | "lowGross"
@@ -1849,6 +2097,10 @@ function formatLeaderboardValue(
     case "puttingTest9Holes":
       return `${Math.round(value)} Test Pts`;
     case "puttingTest3To6ft":
+      return `${Math.round(value)} Test Pts`;
+    case "puttingTest8To20":
+      return `${Math.round(value)} Test Pts`;
+    case "puttingTest20To40":
       return `${Math.round(value)} Test Pts`;
     case "rounds":
       return `${value} Round${value !== 1 ? "s" : ""}`;
@@ -1890,6 +2142,8 @@ function getLeaderboardData(
     | "puttingCombine"
     | "puttingTest9Holes"
     | "puttingTest3To6ft"
+    | "puttingTest8To20"
+    | "puttingTest20To40"
     | "rounds"
     | "drills"
     | "lowGross"
@@ -2189,6 +2443,188 @@ function getLeaderboardData(
     };
   }
 
+  if (metric === "puttingTest8To20") {
+    const allPractice = practiceSessions || [];
+    const rows = allPractice.filter((session: any) => {
+      if (String(session.type || "") !== puttingTest8To20Config.practiceType) return false;
+      return practicePassesLeaderboardTimeFilter(session, timeFilter);
+    });
+
+    const holesByUser = new Map<string, ParsedPuttingHole[]>();
+    rows.forEach((session: any) => {
+      const uid = session.user_id;
+      if (!uid) return;
+      const parsed = parsePuttingTest8To20Session(session);
+      if (!parsed) return;
+      if (!holesByUser.has(uid)) holesByUser.set(uid, []);
+      holesByUser.get(uid)!.push(parsed);
+    });
+
+    const allEntries: any[] = [];
+    holesByUser.forEach((holes, userId) => {
+      const best = bestPuttingTest8To20ScoreForUser(holes);
+      if (best <= 0) return;
+      const profile = userProfiles?.get(userId);
+      if (!profile || !profile.full_name) return;
+      const displayName = profile.full_name;
+      let nameForAvatar = "U";
+      if (profile.full_name) {
+        nameForAvatar =
+          profile.full_name
+            .split(" ")
+            .map((n: string) => n[0])
+            .join("")
+            .toUpperCase() || "U";
+      }
+      const userIcon = profile.preferred_icon_id || nameForAvatar;
+      allEntries.push({
+        id: userId,
+        name: displayName,
+        avatar: userIcon,
+        value: best,
+        isCurrentUser: user?.id === userId,
+      });
+    });
+
+    allEntries.sort((a, b) => b.value - a.value);
+
+    let meBest = 0;
+    if (user?.id) {
+      meBest = bestPuttingTest8To20ScoreForUser(holesByUser.get(user.id) || []);
+    }
+    const withPinned = ensureCurrentUserOnLeaderboard(
+      allEntries,
+      user,
+      userProfiles,
+      meBest,
+    );
+    withPinned.sort((a, b) => b.value - a.value);
+
+    if (withPinned.length === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0,
+      };
+    }
+
+    const userEntryInRanks = withPinned.find((entry) => entry.isCurrentUser);
+    const finalUserValue = userEntryInRanks?.value ?? 0;
+    const withRanks = withPinned.map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+      rankChange: 0,
+      movedUp: false,
+      movedDown: false,
+      previousRank: undefined,
+      lowRound: undefined,
+      lowNett: undefined,
+      birdieCount: 0,
+      eagleCount: 0,
+    }));
+
+    return {
+      top3: withRanks.slice(0, 3),
+      all: withRanks,
+      userRank: userEntryInRanks
+        ? withRanks.findIndex((entry) => entry.isCurrentUser) + 1
+        : 0,
+      userValue: finalUserValue,
+    };
+  }
+
+  if (metric === "puttingTest20To40") {
+    const allPractice = practiceSessions || [];
+    const rows = allPractice.filter((session: any) => {
+      if (String(session.type || "") !== puttingTest20To40Config.practiceType) return false;
+      return practicePassesLeaderboardTimeFilter(session, timeFilter);
+    });
+
+    const holesByUser = new Map<string, ParsedPuttingHole[]>();
+    rows.forEach((session: any) => {
+      const uid = session.user_id;
+      if (!uid) return;
+      const parsed = parsePuttingTest20To40Session(session);
+      if (!parsed) return;
+      if (!holesByUser.has(uid)) holesByUser.set(uid, []);
+      holesByUser.get(uid)!.push(parsed);
+    });
+
+    const allEntries: any[] = [];
+    holesByUser.forEach((holes, userId) => {
+      const best = bestPuttingTest20To40ScoreForUser(holes);
+      if (best <= 0) return;
+      const profile = userProfiles?.get(userId);
+      if (!profile || !profile.full_name) return;
+      const displayName = profile.full_name;
+      let nameForAvatar = "U";
+      if (profile.full_name) {
+        nameForAvatar =
+          profile.full_name
+            .split(" ")
+            .map((n: string) => n[0])
+            .join("")
+            .toUpperCase() || "U";
+      }
+      const userIcon = profile.preferred_icon_id || nameForAvatar;
+      allEntries.push({
+        id: userId,
+        name: displayName,
+        avatar: userIcon,
+        value: best,
+        isCurrentUser: user?.id === userId,
+      });
+    });
+
+    allEntries.sort((a, b) => b.value - a.value);
+
+    let meBest = 0;
+    if (user?.id) {
+      meBest = bestPuttingTest20To40ScoreForUser(holesByUser.get(user.id) || []);
+    }
+    const withPinned = ensureCurrentUserOnLeaderboard(
+      allEntries,
+      user,
+      userProfiles,
+      meBest,
+    );
+    withPinned.sort((a, b) => b.value - a.value);
+
+    if (withPinned.length === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0,
+      };
+    }
+
+    const userEntryInRanks = withPinned.find((entry) => entry.isCurrentUser);
+    const finalUserValue = userEntryInRanks?.value ?? 0;
+    const withRanks = withPinned.map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+      rankChange: 0,
+      movedUp: false,
+      movedDown: false,
+      previousRank: undefined,
+      lowRound: undefined,
+      lowNett: undefined,
+      birdieCount: 0,
+      eagleCount: 0,
+    }));
+
+    return {
+      top3: withRanks.slice(0, 3),
+      all: withRanks,
+      userRank: userEntryInRanks
+        ? withRanks.findIndex((entry) => entry.isCurrentUser) + 1
+        : 0,
+      userValue: finalUserValue,
+    };
+  }
+
   // Debug: Log leaderboard calculation inputs
   // Debug Logs: Keep console.log to see if Stuart's round is in the raw data
   console.log("Leaderboard Data Debug:", {
@@ -2298,15 +2734,19 @@ function getLeaderboardData(
 
   switch (metric) {
     case "xp":
-      // Fallback to All-Time: XP is cumulative, always use total from profile (not filtered by date)
-      // XP Mapping: Ensure the rest of the code looks for profile.xp instead of profile.total_xp
-      if (userProfiles && user?.id) {
-        const userProfile = userProfiles.get(user.id);
-        // Standardize Fallback: Use (profile.xp || 0) to ensure we aren't trying to add undefined or NaN to the state
-        userValue = (userProfile?.xp || 0) || totalXP || 0;
-        console.log("XP Leaderboard: Current user XP value:", userValue, "from profile:", userProfile);
+      if (timeFilter === "allTime") {
+        if (userProfiles && user?.id) {
+          const userProfile = userProfiles.get(user.id);
+          userValue = (userProfile?.xp || 0) || totalXP || 0;
+        } else {
+          userValue = totalXP || 0;
+        }
       } else {
-        userValue = totalXP || 0;
+        const periodXp = accumulateXpByUserForTimeFilter(
+          timeFilter,
+          practiceSessions || [],
+        );
+        userValue = user?.id ? periodXp.get(user.id) || 0 : 0;
       }
       break;
     case "library":
@@ -3224,32 +3664,28 @@ function getLeaderboardData(
     return result;
   }
 
-  // Update XP Leaderboard: Use XP from profiles instead of localStorage
-  // For XP metric, create leaderboard entries from all user profiles
+  // XP leaderboard: all-time = profile.total_xp; week/month/year = sum of practice-row XP in window
   if (metric === "xp") {
-    // Update XP Leaderboard: Use XP from profiles instead of localStorage
     const allEntries: any[] = [];
 
-    // Create entries from userProfiles map (which includes XP)
-    // Fallback to All-Time: Ensure XP is always fetched correctly, regardless of filter
-    // Filter Logic: XP is cumulative - don't filter by date, always show total XP
+    const periodXpByUser =
+      timeFilter === "allTime"
+        ? null
+        : accumulateXpByUserForTimeFilter(
+            timeFilter,
+            practiceSessions || [],
+          );
+
     if (userProfiles && userProfiles.size > 0) {
-      console.log("XP Leaderboard: Creating entries from", userProfiles.size, "profiles");
-      console.log(
-        "XP Leaderboard: Time filter is",
-        timeFilter,
-        "- total XP is lifetime from profile; time buttons do not change XP totals",
-      );
       userProfiles.forEach((profile, userId) => {
-        const xpValue = profile.xp || 0;
         if (!profile || !profile.full_name) return;
+        const xpValue =
+          timeFilter === "allTime"
+            ? profile.xp || 0
+            : periodXpByUser?.get(userId) || 0;
         if (xpValue <= 0) return;
 
         const displayName = profile.full_name;
-
-        if (xpValue > 0) {
-          console.log(`XP Leaderboard: ${displayName} has ${xpValue} XP`);
-        }
 
         let nameForAvatar = "A";
         if (profile.full_name) {
@@ -3273,7 +3709,12 @@ function getLeaderboardData(
       });
     }
 
-    const meXp = user?.id ? userProfiles?.get(user.id)?.xp || 0 : 0;
+    const meXp =
+      user?.id && timeFilter === "allTime"
+        ? userProfiles?.get(user.id)?.xp || 0
+        : user?.id
+          ? periodXpByUser?.get(user.id) || 0
+          : 0;
     const withPinnedXp = ensureCurrentUserOnLeaderboard(
       allEntries,
       user,
@@ -3453,7 +3894,6 @@ export default function AcademyPage() {
   
   // Add Deep Equality Guard: useRef to store previous leaderboard data string to prevent unnecessary re-renders
   const prevLeaderboardStr = useRef<string>("");
-  const prevFourPillarStr = useRef<string>("");
 
   const [userProgress, setUserProgress] = useState<{
     totalXP: number;
@@ -3486,6 +3926,8 @@ export default function AcademyPage() {
     | "puttingCombine"
     | "puttingTest9Holes"
     | "puttingTest3To6ft"
+    | "puttingTest8To20"
+    | "puttingTest20To40"
     | "rounds"
     | "drills"
     | "lowGross"
@@ -3525,7 +3967,6 @@ export default function AcademyPage() {
 
   // Stabilize Fetching: Add circuit breaker to prevent recalculating leaderboard on every render
   const [cachedLeaderboard, setCachedLeaderboard] = useState<any>(null);
-  const [cachedFourPillar, setCachedFourPillar] = useState<any>(null);
 
   // Stable Identity: Wrap functions and objects in useMemo/useCallback to prevent recreation on every render
   // Calculate total XP (rounds + drills) - filtered by timeframe
@@ -3908,79 +4349,6 @@ export default function AcademyPage() {
     };
   }, [rounds?.length, drills?.length, practiceSessions?.length]);
 
-  // Calculate four-pillar leaderboards with loop guard
-  useEffect(() => {
-    if (!user?.id || rounds === undefined) {
-      return;
-    }
-
-    try {
-      const libraryLeaderboard = getMockLeaderboard(
-        "library",
-        timeFilter,
-        rounds,
-        userName,
-        user,
-        userProfiles,
-        drills,
-        practiceSessions,
-      );
-      const practiceLeaderboard = getMockLeaderboard(
-        "practice",
-        timeFilter,
-        rounds,
-        userName,
-        user,
-        userProfiles,
-        drills,
-        practiceSessions,
-      );
-      const roundsLeaderboard = getMockLeaderboard(
-        "rounds",
-        timeFilter,
-        rounds,
-        userName,
-        user,
-        userProfiles,
-        drills,
-        practiceSessions,
-      );
-      const drillsLeaderboard = getMockLeaderboard(
-        "drills",
-        timeFilter,
-        rounds,
-        userName,
-        user,
-        userProfiles,
-        drills,
-        practiceSessions,
-      );
-
-      // Circuit breaker: Prevent infinite loop with JSON.stringify comparison
-      const newFourPillar = {
-        library: libraryLeaderboard,
-        practice: practiceLeaderboard,
-        rounds: roundsLeaderboard,
-        drills: drillsLeaderboard,
-      };
-      const newFourPillarStr = JSON.stringify(newFourPillar);
-      const cachedFourPillarStr = JSON.stringify(cachedFourPillar);
-      if (newFourPillarStr !== cachedFourPillarStr) {
-        setCachedFourPillar(newFourPillar);
-      }
-    } catch (error) {
-      console.error("Academy: Error calculating four-pillar leaderboards:", error);
-    }
-  }, [
-    user?.id,
-    rounds?.length,
-    drills?.length,
-    practiceSessions?.length,
-    timeFilter,
-    userName,
-    userProfiles,
-  ]);
-
   // Calculate score-based leaderboards (lowGross, lowNett, birdies, eagles, putts) with loop guard
   // Always calculate all score-based metrics so they're available when needed
   useEffect(() => {
@@ -4070,14 +4438,18 @@ export default function AcademyPage() {
         leaderboardMetric === "doubleFreeRounds" ||
         leaderboardMetric === "puttingCombine" ||
         leaderboardMetric === "puttingTest9Holes" ||
-        leaderboardMetric === "puttingTest3To6ft") {
+        leaderboardMetric === "puttingTest3To6ft" ||
+        leaderboardMetric === "puttingTest8To20" ||
+        leaderboardMetric === "puttingTest20To40") {
       // Don't use cache for xp or putting tests (always derive from practice rows)
       if (
         cachedLeaderboard &&
         leaderboardMetric !== "xp" &&
         leaderboardMetric !== "puttingCombine" &&
         leaderboardMetric !== "puttingTest9Holes" &&
-        leaderboardMetric !== "puttingTest3To6ft"
+        leaderboardMetric !== "puttingTest3To6ft" &&
+        leaderboardMetric !== "puttingTest8To20" &&
+        leaderboardMetric !== "puttingTest20To40"
       ) {
         return cachedLeaderboard;
       }
@@ -4099,23 +4471,30 @@ export default function AcademyPage() {
       return { top3: [], all: [], userRank: 0, userValue: 0 };
     }
 
-    // Use cachedFourPillar for four-pillar metrics
-    if (!cachedFourPillar) {
-      return { top3: [], all: [], userRank: 0, userValue: 0 };
+    // Four-pillar metrics: always derive from timeFilter + live stats (never use a stale cache)
+    const emptyFour = { top3: [], all: [], userRank: 0, userValue: 0 };
+    if (rounds === undefined || !userName) {
+      return emptyFour;
     }
     switch (leaderboardMetric) {
       case "library":
-        return cachedFourPillar.library || { top3: [], all: [], userRank: 0, userValue: 0 };
       case "practice":
-        return cachedFourPillar.practice || { top3: [], all: [], userRank: 0, userValue: 0 };
       case "rounds":
-        return cachedFourPillar.rounds || { top3: [], all: [], userRank: 0, userValue: 0 };
       case "drills":
-        return cachedFourPillar.drills || { top3: [], all: [], userRank: 0, userValue: 0 };
+        return getMockLeaderboard(
+          leaderboardMetric,
+          timeFilter,
+          rounds,
+          userName,
+          user,
+          userProfiles,
+          drills,
+          practiceSessions,
+        );
       default:
-        return cachedFourPillar.library || { top3: [], all: [], userRank: 0, userValue: 0 };
+        return emptyFour;
     }
-  }, [cachedFourPillar, cachedLeaderboard, leaderboardMetric, timeFilter, rounds, userProgress.totalXP, userName, user, userProfiles, practiceSessions, drills]);
+  }, [cachedLeaderboard, leaderboardMetric, timeFilter, rounds, userProgress.totalXP, userName, user, userProfiles, practiceSessions, drills]);
 
   const top3 = useMemo(() => currentLeaderboard.top3, [currentLeaderboard]);
   const ranks4to7 = useMemo(
@@ -4144,7 +4523,6 @@ export default function AcademyPage() {
   // Get four-pillar leaderboard data - wrap in useMemo
   // Safe Logic: Do the check inside the useMemo rather than skipping the Hook entirely
   const libraryLeaderboard = useMemo(() => {
-    if (cachedFourPillar?.library) return cachedFourPillar.library;
     if (!rounds || !userName)
       return { top3: [], all: [], userRank: 0, userValue: 0 };
     return getMockLeaderboard(
@@ -4158,7 +4536,6 @@ export default function AcademyPage() {
       practiceSessions,
     );
   }, [
-    cachedFourPillar?.library,
     timeFilter,
     rounds,
     userName,
@@ -4169,7 +4546,6 @@ export default function AcademyPage() {
   ]);
 
   const practiceLeaderboard = useMemo(() => {
-    if (cachedFourPillar?.practice) return cachedFourPillar.practice;
     if (!rounds || !userName)
       return { top3: [], all: [], userRank: 0, userValue: 0 };
     return getMockLeaderboard(
@@ -4183,7 +4559,6 @@ export default function AcademyPage() {
       practiceSessions,
     );
   }, [
-    cachedFourPillar?.practice,
     timeFilter,
     rounds,
     userName,
@@ -4194,7 +4569,6 @@ export default function AcademyPage() {
   ]);
 
   const roundsLeaderboard = useMemo(() => {
-    if (cachedFourPillar?.rounds) return cachedFourPillar.rounds;
     if (!rounds || !userName)
       return { top3: [], all: [], userRank: 0, userValue: 0 };
     return getMockLeaderboard(
@@ -4208,7 +4582,6 @@ export default function AcademyPage() {
       practiceSessions,
     );
   }, [
-    cachedFourPillar?.rounds,
     timeFilter,
     rounds,
     userName,
@@ -4219,7 +4592,6 @@ export default function AcademyPage() {
   ]);
 
   const drillsLeaderboard = useMemo(() => {
-    if (cachedFourPillar?.drills) return cachedFourPillar.drills;
     if (!rounds || !userName)
       return { top3: [], all: [], userRank: 0, userValue: 0 };
     return getMockLeaderboard(
@@ -4233,7 +4605,6 @@ export default function AcademyPage() {
       practiceSessions,
     );
   }, [
-    cachedFourPillar?.drills,
     timeFilter,
     rounds,
     userName,
@@ -4698,6 +5069,8 @@ export default function AcademyPage() {
                     <option value="puttingCombine">{puttingTestConfig.testName}</option>
                     <option value="puttingTest9Holes">{puttingTest9Config.testName}</option>
                     <option value="puttingTest3To6ft">{puttingTest3To6ftConfig.testName}</option>
+                    <option value="puttingTest8To20">{puttingTest8To20Config.testName}</option>
+                    <option value="puttingTest20To40">{puttingTest20To40Config.testName}</option>
                     <option value="library">Library Lessons</option>
                     <option value="rounds">Rounds Entered</option>
                     <option value="drills">Drills</option>

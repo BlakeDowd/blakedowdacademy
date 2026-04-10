@@ -357,7 +357,7 @@ export function PuttingTest3To6ftRunner() {
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {(
               [
-                ["read", "Green Read"],
+                ["read", "Read"],
                 ["speed", "Speed"],
                 ["startLine", "Start Line"],
               ] as const

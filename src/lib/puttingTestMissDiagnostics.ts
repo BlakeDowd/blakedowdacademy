@@ -2,7 +2,7 @@
 export type PrimaryMissReason = "read" | "speed" | "startLine";
 
 export const PRIMARY_MISS_LABELS: Record<PrimaryMissReason, string> = {
-  read: "Green Read",
+  read: "Read",
   speed: "Speed",
   startLine: "Start Line",
 };

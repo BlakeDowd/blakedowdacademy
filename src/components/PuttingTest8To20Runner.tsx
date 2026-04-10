@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { puttingTestConfig } from "@/lib/puttingTestConfig";
+import { puttingTest8To20Config } from "@/lib/puttingTest8To20Config";
 import type { PrimaryMissReason } from "@/lib/puttingTestMissDiagnostics";
 import {
   PUTTING_TEST_MISS_CATEGORY_LABELS,
@@ -15,15 +16,13 @@ import { PuttingTestResultsSummaryCard } from "@/components/PuttingTestResultsSu
 type ShapeKey = (typeof puttingTestConfig.shapes)[number];
 type MissCategory = "highLong" | "highShort" | "lowLong" | "lowShort";
 
-export type PuttingHoleRecord = {
+export type Putting8To20HoleRecord = {
   holeIndex: number;
   distance: number;
   shape: ShapeKey;
   outcome: "make" | "miss";
   missReason: MissCategory | null;
-  /** Primary reason for a missed first putt; null on makes. */
   primaryMissReason: PrimaryMissReason | null;
-  /** Human-readable first-putt miss category for reports; null on makes. */
   missCategoryLabel?: string | null;
   secondPuttDistanceFt: number | null;
   putts: 1 | 2 | 3;
@@ -35,6 +34,8 @@ type HoleSetup = { distance: number; shape: ShapeKey };
 
 type ActivePhase = "first-putt" | "miss-category" | "primary-reason" | "second-putt";
 
+const HOLES = puttingTest8To20Config.holeCount;
+
 function shuffle<T>(items: T[]): T[] {
   const a = [...items];
   for (let i = a.length - 1; i > 0; i--) {
@@ -44,12 +45,12 @@ function shuffle<T>(items: T[]): T[] {
   return a;
 }
 
-function buildHoles(): HoleSetup[] {
-  const distances = shuffle([...puttingTestConfig.distances]);
+function buildHoles8To20(): HoleSetup[] {
+  const distances = shuffle([...puttingTest8To20Config.distances]);
   const shapePool: ShapeKey[] = [
-    ...Array(6).fill("Straight" as const),
-    ...Array(6).fill("Left-to-Right" as const),
-    ...Array(6).fill("Right-to-Left" as const),
+    ...Array(puttingTest8To20Config.straightCount).fill("Straight" as const),
+    ...Array(puttingTest8To20Config.leftToRightCount).fill("Left-to-Right" as const),
+    ...Array(puttingTest8To20Config.rightToLeftCount).fill("Right-to-Left" as const),
   ];
   const shapes = shuffle(shapePool);
   return distances.map((distance, i) => ({
@@ -64,16 +65,16 @@ function shapeLabel(shape: ShapeKey): string {
   return shape;
 }
 
-async function persistHoleToSupabase(userId: string, record: PuttingHoleRecord) {
+async function persistHoleToSupabase(userId: string, record: Putting8To20HoleRecord) {
   try {
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
     const { error } = await supabase.from("practice").insert({
       user_id: userId,
-      type: "putting-test",
+      type: puttingTest8To20Config.practiceType,
       duration_minutes: 0,
       notes: JSON.stringify({
-        kind: "putting_test_hole",
+        kind: puttingTest8To20Config.noteKind,
         holeIndex: record.holeIndex,
         distance: record.distance,
         shape: record.shape,
@@ -88,21 +89,23 @@ async function persistHoleToSupabase(userId: string, record: PuttingHoleRecord) 
       }),
     });
     if (error) {
-      console.warn("[PuttingTest] Supabase save:", error.message);
+      console.warn("[PuttingTest8To20] Supabase save:", error.message);
+    } else if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("practiceSessionsUpdated"));
     }
   } catch (e) {
-    console.warn("[PuttingTest] Supabase save failed", e);
+    console.warn("[PuttingTest8To20] Supabase save failed", e);
   }
 }
 
-export function PuttingTestRunner() {
+export function PuttingTest8To20Runner() {
   const { user } = useAuth();
   const [status, setStatus] = useState<"intro" | "active" | "complete">("intro");
   const [holes, setHoles] = useState<HoleSetup[]>([]);
   const [currentHoleIndex, setCurrentHoleIndex] = useState(0);
   const [totalPoints, setTotalPoints] = useState(0);
   const [totalPutts, setTotalPutts] = useState(0);
-  const [holeLog, setHoleLog] = useState<PuttingHoleRecord[]>([]);
+  const [holeLog, setHoleLog] = useState<Putting8To20HoleRecord[]>([]);
   const [phase, setPhase] = useState<ActivePhase>("first-putt");
   const [missCategory, setMissCategory] = useState<MissCategory | null>(null);
   const [primaryMissReason, setPrimaryMissReason] = useState<PrimaryMissReason | null>(null);
@@ -116,7 +119,7 @@ export function PuttingTestRunner() {
     secondPuttDistanceNum > 0;
 
   const startTest = useCallback(() => {
-    setHoles(buildHoles());
+    setHoles(buildHoles8To20());
     setCurrentHoleIndex(0);
     setTotalPoints(0);
     setTotalPutts(0);
@@ -129,7 +132,7 @@ export function PuttingTestRunner() {
   }, []);
 
   const finishHole = useCallback(
-    (record: PuttingHoleRecord) => {
+    (record: Putting8To20HoleRecord) => {
       flushSync(() => {
         setHoleLog((prev) => [...prev, record]);
         setTotalPoints((p) => p + record.points);
@@ -144,13 +147,13 @@ export function PuttingTestRunner() {
       setPhase("first-putt");
 
       const nextIndex = currentHoleIndex + 1;
-      if (nextIndex >= 18) {
+      if (nextIndex >= HOLES) {
         setStatus("complete");
       } else {
         setCurrentHoleIndex(nextIndex);
       }
     },
-    [user?.id, currentHoleIndex]
+    [user?.id, currentHoleIndex],
   );
 
   const onMake = useCallback(() => {
@@ -221,7 +224,7 @@ export function PuttingTestRunner() {
       primaryMissReason,
       secondDistanceValid,
       secondPuttDistanceNum,
-    ]
+    ],
   );
 
   const summary = useMemo(() => {
@@ -237,18 +240,20 @@ export function PuttingTestRunner() {
     return (
       <div className="mt-6 space-y-4">
         <h2 className="text-lg font-semibold leading-snug text-gray-900">
-          {puttingTestConfig.testName}
+          {puttingTest8To20Config.testName}
         </h2>
         <p className="text-sm text-gray-600">
-          18 putts, shuffled distances. Six straight, six left-to-right, six right-to-left. Track makes,
-          miss direction, primary miss reason, and second putt to score.
+          Ten putts from 8–20 feet. Distances are shuffled each run with two straight, four
+          left-to-right, and four right-to-left breaks (random order). Makes are +10; miss scoring uses
+          the high/long–short grid and second-putt distance (≤1.5 ft pro-side drop zone where
+          applicable). Three-putts are −10.
         </p>
         <button
           type="button"
           onClick={startTest}
           className="w-full py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity"
         >
-          Start Putting Test
+          Start test
         </button>
       </div>
     );
@@ -258,16 +263,10 @@ export function PuttingTestRunner() {
     return (
       <div className="mt-6 space-y-5">
         <div className="space-y-1">
-          <p className="text-sm font-semibold text-gray-900">{puttingTestConfig.testName}</p>
+          <p className="text-sm font-semibold text-gray-900">{puttingTest8To20Config.testName}</p>
           <h2 className="text-base font-medium text-gray-600">Test complete</h2>
         </div>
-        <PuttingTestResultsSummaryCard
-          points={summary.points}
-          putts={summary.putts}
-          variant={18}
-          scratchPointsBenchmark={puttingTestConfig.benchmarks.scratchPoints}
-          scratchPuttsBenchmark={puttingTestConfig.benchmarks.scratchPutts}
-        />
+        <PuttingTestResultsSummaryCard points={summary.points} putts={summary.putts} variant="8to20" />
         <PuttingMissDiagnosticsSection holeLog={holeLog} />
         <button
           type="button"
@@ -290,7 +289,7 @@ export function PuttingTestRunner() {
     <div className="mt-6 space-y-6">
       <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 sm:px-4">
         <p className="text-center text-sm font-semibold leading-tight text-gray-900 sm:text-left">
-          {puttingTestConfig.testName}
+          {puttingTest8To20Config.testName}
         </p>
       </div>
 
@@ -305,7 +304,7 @@ export function PuttingTestRunner() {
 
       <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
         <p className="text-base font-medium text-gray-900">
-          Hole {holeDisplay}/18: {currentHole.distance}ft - {shapeLabel(currentHole.shape)}
+          Hole {holeDisplay}/{HOLES}: {currentHole.distance}ft - {shapeLabel(currentHole.shape)}
         </p>
       </div>
 
@@ -355,7 +354,7 @@ export function PuttingTestRunner() {
 
       {phase === "primary-reason" && missCategory != null && (
         <div className="space-y-3">
-          <p className="text-sm text-gray-600">Primary reason for the miss</p>
+          <p className="text-sm text-gray-600">Reason</p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {(
               [
@@ -380,11 +379,11 @@ export function PuttingTestRunner() {
       {phase === "second-putt" && missCategory != null && primaryMissReason != null && (
         <div className="space-y-4">
           <div>
-            <label htmlFor="second-putt-dist" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="second-putt-dist-820" className="block text-sm font-medium text-gray-700 mb-1">
               Second putt distance (ft)
             </label>
             <input
-              id="second-putt-dist"
+              id="second-putt-dist-820"
               type="text"
               inputMode="decimal"
               placeholder="e.g. 3"

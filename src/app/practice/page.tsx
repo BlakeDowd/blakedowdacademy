@@ -17,6 +17,8 @@ import {
 import { puttingTestConfig } from "@/lib/puttingTestConfig";
 import { puttingTest9Config } from "@/lib/puttingTest9Config";
 import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
+import { puttingTest8To20Config } from "@/lib/puttingTest8To20Config";
+import { puttingTest20To40Config } from "@/lib/puttingTest20To40Config";
 
 type RoundType = '9-hole' | '18-hole' | null;
 
@@ -1659,6 +1661,7 @@ export default function PracticePage() {
             type: stableDrillId,
             duration_minutes: drill.estimatedMinutes,
             notes: `Completed Drill: ${drill.category}`,
+            // Leaderboard week/month/year filters read completed_at first (see parseLeaderboardEventMs).
             completed_at: completedAt,
           })
           .select();
@@ -3029,6 +3032,26 @@ export default function PracticePage() {
                 <Target className="w-5 h-5 shrink-0 text-gray-600" />
                 <span className="text-[11px] font-medium leading-tight text-center text-gray-700 sm:text-xs max-w-full">
                   {puttingTest3To6ftConfig.testName}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/practice/putting-test-8-20ft")}
+                className="flex min-h-[5.25rem] flex-col items-center justify-center gap-1.5 px-2 py-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+              >
+                <Target className="w-5 h-5 shrink-0 text-gray-600" />
+                <span className="text-[11px] font-medium leading-tight text-center text-gray-700 sm:text-xs max-w-full">
+                  {puttingTest8To20Config.testName}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/practice/putting-test-20-40ft")}
+                className="flex min-h-[5.25rem] flex-col items-center justify-center gap-1.5 px-2 py-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+              >
+                <Target className="w-5 h-5 shrink-0 text-gray-600" />
+                <span className="text-[11px] font-medium leading-tight text-center text-gray-700 sm:text-xs max-w-full">
+                  {puttingTest20To40Config.testName}
                 </span>
               </button>
             </div>

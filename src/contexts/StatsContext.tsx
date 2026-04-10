@@ -495,6 +495,15 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     };
   }, []); // Empty dependency array - fetch once on mount, then listen for updates
 
+  // First stats fetch can run before Supabase session is ready (RLS returns []). Reload when user id appears.
+  useEffect(() => {
+    if (!user?.id) return;
+    drillsFetched.current = false;
+    practiceSessionsFetched.current = false;
+    loadDrills();
+    loadPracticeSessions();
+  }, [user?.id]);
+
   return (
     <StatsContext.Provider value={{ rounds, drills, practiceSessions, loading, refreshRounds, refreshDrills, refreshPracticeSessions, calculateStats, currentStreak }}>
       {children}
