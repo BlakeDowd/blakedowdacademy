@@ -57,14 +57,27 @@ interface PracticeSessionData {
   created_at?: string;
 }
 
+/** practice_logs rows (combine protocol sessions) for Academy leaderboards */
+interface PracticeLogRow {
+  id: string;
+  user_id: string;
+  log_type?: string;
+  created_at?: string;
+  matrix_score_average?: number | null;
+  perfect_putt_count?: number | null;
+  triple_failure_rate?: number | null;
+}
+
 interface StatsContextType {
   rounds: RoundData[];
   drills: DrillData[];
   practiceSessions: PracticeSessionData[];
+  practiceLogs: PracticeLogRow[];
   loading: boolean;
   refreshRounds: () => void;
   refreshDrills: () => void;
   refreshPracticeSessions: () => void;
+  refreshPracticeLogs: () => void;
   calculateStats: () => { handicap: string; totalRounds: number };
   currentStreak?: number; // Export the Value: Ensure currentStreak is included in the StatsContext.Provider value
 }
@@ -82,6 +95,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   // Check Fetch Logic: Add state for drills and practice_sessions
   const [drills, setDrills] = useState<DrillData[]>([]);
   const [practiceSessions, setPracticeSessions] = useState<PracticeSessionData[]>([]);
+  const [practiceLogs, setPracticeLogs] = useState<PracticeLogRow[]>([]);
   // Set loading to true initially
   const [loading, setLoading] = useState<boolean>(true);
   const { user } = useAuth();
@@ -96,6 +110,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   // Check Fetch Logic: Add fetch guards for drills and practice_sessions
   const drillsFetched = useRef(false);
   const practiceSessionsFetched = useRef(false);
+  const practiceLogsFetched = useRef(false);
 
   // Load rounds from database
   // Check Dashboard Fetch: Don't require user.id - fetch ALL rounds even if user is not logged in
@@ -431,6 +446,42 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loadPracticeLogs = async () => {
+    if (practiceLogsFetched.current) return;
+
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+
+      const { data, error } = await supabase
+        .from("practice_logs")
+        .select("id,user_id,log_type,created_at,matrix_score_average,perfect_putt_count,triple_failure_rate")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        if (
+          error.code === "PGRST116" ||
+          error.message?.includes("permission denied") ||
+          error.message?.includes("RLS")
+        ) {
+          console.warn("StatsContext: practice_logs may be blocked by RLS or missing table:", error.message);
+        } else {
+          console.error("StatsContext: Error loading practice_logs:", error);
+        }
+        setPracticeLogs([]);
+        practiceLogsFetched.current = true;
+        return;
+      }
+
+      setPracticeLogs((data || []) as PracticeLogRow[]);
+      practiceLogsFetched.current = true;
+    } catch (e) {
+      console.error("StatsContext: practice_logs load failed", e);
+      setPracticeLogs([]);
+      practiceLogsFetched.current = true;
+    }
+  };
+
   const refreshRounds = () => {
     loadRounds();
   };
@@ -443,6 +494,11 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   const refreshPracticeSessions = () => {
     practiceSessionsFetched.current = false;
     loadPracticeSessions();
+  };
+
+  const refreshPracticeLogs = () => {
+    practiceLogsFetched.current = false;
+    loadPracticeLogs();
   };
 
   // Make calculateStats return only { handicap: 'N/A', totalRounds: 0 }
@@ -462,6 +518,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     // Update Table Name: Practice table is now created - fetch from it
     loadDrills();
     loadPracticeSessions();
+    loadPracticeLogs();
 
     // Listen for roundsUpdated event
     const handleRoundsUpdate = () => {
@@ -482,6 +539,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       console.log('StatsContext: Received practiceSessionsUpdated event, refreshing from database...');
       practiceSessionsFetched.current = false;
       loadPracticeSessions();
+      practiceLogsFetched.current = false;
+      loadPracticeLogs();
     };
 
     window.addEventListener('roundsUpdated', handleRoundsUpdate);
@@ -500,12 +559,14 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     if (!user?.id) return;
     drillsFetched.current = false;
     practiceSessionsFetched.current = false;
+    practiceLogsFetched.current = false;
     loadDrills();
     loadPracticeSessions();
+    loadPracticeLogs();
   }, [user?.id]);
 
   return (
-    <StatsContext.Provider value={{ rounds, drills, practiceSessions, loading, refreshRounds, refreshDrills, refreshPracticeSessions, calculateStats, currentStreak }}>
+    <StatsContext.Provider value={{ rounds, drills, practiceSessions, practiceLogs, loading, refreshRounds, refreshDrills, refreshPracticeSessions, refreshPracticeLogs, calculateStats, currentStreak }}>
       {children}
     </StatsContext.Provider>
   );
@@ -520,10 +581,12 @@ export function useStats() {
       rounds: [], 
       drills: [], 
       practiceSessions: [], 
+      practiceLogs: [],
       loading: false, 
       refreshRounds: () => {}, 
       refreshDrills: () => {}, 
       refreshPracticeSessions: () => {}, 
+      refreshPracticeLogs: () => {},
       calculateStats: () => ({ handicap: 'N/A', totalRounds: 0 }),
       currentStreak: undefined
     };

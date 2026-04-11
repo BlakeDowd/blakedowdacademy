@@ -19,6 +19,9 @@ import { puttingTest9Config } from "@/lib/puttingTest9Config";
 import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
 import { puttingTest8To20Config } from "@/lib/puttingTest8To20Config";
 import { puttingTest20To40Config } from "@/lib/puttingTest20To40Config";
+import { strikeAndSpeedControlTestConfig } from "@/lib/strikeAndSpeedControlTestConfig";
+import { startLineAndSpeedControlTestConfig } from "@/lib/startLineAndSpeedControlTestConfig";
+import { gauntletPrecisionProtocolConfig } from "@/lib/gauntletPrecisionProtocolConfig";
 
 type RoundType = '9-hole' | '18-hole' | null;
 
@@ -3052,6 +3055,36 @@ export default function PracticePage() {
                 <Target className="w-5 h-5 shrink-0 text-gray-600" />
                 <span className="text-[11px] font-medium leading-tight text-center text-gray-700 sm:text-xs max-w-full">
                   {puttingTest20To40Config.testName}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/practice/strike-and-speed-control-test")}
+                className="flex min-h-[5.25rem] flex-col items-center justify-center gap-1.5 px-2 py-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+              >
+                <Target className="w-5 h-5 shrink-0 text-gray-600" />
+                <span className="text-[11px] font-medium leading-tight text-center text-gray-700 sm:text-xs max-w-full">
+                  {strikeAndSpeedControlTestConfig.testName}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/practice/start-line-and-speed-control-test")}
+                className="flex min-h-[5.25rem] flex-col items-center justify-center gap-1.5 px-2 py-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+              >
+                <Target className="w-5 h-5 shrink-0 text-gray-600" />
+                <span className="text-[11px] font-medium leading-tight text-center text-gray-700 sm:text-xs max-w-full">
+                  {startLineAndSpeedControlTestConfig.testName}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/practice/gauntlet-precision-protocol")}
+                className="flex min-h-[5.25rem] flex-col items-center justify-center gap-1.5 px-2 py-3 rounded-xl transition-all border-2 border-gray-900 bg-gray-900 text-white hover:border-[#FFA500] hover:bg-gray-800"
+              >
+                <Target className="w-5 h-5 shrink-0 text-white" />
+                <span className="text-[11px] font-medium leading-tight text-center text-white sm:text-xs max-w-full">
+                  {gauntletPrecisionProtocolConfig.testName}
                 </span>
               </button>
             </div>

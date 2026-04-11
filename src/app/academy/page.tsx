@@ -48,6 +48,11 @@ import { puttingTest9Config } from "@/lib/puttingTest9Config";
 import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
 import { puttingTest8To20Config } from "@/lib/puttingTest8To20Config";
 import { puttingTest20To40Config } from "@/lib/puttingTest20To40Config";
+import { gauntletPrecisionProtocolConfig } from "@/lib/gauntletPrecisionProtocolConfig";
+import {
+  buildGauntletBlackLabelLeaderboard,
+  computeBestGauntletSessionForUser,
+} from "@/lib/gauntletLeaderboard";
 
 /** Display + DB trophy_name (must match HomeDashboard ACADEMY_TROPHIES). */
 const PUTTING_TEST_CHAMPION_TROPHY_NAME = `Champion: ${puttingTestConfig.testName}`;
@@ -2064,6 +2069,7 @@ function formatLeaderboardValue(
     | "puttingTest3To6ft"
     | "puttingTest8To20"
     | "puttingTest20To40"
+    | "gauntletBlackLabel"
     | "rounds"
     | "drills"
     | "lowGross"
@@ -2102,6 +2108,10 @@ function formatLeaderboardValue(
       return `${Math.round(value)} Test Pts`;
     case "puttingTest20To40":
       return `${Math.round(value)} Test Pts`;
+    case "gauntletBlackLabel": {
+      const n = Math.round(value);
+      return `${n} Perfect Putt${n === 1 ? "" : "s"}`;
+    }
     case "rounds":
       return `${value} Round${value !== 1 ? "s" : ""}`;
     case "drills":
@@ -2144,6 +2154,7 @@ function getLeaderboardData(
     | "puttingTest3To6ft"
     | "puttingTest8To20"
     | "puttingTest20To40"
+    | "gauntletBlackLabel"
     | "rounds"
     | "drills"
     | "lowGross"
@@ -2168,6 +2179,7 @@ function getLeaderboardData(
   >,
   practiceSessions?: any[],
   drills?: any[],
+  practiceLogs: any[] = [],
 ) {
   if (metric === "puttingCombine") {
     const allPractice = practiceSessions || [];
@@ -2602,6 +2614,64 @@ function getLeaderboardData(
 
     const userEntryInRanks = withPinned.find((entry) => entry.isCurrentUser);
     const finalUserValue = userEntryInRanks?.value ?? 0;
+    const withRanks = withPinned.map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+      rankChange: 0,
+      movedUp: false,
+      movedDown: false,
+      previousRank: undefined,
+      lowRound: undefined,
+      lowNett: undefined,
+      birdieCount: 0,
+      eagleCount: 0,
+    }));
+
+    return {
+      top3: withRanks.slice(0, 3),
+      all: withRanks,
+      userRank: userEntryInRanks
+        ? withRanks.findIndex((entry) => entry.isCurrentUser) + 1
+        : 0,
+      userValue: finalUserValue,
+    };
+  }
+
+  if (metric === "gauntletBlackLabel") {
+    const built = buildGauntletBlackLabelLeaderboard(
+      practiceLogs,
+      timeFilter,
+      userProfiles,
+      user?.id,
+    );
+    let meBest = 0;
+    if (user?.id) {
+      const st = computeBestGauntletSessionForUser(
+        practiceLogs,
+        user.id,
+        timeFilter,
+      );
+      meBest = st?.perfect ?? 0;
+    }
+    const withPinned = ensureCurrentUserOnLeaderboard(
+      built.all,
+      user,
+      userProfiles,
+      meBest,
+    );
+    withPinned.sort((a, b) => b.value - a.value);
+
+    if (withPinned.length === 0) {
+      return {
+        top3: [],
+        all: [],
+        userRank: 0,
+        userValue: 0,
+      };
+    }
+
+    const userEntryInRanks = withPinned.find((entry) => entry.isCurrentUser);
+    const finalUserValue = userEntryInRanks?.value ?? meBest;
     const withRanks = withPinned.map((entry, index) => ({
       ...entry,
       rank: index + 1,
@@ -3877,7 +3947,7 @@ export default function AcademyPage() {
 
   // ALL HOOKS MUST BE AT THE TOP - NO EXCEPTIONS (Rules of Hooks)
   // Check Fetch Logic: Ensure the loadStats function is fetching data from the drills and practice_sessions tables as well as rounds
-  const { rounds, drills, practiceSessions } = useStats();
+  const { rounds, drills, practiceSessions, practiceLogs } = useStats();
   const { user, refreshUser, isAuthenticated, loading } = useAuth();
   const router = useRouter();
 
@@ -3928,6 +3998,7 @@ export default function AcademyPage() {
     | "puttingTest3To6ft"
     | "puttingTest8To20"
     | "puttingTest20To40"
+    | "gauntletBlackLabel"
     | "rounds"
     | "drills"
     | "lowGross"
@@ -4195,9 +4266,17 @@ export default function AcademyPage() {
       const practiceUserIds = (practiceSessions || [])
         .map((p: any) => p.user_id)
         .filter(Boolean);
+      const practiceLogUserIds = (practiceLogs || [])
+        .map((p: any) => p.user_id)
+        .filter(Boolean);
 
       // Combine all user IDs and get unique set
-      const allUserIds = [...roundUserIds, ...drillUserIds, ...practiceUserIds];
+      const allUserIds = [
+        ...roundUserIds,
+        ...drillUserIds,
+        ...practiceUserIds,
+        ...practiceLogUserIds,
+      ];
       const uniqueUserIds = Array.from(new Set(allUserIds));
 
       if (uniqueUserIds.length === 0) {
@@ -4308,7 +4387,7 @@ export default function AcademyPage() {
     };
 
     fetchProfiles();
-  }, [rounds?.length, drills?.length, practiceSessions?.length]); // Re-fetch profiles when rounds, drills, or practice sessions change
+  }, [rounds?.length, drills?.length, practiceSessions?.length, practiceLogs?.length]); // Re-fetch profiles when rounds, drills, practice, or practice_logs change
 
   // Global Refresh: Ensure the XP Leaderboard refreshes immediately after the points are added
   // Realtime Filter: Not using Supabase Realtime - only listening to custom xpUpdated events
@@ -4327,10 +4406,14 @@ export default function AcademyPage() {
         const practiceUserIds = (practiceSessions || [])
           .map((p: any) => p.user_id)
           .filter(Boolean);
+        const practiceLogUserIds = (practiceLogs || [])
+          .map((p: any) => p.user_id)
+          .filter(Boolean);
         const allUserIds = [
           ...roundUserIds,
           ...drillUserIds,
           ...practiceUserIds,
+          ...practiceLogUserIds,
         ];
         const uniqueUserIds = Array.from(new Set(allUserIds));
 
@@ -4347,7 +4430,7 @@ export default function AcademyPage() {
     return () => {
       window.removeEventListener("xpUpdated", handleXPUpdate);
     };
-  }, [rounds?.length, drills?.length, practiceSessions?.length]);
+  }, [rounds?.length, drills?.length, practiceSessions?.length, practiceLogs?.length]);
 
   // Calculate score-based leaderboards (lowGross, lowNett, birdies, eagles, putts) with loop guard
   // Always calculate all score-based metrics so they're available when needed
@@ -4386,6 +4469,7 @@ export default function AcademyPage() {
           userProfiles,
           practiceSessions,
           drills,
+          practiceLogs || [],
         );
         scoreBasedLeaderboards[metric] = leaderboard;
       });
@@ -4417,6 +4501,7 @@ export default function AcademyPage() {
     rounds?.length,
     drills?.length,
     practiceSessions?.length,
+    practiceLogs?.length,
     timeFilter,
     user?.totalXP,
     userName,
@@ -4440,7 +4525,8 @@ export default function AcademyPage() {
         leaderboardMetric === "puttingTest9Holes" ||
         leaderboardMetric === "puttingTest3To6ft" ||
         leaderboardMetric === "puttingTest8To20" ||
-        leaderboardMetric === "puttingTest20To40") {
+        leaderboardMetric === "puttingTest20To40" ||
+        leaderboardMetric === "gauntletBlackLabel") {
       // Don't use cache for xp or putting tests (always derive from practice rows)
       if (
         cachedLeaderboard &&
@@ -4449,7 +4535,8 @@ export default function AcademyPage() {
         leaderboardMetric !== "puttingTest9Holes" &&
         leaderboardMetric !== "puttingTest3To6ft" &&
         leaderboardMetric !== "puttingTest8To20" &&
-        leaderboardMetric !== "puttingTest20To40"
+        leaderboardMetric !== "puttingTest20To40" &&
+        leaderboardMetric !== "gauntletBlackLabel"
       ) {
         return cachedLeaderboard;
       }
@@ -4466,6 +4553,7 @@ export default function AcademyPage() {
           userProfiles,
           practiceSessions,
           drills,
+          practiceLogs || [],
         );
       }
       return { top3: [], all: [], userRank: 0, userValue: 0 };
@@ -4494,7 +4582,7 @@ export default function AcademyPage() {
       default:
         return emptyFour;
     }
-  }, [cachedLeaderboard, leaderboardMetric, timeFilter, rounds, userProgress.totalXP, userName, user, userProfiles, practiceSessions, drills]);
+  }, [cachedLeaderboard, leaderboardMetric, timeFilter, rounds, userProgress.totalXP, userName, user, userProfiles, practiceSessions, drills, practiceLogs]);
 
   const top3 = useMemo(() => currentLeaderboard.top3, [currentLeaderboard]);
   const ranks4to7 = useMemo(
@@ -5044,8 +5132,17 @@ export default function AcademyPage() {
           <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full flex flex-col">
             <div className="flex flex-col gap-3 mb-6 w-full min-w-0 items-center text-center">
               <h3 className="text-xl font-bold text-gray-900 w-full min-w-0 px-1">
-                Overall Academy Leaderboard
+                {leaderboardMetric === "gauntletBlackLabel"
+                  ? gauntletPrecisionProtocolConfig.blackLabelLeaderboardTitle
+                  : "Overall Academy Leaderboard"}
               </h3>
+              {leaderboardMetric === "gauntletBlackLabel" && (
+                <p className="text-xs text-gray-600 max-w-xl mx-auto px-2">
+                  {gauntletPrecisionProtocolConfig.testName}: ranks by best single-session{" "}
+                  <span className="font-semibold text-gray-800">Perfect Putt</span> count (Clean Strike
+                  + Through Gate + under 10 cm from target).
+                </p>
+              )}
               {/* Category row centered under title; max-width keeps long options readable */}
               <div className="w-full max-w-xl min-w-0 mx-auto">
                 <div className="flex flex-col gap-2 w-full min-w-0 sm:flex-row sm:items-center sm:justify-center sm:gap-3">
@@ -5071,6 +5168,10 @@ export default function AcademyPage() {
                     <option value="puttingTest3To6ft">{puttingTest3To6ftConfig.testName}</option>
                     <option value="puttingTest8To20">{puttingTest8To20Config.testName}</option>
                     <option value="puttingTest20To40">{puttingTest20To40Config.testName}</option>
+                    <option value="gauntletBlackLabel">
+                      {gauntletPrecisionProtocolConfig.blackLabelLeaderboardTitle} (
+                      {gauntletPrecisionProtocolConfig.testName})
+                    </option>
                     <option value="library">Library Lessons</option>
                     <option value="rounds">Rounds Entered</option>
                     <option value="drills">Drills</option>
@@ -5128,7 +5229,8 @@ export default function AcademyPage() {
                 user,
                 userProfiles,
                 practiceSessions || [],
-                drills || []
+                drills || [],
+                practiceLogs || [],
               ) : currentLeaderboard;
 
               if (!dataToRender || !dataToRender.all || dataToRender.all.length === 0) {
