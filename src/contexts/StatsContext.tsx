@@ -453,20 +453,60 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      // RLS on practice_logs is TO authenticated only; querying before session is ready
+      // produces a PostgREST error that often prints as "{}" in the browser console.
+      if (!session?.user?.id) {
+        return;
+      }
+
       const { data, error } = await supabase
         .from("practice_logs")
         .select("id,user_id,log_type,created_at,matrix_score_average,perfect_putt_count,triple_failure_rate")
         .order("created_at", { ascending: false });
 
       if (error) {
-        if (
-          error.code === "PGRST116" ||
-          error.message?.includes("permission denied") ||
-          error.message?.includes("RLS")
+        const err = error as {
+          message?: string;
+          code?: string;
+          details?: string;
+          hint?: string;
+        };
+        const summary =
+          err.message ||
+          err.details ||
+          (Object.keys(error as object).length ? JSON.stringify(error) : "Unknown error");
+        const summaryLower = summary.toLowerCase();
+        const tableMissing =
+          err.code === "PGRST205" ||
+          summaryLower.includes("schema cache") ||
+          summaryLower.includes("could not find the table");
+        if (tableMissing) {
+          console.warn(
+            "StatsContext: practice_logs is not in the database yet (PGRST205). Apply migrations from supabase/migrations (files matching *practice_logs*) using `supabase db push` or the SQL Editor, then reload.",
+            summary,
+            err.hint ? `PostgREST hint: ${err.hint}` : ""
+          );
+        } else if (
+          err.code === "PGRST116" ||
+          summary.includes("permission denied") ||
+          summary.includes("RLS") ||
+          summary.includes("JWT")
         ) {
-          console.warn("StatsContext: practice_logs may be blocked by RLS or missing table:", error.message);
+          console.warn(
+            "StatsContext: practice_logs may be blocked by RLS, missing table, or no session:",
+            summary,
+            err.code ? `(code: ${err.code})` : ""
+          );
         } else {
-          console.error("StatsContext: Error loading practice_logs:", error);
+          console.error(
+            "StatsContext: Error loading practice_logs:",
+            summary,
+            err.code ? `(code: ${err.code})` : "",
+            err.hint ? `hint: ${err.hint}` : ""
+          );
         }
         setPracticeLogs([]);
         practiceLogsFetched.current = true;
@@ -476,7 +516,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       setPracticeLogs((data || []) as PracticeLogRow[]);
       practiceLogsFetched.current = true;
     } catch (e) {
-      console.error("StatsContext: practice_logs load failed", e);
+      const msg = e instanceof Error ? e.message : JSON.stringify(e);
+      console.error("StatsContext: practice_logs load failed:", msg, e);
       setPracticeLogs([]);
       practiceLogsFetched.current = true;
     }
@@ -518,7 +559,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     // Update Table Name: Practice table is now created - fetch from it
     loadDrills();
     loadPracticeSessions();
-    loadPracticeLogs();
+    // practice_logs: fetched only when authenticated (see loadPracticeLogs + user?.id effect)
 
     // Listen for roundsUpdated event
     const handleRoundsUpdate = () => {
@@ -556,7 +597,11 @@ export function StatsProvider({ children }: { children: ReactNode }) {
 
   // First stats fetch can run before Supabase session is ready (RLS returns []). Reload when user id appears.
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setPracticeLogs([]);
+      practiceLogsFetched.current = false;
+      return;
+    }
     drillsFetched.current = false;
     practiceSessionsFetched.current = false;
     practiceLogsFetched.current = false;
