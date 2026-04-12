@@ -66,6 +66,7 @@ interface PracticeLogRow {
   matrix_score_average?: number | null;
   perfect_putt_count?: number | null;
   triple_failure_rate?: number | null;
+  total_points?: number | null;
 }
 
 interface StatsContextType {
@@ -423,13 +424,24 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         
         const lowerType = mappedType.toLowerCase();
         
-        if (lowerType === 'short game' || lowerType === 'chipping-green' || lowerType === 'chipping') mappedType = 'Chipping';
+        if (
+          lowerType === 'short game' ||
+          lowerType === 'chipping-green' ||
+          lowerType === 'chipping' ||
+          lowerType === 'chipping_combine_9'
+        )
+          mappedType = 'Chipping';
         else if (lowerType === 'approach' || lowerType === 'range-grass' || lowerType === 'irons') mappedType = 'Irons';
         else if (lowerType === 'mental game' || lowerType === 'mental' || lowerType === 'home' || lowerType === 'mental/strategy') mappedType = 'Mental/Strategy';
         else if (lowerType === 'range-mat' || lowerType === 'driving') mappedType = 'Driving';
         else if (lowerType === 'bunker' || lowerType === 'bunkers') mappedType = 'Bunkers';
         else if (lowerType === 'putting-green' || lowerType === 'putting') mappedType = 'Putting';
-        else if (lowerType === 'wedges' || lowerType === 'wedge play') mappedType = 'Wedges';
+        else if (
+          lowerType === 'wedges' ||
+          lowerType === 'wedge play' ||
+          lowerType === 'wedge_lateral_9'
+        )
+          mappedType = 'Wedges';
         
         return {
           ...session,
@@ -464,7 +476,9 @@ export function StatsProvider({ children }: { children: ReactNode }) {
 
       const { data, error } = await supabase
         .from("practice_logs")
-        .select("id,user_id,log_type,created_at,matrix_score_average,perfect_putt_count,triple_failure_rate")
+        .select(
+          "id,user_id,log_type,created_at,matrix_score_average,perfect_putt_count,triple_failure_rate,total_points",
+        )
         .order("created_at", { ascending: false });
 
       if (error) {

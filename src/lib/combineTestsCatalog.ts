@@ -9,6 +9,9 @@ import { gauntletPrecisionProtocolConfig } from "@/lib/gauntletPrecisionProtocol
 import { aimpoint6ftCombineConfig } from "@/lib/aimpoint6ftCombineConfig";
 import { midRangeSlopeSensingConfig } from "@/lib/midRangeSlopeSensingConfig";
 import { aimpointLongRange2040Config } from "@/lib/aimpointLongRange2040Config";
+import { chippingCombine9Config } from "@/lib/chippingCombine9Config";
+import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
+import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
 
 export const COMBINE_CATEGORY_IDS = [
   "Putting",
@@ -101,5 +104,23 @@ export const COMBINE_TEST_CARDS: CombineTestCard[] = [
     category: "Putting",
     href: "/practice/aimpoint-long-range-2040",
     label: aimpointLongRange2040Config.testName,
+  },
+  {
+    id: "chipping-combine-9",
+    category: "Chipping",
+    href: "/practice/chipping-combine-9",
+    label: chippingCombine9Config.testName,
+  },
+  {
+    id: "wedge-lateral-9",
+    category: "Wedges",
+    href: "/practice/wedge-lateral-9",
+    label: wedgeLateral9Config.testName,
+  },
+  {
+    id: "iron-precision-protocol",
+    category: "Irons",
+    href: "/practice/iron-precision-protocol",
+    label: ironPrecisionProtocolConfig.testName,
   },
 ];

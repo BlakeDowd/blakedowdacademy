@@ -49,10 +49,18 @@ import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
 import { puttingTest8To20Config } from "@/lib/puttingTest8To20Config";
 import { puttingTest20To40Config } from "@/lib/puttingTest20To40Config";
 import { gauntletPrecisionProtocolConfig } from "@/lib/gauntletPrecisionProtocolConfig";
+import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
+import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
 import {
   buildGauntletBlackLabelLeaderboard,
   computeBestGauntletSessionForUser,
 } from "@/lib/gauntletLeaderboard";
+import {
+  buildAcademyCombinesLeaderboard,
+  COMBINE_LEADERBOARD_OPTIONS,
+  isLeaderboardDrivenCombineId,
+  type CombineLeaderboardTestId,
+} from "@/lib/academyCombinesLeaderboard";
 
 /** Display + DB trophy_name (must match HomeDashboard ACADEMY_TROPHIES). */
 const PUTTING_TEST_CHAMPION_TROPHY_NAME = `Champion: ${puttingTestConfig.testName}`;
@@ -3993,12 +4001,6 @@ export default function AcademyPage() {
     | "xp"
     | "library"
     | "practice"
-    | "puttingCombine"
-    | "puttingTest9Holes"
-    | "puttingTest3To6ft"
-    | "puttingTest8To20"
-    | "puttingTest20To40"
-    | "gauntletBlackLabel"
     | "rounds"
     | "drills"
     | "lowGross"
@@ -4039,6 +4041,9 @@ export default function AcademyPage() {
   // Stabilize Fetching: Add circuit breaker to prevent recalculating leaderboard on every render
   const [cachedLeaderboard, setCachedLeaderboard] = useState<any>(null);
 
+  const [hallLeaderTab, setHallLeaderTab] = useState<"stats" | "combines">("stats");
+  const [combineLeaderboardTest, setCombineLeaderboardTest] =
+    useState<CombineLeaderboardTestId>("aimpoint_6ft_combine");
   // Stable Identity: Wrap functions and objects in useMemo/useCallback to prevent recreation on every render
   // Calculate total XP (rounds + drills) - filtered by timeframe
   // Safe Logic: If the calculation inside useMemo needs the user, do the check inside the useMemo (e.g., return user ? calculate(...) : 0) rather than skipping the Hook entirely
@@ -4387,7 +4392,12 @@ export default function AcademyPage() {
     };
 
     fetchProfiles();
-  }, [rounds?.length, drills?.length, practiceSessions?.length, practiceLogs?.length]); // Re-fetch profiles when rounds, drills, practice, or practice_logs change
+  }, [
+    rounds?.length ?? 0,
+    drills?.length ?? 0,
+    practiceSessions?.length ?? 0,
+    practiceLogs?.length ?? 0,
+  ]); // Re-fetch profiles when source tables change (fixed length: 4)
 
   // Global Refresh: Ensure the XP Leaderboard refreshes immediately after the points are added
   // Realtime Filter: Not using Supabase Realtime - only listening to custom xpUpdated events
@@ -4430,7 +4440,12 @@ export default function AcademyPage() {
     return () => {
       window.removeEventListener("xpUpdated", handleXPUpdate);
     };
-  }, [rounds?.length, drills?.length, practiceSessions?.length, practiceLogs?.length]);
+  }, [
+    rounds?.length ?? 0,
+    drills?.length ?? 0,
+    practiceSessions?.length ?? 0,
+    practiceLogs?.length ?? 0,
+  ]); // Same four deps as profile fetch — array length must stay constant for React
 
   // Calculate score-based leaderboards (lowGross, lowNett, birdies, eagles, putts) with loop guard
   // Always calculate all score-based metrics so they're available when needed
@@ -4520,23 +4535,11 @@ export default function AcademyPage() {
         leaderboardMetric === "lowestAvgDoubleBogeys" ||
         leaderboardMetric === "highestAvgBirdies" ||
         leaderboardMetric === "bogeyFreeRounds" ||
-        leaderboardMetric === "doubleFreeRounds" ||
-        leaderboardMetric === "puttingCombine" ||
-        leaderboardMetric === "puttingTest9Holes" ||
-        leaderboardMetric === "puttingTest3To6ft" ||
-        leaderboardMetric === "puttingTest8To20" ||
-        leaderboardMetric === "puttingTest20To40" ||
-        leaderboardMetric === "gauntletBlackLabel") {
-      // Don't use cache for xp or putting tests (always derive from practice rows)
+        leaderboardMetric === "doubleFreeRounds") {
+      // Don't use cache for xp (always derive from practice rows)
       if (
         cachedLeaderboard &&
-        leaderboardMetric !== "xp" &&
-        leaderboardMetric !== "puttingCombine" &&
-        leaderboardMetric !== "puttingTest9Holes" &&
-        leaderboardMetric !== "puttingTest3To6ft" &&
-        leaderboardMetric !== "puttingTest8To20" &&
-        leaderboardMetric !== "puttingTest20To40" &&
-        leaderboardMetric !== "gauntletBlackLabel"
+        leaderboardMetric !== "xp"
       ) {
         return cachedLeaderboard;
       }
@@ -4711,6 +4714,62 @@ export default function AcademyPage() {
       entry.name.toLowerCase().includes(searchLower),
     );
   }, [sortedLeaderboard, leaderboardSearch]);
+
+  const hallCombineRows = useMemo(() => {
+    if (isLeaderboardDrivenCombineId(combineLeaderboardTest)) {
+      const data = getLeaderboardData(
+        combineLeaderboardTest as Parameters<typeof getLeaderboardData>[0],
+        timeFilter,
+        rounds || [],
+        user?.totalXP || 0,
+        userName || "Academy Member",
+        user,
+        userProfiles,
+        practiceSessions || [],
+        drills || [],
+        practiceLogs || [],
+      );
+      if (!data?.all?.length) return [];
+      return data.all.map((entry: any) => ({
+        userId: String(entry.id),
+        name: entry.name,
+        scoreDisplay: formatLeaderboardValue(
+          entry.value,
+          combineLeaderboardTest as Parameters<typeof formatLeaderboardValue>[1],
+        ),
+        sortValue:
+          typeof entry.value === "number" && Number.isFinite(entry.value) ? entry.value : 0,
+        dateMs: 0,
+        dateLabel: "—",
+        isCurrentUser: !!entry.isCurrentUser,
+      }));
+    }
+    return buildAcademyCombinesLeaderboard(
+      combineLeaderboardTest,
+      practiceSessions,
+      practiceLogs,
+      userProfiles,
+      timeFilter,
+      user?.id,
+    );
+  }, [
+    combineLeaderboardTest,
+    timeFilter,
+    rounds,
+    user?.totalXP,
+    userName,
+    user,
+    userProfiles,
+    practiceSessions,
+    drills,
+    practiceLogs,
+    user?.id,
+  ]);
+
+  const combineScoreColumnLabel = useMemo(() => {
+    const opt = COMBINE_LEADERBOARD_OPTIONS.find((o) => o.id === combineLeaderboardTest);
+    return opt?.scoreHeader ?? "Score";
+  }, [combineLeaderboardTest]);
 
   // Fix the Hook Order error
   // Move All Hooks to the Top: Take every useState, useMemo, and useEffect (including the new ones on line 1323) and move them to the very top of the AcademyPage function
@@ -5127,73 +5186,150 @@ export default function AcademyPage() {
             );
           })()}
 
-        {/* Overall Academy Leaderboard */}
+        {/* Hall Of Fame Leaderboard */}
         <div className="mb-6 w-full">
-          <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full flex flex-col">
-            <div className="flex flex-col gap-3 mb-6 w-full min-w-0 items-center text-center">
-              <h3 className="text-xl font-bold text-gray-900 w-full min-w-0 px-1">
-                {leaderboardMetric === "gauntletBlackLabel"
+          <div className="rounded-2xl overflow-hidden border-2 border-amber-200/60 bg-gradient-to-b from-stone-50 via-white to-amber-50/30 shadow-md w-full flex flex-col">
+            <div className="px-5 pt-5 pb-3 text-center border-b border-amber-100/80 bg-stone-900/[0.03]">
+              <div className="inline-flex items-center gap-2 text-amber-800/90 mb-1">
+                <Medal className="w-5 h-5" />
+                <p className="text-xs font-semibold uppercase tracking-[0.2em]">Hall Of Fame</p>
+              </div>
+              <h3 className="text-xl font-bold text-stone-900 font-serif tracking-tight">
+                {hallLeaderTab === "combines" && combineLeaderboardTest === "gauntletBlackLabel"
                   ? gauntletPrecisionProtocolConfig.blackLabelLeaderboardTitle
-                  : "Overall Academy Leaderboard"}
+                  : "Academy Leaderboard"}
               </h3>
-              {leaderboardMetric === "gauntletBlackLabel" && (
-                <p className="text-xs text-gray-600 max-w-xl mx-auto px-2">
-                  {gauntletPrecisionProtocolConfig.testName}: ranks by best single-session{" "}
-                  <span className="font-semibold text-gray-800">Perfect Putt</span> count (Clean Strike
-                  + Through Gate + under 10 cm from target).
-                </p>
-              )}
-              {/* Category row centered under title; max-width keeps long options readable */}
-              <div className="w-full max-w-xl min-w-0 mx-auto">
-                <div className="flex flex-col gap-2 w-full min-w-0 sm:flex-row sm:items-center sm:justify-center sm:gap-3">
-                  <label
-                    htmlFor="category-select"
-                    className="text-sm font-medium text-gray-700 shrink-0 sm:pt-0.5"
-                  >
-                    Category:
-                  </label>
-                  <select
-                    id="category-select"
-                    value={leaderboardMetric}
-                    onChange={(e) => {
-                      const selectedMetric = e.target.value as typeof leaderboardMetric;
-                      setLeaderboardMetric(selectedMetric);
-                    }}
-                    className="min-w-0 w-full sm:flex-1 sm:max-w-md box-border px-4 py-2 rounded-lg text-sm font-medium text-gray-900 bg-white border border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#014421] focus:border-[#014421] transition-colors cursor-pointer text-left"
-                  >
-                    <option value="xp">Overall (Total XP)</option>
-                    <option value="practice">Practice Hours</option>
-                    <option value="puttingCombine">{puttingTestConfig.testName}</option>
-                    <option value="puttingTest9Holes">{puttingTest9Config.testName}</option>
-                    <option value="puttingTest3To6ft">{puttingTest3To6ftConfig.testName}</option>
-                    <option value="puttingTest8To20">{puttingTest8To20Config.testName}</option>
-                    <option value="puttingTest20To40">{puttingTest20To40Config.testName}</option>
-                    <option value="gauntletBlackLabel">
-                      {gauntletPrecisionProtocolConfig.blackLabelLeaderboardTitle} (
-                      {gauntletPrecisionProtocolConfig.testName})
-                    </option>
-                    <option value="library">Library Lessons</option>
-                    <option value="rounds">Rounds Entered</option>
-                    <option value="drills">Drills</option>
-                    <option value="lowGross">Low Gross</option>
-                    <option value="lowNett">Low Nett</option>
-                    <option value="birdies">Birdies</option>
-                    <option value="eagles">Eagles</option>
-                    <option value="putts">Average Putts</option>
-                    <option value="lowestPutts">Lowest Putts</option>
-                    <option value="lowestAvgBogeys">Lowest Average Bogeys</option>
-                    <option value="lowestAvgDoubleBogeys">Lowest Average Double Bogeys</option>
-                    <option value="highestAvgBirdies">Highest Average Birdies</option>
-                    <option value="bogeyFreeRounds">Bogey Free Rounds</option>
-                    <option value="doubleFreeRounds">Double Free Rounds</option>
-                  </select>
-                </div>
+              <p className="text-xs text-stone-600 mt-1 max-w-md mx-auto">
+                {hallLeaderTab === "combines"
+                  ? "Session-Based Combine Rankings By Selected Test."
+                  : "Pick A Category To Compare Academy-Wide Rankings."}
+              </p>
+            </div>
+
+            <div className="px-4 pt-4 pb-2 flex justify-center">
+              <div
+                className="inline-flex rounded-full p-1 bg-stone-200/80 border border-stone-300/80 shadow-inner"
+                role="tablist"
+                aria-label="Leaderboard view"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={hallLeaderTab === "stats"}
+                  onClick={() => setHallLeaderTab("stats")}
+                  className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${
+                    hallLeaderTab === "stats"
+                      ? "bg-white text-stone-900 shadow border border-stone-200"
+                      : "text-stone-600 hover:text-stone-900"
+                  }`}
+                >
+                  Stats
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={hallLeaderTab === "combines"}
+                  onClick={() => setHallLeaderTab("combines")}
+                  className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${
+                    hallLeaderTab === "combines"
+                      ? "bg-white text-stone-900 shadow border border-stone-200"
+                      : "text-stone-600 hover:text-stone-900"
+                  }`}
+                >
+                  Combines
+                </button>
               </div>
             </div>
 
-            {/* Time Filter Buttons */}
-            <div className="mb-6 w-full">
-              <div className="flex items-center justify-center gap-2 sm:gap-2.5 px-2 sm:px-4 flex-wrap">
+            {hallLeaderTab === "stats" && (
+              <div className="px-4 pb-3 max-w-xl mx-auto w-full">
+                <label
+                  htmlFor="stats-category-select"
+                  className="block text-xs font-semibold uppercase tracking-wide text-stone-600 mb-1.5"
+                >
+                  Category
+                </label>
+                <select
+                  id="stats-category-select"
+                  value={leaderboardMetric}
+                  onChange={(e) => {
+                    setLeaderboardMetric(e.target.value as typeof leaderboardMetric);
+                  }}
+                  className="w-full px-3 py-2.5 rounded-xl text-sm font-medium text-stone-900 bg-white border border-stone-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#014421]/30 focus:border-[#014421]"
+                >
+                  <option value="xp">Overall (Total XP)</option>
+                  <option value="practice">Practice Hours</option>
+                  <option value="library">Library Lessons</option>
+                  <option value="rounds">Rounds Entered</option>
+                  <option value="drills">Drills</option>
+                  <option value="lowGross">Low Gross</option>
+                  <option value="lowNett">Low Nett</option>
+                  <option value="birdies">Birdies</option>
+                  <option value="eagles">Eagles</option>
+                  <option value="putts">Average Putts</option>
+                  <option value="lowestPutts">Lowest Putts</option>
+                  <option value="lowestAvgBogeys">Lowest Average Bogeys</option>
+                  <option value="lowestAvgDoubleBogeys">Lowest Average Double Bogeys</option>
+                  <option value="highestAvgBirdies">Highest Average Birdies</option>
+                  <option value="bogeyFreeRounds">Bogey Free Rounds</option>
+                  <option value="doubleFreeRounds">Double Free Rounds</option>
+                </select>
+              </div>
+            )}
+
+            {hallLeaderTab === "combines" && (
+              <div className="px-4 pb-3 max-w-xl mx-auto w-full">
+                <label
+                  htmlFor="combine-test-select"
+                  className="block text-xs font-semibold uppercase tracking-wide text-stone-600 mb-1.5"
+                >
+                  Test Type
+                </label>
+                <select
+                  id="combine-test-select"
+                  value={combineLeaderboardTest}
+                  onChange={(e) =>
+                    setCombineLeaderboardTest(e.target.value as CombineLeaderboardTestId)
+                  }
+                  className="w-full px-3 py-2.5 rounded-xl text-sm font-medium text-stone-900 bg-white border border-stone-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#014421]/30 focus:border-[#014421]"
+                >
+                  {COMBINE_LEADERBOARD_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                {combineLeaderboardTest === "gauntlet" && (
+                  <p className="text-[11px] text-stone-500 mt-1.5 text-center">
+                    Points Use Session Matrix Average — Lower Is Better.
+                  </p>
+                )}
+                {combineLeaderboardTest === "ironPrecisionProtocol" && (
+                  <p className="text-[11px] text-stone-500 mt-1.5 text-center">
+                    {ironPrecisionProtocolConfig.testName}: ranks by best session{" "}
+                    <span className="font-semibold text-stone-700">total points</span> (higher is
+                    better).
+                  </p>
+                )}
+                {combineLeaderboardTest === "wedge_lateral_9" && (
+                  <p className="text-[11px] text-stone-500 mt-1.5 text-center">
+                    {wedgeLateral9Config.testName}: ranks by best session{" "}
+                    <span className="font-semibold text-stone-700">total points</span> (higher is
+                    better).
+                  </p>
+                )}
+                {combineLeaderboardTest === "gauntletBlackLabel" && (
+                  <p className="text-xs text-stone-600 max-w-xl mx-auto mt-2 text-center px-1">
+                    {gauntletPrecisionProtocolConfig.testName}: ranks by best single-session{" "}
+                    <span className="font-semibold text-stone-800">Perfect Putt</span> count (Clean Strike +
+                    Through Gate + under 10 cm from target).
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="px-4 pb-4 w-full">
+              <div className="flex items-center justify-center gap-2 sm:gap-2.5 flex-wrap max-w-xl mx-auto">
                 {(["week", "month", "year", "allTime"] as const).map((filter) => {
                   const labels = {
                     week: "This Week",
@@ -5204,11 +5340,12 @@ export default function AcademyPage() {
                   return (
                     <button
                       key={filter}
+                      type="button"
                       onClick={() => setTimeFilter(filter)}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                      className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
                         timeFilter === filter
                           ? "text-white bg-[#014421]"
-                          : "text-gray-600 bg-gray-100 hover:bg-gray-200"
+                          : "text-stone-600 bg-stone-100 hover:bg-stone-200"
                       }`}
                     >
                       {labels[filter]}
@@ -5217,145 +5354,218 @@ export default function AcademyPage() {
                 })}
               </div>
             </div>
-            
-            {(() => {
-              // Compute XP Leaderboard right here to avoid hook order issues, or use currentLeaderboard for other metrics
-              const dataToRender = leaderboardMetric === "xp" ? getLeaderboardData(
-                "xp",
-                timeFilter, // Use actual time filter instead of "allTime"
-                rounds || [],
-                user?.totalXP || 0,
-                userName || "Academy Member",
-                user,
-                userProfiles,
-                practiceSessions || [],
-                drills || [],
-                practiceLogs || [],
-              ) : currentLeaderboard;
 
-              if (!dataToRender || !dataToRender.all || dataToRender.all.length === 0) {
-                const timeLabels = {
-                  week: "this week",
-                  month: "this month",
-                  year: "this year",
-                  allTime: "yet"
-                };
-                return (
-                  <div className="text-center flex-1 flex flex-col items-center justify-center min-h-[160px]">
-                    <p className="text-sm text-gray-500">
-                      No data for {timeLabels[timeFilter]}. Start logging to take the lead!
-                    </p>
+            <div className="px-3 sm:px-5 pb-5">
+              {hallLeaderTab === "stats" ? (
+                (() => {
+                    const dataToRender =
+                      leaderboardMetric === "xp"
+                        ? getLeaderboardData(
+                            "xp",
+                            timeFilter,
+                            rounds || [],
+                            user?.totalXP || 0,
+                            userName || "Academy Member",
+                            user,
+                            userProfiles,
+                            practiceSessions || [],
+                            drills || [],
+                            practiceLogs || [],
+                          )
+                        : currentLeaderboard;
+
+                    if (!dataToRender || !dataToRender.all || dataToRender.all.length === 0) {
+                      const timeLabels = {
+                        week: "this week",
+                        month: "this month",
+                        year: "this year",
+                        allTime: "yet",
+                      };
+                      return (
+                        <div className="text-center flex-1 flex flex-col items-center justify-center min-h-[160px]">
+                          <p className="text-sm text-stone-500">
+                            No data for {timeLabels[timeFilter]}. Start logging to take the lead!
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    const top20 = dataToRender.all.slice(0, 20);
+                    const meEntry = dataToRender.all.find((e: any) => e.isCurrentUser);
+                    const meInTop20 = top20.some((e: any) => e.isCurrentUser);
+                    const meRank =
+                      meEntry != null
+                        ? dataToRender.all.findIndex((e: any) => e.isCurrentUser) + 1
+                        : 0;
+
+                    const renderRow = (entry: any, rank: number, keySuffix: string) => {
+                      const displayName =
+                        entry.full_name ||
+                        entry.display_name ||
+                        (entry.email?.includes("@")
+                          ? entry.email.split("@")[0]
+                          : entry.email) ||
+                        (entry.name?.includes("@")
+                          ? entry.name.split("@")[0]
+                          : entry.name) ||
+                        "Academy Member";
+                      const isMe = entry.isCurrentUser;
+                      const displayValue = formatLeaderboardValue(
+                        entry.value,
+                        leaderboardMetric as Parameters<typeof formatLeaderboardValue>[1],
+                      );
+                      const podium =
+                        rank === 1
+                          ? "border-l-4 border-amber-400 bg-amber-50/40 ring-1 ring-amber-200/40"
+                          : rank === 2
+                            ? "border-l-4 border-slate-400 bg-slate-50/80 ring-1 ring-slate-200/50"
+                            : rank === 3
+                              ? "border-l-4 border-amber-800/40 bg-orange-50/40 ring-1 ring-orange-200/40"
+                              : "";
+                      return (
+                        <div
+                          key={entry.id ? `${entry.id}-${keySuffix}` : `rank-${rank}-${keySuffix}`}
+                          className={`flex items-center justify-between p-3 rounded-xl transition-all ${podium} ${
+                            isMe
+                              ? "bg-green-50 border-2 border-[#014421] shadow-sm"
+                              : "bg-white/70 border border-stone-200/80 hover:border-stone-300"
+                          }`}
+                        >
+                          <div className="flex items-center gap-4 min-w-0 flex-1">
+                            <div
+                              className={`text-lg font-bold w-8 shrink-0 text-center ${
+                                rank === 1
+                                  ? "text-amber-600"
+                                  : rank === 2
+                                    ? "text-slate-500"
+                                    : rank === 3
+                                      ? "text-orange-800/80"
+                                      : "text-stone-500"
+                              }`}
+                            >
+                              #{rank}
+                            </div>
+                            <div className="shrink-0 relative">
+                              {rank === 1 && keySuffix === "top" && (
+                                <Crown className="w-5 h-5 absolute -top-3 -right-2 text-amber-500" />
+                              )}
+                              <CircularAvatar
+                                initial={displayName[0]}
+                                iconId={
+                                  entry.avatar &&
+                                  GOLF_ICONS.some((icon: any) => icon.id === entry.avatar)
+                                    ? entry.avatar
+                                    : undefined
+                                }
+                                size={44}
+                                bgColor={
+                                  isMe
+                                    ? "#014421"
+                                    : rank === 1
+                                      ? "#f59e0b"
+                                      : rank === 2
+                                        ? "#94a3b8"
+                                        : rank === 3
+                                          ? "#d97706"
+                                          : "#9CA3AF"
+                                }
+                              />
+                            </div>
+                            <div
+                              className="text-base font-semibold text-stone-900 truncate pr-2 flex-1"
+                              title={displayName}
+                            >
+                              {displayName}{" "}
+                              {isMe && (
+                                <span className="text-xs font-bold text-[#014421] ml-1">(You)</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-lg font-bold text-[#014421] shrink-0 pl-2 text-right">
+                            {displayValue}
+                          </div>
+                        </div>
+                      );
+                    };
+
+                    return (
+                      <div className="flex flex-col gap-3 mx-auto w-full max-w-xl">
+                        {top20.map((entry: any, index: number) =>
+                          renderRow(entry, index + 1, "top"),
+                        )}
+                        {user?.id && meEntry && !meInTop20 && meRank > 0 ? (
+                          <div className="pt-2 mt-1 border-t border-stone-200">
+                            <p className="text-xs text-stone-500 mb-2 text-center">
+                              Your rank (#{meRank}) — not in the top 20 for this filter
+                            </p>
+                            {renderRow(meEntry, meRank, "you")}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })()
+              ) : hallCombineRows.length === 0 ? (
+                <div className="text-center py-12 text-sm text-stone-500">
+                  No Combine Sessions For This Test And Period Yet.
+                </div>
+              ) : (
+                <div className="mx-auto w-full max-w-xl space-y-2">
+                  <div className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,5.5rem)_4.5rem] gap-1 px-2 py-1 text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-stone-500 border-b border-stone-200">
+                    <span>Rank</span>
+                    <span>Student Name</span>
+                    <span className="text-right">{combineScoreColumnLabel}</span>
+                    <span className="text-right">Date</span>
                   </div>
-                );
-              }
-
-              // Top 20 list (full ranking stays in dataToRender.all for correct "You" rank)
-              const top20 = dataToRender.all.slice(0, 20);
-              const meEntry = dataToRender.all.find((e: any) => e.isCurrentUser);
-              const meInTop20 = top20.some((e: any) => e.isCurrentUser);
-              const meRank =
-                meEntry != null
-                  ? dataToRender.all.findIndex((e: any) => e.isCurrentUser) + 1
-                  : 0;
-
-              const renderRow = (entry: any, rank: number, keySuffix: string) => {
-                const displayName =
-                  entry.full_name ||
-                  entry.display_name ||
-                  (entry.email?.includes("@")
-                    ? entry.email.split("@")[0]
-                    : entry.email) ||
-                  (entry.name?.includes("@")
-                    ? entry.name.split("@")[0]
-                    : entry.name) ||
-                  "Academy Member";
-                const isMe = entry.isCurrentUser;
-                const displayValue = formatLeaderboardValue(
-                  entry.value,
-                  leaderboardMetric as Parameters<typeof formatLeaderboardValue>[1],
-                );
-                return (
-                  <div
-                    key={entry.id ? `${entry.id}-${keySuffix}` : `rank-${rank}-${keySuffix}`}
-                    className={`flex items-center justify-between p-3 rounded-xl transition-all ${
-                      isMe
-                        ? "bg-green-50 border-2 border-[#014421] shadow-sm"
-                        : "bg-gray-50 border border-transparent hover:border-gray-200"
-                    }`}
-                  >
-                    <div className="flex items-center gap-4 min-w-0 flex-1">
+                  {hallCombineRows.slice(0, 40).map((row, index) => {
+                    const rank = index + 1;
+                    const podium =
+                      rank === 1
+                        ? "border-l-4 border-amber-400 bg-amber-50/50 ring-1 ring-amber-200/50"
+                        : rank === 2
+                          ? "border-l-4 border-slate-400 bg-slate-50/90 ring-1 ring-slate-200/60"
+                          : rank === 3
+                            ? "border-l-4 border-amber-800/50 bg-orange-50/50 ring-1 ring-orange-200/50"
+                            : "border-l-4 border-transparent bg-white/60";
+                    const prof = userProfiles.get(row.userId);
+                    return (
                       <div
-                        className={`text-lg font-bold w-8 shrink-0 text-center ${
-                          rank === 1
-                            ? "text-[#FFA500]"
-                            : rank === 2
-                              ? "text-[#C0C0C0]"
-                              : rank === 3
-                                ? "text-[#CD7F32]"
-                                : "text-gray-500"
+                        key={`${row.userId}-${index}-${row.sortValue}`}
+                        className={`grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,5.5rem)_4.5rem] gap-1 items-center px-2 py-2 rounded-xl ${podium} ${
+                          row.isCurrentUser ? "ring-2 ring-[#014421]/40" : ""
                         }`}
                       >
-                        #{rank}
+                        <span className="text-sm font-bold text-stone-700 tabular-nums">{rank}</span>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <CircularAvatar
+                            initial={row.name[0]?.toUpperCase() || "?"}
+                            iconId={
+                              prof?.preferred_icon_id &&
+                              GOLF_ICONS.some((icon: any) => icon.id === prof.preferred_icon_id)
+                                ? prof.preferred_icon_id
+                                : undefined
+                            }
+                            size={36}
+                            bgColor={rank <= 3 ? "#b45309" : "#78716c"}
+                          />
+                          <span className="text-sm font-semibold text-stone-900 truncate">
+                            {row.name}
+                            {row.isCurrentUser && (
+                              <span className="text-[10px] font-bold text-[#014421] ml-1">(You)</span>
+                            )}
+                          </span>
+                        </div>
+                        <span className="text-sm font-bold text-[#014421] text-right tabular-nums leading-tight">
+                          {row.scoreDisplay}
+                        </span>
+                        <span className="text-xs text-stone-600 text-right whitespace-nowrap">
+                          {row.dateLabel}
+                        </span>
                       </div>
-                      <div className="shrink-0 relative">
-                        {rank === 1 && keySuffix === "top" && (
-                          <Crown className="w-5 h-5 absolute -top-3 -right-2 text-[#FFA500]" />
-                        )}
-                        <CircularAvatar
-                          initial={displayName[0]}
-                          iconId={
-                            entry.avatar &&
-                            GOLF_ICONS.some((icon: any) => icon.id === entry.avatar)
-                              ? entry.avatar
-                              : undefined
-                          }
-                          size={44}
-                          bgColor={
-                            isMe
-                              ? "#014421"
-                              : rank === 1
-                                ? "#FFA500"
-                                : rank === 2
-                                  ? "#C0C0C0"
-                                  : rank === 3
-                                    ? "#CD7F32"
-                                    : "#9CA3AF"
-                          }
-                        />
-                      </div>
-                      <div
-                        className="text-base font-semibold text-gray-900 truncate pr-2 flex-1"
-                        title={displayName}
-                      >
-                        {displayName}{" "}
-                        {isMe && (
-                          <span className="text-xs font-bold text-[#014421] ml-1">(You)</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-lg font-bold text-[#014421] shrink-0 pl-2 text-right">
-                      {displayValue}
-                    </div>
-                  </div>
-                );
-              };
-
-              return (
-                <div className="flex flex-col gap-3 mx-auto w-full max-w-xl">
-                  {top20.map((entry: any, index: number) =>
-                    renderRow(entry, index + 1, "top"),
-                  )}
-                  {user?.id && meEntry && !meInTop20 && meRank > 0 ? (
-                    <div className="pt-2 mt-1 border-t border-gray-200">
-                      <p className="text-xs text-gray-500 mb-2 text-center">
-                        Your rank (#{meRank}) — not in the top 20 for this filter
-                      </p>
-                      {renderRow(meEntry, meRank, "you")}
-                    </div>
-                  ) : null}
+                    );
+                  })}
                 </div>
-              );
-            })()}
+              )}
+            </div>
           </div>
         </div>
 
