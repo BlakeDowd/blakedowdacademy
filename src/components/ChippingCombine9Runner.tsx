@@ -10,14 +10,25 @@ import {
   type ReadErrorLabel,
   MAX_CHIP_SESSION,
   MAX_SESSION_POINTS,
+  averageProximityCm,
   buildAggregates,
-  chipPointsForResult,
+  chipPointsFromProximityCm,
+  chipResultLabelFromProximityCm,
   missDiagnosisText,
   proximityRating,
   scrambleRate,
   sessionTotalPoints,
+  suggestedChipFromProximityCm,
   totalChipPoints,
 } from "@/lib/chippingCombine9Analytics";
+
+function parseProximityCm(raw: string): number | null {
+  const t = raw.trim();
+  if (t === "") return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
 
 function randomDistancesM(count: number, min: number, max: number): number[] {
   const span = max - min + 1;
@@ -37,6 +48,7 @@ async function persistSession(
       hole: h.hole,
       chip_result: h.chip_result,
       chip_points: h.chip_points,
+      proximity_cm: h.proximity_cm ?? null,
     }));
     const missCategories = holes
       .filter((h) => h.miss_category)
@@ -83,9 +95,11 @@ async function persistSession(
 }
 
 const CHIP_OPTIONS: { label: ChipResultLabel; hint: string }[] = [
-  { label: "Inside 6ft", hint: "+10 pts" },
-  { label: "Inside Club Length", hint: "+5 pts" },
-  { label: "Outside Zone", hint: "0 pts" },
+  { label: "Holed", hint: "0 cm → 20 pts" },
+  { label: "Inside Club Length", hint: "1–90 cm → 15–11 pts (linear)" },
+  { label: "Inside 6ft", hint: "91–183 cm → 10–6 pts (linear)" },
+  { label: "Safety Zone", hint: "184–300 cm → 5–1 pts (linear)" },
+  { label: "Missed Zone", hint: ">300 cm → 0 pts" },
 ];
 
 export function ChippingCombine9Runner() {
@@ -96,6 +110,8 @@ export function ChippingCombine9Runner() {
   const [phase, setPhase] = useState<"chip" | "putt" | "audit">("chip");
   const [holes, setHoles] = useState<ChippingCombineHoleLog[]>([]);
   const [pendingChip, setPendingChip] = useState<ChipResultLabel | null>(null);
+  const [proximityInput, setProximityInput] = useState("");
+  const [chipError, setChipError] = useState<string | null>(null);
   const [readError, setReadError] = useState<ReadErrorLabel | null>(null);
   const [executionError, setExecutionError] = useState<ExecutionErrorLabel | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -118,6 +134,8 @@ export function ChippingCombine9Runner() {
     setPhase("chip");
     setHoles([]);
     setPendingChip(null);
+    setProximityInput("");
+    setChipError(null);
     setReadError(null);
     setExecutionError(null);
     setSaveError(null);
@@ -131,6 +149,8 @@ export function ChippingCombine9Runner() {
       const next = [...holes, entry];
       setHoles(next);
       setPendingChip(null);
+      setProximityInput("");
+      setChipError(null);
       setReadError(null);
       setExecutionError(null);
       setPhase("chip");
@@ -139,7 +159,7 @@ export function ChippingCombine9Runner() {
         setStatus("complete");
         const aggregates = buildAggregates(next);
         if (!user?.id) {
-          setSaveError("Sign in to save this session to practice.");
+          setSaveError("Sign in to save this session.");
           setSaved(false);
         } else if (!persistAttemptedRef.current) {
           persistAttemptedRef.current = true;
@@ -160,23 +180,50 @@ export function ChippingCombine9Runner() {
     [holes, total, user?.id, distancesM],
   );
 
-  const onSelectChip = useCallback((label: ChipResultLabel) => {
-    setPendingChip(label);
-    setPhase("putt");
-  }, []);
+  const proximityCmParsed = useMemo(
+    () => parseProximityCm(proximityInput),
+    [proximityInput],
+  );
+  const suggestedChip = useMemo(
+    () => suggestedChipFromProximityCm(proximityCmParsed),
+    [proximityCmParsed],
+  );
+  const calculatedChipPts = useMemo(() => {
+    if (proximityCmParsed === null) return null;
+    return chipPointsFromProximityCm(proximityCmParsed);
+  }, [proximityCmParsed]);
+
+  const onSelectChip = useCallback(
+    (_label: ChipResultLabel) => {
+      const cm = parseProximityCm(proximityInput);
+      if (cm === null) {
+        setChipError("Enter distance from hole (cm) first.");
+        return;
+      }
+      setChipError(null);
+      const derived = chipResultLabelFromProximityCm(cm);
+      setPendingChip(derived);
+      setPhase("putt");
+    },
+    [proximityInput],
+  );
 
   const onPuttMade = useCallback(() => {
     if (phase !== "putt" || !pendingChip) return;
-    const chipPts = chipPointsForResult(pendingChip);
+    const cm = parseProximityCm(proximityInput);
+    if (cm === null) return;
+    const chipResult = chipResultLabelFromProximityCm(cm);
+    const chipPts = chipPointsFromProximityCm(cm);
     void finishHole({
       hole: displayHole,
       distance_m: distanceThisHole,
-      chip_result: pendingChip,
+      proximity_cm: cm,
+      chip_result: chipResult,
       chip_points: chipPts,
       putt_made: true,
       putt_points: 10,
     });
-  }, [phase, pendingChip, displayHole, distanceThisHole, finishHole]);
+  }, [phase, pendingChip, proximityInput, displayHole, distanceThisHole, finishHole]);
 
   const onPuttMissed = useCallback(() => {
     if (phase !== "putt") return;
@@ -187,12 +234,16 @@ export function ChippingCombine9Runner() {
 
   const onSubmitAudit = useCallback(() => {
     if (phase !== "audit" || !pendingChip || readError === null || executionError === null) return;
-    const chipPts = chipPointsForResult(pendingChip);
+    const cm = parseProximityCm(proximityInput);
+    if (cm === null) return;
+    const chipResult = chipResultLabelFromProximityCm(cm);
+    const chipPts = chipPointsFromProximityCm(cm);
     const missCategory = `${readError}/${executionError}`;
     void finishHole({
       hole: displayHole,
       distance_m: distanceThisHole,
-      chip_result: pendingChip,
+      proximity_cm: cm,
+      chip_result: chipResult,
       chip_points: chipPts,
       putt_made: false,
       putt_points: 0,
@@ -200,7 +251,7 @@ export function ChippingCombine9Runner() {
       execution_error: executionError,
       miss_category: missCategory,
     });
-  }, [phase, pendingChip, readError, executionError, displayHole, distanceThisHole, finishHole]);
+  }, [phase, pendingChip, proximityInput, readError, executionError, displayHole, distanceThisHole, finishHole]);
 
   const retryPersist = useCallback(async () => {
     if (!user?.id || holes.length < total) return;
@@ -225,6 +276,7 @@ export function ChippingCombine9Runner() {
       chipPts: totalChipPoints(holes),
       diagnosis: missDiagnosisText(holes),
       totalPts: sessionTotalPoints(holes),
+      avgProximityCm: averageProximityCm(holes),
     };
   }, [holes, total]);
 
@@ -235,15 +287,12 @@ export function ChippingCombine9Runner() {
   if (status === "intro") {
     return (
       <div className="mt-6 space-y-4">
-        <h2 className="text-lg font-semibold leading-snug text-gray-900">
-          {chippingCombine9Config.testName}
-        </h2>
         <p className="text-sm text-gray-600 leading-relaxed">
-          Nine-hole scramble test. Each hole gets a random distance between{" "}
-          {chippingCombine9Config.distanceMinM}m and {chippingCombine9Config.distanceMaxM}m. Log your
-          chip proximity, then whether you made the putt. On misses, run a quick process audit (read
-          vs execution). One session is saved to practice with distances, scores, and miss
-          categories in metadata.
+          Starting draws nine new distances in that same {chippingCombine9Config.distanceMinM}–
+          {chippingCombine9Config.distanceMaxM} m window. Each hole: enter chip distance from the hole
+          in centimeters (Online Academy linear proximity scale), confirm the matching zone, log make or
+          miss on the putt, then optional read vs. execution tags on misses. Finish all nine to save this
+          session to your practice history.
         </p>
         <button
           type="button"
@@ -283,7 +332,7 @@ export function ChippingCombine9Runner() {
                 {summary.proximityPct.toFixed(0)}%
               </p>
               <p className="text-xs text-gray-500 mt-1">
-                Chip points {summary.chipPts} / {MAX_CHIP_SESSION} max.
+                Chip points {summary.chipPts.toFixed(1)} / {MAX_CHIP_SESSION} max.
               </p>
             </div>
           </div>
@@ -293,11 +342,21 @@ export function ChippingCombine9Runner() {
             </p>
             <p className="text-sm font-medium text-gray-900">{summary.diagnosis}</p>
           </div>
-          <div className="border-t border-gray-100 pt-4">
-            <p className="text-xs text-gray-500">Total points (chip + putts)</p>
-            <p className="text-lg font-semibold text-gray-900 tabular-nums">
-              {summary.totalPts} / {MAX_SESSION_POINTS}
-            </p>
+          <div className="border-t border-gray-100 pt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs text-gray-500">Total points (chip + putts)</p>
+              <p className="text-lg font-semibold text-gray-900 tabular-nums">
+                {summary.totalPts.toFixed(1)} / {MAX_SESSION_POINTS}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Average proximity</p>
+              <p className="text-lg font-semibold text-gray-900 tabular-nums">
+                {summary.avgProximityCm !== null
+                  ? `${summary.avgProximityCm.toFixed(1)} cm`
+                  : "—"}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -317,7 +376,7 @@ export function ChippingCombine9Runner() {
         )}
         {saved && !saveError && (
           <p className="text-sm text-green-700 font-medium">
-            Saved to practice (test_type + metadata).
+            Session saved.
           </p>
         )}
 
@@ -343,15 +402,69 @@ export function ChippingCombine9Runner() {
       </div>
 
       {phase === "chip" && (
-        <div className="space-y-3">
-          <p className="text-sm font-medium text-gray-800">Chip result</p>
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <label htmlFor="chipping-proximity-cm" className="text-sm font-medium text-gray-800">
+              Distance From Hole (cm)
+            </label>
+            <input
+              id="chipping-proximity-cm"
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step="any"
+              autoComplete="off"
+              enterKeyHint="done"
+              value={proximityInput}
+              onChange={(e) => {
+                setProximityInput(e.target.value);
+                if (chipError) setChipError(null);
+              }}
+              onFocus={(e) => {
+                const el = e.currentTarget;
+                if (el.value.length === 0) return;
+                requestAnimationFrame(() => {
+                  el.select();
+                });
+              }}
+              placeholder="e.g. 120"
+              className="w-full min-h-[48px] rounded-xl border-2 border-gray-200 bg-white px-4 py-3.5 text-[16px] leading-normal text-gray-900 tabular-nums focus:border-[#014421] focus:outline-none focus:ring-2 focus:ring-[#014421]/20 [-moz-appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            />
+            {calculatedChipPts !== null && (
+              <p className="text-sm text-gray-800 pt-1">
+                Calculated chip points:{" "}
+                <span className="font-semibold text-[#014421] tabular-nums">
+                  {calculatedChipPts.toFixed(1)} pts
+                </span>
+              </p>
+            )}
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Use the iPhone Measure App for exact results.
+            </p>
+            {chipError && <p className="text-sm text-red-600">{chipError}</p>}
+          </div>
+
           <div className="space-y-2">
-            {CHIP_OPTIONS.map((o) => (
-              <button key={o.label} type="button" onClick={() => onSelectChip(o.label)} className={choiceBtn}>
-                <span className="block">{o.label}</span>
-                <span className="text-xs font-normal text-gray-500">{o.hint}</span>
-              </button>
-            ))}
+            <p className="text-sm font-medium text-gray-800">Confirm your proximity zone</p>
+            <div className="space-y-2">
+              {CHIP_OPTIONS.map((o) => (
+                <button
+                  key={o.label}
+                  type="button"
+                  onClick={() => onSelectChip(o.label)}
+                  className={`${choiceBtn} ${suggestedChip === o.label ? choiceBtnActive : ""}`}
+                >
+                  <span className="block">
+                    {o.label === "Inside Club Length"
+                      ? "Inside Club Length (<90 cm)"
+                      : o.label === "Inside 6ft"
+                        ? "Inside 6ft (<183 cm)"
+                        : o.label}
+                  </span>
+                  <span className="text-xs font-normal text-gray-500">{o.hint}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -360,7 +473,10 @@ export function ChippingCombine9Runner() {
         <div className="space-y-3">
           <p className="text-sm text-gray-600">
             Chip: <span className="font-semibold text-gray-900">{pendingChip}</span> (
-            {chipPointsForResult(pendingChip)} pts)
+            {proximityCmParsed !== null
+              ? chipPointsFromProximityCm(proximityCmParsed).toFixed(1)
+              : "0.0"}{" "}
+            pts)
           </p>
           <p className="text-sm font-medium text-gray-800">Putt outcome</p>
           <div className="grid grid-cols-2 gap-2">

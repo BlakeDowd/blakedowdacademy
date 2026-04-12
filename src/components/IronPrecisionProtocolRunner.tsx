@@ -161,7 +161,7 @@ export function IronPrecisionProtocolRunner() {
       setCompletedShots(nextLog);
       setStatus("complete");
       if (!user?.id) {
-        setSaveError("Sign in to save this session to practice logs.");
+        setSaveError("Sign in to save this session.");
         setSaved(false);
       } else if (!persistAttemptedRef.current) {
         persistAttemptedRef.current = true;
@@ -249,9 +249,6 @@ export function IronPrecisionProtocolRunner() {
   if (status === "intro") {
     return (
       <div className="mt-6 space-y-4">
-        <h2 className="text-lg font-semibold leading-snug text-gray-900">
-          {ironPrecisionProtocolConfig.testName}
-        </h2>
         <div className="space-y-3 text-sm text-gray-600 leading-relaxed">
           <p>
             Nine shots, one per club ({clubs.join(", ")}). Choose{" "}
@@ -283,7 +280,7 @@ export function IronPrecisionProtocolRunner() {
           onClick={startTest}
           className="w-full py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity"
         >
-          Start Test
+          Start Combine
         </button>
       </div>
     );
@@ -365,7 +362,7 @@ export function IronPrecisionProtocolRunner() {
           </div>
         )}
         {saved && !saveError && (
-          <p className="text-sm text-green-700 font-medium">Session saved to practice logs.</p>
+          <p className="text-sm text-green-700 font-medium">Session saved.</p>
         )}
 
         <button
@@ -383,12 +380,6 @@ export function IronPrecisionProtocolRunner() {
 
   return (
     <div className="mt-6 space-y-6">
-      <div className="rounded-xl border border-gray-200 bg-white px-3 py-3 sm:px-4">
-        <h2 className="text-center text-base font-semibold text-gray-900 sm:text-left">
-          {ironPrecisionProtocolConfig.testName}
-        </h2>
-      </div>
-
       <div className="rounded-xl border border-amber-100 bg-amber-50/80 p-4 space-y-2 text-sm text-gray-800">
         <p className="font-semibold text-gray-900">
           Shot {shotNumber} of {total}

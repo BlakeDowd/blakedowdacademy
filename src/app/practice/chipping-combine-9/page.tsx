@@ -28,10 +28,11 @@ export default function ChippingCombine9Page() {
             </h1>
           </div>
           <p className="text-sm text-gray-600 mt-2">
-            Random distances each session, chip proximity scoring, putt conversion, and miss
-            diagnosis. Saved as one practice row with{" "}
-            <code className="text-xs bg-gray-100 px-1 rounded">test_type</code>{" "}
-            <span className="font-mono text-xs">{chippingCombine9Config.testType}</span>.
+            Nine holes per session, each with a random distance between {chippingCombine9Config.distanceMinM}{" "}
+            m and {chippingCombine9Config.distanceMaxM} m. Enter proximity in centimeters (linear chip
+            scale), confirm your zone, then whether you hole the putt (+10 when made). Missed putts can
+            include a short read vs.
+            execution audit for miss diagnosis. Chip and putt points roll into one session total.
           </p>
           <ChippingCombine9Runner />
         </div>
