@@ -28,6 +28,7 @@ import {
   PUTTING_TEST_MISS_CATEGORY_LABELS,
 } from "@/lib/puttingTestMissScoring";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
+import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 
 function parseProximityCm(raw: string): number | null {
   const t = raw.trim();
@@ -42,12 +43,13 @@ function randomDistancesM(count: number, min: number, max: number): number[] {
   return Array.from({ length: count }, () => min + Math.floor(Math.random() * span));
 }
 
+/** @returns null on success, or a user-visible error string */
 async function persistSession(
   userId: string,
   distancesM: number[],
   holes: ChippingCombineHoleLog[],
   aggregates: Record<string, unknown>,
-) {
+): Promise<string | null> {
   try {
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
@@ -88,16 +90,18 @@ async function persistSession(
       }),
     });
     if (error) {
-      console.warn("[ChippingCombine9] practice insert:", error.message);
-      return false;
+      const msg = formatSupabaseWriteError(error);
+      console.warn("[ChippingCombine9] practice insert:", msg);
+      return msg;
     }
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));
     }
-    return true;
+    return null;
   } catch (e) {
-    console.warn("[ChippingCombine9] practice insert failed", e);
-    return false;
+    const msg = formatSupabaseWriteError(e);
+    console.warn("[ChippingCombine9] practice insert failed", msg);
+    return msg;
   }
 }
 
@@ -170,12 +174,10 @@ export function ChippingCombine9Runner() {
         } else if (!persistAttemptedRef.current) {
           persistAttemptedRef.current = true;
           setSaveError(null);
-          const ok = await persistSession(user.id, distancesM, next, aggregates);
-          setSaved(ok);
-          if (!ok) {
-            setSaveError(
-              "Could not save. Apply the latest database migration or check your connection.",
-            );
+          const saveErr = await persistSession(user.id, distancesM, next, aggregates);
+          setSaved(saveErr == null);
+          if (saveErr) {
+            setSaveError(saveErr);
             persistAttemptedRef.current = false;
           }
         }
@@ -296,12 +298,10 @@ export function ChippingCombine9Runner() {
     setSaveError(null);
     const aggregates = buildAggregates(holes);
     persistAttemptedRef.current = true;
-    const ok = await persistSession(user.id, distancesM, holes, aggregates);
-    setSaved(ok);
-    if (!ok) {
-      setSaveError(
-        "Could not save. Apply the latest database migration or check your connection.",
-      );
+    const saveErr = await persistSession(user.id, distancesM, holes, aggregates);
+    setSaved(saveErr == null);
+    if (saveErr) {
+      setSaveError(saveErr);
       persistAttemptedRef.current = false;
     }
   }, [user?.id, holes, total, distancesM]);

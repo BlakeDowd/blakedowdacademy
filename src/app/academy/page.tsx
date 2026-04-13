@@ -70,6 +70,10 @@ import {
 import AcademyTrophyCasePanel, {
   type AcademySelectedTrophy,
 } from "@/components/AcademyTrophyCasePanel";
+import {
+  practiceSessionMinutesFromRow,
+  practiceSessionsForUser,
+} from "@/lib/practiceSessionDuration";
 
 type AcademyDbTrophyRow = {
   trophy_name: string;
@@ -3397,11 +3401,12 @@ export default function AcademyPage() {
 
   /** Stats object passed to `TROPHY_LIST` getProgress / checks — mirrors HomeDashboard trophy logic. */
   const academyTrophyStats = useMemo(() => {
-    const practiceHours = (practiceSessions || []).reduce((sum: number, s: any) => {
-      const m =
-        Number(s?.duration_minutes) || Number(s?.duration) || Number(s?.estimatedMinutes) || 0;
-      return sum + m / 60;
-    }, 0);
+    const myPracticeSessions = practiceSessionsForUser(practiceSessions, user?.id);
+    const practiceHours = myPracticeSessions.reduce(
+      (sum: number, s: { duration_minutes?: unknown; duration?: unknown; estimatedMinutes?: unknown }) =>
+        sum + practiceSessionMinutesFromRow(s) / 60,
+      0,
+    );
     let completedLessons = 0;
     let practiceHistory: any[] = [];
     let libraryCategories: Record<string, number> = {};
@@ -3425,7 +3430,7 @@ export default function AcademyPage() {
       practiceHistory,
       libraryCategories,
       userId: user?.id,
-      practiceSessions: practiceSessions || [],
+      practiceSessions: myPracticeSessions,
       practiceLogs: practiceLogs || [],
     };
   }, [

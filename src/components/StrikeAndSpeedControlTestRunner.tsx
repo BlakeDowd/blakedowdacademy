@@ -13,6 +13,7 @@ import {
   type StrikeQuality,
 } from "@/lib/strikeAndSpeedControlTestConfig";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
+import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 
 type PuttRecord = {
   putt: number;
@@ -23,7 +24,12 @@ type PuttRecord = {
 
 type CombineProfile = Record<string, unknown>;
 
-async function persistSession(userId: string, putts: PuttRecord[], matrixAverage: number) {
+/** @returns null on success, or a user-visible error string */
+async function persistSession(
+  userId: string,
+  putts: PuttRecord[],
+  matrixAverage: number,
+): Promise<string | null> {
   const { createClient } = await import("@/lib/supabase/client");
   const supabase = createClient();
 
@@ -34,17 +40,20 @@ async function persistSession(userId: string, putts: PuttRecord[], matrixAverage
     distance_cm,
   }));
 
+  const matrixAvg = Number.isFinite(matrixAverage) ? matrixAverage : 0;
+
   const { error: logError } = await supabase.from("practice_logs").insert({
     user_id: userId,
     log_type: strikeAndSpeedControlTestConfig.practiceLogType,
     strike_data: strike_payload,
     distance_data: distance_payload,
-    matrix_score_average: matrixAverage,
+    matrix_score_average: matrixAvg,
   });
 
   if (logError) {
-    console.warn("[StrikeSpeedControl] practice_logs insert:", logError.message);
-    return false;
+    const msg = formatSupabaseWriteError(logError);
+    console.warn("[StrikeSpeedControl] practice_logs insert:", msg);
+    return msg;
   }
 
   const { data: profileRow, error: profileFetchError } = await supabase
@@ -59,7 +68,7 @@ async function persistSession(userId: string, putts: PuttRecord[], matrixAverage
     const prev = (profileRow?.combine_profile as CombineProfile | null) ?? {};
     const nextCombine: CombineProfile = {
       ...prev,
-      strike_speed_index: matrixAverage,
+      strike_speed_index: matrixAvg,
     };
     const { error: profileUpdateError } = await supabase
       .from("profiles")
@@ -73,7 +82,7 @@ async function persistSession(userId: string, putts: PuttRecord[], matrixAverage
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("practiceSessionsUpdated"));
   }
-  return true;
+  return null;
 }
 
 export function StrikeAndSpeedControlTestRunner() {
@@ -135,12 +144,10 @@ export function StrikeAndSpeedControlTestRunner() {
             strike: p.strike,
           })),
         );
-        const ok = await persistSession(user.id, nextLog, avg);
-        setSaved(ok);
-        if (!ok) {
-          setSaveError(
-            "Could not save session. Check your connection or apply the latest database migration.",
-          );
+        const saveErr = await persistSession(user.id, nextLog, avg);
+        setSaved(saveErr == null);
+        if (saveErr) {
+          setSaveError(saveErr);
           persistAttemptedRef.current = false;
         }
       }
@@ -180,12 +187,10 @@ export function StrikeAndSpeedControlTestRunner() {
       })),
     );
     persistAttemptedRef.current = true;
-    const ok = await persistSession(user.id, completedPutts, avg);
-    setSaved(ok);
-    if (!ok) {
-      setSaveError(
-        "Could not save session. Check your connection or apply the latest database migration.",
-      );
+    const saveErr = await persistSession(user.id, completedPutts, avg);
+    setSaved(saveErr == null);
+    if (saveErr) {
+      setSaveError(saveErr);
       persistAttemptedRef.current = false;
     }
   }, [user?.id, completedPutts, total]);

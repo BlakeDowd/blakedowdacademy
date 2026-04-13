@@ -20,6 +20,8 @@ import {
   type IronStrike,
 } from "@/lib/ironPrecisionProtocolConfig";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
+import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
+import { refreshAuthSessionIfPossible } from "@/lib/supabasePersistSession";
 
 const FINGER_OPTIONS: IronFingerMiss[] = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
 
@@ -35,6 +37,7 @@ type ShotPayload = {
 
 type CombineProfile = Record<string, unknown>;
 
+/** @returns null on success, or a user-visible error string */
 async function persistSession(
   userId: string,
   shots: ShotPayload[],
@@ -42,67 +45,91 @@ async function persistSession(
   avgPointsPerShot: number,
   wallPct: number,
   zeroPointPct: number,
-) {
-  const { createClient } = await import("@/lib/supabase/client");
-  const supabase = createClient();
+): Promise<string | null> {
+  try {
+    const { createClient } = await import("@/lib/supabase/client");
+    const supabase = createClient();
 
-  const strike_payload = shots.map(({ shot, club, direction, fingers, strike, contact, points }) => ({
-    shot,
-    club,
-    fingers,
-    strike: normalizeLegacyVerticalStrike(strike),
-    contact,
-    points,
-    metadata: { direction },
-  }));
-
-  const distance_payload = [{ wall_pct: wallPct, zero_point_pct: zeroPointPct }];
-
-  const { error: logError } = await supabase.from("practice_logs").insert({
-    user_id: userId,
-    log_type: ironPrecisionProtocolConfig.practiceLogType,
-    strike_data: strike_payload,
-    start_line_data: [],
-    distance_data: distance_payload,
-    matrix_score_average: avgPointsPerShot,
-    total_points: totalPoints,
-  });
-
-  if (logError) {
-    console.warn("[IronPrecision] practice_logs insert:", logError.message);
-    return false;
-  }
-
-  const { data: profileRow, error: profileFetchError } = await supabase
-    .from("profiles")
-    .select("combine_profile")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (profileFetchError) {
-    console.warn("[IronPrecision] profiles fetch:", profileFetchError.message);
-  } else {
-    const prev = (profileRow?.combine_profile as CombineProfile | null) ?? {};
-    const nextCombine: CombineProfile = {
-      ...prev,
-      iron_precision_protocol_index: avgPointsPerShot,
-      iron_precision_protocol_last_total_points: totalPoints,
-      iron_precision_protocol_last_wall_pct: wallPct,
-      iron_precision_protocol_last_zero_point_pct: zeroPointPct,
-    };
-    const { error: profileUpdateError } = await supabase
-      .from("profiles")
-      .update({ combine_profile: nextCombine })
-      .eq("id", userId);
-    if (profileUpdateError) {
-      console.warn("[IronPrecision] profiles update:", profileUpdateError.message);
+    await refreshAuthSessionIfPossible(supabase);
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.user?.id) {
+      return "Your sign-in session expired. Please sign in again, then tap “Retry save” below.";
     }
-  }
+    if (session.user.id !== userId) {
+      return "You must be signed in as the player who completed this session to save it.";
+    }
 
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event("practiceSessionsUpdated"));
+    const strike_payload = shots.map(({ shot, club, direction, fingers, strike, contact, points }) => ({
+      shot,
+      club,
+      fingers,
+      strike: normalizeLegacyVerticalStrike(strike),
+      contact,
+      points: Number.isFinite(points) ? points : 0,
+      metadata: { direction },
+    }));
+
+    const safeWall = Number.isFinite(wallPct) ? wallPct : 0;
+    const safeZero = Number.isFinite(zeroPointPct) ? zeroPointPct : 0;
+    const distance_payload = [{ wall_pct: safeWall, zero_point_pct: safeZero }];
+
+    const avg = Number.isFinite(avgPointsPerShot) ? avgPointsPerShot : 0;
+    const totalPts = Number.isFinite(totalPoints) ? totalPoints : 0;
+
+    const { error: logError } = await supabase.from("practice_logs").insert({
+      user_id: userId,
+      log_type: ironPrecisionProtocolConfig.practiceLogType,
+      strike_data: strike_payload,
+      start_line_data: [],
+      distance_data: distance_payload,
+      matrix_score_average: avg,
+      total_points: totalPts,
+      duration_minutes: 0,
+    });
+
+    if (logError) {
+      const msg = formatSupabaseWriteError(logError);
+      console.warn("[IronPrecision] practice_logs insert:", msg, logError);
+      return msg;
+    }
+
+    const { data: profileRow, error: profileFetchError } = await supabase
+      .from("profiles")
+      .select("combine_profile")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (profileFetchError) {
+      console.warn("[IronPrecision] profiles fetch:", profileFetchError.message);
+    } else {
+      const prev = (profileRow?.combine_profile as CombineProfile | null) ?? {};
+      const nextCombine: CombineProfile = {
+        ...prev,
+        iron_precision_protocol_index: avg,
+        iron_precision_protocol_last_total_points: totalPts,
+        iron_precision_protocol_last_wall_pct: safeWall,
+        iron_precision_protocol_last_zero_point_pct: safeZero,
+      };
+      const { error: profileUpdateError } = await supabase
+        .from("profiles")
+        .update({ combine_profile: nextCombine })
+        .eq("id", userId);
+      if (profileUpdateError) {
+        console.warn("[IronPrecision] profiles update:", profileUpdateError.message);
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("practiceSessionsUpdated"));
+    }
+    return null;
+  } catch (e) {
+    const msg = formatSupabaseWriteError(e);
+    console.error("[IronPrecision] persistSession threw:", e);
+    return msg;
   }
-  return true;
 }
 
 export function IronPrecisionProtocolRunner() {
@@ -177,12 +204,16 @@ export function IronPrecisionProtocolRunner() {
         const avg = averagePointsPerShot(inputs);
         const wallPct = wallPercentage(inputs);
         const zpPct = zeroPointRangePercentage(inputs);
-        const ok = await persistSession(uid, nextLog, totalPoints, avg, wallPct, zpPct);
-        setSaved(ok);
-        if (!ok) {
-          setSaveError(
-            "Could not save session. Check your connection or apply the latest database migration.",
-          );
+        let saveErr: string | null;
+        try {
+          saveErr = await persistSession(uid, nextLog, totalPoints, avg, wallPct, zpPct);
+        } catch (e) {
+          saveErr = formatSupabaseWriteError(e);
+          console.error("[IronPrecision] recordShot save threw:", e);
+        }
+        setSaved(saveErr == null);
+        if (saveErr) {
+          setSaveError(saveErr);
           persistAttemptedRef.current = false;
         }
       }
@@ -228,12 +259,16 @@ export function IronPrecisionProtocolRunner() {
     const wallPct = wallPercentage(inputs);
     const zpPct = zeroPointRangePercentage(inputs);
     persistAttemptedRef.current = true;
-    const ok = await persistSession(uid, completedShots, totalPoints, avg, wallPct, zpPct);
-    setSaved(ok);
-    if (!ok) {
-      setSaveError(
-        "Could not save session. Check your connection or apply the latest database migration.",
-      );
+    let saveErr: string | null;
+    try {
+      saveErr = await persistSession(uid, completedShots, totalPoints, avg, wallPct, zpPct);
+    } catch (e) {
+      saveErr = formatSupabaseWriteError(e);
+      console.error("[IronPrecision] retryPersist threw:", e);
+    }
+    setSaved(saveErr == null);
+    if (saveErr) {
+      setSaveError(saveErr);
       persistAttemptedRef.current = false;
     }
   }, [user, completedShots, total]);

@@ -22,6 +22,7 @@ import {
   MAX_SESSION_POINTS,
 } from "@/lib/teeShotDispersionCombineAnalytics";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
+import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 
 const FACE_ROWS: FaceRow[] = ["high", "middle", "low"];
 const FACE_COLS: FaceCol[] = ["heel", "middle", "toe"];
@@ -35,11 +36,12 @@ function parseCarryMeters(raw: string): number | null {
   return n;
 }
 
+/** @returns null on success, or a user-visible error string */
 async function persistSession(
   userId: string,
   shots: TeeShotDispersionShotLog[],
   aggregates: Record<string, unknown>,
-) {
+): Promise<string | null> {
   try {
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
@@ -62,16 +64,18 @@ async function persistSession(
       }),
     });
     if (error) {
-      console.warn("[TeeShotDispersionCombine] practice insert:", error.message);
-      return false;
+      const msg = formatSupabaseWriteError(error);
+      console.warn("[TeeShotDispersionCombine] practice insert:", msg);
+      return msg;
     }
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));
     }
-    return true;
+    return null;
   } catch (e) {
-    console.warn("[TeeShotDispersionCombine] practice insert failed", e);
-    return false;
+    const msg = formatSupabaseWriteError(e);
+    console.warn("[TeeShotDispersionCombine] practice insert failed", msg);
+    return msg;
   }
 }
 
@@ -155,12 +159,10 @@ export function TeeShotDispersionCombineRunner() {
       } else if (!persistAttemptedRef.current) {
         persistAttemptedRef.current = true;
         setSaveError(null);
-        const ok = await persistSession(user.id, finalShots, aggregates);
-        setSaved(ok);
-        if (!ok) {
-          setSaveError(
-            "Could not save. Apply the latest database migration or check your connection.",
-          );
+        const saveErr = await persistSession(user.id, finalShots, aggregates);
+        setSaved(saveErr == null);
+        if (saveErr) {
+          setSaveError(saveErr);
           persistAttemptedRef.current = false;
         }
       }
@@ -242,12 +244,10 @@ export function TeeShotDispersionCombineRunner() {
     setSaveError(null);
     const aggregates = buildAggregates(shots);
     persistAttemptedRef.current = true;
-    const ok = await persistSession(user.id, shots, aggregates);
-    setSaved(ok);
-    if (!ok) {
-      setSaveError(
-        "Could not save. Apply the latest database migration or check your connection.",
-      );
+    const saveErr = await persistSession(user.id, shots, aggregates);
+    setSaved(saveErr == null);
+    if (saveErr) {
+      setSaveError(saveErr);
       persistAttemptedRef.current = false;
     }
   }, [user?.id, shots, total]);

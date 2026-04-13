@@ -13,6 +13,7 @@ import {
 } from "@/lib/startLineAndSpeedControlTestConfig";
 import { meanAbsDistanceCm } from "@/lib/strikeAndSpeedControlScoring";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
+import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 
 type PuttRecord = {
   putt: number;
@@ -23,12 +24,13 @@ type PuttRecord = {
 
 type CombineProfile = Record<string, unknown>;
 
+/** @returns null on success, or a user-visible error string */
 async function persistSession(
   userId: string,
   putts: PuttRecord[],
   scoreAverage: number,
   gateSuccessPct: number,
-) {
+): Promise<string | null> {
   const { createClient } = await import("@/lib/supabase/client");
   const supabase = createClient();
 
@@ -39,18 +41,21 @@ async function persistSession(
     distance_cm,
   }));
 
+  const matrixAvg = Number.isFinite(scoreAverage) ? scoreAverage : 0;
+
   const { error: logError } = await supabase.from("practice_logs").insert({
     user_id: userId,
     log_type: startLineAndSpeedControlTestConfig.practiceLogType,
     strike_data: [],
     start_line_data: start_line_payload,
     distance_data: distance_payload,
-    matrix_score_average: scoreAverage,
+    matrix_score_average: matrixAvg,
   });
 
   if (logError) {
-    console.warn("[StartLineSpeedControl] practice_logs insert:", logError.message);
-    return false;
+    const msg = formatSupabaseWriteError(logError);
+    console.warn("[StartLineSpeedControl] practice_logs insert:", msg);
+    return msg;
   }
 
   const { data: profileRow, error: profileFetchError } = await supabase
@@ -65,7 +70,7 @@ async function persistSession(
     const prev = (profileRow?.combine_profile as CombineProfile | null) ?? {};
     const nextCombine: CombineProfile = {
       ...prev,
-      start_line_speed_index: scoreAverage,
+      start_line_speed_index: matrixAvg,
       start_line_gate_success_rate: gateSuccessPct,
     };
     const { error: profileUpdateError } = await supabase
@@ -80,7 +85,7 @@ async function persistSession(
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("practiceSessionsUpdated"));
   }
-  return true;
+  return null;
 }
 
 export function StartLineAndSpeedControlTestRunner() {
@@ -143,12 +148,10 @@ export function StartLineAndSpeedControlTestRunner() {
           })),
         );
         const gatePct = gateSuccessRatePct(nextLog.map((p) => ({ gate: p.gate })));
-        const ok = await persistSession(user.id, nextLog, avg, gatePct);
-        setSaved(ok);
-        if (!ok) {
-          setSaveError(
-            "Could not save session. Check your connection or apply the latest database migration.",
-          );
+        const saveErr = await persistSession(user.id, nextLog, avg, gatePct);
+        setSaved(saveErr == null);
+        if (saveErr) {
+          setSaveError(saveErr);
           persistAttemptedRef.current = false;
         }
       }
@@ -189,12 +192,10 @@ export function StartLineAndSpeedControlTestRunner() {
     );
     const gatePct = gateSuccessRatePct(completedPutts.map((p) => ({ gate: p.gate })));
     persistAttemptedRef.current = true;
-    const ok = await persistSession(user.id, completedPutts, avg, gatePct);
-    setSaved(ok);
-    if (!ok) {
-      setSaveError(
-        "Could not save session. Check your connection or apply the latest database migration.",
-      );
+    const saveErr = await persistSession(user.id, completedPutts, avg, gatePct);
+    setSaved(saveErr == null);
+    if (saveErr) {
+      setSaveError(saveErr);
       persistAttemptedRef.current = false;
     }
   }, [user?.id, completedPutts, total]);

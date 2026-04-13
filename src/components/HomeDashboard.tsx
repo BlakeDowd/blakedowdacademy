@@ -40,6 +40,10 @@ import {
   insertUserAchievement,
   type UserAchievementRow,
 } from "@/lib/userAchievements";
+import {
+  practiceSessionMinutesFromRow,
+  practiceSessionsForUser,
+} from "@/lib/practiceSessionDuration";
 import AcademyTrophyCasePanel, {
   type AcademySelectedTrophy,
 } from "@/components/AcademyTrophyCasePanel";
@@ -768,16 +772,13 @@ export default function HomeDashboard() {
   }, [user?.id, rounds?.length]);
 
   const calculatePracticeHours = () => {
-    if (!practiceSessions || practiceSessions.length === 0) return 0;
-    const totalMinutes = practiceSessions.reduce((sum: number, session: any) => {
-      return (
-        sum +
-        (Number(session?.duration_minutes) ||
-          Number(session?.duration) ||
-          Number(session?.estimatedMinutes) ||
-          0)
-      );
-    }, 0);
+    const mine = practiceSessionsForUser(practiceSessions, user?.id);
+    if (mine.length === 0) return 0;
+    const totalMinutes = mine.reduce(
+      (sum: number, session: { duration_minutes?: unknown; duration?: unknown; estimatedMinutes?: unknown }) =>
+        sum + practiceSessionMinutesFromRow(session),
+      0,
+    );
     return totalMinutes / 60;
   };
 
@@ -803,11 +804,12 @@ export default function HomeDashboard() {
   }, [safeRounds, user]);
 
   const academyTrophyStats = useMemo(() => {
-    const practiceHours = (practiceSessions || []).reduce((sum: number, s: any) => {
-      const m =
-        Number(s?.duration_minutes) || Number(s?.duration) || Number(s?.estimatedMinutes) || 0;
-      return sum + m / 60;
-    }, 0);
+    const myPracticeSessions = practiceSessionsForUser(practiceSessions, user?.id);
+    const practiceHours = myPracticeSessions.reduce(
+      (sum: number, s: { duration_minutes?: unknown; duration?: unknown; estimatedMinutes?: unknown }) =>
+        sum + practiceSessionMinutesFromRow(s) / 60,
+      0,
+    );
     let completedLessons = 0;
     let practiceHistory: any[] = [];
     let libraryCategories: Record<string, number> = {};
@@ -831,7 +833,7 @@ export default function HomeDashboard() {
       practiceHistory,
       libraryCategories,
       userId: user?.id,
-      practiceSessions: practiceSessions || [],
+      practiceSessions: myPracticeSessions,
       practiceLogs: practiceLogs || [],
     };
   }, [user?.id, user?.totalXP, safeRounds, practiceSessions, practiceLogs, currentHandicapForTrophies]);
@@ -968,7 +970,7 @@ export default function HomeDashboard() {
           practiceHistory,
           libraryCategories,
           userId: user.id,
-          practiceSessions: practiceSessions || [],
+          practiceSessions: practiceSessionsForUser(practiceSessions, user.id),
           practiceLogs: practiceLogs || [],
         };
         

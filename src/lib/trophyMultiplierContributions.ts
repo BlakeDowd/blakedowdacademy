@@ -1,4 +1,5 @@
 import { listUserCombineCompletionEvents } from "@/lib/combineCompletionDetection";
+import { practiceSessionMinutesFromRow } from "@/lib/practiceSessionDuration";
 
 /**
  * Trophy Case multiplier: how many times the user has met a trophy's threshold,
@@ -78,8 +79,7 @@ function practiceHourMilestoneDates(
   if (thresholdHours === 1) {
     let cumH = 0;
     for (const s of rows) {
-      const addM =
-        Number(s?.duration_minutes) || Number(s?.duration) || Number(s?.estimatedMinutes) || 0;
+      const addM = practiceSessionMinutesFromRow(s);
       const addH = addM / 60;
       if (addH <= 0) continue;
       const before = cumH;
@@ -95,8 +95,7 @@ function practiceHourMilestoneDates(
   let prevM = 0;
   const dates: string[] = [];
   for (const s of rows) {
-    const m =
-      Number(s?.duration_minutes) || Number(s?.duration) || Number(s?.estimatedMinutes) || 0;
+    const m = practiceSessionMinutesFromRow(s);
     const addH = m / 60;
     if (addH <= 0) continue;
     cumH += addH;

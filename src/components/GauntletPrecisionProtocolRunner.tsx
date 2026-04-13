@@ -14,6 +14,7 @@ import {
 } from "@/lib/gauntletPrecisionProtocolConfig";
 import { meanAbsDistanceCm } from "@/lib/strikeAndSpeedControlScoring";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
+import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 
 type PuttRecord = {
   putt: number;
@@ -25,13 +26,14 @@ type PuttRecord = {
 
 type CombineProfile = Record<string, unknown>;
 
+/** @returns null on success, or a user-visible error string */
 async function persistSession(
   userId: string,
   putts: PuttRecord[],
   scoreAverage: number,
   perfectCount: number,
   tripleFailurePct: number,
-) {
+): Promise<string | null> {
   const { createClient } = await import("@/lib/supabase/client");
   const supabase = createClient();
 
@@ -46,20 +48,25 @@ async function persistSession(
     distance_cm,
   }));
 
+  const matrixAvg = Number.isFinite(scoreAverage) ? scoreAverage : 0;
+  const perfectN = Number.isFinite(perfectCount) ? Math.round(perfectCount) : 0;
+  const triplePct = Number.isFinite(tripleFailurePct) ? tripleFailurePct : 0;
+
   const { error: logError } = await supabase.from("practice_logs").insert({
     user_id: userId,
     log_type: gauntletPrecisionProtocolConfig.practiceLogType,
     strike_data: strike_payload,
     start_line_data: start_line_payload,
     distance_data: distance_payload,
-    matrix_score_average: scoreAverage,
-    perfect_putt_count: perfectCount,
-    triple_failure_rate: tripleFailurePct,
+    matrix_score_average: matrixAvg,
+    perfect_putt_count: perfectN,
+    triple_failure_rate: triplePct,
   });
 
   if (logError) {
-    console.warn("[Gauntlet] practice_logs insert:", logError.message);
-    return false;
+    const msg = formatSupabaseWriteError(logError);
+    console.warn("[Gauntlet] practice_logs insert:", msg);
+    return msg;
   }
 
   const { data: profileRow, error: profileFetchError } = await supabase
@@ -74,9 +81,9 @@ async function persistSession(
     const prev = (profileRow?.combine_profile as CombineProfile | null) ?? {};
     const nextCombine: CombineProfile = {
       ...prev,
-      gauntlet_precision_index: scoreAverage,
-      gauntlet_last_perfect_putt_count: perfectCount,
-      gauntlet_last_triple_failure_rate: tripleFailurePct,
+      gauntlet_precision_index: matrixAvg,
+      gauntlet_last_perfect_putt_count: perfectN,
+      gauntlet_last_triple_failure_rate: triplePct,
     };
     const { error: profileUpdateError } = await supabase
       .from("profiles")
@@ -90,7 +97,7 @@ async function persistSession(
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("practiceSessionsUpdated"));
   }
-  return true;
+  return null;
 }
 
 export function GauntletPrecisionProtocolRunner() {
@@ -162,12 +169,10 @@ export function GauntletPrecisionProtocolRunner() {
         const triplePct = tripleFailureRatePercent(
           nextLog.map((p) => ({ strike: p.strike, gate: p.gate })),
         );
-        const ok = await persistSession(user.id, nextLog, avg, perfect, triplePct);
-        setSaved(ok);
-        if (!ok) {
-          setSaveError(
-            "Could not save session. Check your connection or apply the latest database migration.",
-          );
+        const saveErr = await persistSession(user.id, nextLog, avg, perfect, triplePct);
+        setSaved(saveErr == null);
+        if (saveErr) {
+          setSaveError(saveErr);
           persistAttemptedRef.current = false;
         }
       }
@@ -215,12 +220,10 @@ export function GauntletPrecisionProtocolRunner() {
       completedPutts.map((p) => ({ strike: p.strike, gate: p.gate })),
     );
     persistAttemptedRef.current = true;
-    const ok = await persistSession(user.id, completedPutts, avg, perfect, triplePct);
-    setSaved(ok);
-    if (!ok) {
-      setSaveError(
-        "Could not save session. Check your connection or apply the latest database migration.",
-      );
+    const saveErr = await persistSession(user.id, completedPutts, avg, perfect, triplePct);
+    setSaved(saveErr == null);
+    if (saveErr) {
+      setSaveError(saveErr);
       persistAttemptedRef.current = false;
     }
   }, [user?.id, completedPutts, total]);

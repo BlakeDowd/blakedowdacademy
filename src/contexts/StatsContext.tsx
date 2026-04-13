@@ -387,7 +387,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       console.log('StatsContext: Fetching ALL practice sessions for leaderboard (not filtering by user_id)');
       
       // Update Table Name: Ensure the loadStats function fetches from the practice table (not practice_sessions)
-      // Fetch Everything: Select ALL rows - no user_id filter
+      // All rows (leaderboards). Trophy / personal totals must filter by `user_id` in the consumer (see `practiceSessionsForUser`).
       const { data, error } = await supabase
         .from('practice')
         .select('*')
