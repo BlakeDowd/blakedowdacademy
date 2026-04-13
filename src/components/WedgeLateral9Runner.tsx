@@ -8,6 +8,7 @@ import {
   type WedgeLateral9ShotLog,
 } from "@/lib/wedgeLateral9Analytics";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
+import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import {
   normalizeLegacyVerticalStrike,
   type IronContact,
@@ -161,6 +162,17 @@ export function WedgeLateral9Runner() {
     user,
   ]);
 
+  const undoLastShot = useCallback(() => {
+    if (status !== "active" || completedShots.length === 0) return;
+    const last = completedShots[completedShots.length - 1];
+    setCompletedShots((s) => s.slice(0, -1));
+    setShotIndex((i) => Math.max(0, i - 1));
+    setDirection(last.direction);
+    setDispersion(last.direction === "straight" ? 0 : last.dispersion);
+    setStrike(last.strike);
+    setContact(last.contact);
+  }, [status, completedShots]);
+
   const retryPersist = useCallback(async () => {
     if (!user?.id || completedShots.length < total) return;
     setSaveError(null);
@@ -288,6 +300,10 @@ export function WedgeLateral9Runner() {
           <span className="font-bold text-gray-900 tabular-nums">Hit to {targetM} m</span>
         </p>
       </div>
+
+      {completedShots.length > 0 && (
+        <CombineFlowBackControl onBack={undoLastShot} label="Undo last shot" />
+      )}
 
       <div className="space-y-2">
         <p className="text-sm font-medium text-gray-800">Direction</p>

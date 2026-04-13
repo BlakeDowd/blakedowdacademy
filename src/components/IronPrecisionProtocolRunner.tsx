@@ -19,6 +19,7 @@ import {
   type IronMissDirection,
   type IronStrike,
 } from "@/lib/ironPrecisionProtocolConfig";
+import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 
 const FINGER_OPTIONS: IronFingerMiss[] = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
 
@@ -201,6 +202,17 @@ export function IronPrecisionProtocolRunner() {
     total,
     user,
   ]);
+
+  const undoLastShot = useCallback(() => {
+    if (status !== "active" || completedShots.length === 0) return;
+    const last = completedShots[completedShots.length - 1];
+    setCompletedShots((s) => s.slice(0, -1));
+    setShotIndex((i) => Math.max(0, i - 1));
+    setDirection(last.direction);
+    setFingers(last.direction === "straight" ? 0 : last.fingers);
+    setStrike(last.strike);
+    setContact(last.contact);
+  }, [status, completedShots]);
 
   const retryPersist = useCallback(async () => {
     if (!user?.id || completedShots.length < total) return;
@@ -388,6 +400,10 @@ export function IronPrecisionProtocolRunner() {
           Club: <span className="font-semibold text-gray-900">{currentClub}</span>
         </p>
       </div>
+
+      {completedShots.length > 0 && (
+        <CombineFlowBackControl onBack={undoLastShot} label="Undo last shot" />
+      )}
 
       <div className="space-y-2">
         <p className="text-sm font-medium text-gray-800">Directional Bias</p>

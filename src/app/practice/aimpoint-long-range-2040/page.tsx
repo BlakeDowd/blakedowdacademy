@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronLeft, Target } from "lucide-react";
 import { AimpointLongRange2040Runner } from "@/components/AimpointLongRange2040Runner";
+import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { combineHighlightAimpointLong2040 } from "@/lib/combineHighlightDefinitions";
 import { aimpointLongRange2040Config } from "@/lib/aimpointLongRange2040Config";
 
 export default function AimpointLongRange2040Page() {
@@ -32,6 +34,7 @@ export default function AimpointLongRange2040Page() {
             aimpoint_long_40ft and JSONB metadata including thirty explicit measurement rows.
           </p>
           <AimpointLongRange2040Runner />
+          <CombineCommunityHighlights definition={combineHighlightAimpointLong2040} />
         </div>
       </div>
     </div>

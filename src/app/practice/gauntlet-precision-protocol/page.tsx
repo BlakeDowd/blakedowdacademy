@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronLeft, CircleDot } from "lucide-react";
 import { GauntletPrecisionProtocolRunner } from "@/components/GauntletPrecisionProtocolRunner";
+import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { combineHighlightGauntlet } from "@/lib/combineHighlightDefinitions";
 import { gauntletPrecisionProtocolConfig } from "@/lib/gauntletPrecisionProtocolConfig";
 
 export default function GauntletPrecisionProtocolPage() {
@@ -32,6 +34,7 @@ export default function GauntletPrecisionProtocolPage() {
             distance—lower average score is better. Sign in to save your session when you finish.
           </p>
           <GauntletPrecisionProtocolRunner />
+          <CombineCommunityHighlights definition={combineHighlightGauntlet} />
         </div>
       </div>
     </div>

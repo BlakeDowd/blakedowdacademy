@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { StrikeAndSpeedControlTestRunner } from "@/components/StrikeAndSpeedControlTestRunner";
+import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { combineHighlightStrikeSpeed } from "@/lib/combineHighlightDefinitions";
 import { strikeAndSpeedControlTestConfig } from "@/lib/strikeAndSpeedControlTestConfig";
 
 export default function StrikeAndSpeedControlTestPage() {
@@ -16,6 +18,7 @@ export default function StrikeAndSpeedControlTestPage() {
           <h1 className="text-2xl font-bold text-gray-900">{strikeAndSpeedControlTestConfig.testName}</h1>
         </header>
         <StrikeAndSpeedControlTestRunner />
+        <CombineCommunityHighlights definition={combineHighlightStrikeSpeed} />
       </div>
     </div>
   );

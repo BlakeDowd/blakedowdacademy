@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronLeft, Target } from "lucide-react";
 import { Aimpoint6ftCombineRunner } from "@/components/Aimpoint6ftCombineRunner";
+import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { combineHighlightAimpoint6ft } from "@/lib/combineHighlightDefinitions";
 import { aimpoint6ftCombineConfig } from "@/lib/aimpoint6ftCombineConfig";
 
 export default function Aimpoint6ftCombinePage() {
@@ -32,6 +34,7 @@ export default function Aimpoint6ftCombinePage() {
             with test type and full metadata for charting.
           </p>
           <Aimpoint6ftCombineRunner />
+          <CombineCommunityHighlights definition={combineHighlightAimpoint6ft} />
         </div>
       </div>
     </div>

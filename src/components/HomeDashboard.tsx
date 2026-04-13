@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import IconPicker, { GOLF_ICONS } from "@/components/IconPicker";
 import Toast from "@/components/Toast";
+import { GoalAccountabilityModule } from "@/components/Dashboard";
 import TrophyCard from "@/components/TrophyCard";
 import { logActivity } from "@/lib/activity";
 import { puttingTestConfig } from "@/lib/puttingTestConfig";
@@ -226,7 +227,13 @@ export default function HomeDashboard() {
   // Re-initialize simply: Define const { rounds = [] } = useStats();
   // Sync Dashboard: Ensure the dashboard 'Practice' cards are pulling from this real data instead of mock numbers
   // Direct Context Access: Ensure this component is using currentStreak from useStats() to get the user data
-  const { rounds = [], practiceSessions = [], currentStreak } = useStats();
+  const {
+    rounds = [],
+    communityRounds = [],
+    communityRoundsHydrated = false,
+    practiceSessions = [],
+    currentStreak,
+  } = useStats();
   
   // Verify User Object: Log user object to verify it's correctly identifying the user
   useEffect(() => {
@@ -255,16 +262,11 @@ export default function HomeDashboard() {
   // Update HomeDashboard.tsx to use useStats() to get the actual rounds.length so the stats are dynamic instead of zero
   // Make sure these are wrapped in the same useRef guards we used in the Academy to prevent any new loops
   const userRoundsCount = useMemo(() => {
-    if (!rounds || !user?.id) {
+    if (!rounds?.length || !user?.id) {
       console.log('HomeDashboard: userRoundsCount - no rounds or user.id');
       return 0;
     }
-    // Check the Filter: Ensure that when the 'My Rounds' tab is active, the app filters the rounds array to only show rounds where user_id === user.id
-    const userRounds = rounds.filter((round: any) => {
-      // Use strict equality and handle optional chaining
-      const matches = round?.user_id === user.id;
-      return matches;
-    });
+    const userRounds = rounds.filter((round: any) => round?.user_id === user.id);
     console.log('HomeDashboard: userRoundsCount calculated:', userRounds.length, 'rounds for user', user.id);
     return userRounds.length;
   }, [rounds, user?.id]);
@@ -283,8 +285,9 @@ export default function HomeDashboard() {
     };
   }, [user?.currentStreak, user?.totalXP, user?.currentLevel]);
   
-  // Ensure rounds is always an array, never null or undefined
+  /** Personal rounds from StatsContext (already scoped to the signed-in user). */
   const allRounds = (rounds || []) as any[];
+  const allCommunityRounds = (communityRounds || []) as any[];
   
   // Keep safeRounds for backward compatibility with other parts of the component
   const safeRounds = useMemo(() => {
@@ -499,15 +502,13 @@ export default function HomeDashboard() {
         return [];
       }
       
-      const myRounds = allRounds.filter((r: any) => r?.user_id === user.id);
-      console.log('HomeDashboard: My Rounds tab - filtered to', myRounds.length, 'rounds for user', user.id);
-      return myRounds;
-    } else {
-      // Strict Filtering: If activeTab === 'community', return the full rounds array (Global)
-      console.log('HomeDashboard: Community tab - showing all', allRounds.length, 'rounds');
+      console.log('HomeDashboard: My Rounds tab - showing', allRounds.length, 'personal rounds for user', user.id);
       return allRounds;
+    } else {
+      console.log('HomeDashboard: Community tab - showing all', allCommunityRounds.length, 'rounds');
+      return allCommunityRounds;
     }
-  }, [allRounds, user?.id, scoreTab]); // Add scoreTab to dependencies to re-run when tab changes
+  }, [allRounds, allCommunityRounds, user?.id, scoreTab]); // Add scoreTab to dependencies to re-run when tab changes
   
   // Fetch Guard removed
   
@@ -555,7 +556,9 @@ export default function HomeDashboard() {
   // Add Name Mapping: Create a way to fetch the full_name from the profiles table for every user_id found in the rounds
   // Clear the Cache: Re-fetch profiles when tab changes or rounds change
   useEffect(() => {
-    if (!rounds || rounds.length === 0) {
+    const sourceRounds =
+      scoreTab === 'myRounds' ? allRounds : allCommunityRounds;
+    if (!sourceRounds || sourceRounds.length === 0) {
       setUserProfiles(new Map());
       return;
     }
@@ -563,9 +566,7 @@ export default function HomeDashboard() {
     const fetchProfiles = async () => {
       // Add Name Mapping: Extract all unique user_ids from rounds
       // Clear the Cache: Use filteredRoundsByTab to get user_ids based on current tab
-      const roundsToUse = scoreTab === 'myRounds' 
-        ? rounds.filter((r: any) => r?.user_id === user?.id)
-        : rounds;
+      const roundsToUse = sourceRounds;
       
       const uniqueUserIds = Array.from(new Set(roundsToUse.map((item: any) => item?.user_id).filter(Boolean)));
       if (uniqueUserIds.length === 0) {
@@ -607,7 +608,7 @@ export default function HomeDashboard() {
     };
     
     fetchProfiles();
-  }, [rounds, scoreTab, user?.id]); // Clear the Cache: Add scoreTab to dependencies so name-mapping re-runs when tab changes
+  }, [allRounds, allCommunityRounds, scoreTab, user?.id]); // Re-run when personal or community rounds change or tab switches
   
   // Delete all logic related to 'Alex Chen', 'Maria Rodriguez', and any hardcoded mock users
   // Wipe the variable 'ec': Completely remove any mention of ec or ed from this file
@@ -1595,7 +1596,7 @@ export default function HomeDashboard() {
             // Initialization Safety: Add if (!rounds || rounds.length === 0) return <div>Loading rounds...</div>; at the top of the Community section to prevent it from mapping an empty state.
             // Strict Filtering: Use filteredRoundsByTab which returns the full rounds array for community tab
             // Clear the Cache: Ensure that when the tab changes, the name-mapping logic re-runs so Luke's name doesn't stay stuck on my personal rounds
-            !rounds || rounds.length === 0 ? (
+            !communityRoundsHydrated ? (
               <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
                 <p className="text-gray-600 text-sm">Loading rounds...</p>
               </div>
@@ -1763,6 +1764,8 @@ export default function HomeDashboard() {
             })()}
           </div>
         </div>
+
+        <GoalAccountabilityModule />
 
         {/* The Expansion Modal: Create a Modal that appears when a trophy is selected */}
         {/* Styling: Ensure the modal looks premium, with a darkened background and a centered card */}

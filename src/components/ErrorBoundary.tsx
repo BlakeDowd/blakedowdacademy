@@ -1,7 +1,6 @@
 "use client";
 
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import Link from 'next/link';
+import React, { Component, ErrorInfo, ReactNode } from "react";
 
 interface Props {
   children: ReactNode;
@@ -35,12 +34,13 @@ class ErrorBoundary extends Component<Props, State> {
             <p className="text-gray-600 mb-6">
               An unexpected error occurred. Please try going back to the home page.
             </p>
-            <Link
+            {/* Client Link navigation does not reset this boundary; a full page load does. */}
+            <a
               href="/"
               className="inline-block px-6 py-3 bg-[#014421] text-white font-semibold rounded-lg hover:bg-[#01331a] transition-colors"
             >
               Back to Home
-            </Link>
+            </a>
             {this.state.error && (
               <details className="mt-6 text-left">
                 <summary className="text-sm text-gray-500 cursor-pointer">Error details</summary>

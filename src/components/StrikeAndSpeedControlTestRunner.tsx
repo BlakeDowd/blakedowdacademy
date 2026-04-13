@@ -12,6 +12,7 @@ import {
   strikeAndSpeedControlTestConfig,
   type StrikeQuality,
 } from "@/lib/strikeAndSpeedControlTestConfig";
+import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 
 type PuttRecord = {
   putt: number;
@@ -159,6 +160,15 @@ export function StrikeAndSpeedControlTestRunner() {
     user?.id,
   ]);
 
+  const undoLastPutt = useCallback(() => {
+    if (status !== "active" || completedPutts.length === 0) return;
+    const last = completedPutts[completedPutts.length - 1];
+    setCompletedPutts((s) => s.slice(0, -1));
+    setCurrentPuttIndex((i) => Math.max(0, i - 1));
+    setStrike(last.strike);
+    setDistanceInput(String(last.distance_cm));
+  }, [status, completedPutts]);
+
   const retryPersist = useCallback(async () => {
     if (!user?.id || completedPutts.length < total) return;
     setSaveError(null);
@@ -302,6 +312,10 @@ export function StrikeAndSpeedControlTestRunner() {
           Target: {currentTargetFt} Feet
         </p>
       </div>
+
+      {completedPutts.length > 0 && (
+        <CombineFlowBackControl onBack={undoLastPutt} label="Undo last putt" />
+      )}
 
       <div className="space-y-2">
         <p className="text-sm font-medium text-gray-800">Strike</p>

@@ -1,4 +1,6 @@
 import { chippingCombine9Config } from "@/lib/chippingCombine9Config";
+import type { PuttingTestMissCategory } from "@/lib/puttingTestMissScoring";
+import type { PrimaryMissReason } from "@/lib/puttingTestMissDiagnostics";
 
 /** Persisted zone labels; "Outside Zone" kept for legacy rows. */
 export type ChipResultLabel =
@@ -9,10 +11,6 @@ export type ChipResultLabel =
   | "Missed Zone"
   | "Outside Zone";
 
-export type ReadErrorLabel = "High" | "Low";
-
-export type ExecutionErrorLabel = "Speed" | "Start Line";
-
 export type ChippingCombineHoleLog = {
   hole: number;
   distance_m: number;
@@ -22,9 +20,14 @@ export type ChippingCombineHoleLog = {
   chip_points: number;
   putt_made: boolean;
   putt_points: number;
-  read_error?: ReadErrorLabel;
-  execution_error?: ExecutionErrorLabel;
-  /** e.g. "Low/Start Line" for missed putts with audit */
+  /** Standard 4-quadrant first-putt miss (same keys as putting combine tests). */
+  first_putt_miss_quadrant?: PuttingTestMissCategory;
+  /** Second step of missed-putt audit (Read / Speed / Start Line). */
+  putt_miss_primary_reason?: PrimaryMissReason;
+  /**
+   * Human-readable miss summary, e.g. "High / Short · Read".
+   * Legacy rows may use older formats.
+   */
   miss_category?: string;
 };
 
@@ -55,8 +58,8 @@ export function chipProximityPointsRaw(cm: number): number {
     const t = (cm - 183) / (184 - 183);
     return at183 + (at184 - at183) * t;
   }
-  if (cm >= 184 && cm <= 300) {
-    return 5 - (((cm - 184) / 116) * 4);
+  if (cm >= 184 && cm <= 299) {
+    return 5 - (((cm - 184) / (299 - 184)) * 4);
   }
   return 0;
 }
@@ -71,7 +74,7 @@ export function chipResultLabelFromProximityCm(cm: number): ChipResultLabel {
   if (cm === 0) return "Holed";
   if (cm > 0 && cm <= 90) return "Inside Club Length";
   if (cm > 90 && cm <= 183) return "Inside 6ft";
-  if (cm > 183 && cm <= 300) return "Safety Zone";
+  if (cm > 183 && cm <= 299) return "Safety Zone";
   return "Missed Zone";
 }
 
@@ -118,14 +121,16 @@ export function proximityRating(holes: ChippingCombineHoleLog[]): number {
 }
 
 export function missDiagnosisText(holes: ChippingCombineHoleLog[]): string {
-  const misses = holes.filter((h) => !h.putt_made && h.miss_category);
-  if (misses.length === 0) {
-    const anyMiss = holes.some((h) => !h.putt_made);
-    if (anyMiss) return "Missed putts without a full process audit.";
-    return "No missed putts in this session.";
+  const missedScramblePutts = holes.filter((h) => !h.putt_made);
+  const categorized = missedScramblePutts.filter((h) => h.miss_category);
+  if (missedScramblePutts.length === 0) {
+    return "No missed scramble putts in this session.";
+  }
+  if (categorized.length === 0) {
+    return "Missed scramble putts with no category logged.";
   }
   const counts: Record<string, number> = {};
-  for (const h of misses) {
+  for (const h of categorized) {
     const k = h.miss_category!;
     counts[k] = (counts[k] ?? 0) + 1;
   }
@@ -137,8 +142,8 @@ export function missDiagnosisText(holes: ChippingCombineHoleLog[]): string {
       topKey = k;
     }
   }
-  const pct = Math.round((topN / misses.length) * 100);
-  return `${pct}% of misses were ${topKey}`;
+  const pct = Math.round((topN / categorized.length) * 100);
+  return `${pct}% of missed scramble putts were ${topKey}`;
 }
 
 export function sessionTotalPoints(holes: ChippingCombineHoleLog[]): number {

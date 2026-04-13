@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { ChevronLeft, Target } from "lucide-react";
 import { PuttingTest3To6ftRunner } from "@/components/PuttingTest3To6ftRunner";
+import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { combineHighlightPutting36 } from "@/lib/combineHighlightDefinitions";
 import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
 
 export default function PuttingTest3To6ftPage() {
@@ -34,6 +36,7 @@ export default function PuttingTest3To6ftPage() {
             under this test name.
           </p>
           <PuttingTest3To6ftRunner />
+          <CombineCommunityHighlights definition={combineHighlightPutting36} />
         </div>
       </div>
     </div>

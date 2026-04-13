@@ -17,6 +17,7 @@ import {
   readerLabelFromBias,
 } from "@/lib/aimpoint6ftCombineScoring";
 import { parsePercentOneDecimal } from "@/lib/slopeReadingParse";
+import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 
 function shuffle<T>(items: T[]): T[] {
   const a = [...items];
@@ -165,6 +166,17 @@ export function MidRangeSlopeSensingRunner() {
       setPuttIndex((i) => i + 1);
     }
   }, [status, stepValid, puttDisplay, targetFt, n33g, n33a, n66g, n66a, log, total, user?.id]);
+
+  const undoLastPutt = useCallback(() => {
+    if (status !== "active" || log.length === 0) return;
+    const last = log[log.length - 1];
+    setLog((s) => s.slice(0, -1));
+    setPuttIndex((i) => Math.max(0, i - 1));
+    setG33(String(last.pct_33_guess));
+    setA33(String(last.pct_33_actual));
+    setG66(String(last.pct_66_guess));
+    setA66(String(last.pct_66_actual));
+  }, [status, log]);
 
   const retryPersist = useCallback(async () => {
     if (!user?.id || log.length < total) return;
@@ -331,6 +343,8 @@ export function MidRangeSlopeSensingRunner() {
         </p>
         <p className="text-xs text-gray-600">Enter percentages with at most one decimal.</p>
       </div>
+
+      {log.length > 0 && <CombineFlowBackControl onBack={undoLastPutt} label="Undo last putt" />}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>

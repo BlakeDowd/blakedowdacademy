@@ -70,12 +70,18 @@ interface PracticeLogRow {
 }
 
 interface StatsContextType {
+  /** Rounds for the signed-in user only (used by My Rounds, scores, stats). */
   rounds: RoundData[];
+  /** All users' rounds for community leaderboards (Academy, dashboard Community tab). */
+  communityRounds: RoundData[];
+  /** True after the first community (all-users) rounds fetch attempt has finished. */
+  communityRoundsHydrated: boolean;
   drills: DrillData[];
   practiceSessions: PracticeSessionData[];
   practiceLogs: PracticeLogRow[];
   loading: boolean;
   refreshRounds: () => void;
+  refreshCommunityRounds: () => void;
   refreshDrills: () => void;
   refreshPracticeSessions: () => void;
   refreshPracticeLogs: () => void;
@@ -93,6 +99,8 @@ export function calculatePuttingAccuracy(made6ftAndIn: number, puttsUnder6ftAtte
 export function StatsProvider({ children }: { children: ReactNode }) {
   // Set rounds to empty array
   const [rounds, setRounds] = useState<RoundData[]>([]);
+  const [communityRounds, setCommunityRounds] = useState<RoundData[]>([]);
+  const [communityRoundsHydrated, setCommunityRoundsHydrated] = useState(false);
   // Check Fetch Logic: Add state for drills and practice_sessions
   const [drills, setDrills] = useState<DrillData[]>([]);
   const [practiceSessions, setPracticeSessions] = useState<PracticeSessionData[]>([]);
@@ -104,160 +112,146 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   // Export the Value: Get currentStreak from AuthContext user object
   const currentStreak = user?.currentStreak;
   
-  // Add Fetch Guard: At the top of the StatsProvider component, add const hasAttemptedFetch = useRef(false);
-  const hasAttemptedFetch = useRef(false);
-  // Add Fetch Guard: At the top of StatsProvider, add const roundsFetched = useRef(false);
-  const roundsFetched = useRef(false);
+  /** Prevents duplicate global (leaderboard) round fetches unless explicitly refreshed. */
+  const communityRoundsFetched = useRef(false);
   // Check Fetch Logic: Add fetch guards for drills and practice_sessions
   const drillsFetched = useRef(false);
   const practiceSessionsFetched = useRef(false);
   const practiceLogsFetched = useRef(false);
 
-  // Load rounds from database
-  // Check Dashboard Fetch: Don't require user.id - fetch ALL rounds even if user is not logged in
-  // Profile Mapping: Rounds with user_id that doesn't exist in profiles will still show (with 'Unknown User')
-  const loadRounds = async () => {
-    // Block Infinite Retries: In the loadRounds function, add if (hasAttemptedFetch.current) return; at the very top
-    if (hasAttemptedFetch.current) return;
-    // Prevent Retries: In loadRounds, add if (roundsFetched.current) return; at the very start
-    if (roundsFetched.current) return;
-    
-    // Verify App State: Don't block fetching if user.id is missing - fetch all rounds anyway
-    // This ensures rounds show up even if user state is temporarily unavailable
-    if (!user?.id) {
-      console.warn('StatsContext: No user.id, but attempting to fetch rounds anyway (for leaderboard)');
-      // Don't return early - continue to fetch all rounds
-    }
+  const mapRoundRow = (round: any): RoundData & { user_id?: string; full_name?: string; profile_icon?: string } => ({
+    date: round.date,
+    created_at: round.created_at,
+    course: round.course_name || round.course,
+    handicap: round.handicap,
+    holes: round.holes,
+    score: round.score,
+    nett: round.nett,
+    eagles: round.eagles,
+    birdies: round.birdies,
+    pars: round.pars,
+    bogeys: round.bogeys,
+    doubleBogeys: round.double_bogeys,
+    firLeft: round.fir_left,
+    firHit: round.fir_hit,
+    firRight: round.fir_right,
+    totalGir: round.total_gir,
+    totalPenalties: round.total_penalties,
+    teePenalties: round.tee_penalties,
+    approachPenalties: round.approach_penalties,
+    goingForGreen: round.going_for_green,
+    gir8ft: round.gir_8ft || 0,
+    gir20ft: round.gir_20ft || 0,
+    upAndDownConversions: round.up_and_down_conversions || round.conversions || 0,
+    missed: round.missed || round.up_and_down_missed || 0,
+    bunkerAttempts: round.bunker_attempts || 0,
+    bunkerSaves: round.bunker_saves || 0,
+    chipInside6ft: round.chip_inside_6ft ?? round.inside_6ft ?? 0,
+    doubleChips: round.double_chips || round.chip_ins || 0,
+    totalPutts: round.total_putts,
+    threePutts: round.three_putts,
+    made6ftAndIn: round.made_under_6ft ?? 0,
+    puttsUnder6ftAttempts: round.putts_under_6ft_attempts ?? 0,
+    user_id: round.user_id,
+    full_name: undefined,
+    profile_icon: undefined,
+  });
+
+  /** Leaderboards / community: all users' rounds (RLS permitting). */
+  const loadCommunityRounds = async () => {
+    if (communityRoundsFetched.current) return;
 
     try {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
-      console.log('StatsContext: Fetching ALL rounds for leaderboard (not filtering by user_id)');
-      console.log('StatsContext: User object:', user ? { id: user.id, email: user.email, fullName: user.fullName } : 'No user (fetching all rounds anyway)');
-      
-      // Modify loadRounds: Remove any .eq('user_id', ...) filters from the query used for the global leaderboard
-      // Ensure Select All: Confirm the query is .from('rounds').select('*') so it pulls every round in the database
-      // Verify Sorting: Keep the .order('created_at', { ascending: false }) so the most recent rounds are still at the top
-      // Why: We already have the user profile in AuthContext, so we don't need to join it here to get the leaderboard data to appear
       const { data, error } = await supabase
-        .from('rounds')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      // Debug: Log the query - now fetching ALL rounds without profile join
-      console.log('StatsContext: Query - fetching ALL rounds (no user_id filter, no profile join)');
+        .from("rounds")
+        .select("*")
+        .order("created_at", { ascending: false });
 
       if (error) {
-        hasAttemptedFetch.current = true;
         const err = error as { message?: string; code?: string; details?: string };
-        const errMsg = err?.message ?? err?.details ?? (typeof error === 'object' && Object.keys(error as object).length > 0 ? JSON.stringify(error) : 'Failed to load rounds (check RLS policies for rounds table)');
-        console.error('StatsContext: Error loading rounds:', errMsg, err?.code ? `(code: ${err.code})` : '');
-        // Safe Fallback: If an error occurs, set setRounds([]) so the rest of the app doesn't stay 'loading' forever
-        setRounds([]);
-        // Set Guard on Error: Inside the if (error) block (line 100), add roundsFetched.current = true;. This stops the console from spamming errors and freezing the CPU.
-        roundsFetched.current = true;
-        setLoading(false); // Ensure loading state is cleared on error
+        const errMsg =
+          err?.message ??
+          err?.details ??
+          (typeof error === "object" && Object.keys(error as object).length > 0
+            ? JSON.stringify(error)
+            : "Failed to load community rounds");
+        console.error("StatsContext: Error loading community rounds:", errMsg, err?.code ? `(code: ${err.code})` : "");
+        setCommunityRounds([]);
+        communityRoundsFetched.current = true;
         return;
       }
 
-      console.log('StatsContext: Raw data from database:', data);
-      console.log('StatsContext: Number of rounds fetched:', data?.length || 0);
-      
-      // Debug: Check user_id in fetched rounds
-      if (data && data.length > 0) {
-        console.log('StatsContext: Sample rounds:', data.slice(0, 5).map((r: any) => ({
-          round_id: r.id,
-          user_id: r.user_id,
-          date: r.date,
-          score: r.score
-        })));
-        // Debug Logs: Keep console.log to see if Stuart's round is in the raw data
-        console.log('StatsContext: All rounds user_ids:', data.map((r: any) => r.user_id));
-      } else {
-        console.warn('StatsContext: No rounds found in database');
-        console.warn('StatsContext: This could mean:');
-        console.warn('  1. No rounds exist in database');
-        console.warn('  2. RLS policies are blocking access');
+      const transformed = (data || []).map(mapRoundRow);
+      setCommunityRounds(transformed);
+      communityRoundsFetched.current = true;
+      if (transformed.length > 0 && typeof window !== "undefined") {
+        sessionStorage.removeItem("statsContextRoundsToastShown");
+        sessionStorage.removeItem("roundsToastShown");
       }
-
-      // Transform database columns (snake_case) to camelCase for RoundData interface
-      // Profile Join: Include user_id and profile data (full_name, profile_icon) from joined profiles table
-      const transformedRounds: (RoundData & { user_id?: string; full_name?: string; profile_icon?: string })[] = (data || []).map((round: any) => ({
-        date: round.date,
-        created_at: round.created_at, // Include created_at for time filtering
-        course: round.course_name || round.course, // Handle both course_name and course for compatibility
-        handicap: round.handicap,
-        holes: round.holes,
-        score: round.score,
-        nett: round.nett,
-        eagles: round.eagles,
-        birdies: round.birdies,
-        pars: round.pars,
-        bogeys: round.bogeys,
-        doubleBogeys: round.double_bogeys,
-        firLeft: round.fir_left,
-        firHit: round.fir_hit,
-        firRight: round.fir_right,
-        totalGir: round.total_gir,
-        totalPenalties: round.total_penalties,
-        teePenalties: round.tee_penalties,
-        approachPenalties: round.approach_penalties,
-        goingForGreen: round.going_for_green,
-        gir8ft: round.gir_8ft || 0,
-        gir20ft: round.gir_20ft || 0,
-        upAndDownConversions: round.up_and_down_conversions || round.conversions || 0,
-        missed: round.missed || round.up_and_down_missed || 0,
-        bunkerAttempts: round.bunker_attempts || 0,
-        bunkerSaves: round.bunker_saves || 0,
-        chipInside6ft: round.chip_inside_6ft ?? round.inside_6ft ?? 0, // Schema: chip_inside_6ft; legacy: inside_6ft
-        doubleChips: round.double_chips || round.chip_ins || 0, // Handle both column names
-        totalPutts: round.total_putts,
-        threePutts: round.three_putts,
-        made6ftAndIn: round.made_under_6ft ?? 0,
-        puttsUnder6ftAttempts: round.putts_under_6ft_attempts ?? 0,
-        // Include user_id for leaderboard (profile data available from AuthContext)
-        user_id: round.user_id,
-        // Profile data is available from AuthContext, so we don't need to join it here
-        full_name: undefined, // Profile data available from AuthContext
-        profile_icon: undefined, // Profile data available from AuthContext
-      }));
-
-      setRounds(transformedRounds);
-      console.log('StatsContext: Loaded rounds from database:', transformedRounds.length);
-      console.log('StatsContext: Transformed rounds data:', transformedRounds);
-      
-      // Verify App State: Log if rounds.length === 0 (no UI alerts in context provider)
-      // Remove Browser Alerts: Context providers shouldn't show alerts - logged to console only
-      if (transformedRounds.length === 0) {
-        console.warn('⚠️ StatsContext: transformedRounds.length === 0 - No rounds data from Supabase');
-        console.warn('⚠️ This could mean:');
-        console.warn('  1. No rounds exist in database');
-        console.warn('  2. RLS policies are blocking access');
-        console.warn('  3. Query is failing silently');
-        // Remove Browser Alerts: No alert() in context provider - UI components handle notifications
-      } else {
-        console.log('✅ StatsContext: Rounds data loaded successfully:', transformedRounds.length, 'rounds');
-        // Clear flags if rounds are found
-        if (typeof window !== 'undefined') {
-          sessionStorage.removeItem('statsContextRoundsToastShown');
-          sessionStorage.removeItem('roundsToastShown');
-        }
-      }
-      
-      // Set guard after successful fetch
-      roundsFetched.current = true;
-      hasAttemptedFetch.current = true;
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : (error as { message?: string })?.message ?? JSON.stringify(error);
-      console.error('StatsContext: Error loading rounds:', errMsg);
-      // Safe Fallback: If an error occurs, set setRounds([]) so the rest of the app doesn't stay 'loading' forever
-      setRounds([]);
-      // Set Guard on Error: Even if there is an error, set roundsFetched.current = true;. This prevents the app from DDoS-ing the database when a request fails.
-      roundsFetched.current = true;
-      hasAttemptedFetch.current = true;
+      const errMsg =
+        error instanceof Error
+          ? error.message
+          : (error as { message?: string })?.message ?? JSON.stringify(error);
+      console.error("StatsContext: Error loading community rounds:", errMsg);
+      setCommunityRounds([]);
+      communityRoundsFetched.current = true;
     } finally {
-      // Clear Loading State: Ensure setLoading(false) is called in the finally block so the UI doesn't stay frozen
+      setCommunityRoundsHydrated(true);
+    }
+  };
+
+  /** My Rounds / scores: only the authenticated user's rows. */
+  const loadMyRounds = async () => {
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+
+      if (!authUser?.id) {
+        setRounds([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("rounds")
+        .select("*")
+        .eq("user_id", authUser.id)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        const err = error as { message?: string; code?: string; details?: string };
+        const errMsg =
+          err?.message ??
+          err?.details ??
+          (typeof error === "object" && Object.keys(error as object).length > 0
+            ? JSON.stringify(error)
+            : "Failed to load your rounds");
+        console.error("StatsContext: Error loading my rounds:", errMsg, err?.code ? `(code: ${err.code})` : "");
+        setRounds([]);
+        return;
+      }
+
+      const transformed = (data || []).map(mapRoundRow);
+      setRounds(transformed);
+      if (transformed.length > 0 && typeof window !== "undefined") {
+        sessionStorage.removeItem("statsContextRoundsToastShown");
+        sessionStorage.removeItem("roundsToastShown");
+      }
+    } catch (error) {
+      const errMsg =
+        error instanceof Error
+          ? error.message
+          : (error as { message?: string })?.message ?? JSON.stringify(error);
+      console.error("StatsContext: Error loading my rounds:", errMsg);
+      setRounds([]);
+    } finally {
       setLoading(false);
     }
   };
@@ -433,7 +427,13 @@ export function StatsProvider({ children }: { children: ReactNode }) {
           mappedType = 'Chipping';
         else if (lowerType === 'approach' || lowerType === 'range-grass' || lowerType === 'irons') mappedType = 'Irons';
         else if (lowerType === 'mental game' || lowerType === 'mental' || lowerType === 'home' || lowerType === 'mental/strategy') mappedType = 'Mental/Strategy';
-        else if (lowerType === 'range-mat' || lowerType === 'driving') mappedType = 'Driving';
+        else if (
+          lowerType === 'range-mat' ||
+          lowerType === 'driving' ||
+          lowerType === 'tee_shot_dispersion_combine'
+        )
+          mappedType = 'Driving';
+        else if (lowerType === 'bunker_9_hole_challenge') mappedType = 'Bunkers';
         else if (lowerType === 'bunker' || lowerType === 'bunkers') mappedType = 'Bunkers';
         else if (lowerType === 'putting-green' || lowerType === 'putting') mappedType = 'Putting';
         else if (
@@ -538,7 +538,13 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshRounds = () => {
-    loadRounds();
+    void loadMyRounds();
+  };
+
+  const refreshCommunityRounds = () => {
+    communityRoundsFetched.current = false;
+    setCommunityRoundsHydrated(false);
+    void loadCommunityRounds();
   };
 
   const refreshDrills = () => {
@@ -559,16 +565,10 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   // Make calculateStats return only { handicap: 'N/A', totalRounds: 0 }
   const calculateStats = () => ({ handicap: 'N/A', totalRounds: 0 });
 
-  // Check Fetch Logic: Ensure the loadStats function is fetching data from the drills and practice_sessions tables as well as rounds
-  // Load rounds, drills, and practice_sessions on mount and listen for updates
-  // Modify loadRounds: Remove any .eq('user_id', ...) filters from the query used for the global leaderboard
-  // Ensure Select All: Confirm the query is .from('rounds').select('*') so it pulls every round in the database
-  // Verify Sorting: Keep the .order('created_at', { ascending: false }) so the most recent rounds are still at the top
+  // Load community rounds + drills/practice on mount; my rounds follow auth user id (separate effect).
   useEffect(() => {
-    // Always fetch all rounds for the global leaderboard, regardless of user.id
-    // This ensures the leaderboard shows all users' rounds, not just the current user's
-    loadRounds();
-    
+    void loadCommunityRounds();
+
     // Check Fetch Logic: Fetch drills and practice_sessions from database tables
     // Update Table Name: Practice table is now created - fetch from it
     loadDrills();
@@ -577,9 +577,11 @@ export function StatsProvider({ children }: { children: ReactNode }) {
 
     // Listen for roundsUpdated event
     const handleRoundsUpdate = () => {
-      console.log('StatsContext: Received roundsUpdated event, refreshing from database...');
-      // Always refresh all rounds for the global leaderboard
-      loadRounds();
+      console.log("StatsContext: Received roundsUpdated event, refreshing rounds...");
+      communityRoundsFetched.current = false;
+      setCommunityRoundsHydrated(false);
+      void loadCommunityRounds();
+      void loadMyRounds();
     };
     
     // Live Sync: Set up the same event listener (drillsUpdated) so when someone logs a new drill score, the leaderboard refreshes for everyone immediately
@@ -609,6 +611,10 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     };
   }, []); // Empty dependency array - fetch once on mount, then listen for updates
 
+  useEffect(() => {
+    void loadMyRounds();
+  }, [user?.id]);
+
   // First stats fetch can run before Supabase session is ready (RLS returns []). Reload when user id appears.
   useEffect(() => {
     if (!user?.id) {
@@ -625,7 +631,24 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   }, [user?.id]);
 
   return (
-    <StatsContext.Provider value={{ rounds, drills, practiceSessions, practiceLogs, loading, refreshRounds, refreshDrills, refreshPracticeSessions, refreshPracticeLogs, calculateStats, currentStreak }}>
+    <StatsContext.Provider
+      value={{
+        rounds,
+        communityRounds,
+        communityRoundsHydrated,
+        drills,
+        practiceSessions,
+        practiceLogs,
+        loading,
+        refreshRounds,
+        refreshCommunityRounds,
+        refreshDrills,
+        refreshPracticeSessions,
+        refreshPracticeLogs,
+        calculateStats,
+        currentStreak,
+      }}
+    >
       {children}
     </StatsContext.Provider>
   );
@@ -638,11 +661,14 @@ export function useStats() {
     console.error('useStats must be used within a StatsProvider - returning empty context');
     return { 
       rounds: [], 
+      communityRounds: [],
+      communityRoundsHydrated: false,
       drills: [], 
       practiceSessions: [], 
       practiceLogs: [],
       loading: false, 
       refreshRounds: () => {}, 
+      refreshCommunityRounds: () => {},
       refreshDrills: () => {}, 
       refreshPracticeSessions: () => {}, 
       refreshPracticeLogs: () => {},

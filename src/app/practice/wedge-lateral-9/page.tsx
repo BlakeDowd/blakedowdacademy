@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronLeft, Triangle } from "lucide-react";
 import { WedgeLateral9Runner } from "@/components/WedgeLateral9Runner";
+import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { combineHighlightWedgeLateral9 } from "@/lib/combineHighlightDefinitions";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
 
 export default function WedgeLateral9Page() {
@@ -34,6 +36,7 @@ export default function WedgeLateral9Page() {
             in to save your session when you finish.
           </p>
           <WedgeLateral9Runner />
+          <CombineCommunityHighlights definition={combineHighlightWedgeLateral9} />
         </div>
       </div>
     </div>

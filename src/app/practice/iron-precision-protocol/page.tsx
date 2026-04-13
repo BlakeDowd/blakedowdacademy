@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronLeft, Crosshair } from "lucide-react";
 import { IronPrecisionProtocolRunner } from "@/components/IronPrecisionProtocolRunner";
+import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { combineHighlightIronPrecision } from "@/lib/combineHighlightDefinitions";
 import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
 
 export default function IronPrecisionProtocolPage() {
@@ -33,6 +35,7 @@ export default function IronPrecisionProtocolPage() {
             earns a small quality bonus. Sign in to save your session when you finish.
           </p>
           <IronPrecisionProtocolRunner />
+          <CombineCommunityHighlights definition={combineHighlightIronPrecision} />
         </div>
       </div>
     </div>

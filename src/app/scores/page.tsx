@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useStats } from "@/contexts/StatsContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { ArrowLeft, Trophy, TrendingUp, Star, TrendingDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -51,13 +52,19 @@ interface RoundWithBadge extends RoundData {
 
 export default function ScoresPage() {
   const router = useRouter();
-  const { rounds } = useStats();
+  const { rounds, loading: statsLoading } = useStats();
+  const { user, loading: authLoading } = useAuth();
   const [sortedRounds, setSortedRounds] = useState<RoundWithBadge[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const dataReady = !authLoading && !statsLoading;
 
   useEffect(() => {
+    if (authLoading || statsLoading) {
+      return;
+    }
+
     if (rounds.length === 0) {
-      setLoading(false);
+      setSortedRounds([]);
       return;
     }
 
@@ -118,8 +125,7 @@ export default function ScoresPage() {
     });
 
     setSortedRounds(roundsWithBadges);
-    setLoading(false);
-  }, [rounds]);
+  }, [rounds, authLoading, statsLoading]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -161,12 +167,42 @@ export default function ScoresPage() {
     return <Star className="w-5 h-5" style={{ color: '#014421' }} />;
   };
 
-  if (loading) {
+  if (!dataReady) {
     return (
       <div className="min-h-screen bg-gray-50 pb-24 flex items-center justify-center">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-[#014421] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-600">Loading scores...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user?.id) {
+    return (
+      <div className="min-h-screen bg-gray-50 pb-24 flex flex-col">
+        <div className="shrink-0 px-5 pt-6 pb-4 flex items-center gap-4 border-b border-gray-200 bg-white">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-600" />
+          </button>
+          <h1 className="text-2xl font-bold text-gray-900">My Rounds</h1>
+        </div>
+        <div className="flex-1 flex items-center justify-center px-4">
+          <div className="text-center max-w-sm">
+            <p className="text-gray-700 font-medium mb-2">Sign in to view your rounds</p>
+            <button
+              type="button"
+              onClick={() => router.push("/login")}
+              className="mt-2 px-6 py-3 rounded-lg font-semibold text-white"
+              style={{ backgroundColor: "#014421" }}
+            >
+              Go to login
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -195,7 +231,7 @@ export default function ScoresPage() {
               <div className="w-20 h-20 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(1, 68, 33, 0.1)' }}>
                 <Trophy className="w-10 h-10" style={{ color: '#014421' }} />
               </div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">No rounds yet</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">No rounds recorded</h2>
               <p className="text-gray-600 text-sm mb-6">
                 Log your first round to start tracking your progress!
               </p>

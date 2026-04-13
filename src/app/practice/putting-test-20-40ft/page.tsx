@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { PuttingTest20To40Runner } from "@/components/PuttingTest20To40Runner";
+import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { combineHighlightPutting2040 } from "@/lib/combineHighlightDefinitions";
 import { puttingTest20To40Config } from "@/lib/puttingTest20To40Config";
 
 export default function PuttingTest20To40Page() {
@@ -16,6 +18,7 @@ export default function PuttingTest20To40Page() {
           <h1 className="text-2xl font-bold text-gray-900">{puttingTest20To40Config.testName}</h1>
         </header>
         <PuttingTest20To40Runner />
+        <CombineCommunityHighlights definition={combineHighlightPutting2040} />
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import {
   type StartLineGate,
 } from "@/lib/startLineAndSpeedControlTestConfig";
 import { meanAbsDistanceCm } from "@/lib/strikeAndSpeedControlScoring";
+import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 
 type PuttRecord = {
   putt: number;
@@ -166,6 +167,15 @@ export function StartLineAndSpeedControlTestRunner() {
     total,
     user?.id,
   ]);
+
+  const undoLastPutt = useCallback(() => {
+    if (status !== "active" || completedPutts.length === 0) return;
+    const last = completedPutts[completedPutts.length - 1];
+    setCompletedPutts((s) => s.slice(0, -1));
+    setCurrentPuttIndex((i) => Math.max(0, i - 1));
+    setGate(last.gate);
+    setDistanceInput(String(last.distance_cm));
+  }, [status, completedPutts]);
 
   const retryPersist = useCallback(async () => {
     if (!user?.id || completedPutts.length < total) return;
@@ -335,6 +345,10 @@ export function StartLineAndSpeedControlTestRunner() {
         </p>
         <p className="text-sm text-gray-700">Target: {currentTargetFt} Feet</p>
       </div>
+
+      {completedPutts.length > 0 && (
+        <CombineFlowBackControl onBack={undoLastPutt} label="Undo last putt" />
+      )}
 
       <div className="space-y-2">
         <p className="text-sm font-medium text-gray-800">Start Line</p>

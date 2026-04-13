@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronLeft, Target } from "lucide-react";
 import { ChippingCombine9Runner } from "@/components/ChippingCombine9Runner";
+import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { combineHighlightChipping9 } from "@/lib/combineHighlightDefinitions";
 import { chippingCombine9Config } from "@/lib/chippingCombine9Config";
 
 export default function ChippingCombine9Page() {
@@ -35,6 +37,7 @@ export default function ChippingCombine9Page() {
             execution audit for miss diagnosis. Chip and putt points roll into one session total.
           </p>
           <ChippingCombine9Runner />
+          <CombineCommunityHighlights definition={combineHighlightChipping9} />
         </div>
       </div>
     </div>

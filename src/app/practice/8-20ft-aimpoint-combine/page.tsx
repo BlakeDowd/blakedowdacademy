@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronLeft, Target } from "lucide-react";
 import { MidRangeSlopeSensingRunner } from "@/components/MidRangeSlopeSensingRunner";
+import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { combineHighlightAimpoint820 } from "@/lib/combineHighlightDefinitions";
 import { midRangeSlopeSensingConfig } from "@/lib/midRangeSlopeSensingConfig";
 
 export default function Aimpoint820CombinePage() {
@@ -33,6 +35,7 @@ export default function Aimpoint820CombinePage() {
             explicit measurement rows).
           </p>
           <MidRangeSlopeSensingRunner />
+          <CombineCommunityHighlights definition={combineHighlightAimpoint820} />
         </div>
       </div>
     </div>

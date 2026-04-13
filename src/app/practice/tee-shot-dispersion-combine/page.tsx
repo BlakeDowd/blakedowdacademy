@@ -1,13 +1,11 @@
-"use client";
-
 import Link from "next/link";
 import { ChevronLeft, Target } from "lucide-react";
-import { PuttingTest9Runner } from "@/components/PuttingTest9Runner";
+import { TeeShotDispersionCombineRunner } from "@/components/TeeShotDispersionCombineRunner";
 import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
-import { combineHighlightPutting9 } from "@/lib/combineHighlightDefinitions";
-import { puttingTest9Config } from "@/lib/puttingTest9Config";
+import { combineHighlightTeeShotDispersion } from "@/lib/combineHighlightDefinitions";
+import { teeShotDispersionCombineConfig } from "@/lib/teeShotDispersionCombineConfig";
 
-export default function PuttingTest9Page() {
+export default function TeeShotDispersionCombinePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-lg mx-auto px-4 py-6 pb-24">
@@ -28,15 +26,19 @@ export default function PuttingTest9Page() {
               <Target className="w-5 h-5 text-gray-600" />
             </div>
             <h1 className="text-xl font-semibold leading-snug text-gray-900">
-              {puttingTest9Config.testName}
+              {teeShotDispersionCombineConfig.testName}
             </h1>
           </div>
           <p className="text-sm text-gray-600 mt-2">
-            Nine-hole combine: shuffled distances and break mix. Highest single-session score appears on
-            the Academy leaderboard.
+            {teeShotDispersionCombineConfig.shotCount} tee shots per session. For each shot, enter carry
+            distance (m), set start direction (left / straight / right), choose finger dispersion on the
+            button grid or Outside 4 for a fail (0 pts), then tap the 9-point driver face (Heel / Middle /
+            Toe × High / Middle / Low). Scoring matches the iron/wedge finger bands; sweet spot (Middle /
+            Middle) earns +{teeShotDispersionCombineConfig.middleMiddleBonus} when not Outside 4.
+            Your summary includes a strike cluster readout from impact patterns.
           </p>
-          <PuttingTest9Runner />
-          <CombineCommunityHighlights definition={combineHighlightPutting9} />
+          <TeeShotDispersionCombineRunner />
+          <CombineCommunityHighlights definition={combineHighlightTeeShotDispersion} />
         </div>
       </div>
     </div>

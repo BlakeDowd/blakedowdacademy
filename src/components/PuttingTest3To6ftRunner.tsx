@@ -12,6 +12,7 @@ import {
 } from "@/lib/puttingTestMissScoring";
 import { PuttingMissDiagnosticsSection } from "@/components/PuttingMissDiagnostics";
 import { PuttingTestResultsSummaryCard } from "@/components/PuttingTestResultsSummaryCard";
+import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 
 type ShapeKey = (typeof puttingTestConfig.shapes)[number];
 type MissCategory = "highLong" | "highShort" | "lowLong" | "lowShort";
@@ -227,6 +228,22 @@ export function PuttingTest3To6ftRunner() {
     ],
   );
 
+  const goBackPhase = useCallback(() => {
+    if (phase === "miss-category") {
+      setPhase("first-putt");
+      return;
+    }
+    if (phase === "primary-reason") {
+      setPhase("miss-category");
+      setMissCategory(null);
+      return;
+    }
+    if (phase === "second-putt") {
+      setPhase("primary-reason");
+      setPrimaryMissReason(null);
+    }
+  }, [phase]);
+
   const summary = useMemo(() => {
     if (holeLog.length === 0) return null;
     return {
@@ -306,6 +323,8 @@ export function PuttingTest3To6ftRunner() {
           Hole {holeDisplay}/{HOLES}: {currentHole.distance}ft - {shapeLabel(currentHole.shape)}
         </p>
       </div>
+
+      {phase !== "first-putt" && <CombineFlowBackControl onBack={goBackPhase} />}
 
       {phase === "first-putt" && (
         <div className="grid grid-cols-2 gap-3">

@@ -12,6 +12,8 @@ import { aimpointLongRange2040Config } from "@/lib/aimpointLongRange2040Config";
 import { chippingCombine9Config } from "@/lib/chippingCombine9Config";
 import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
+import { teeShotDispersionCombineConfig } from "@/lib/teeShotDispersionCombineConfig";
+import { bunker9HoleChallengeConfig } from "@/lib/bunker9HoleChallengeConfig";
 
 export const COMBINE_CATEGORY_IDS = [
   "Putting",
@@ -122,5 +124,17 @@ export const COMBINE_TEST_CARDS: CombineTestCard[] = [
     category: "Irons",
     href: "/practice/iron-precision-protocol",
     label: ironPrecisionProtocolConfig.testName,
+  },
+  {
+    id: "tee-shot-dispersion-combine",
+    category: "Tee Shot",
+    href: "/practice/tee-shot-dispersion-combine",
+    label: teeShotDispersionCombineConfig.testName,
+  },
+  {
+    id: "bunker-9-hole-challenge",
+    category: "Bunkers",
+    href: "/practice/bunker-9-hole-challenge",
+    label: bunker9HoleChallengeConfig.testName,
   },
 ];

@@ -92,11 +92,14 @@ export default function CoachesDashboard() {
     <div className="w-full max-w-md mx-auto min-w-0 flex flex-col bg-gray-50 overflow-x-hidden">
       {/* Header: Shrink-0 ensures it never loses its size */}
       <header className="shrink-0 w-full bg-[#014421] text-white p-4 shadow-md">
-        <Link href="/" className="inline-flex items-center text-green-100 hover:text-white mb-2 transition-colors text-sm truncate min-w-0 flex-shrink">
-          <ArrowLeft className="w-4 h-4 mr-2 shrink-0" />
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 text-green-100 hover:text-white mb-2 transition-colors text-sm min-w-0 max-w-full"
+        >
+          <ArrowLeft className="w-4 h-4 shrink-0" />
           Back to Home
         </Link>
-        <h1 className="text-xl font-bold truncate min-w-0 flex-shrink">Coach Dashboard</h1>
+        <h1 className="text-xl font-bold truncate min-w-0 shrink-0">Coach Dashboard</h1>
         <p className="text-xs opacity-80 mt-1 truncate min-w-0">Authorized Access: {userEmail}</p>
       </header>
 

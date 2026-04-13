@@ -14,6 +14,7 @@ import {
 } from "@/lib/aimpointLongRange2040Scoring";
 import { readerLabelFromBias } from "@/lib/aimpoint6ftCombineScoring";
 import { parsePercentOneDecimal } from "@/lib/slopeReadingParse";
+import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 
 function shuffle<T>(items: T[]): T[] {
   const a = [...items];
@@ -194,6 +195,19 @@ export function AimpointLongRange2040Runner() {
     user?.id,
   ]);
 
+  const undoLastPutt = useCallback(() => {
+    if (status !== "active" || log.length === 0) return;
+    const last = log[log.length - 1];
+    setLog((s) => s.slice(0, -1));
+    setPuttIndex((i) => Math.max(0, i - 1));
+    setG33(String(last.pct_33_guess));
+    setA33(String(last.pct_33_actual));
+    setG50(String(last.pct_50_guess));
+    setA50(String(last.pct_50_actual));
+    setG66(String(last.pct_66_guess));
+    setA66(String(last.pct_66_actual));
+  }, [status, log]);
+
   const retryPersist = useCallback(async () => {
     if (!user?.id || log.length < total) return;
     setSaveError(null);
@@ -361,6 +375,8 @@ export function AimpointLongRange2040Runner() {
         <p className="text-sm text-gray-800">Target: {targetFt} Feet</p>
         <p className="text-xs text-gray-600">Up to one decimal place on all percentages.</p>
       </div>
+
+      {log.length > 0 && <CombineFlowBackControl onBack={undoLastPutt} label="Undo last putt" />}
 
       <div className="space-y-5">
         <div>

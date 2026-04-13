@@ -3955,7 +3955,7 @@ export default function AcademyPage() {
 
   // ALL HOOKS MUST BE AT THE TOP - NO EXCEPTIONS (Rules of Hooks)
   // Check Fetch Logic: Ensure the loadStats function is fetching data from the drills and practice_sessions tables as well as rounds
-  const { rounds, drills, practiceSessions, practiceLogs } = useStats();
+  const { rounds, communityRounds, drills, practiceSessions, practiceLogs } = useStats();
   const { user, refreshUser, isAuthenticated, loading } = useAuth();
   const router = useRouter();
 
@@ -4262,7 +4262,7 @@ export default function AcademyPage() {
   useEffect(() => {
     const fetchProfiles = async () => {
       // Get all unique user IDs from rounds, drills, and practice sessions
-      const roundUserIds = (rounds || [])
+      const roundUserIds = (communityRounds || [])
         .map((r: any) => r.user_id)
         .filter(Boolean);
       const drillUserIds = (drills || [])
@@ -4393,7 +4393,7 @@ export default function AcademyPage() {
 
     fetchProfiles();
   }, [
-    rounds?.length ?? 0,
+    communityRounds?.length ?? 0,
     drills?.length ?? 0,
     practiceSessions?.length ?? 0,
     practiceLogs?.length ?? 0,
@@ -4407,7 +4407,7 @@ export default function AcademyPage() {
       console.log("Academy: Received xpUpdated event, refreshing profiles...");
       // Re-fetch profiles to get updated XP values
       const fetchProfiles = async () => {
-        const roundUserIds = (rounds || [])
+        const roundUserIds = (communityRounds || [])
           .map((r: any) => r.user_id)
           .filter(Boolean);
         const drillUserIds = (drills || [])
@@ -4441,7 +4441,7 @@ export default function AcademyPage() {
       window.removeEventListener("xpUpdated", handleXPUpdate);
     };
   }, [
-    rounds?.length ?? 0,
+    communityRounds?.length ?? 0,
     drills?.length ?? 0,
     practiceSessions?.length ?? 0,
     practiceLogs?.length ?? 0,
@@ -4450,7 +4450,7 @@ export default function AcademyPage() {
   // Calculate score-based leaderboards (lowGross, lowNett, birdies, eagles, putts) with loop guard
   // Always calculate all score-based metrics so they're available when needed
   useEffect(() => {
-    if (!user?.id || rounds === undefined) {
+    if (!user?.id) {
       return;
     }
 
@@ -4477,7 +4477,7 @@ export default function AcademyPage() {
         const leaderboard = getLeaderboardData(
           metric,
           timeFilter,
-          rounds,
+          communityRounds,
           totalXP,
           userName,
           user,
@@ -4513,7 +4513,7 @@ export default function AcademyPage() {
     }
   }, [
     user?.id,
-    rounds?.length,
+    communityRounds?.length,
     drills?.length,
     practiceSessions?.length,
     practiceLogs?.length,
@@ -4544,12 +4544,12 @@ export default function AcademyPage() {
         return cachedLeaderboard;
       }
       // Calculate on-demand if not cached yet
-      if (user?.id && rounds) {
+      if (user?.id) {
         const totalXP = user?.totalXP || 0;
         return getLeaderboardData(
           leaderboardMetric,
           timeFilter,
-          rounds,
+          communityRounds,
           totalXP,
           userName,
           user,
@@ -4564,7 +4564,7 @@ export default function AcademyPage() {
 
     // Four-pillar metrics: always derive from timeFilter + live stats (never use a stale cache)
     const emptyFour = { top3: [], all: [], userRank: 0, userValue: 0 };
-    if (rounds === undefined || !userName) {
+    if (!userName) {
       return emptyFour;
     }
     switch (leaderboardMetric) {
@@ -4575,7 +4575,7 @@ export default function AcademyPage() {
         return getMockLeaderboard(
           leaderboardMetric,
           timeFilter,
-          rounds,
+          communityRounds,
           userName,
           user,
           userProfiles,
@@ -4585,7 +4585,7 @@ export default function AcademyPage() {
       default:
         return emptyFour;
     }
-  }, [cachedLeaderboard, leaderboardMetric, timeFilter, rounds, userProgress.totalXP, userName, user, userProfiles, practiceSessions, drills, practiceLogs]);
+  }, [cachedLeaderboard, leaderboardMetric, timeFilter, rounds, communityRounds, userProgress.totalXP, userName, user, userProfiles, practiceSessions, drills, practiceLogs]);
 
   const top3 = useMemo(() => currentLeaderboard.top3, [currentLeaderboard]);
   const ranks4to7 = useMemo(
@@ -4614,12 +4614,12 @@ export default function AcademyPage() {
   // Get four-pillar leaderboard data - wrap in useMemo
   // Safe Logic: Do the check inside the useMemo rather than skipping the Hook entirely
   const libraryLeaderboard = useMemo(() => {
-    if (!rounds || !userName)
+    if (!userName)
       return { top3: [], all: [], userRank: 0, userValue: 0 };
     return getMockLeaderboard(
       "library",
       timeFilter,
-      rounds,
+      communityRounds,
       userName,
       user,
       userProfiles,
@@ -4628,7 +4628,7 @@ export default function AcademyPage() {
     );
   }, [
     timeFilter,
-    rounds,
+    communityRounds,
     userName,
     user,
     userProfiles,
@@ -4637,12 +4637,12 @@ export default function AcademyPage() {
   ]);
 
   const practiceLeaderboard = useMemo(() => {
-    if (!rounds || !userName)
+    if (!userName)
       return { top3: [], all: [], userRank: 0, userValue: 0 };
     return getMockLeaderboard(
       "practice",
       timeFilter,
-      rounds,
+      communityRounds,
       userName,
       user,
       userProfiles,
@@ -4651,7 +4651,7 @@ export default function AcademyPage() {
     );
   }, [
     timeFilter,
-    rounds,
+    communityRounds,
     userName,
     user,
     userProfiles,
@@ -4660,12 +4660,12 @@ export default function AcademyPage() {
   ]);
 
   const roundsLeaderboard = useMemo(() => {
-    if (!rounds || !userName)
+    if (!userName)
       return { top3: [], all: [], userRank: 0, userValue: 0 };
     return getMockLeaderboard(
       "rounds",
       timeFilter,
-      rounds,
+      communityRounds,
       userName,
       user,
       userProfiles,
@@ -4674,7 +4674,7 @@ export default function AcademyPage() {
     );
   }, [
     timeFilter,
-    rounds,
+    communityRounds,
     userName,
     user,
     userProfiles,
@@ -4683,12 +4683,12 @@ export default function AcademyPage() {
   ]);
 
   const drillsLeaderboard = useMemo(() => {
-    if (!rounds || !userName)
+    if (!userName)
       return { top3: [], all: [], userRank: 0, userValue: 0 };
     return getMockLeaderboard(
       "drills",
       timeFilter,
-      rounds,
+      communityRounds,
       userName,
       user,
       userProfiles,
@@ -4697,7 +4697,7 @@ export default function AcademyPage() {
     );
   }, [
     timeFilter,
-    rounds,
+    communityRounds,
     userName,
     user,
     userProfiles,
@@ -4720,7 +4720,7 @@ export default function AcademyPage() {
       const data = getLeaderboardData(
         combineLeaderboardTest as Parameters<typeof getLeaderboardData>[0],
         timeFilter,
-        rounds || [],
+        communityRounds || [],
         user?.totalXP || 0,
         userName || "Academy Member",
         user,
@@ -4755,7 +4755,7 @@ export default function AcademyPage() {
   }, [
     combineLeaderboardTest,
     timeFilter,
-    rounds,
+    communityRounds,
     user?.totalXP,
     userName,
     user,
@@ -5363,7 +5363,7 @@ export default function AcademyPage() {
                         ? getLeaderboardData(
                             "xp",
                             timeFilter,
-                            rounds || [],
+                            communityRounds || [],
                             user?.totalXP || 0,
                             userName || "Academy Member",
                             user,

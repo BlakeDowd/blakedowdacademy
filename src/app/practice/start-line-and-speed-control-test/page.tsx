@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { StartLineAndSpeedControlTestRunner } from "@/components/StartLineAndSpeedControlTestRunner";
+import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { combineHighlightStartLine } from "@/lib/combineHighlightDefinitions";
 import { startLineAndSpeedControlTestConfig } from "@/lib/startLineAndSpeedControlTestConfig";
 
 export default function StartLineAndSpeedControlTestPage() {
@@ -16,6 +18,7 @@ export default function StartLineAndSpeedControlTestPage() {
           <h1 className="text-2xl font-bold text-gray-900">{startLineAndSpeedControlTestConfig.testName}</h1>
         </header>
         <StartLineAndSpeedControlTestRunner />
+        <CombineCommunityHighlights definition={combineHighlightStartLine} />
       </div>
     </div>
   );

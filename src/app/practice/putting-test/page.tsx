@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { ChevronLeft, Target } from "lucide-react";
 import { PuttingTestRunner } from "@/components/PuttingTestRunner";
+import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { combineHighlightPutting18 } from "@/lib/combineHighlightDefinitions";
 import { puttingTestConfig } from "@/lib/puttingTestConfig";
 
 export default function PuttingTestPage() {
@@ -33,6 +35,7 @@ export default function PuttingTestPage() {
             Shuffled 18-footer sequence with break shape mix. Log each hole for points and putt count.
           </p>
           <PuttingTestRunner />
+          <CombineCommunityHighlights definition={combineHighlightPutting18} />
         </div>
       </div>
     </div>

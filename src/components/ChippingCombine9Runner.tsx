@@ -6,8 +6,6 @@ import { chippingCombine9Config } from "@/lib/chippingCombine9Config";
 import {
   type ChipResultLabel,
   type ChippingCombineHoleLog,
-  type ExecutionErrorLabel,
-  type ReadErrorLabel,
   MAX_CHIP_SESSION,
   MAX_SESSION_POINTS,
   averageProximityCm,
@@ -21,6 +19,15 @@ import {
   suggestedChipFromProximityCm,
   totalChipPoints,
 } from "@/lib/chippingCombine9Analytics";
+import {
+  PRIMARY_MISS_LABELS,
+  type PrimaryMissReason,
+} from "@/lib/puttingTestMissDiagnostics";
+import {
+  type PuttingTestMissCategory,
+  PUTTING_TEST_MISS_CATEGORY_LABELS,
+} from "@/lib/puttingTestMissScoring";
+import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 
 function parseProximityCm(raw: string): number | null {
   const t = raw.trim();
@@ -51,12 +58,12 @@ async function persistSession(
       proximity_cm: h.proximity_cm ?? null,
     }));
     const missCategories = holes
-      .filter((h) => h.miss_category)
+      .filter((h) => h.miss_category || h.first_putt_miss_quadrant)
       .map((h) => ({
         hole: h.hole,
         category: h.miss_category,
-        read_error: h.read_error,
-        execution_error: h.execution_error,
+        quadrant: h.first_putt_miss_quadrant ?? null,
+        primary_reason: h.putt_miss_primary_reason ?? null,
       }));
 
     const { error } = await supabase.from("practice").insert({
@@ -98,22 +105,23 @@ const CHIP_OPTIONS: { label: ChipResultLabel; hint: string }[] = [
   { label: "Holed", hint: "0 cm → 20 pts" },
   { label: "Inside Club Length", hint: "1–90 cm → 15–11 pts (linear)" },
   { label: "Inside 6ft", hint: "91–183 cm → 10–6 pts (linear)" },
-  { label: "Safety Zone", hint: "184–300 cm → 5–1 pts (linear)" },
-  { label: "Missed Zone", hint: ">300 cm → 0 pts" },
+  { label: "Safety Zone", hint: "184–299 cm → 5–1 pts (linear)" },
+  { label: "Missed Zone", hint: "≥300 cm → 0 pts" },
 ];
+
+type Phase = "chip" | "putt" | "audit-quadrant" | "audit-primary";
 
 export function ChippingCombine9Runner() {
   const { user } = useAuth();
   const [status, setStatus] = useState<"intro" | "active" | "complete">("intro");
   const [distancesM, setDistancesM] = useState<number[]>([]);
   const [holeIndex, setHoleIndex] = useState(0);
-  const [phase, setPhase] = useState<"chip" | "putt" | "audit">("chip");
+  const [phase, setPhase] = useState<Phase>("chip");
   const [holes, setHoles] = useState<ChippingCombineHoleLog[]>([]);
   const [pendingChip, setPendingChip] = useState<ChipResultLabel | null>(null);
   const [proximityInput, setProximityInput] = useState("");
   const [chipError, setChipError] = useState<string | null>(null);
-  const [readError, setReadError] = useState<ReadErrorLabel | null>(null);
-  const [executionError, setExecutionError] = useState<ExecutionErrorLabel | null>(null);
+  const [pendingMissQuadrant, setPendingMissQuadrant] = useState<PuttingTestMissCategory | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const persistAttemptedRef = useRef(false);
@@ -136,8 +144,7 @@ export function ChippingCombine9Runner() {
     setPendingChip(null);
     setProximityInput("");
     setChipError(null);
-    setReadError(null);
-    setExecutionError(null);
+    setPendingMissQuadrant(null);
     setSaveError(null);
     setSaved(false);
     persistAttemptedRef.current = false;
@@ -151,8 +158,7 @@ export function ChippingCombine9Runner() {
       setPendingChip(null);
       setProximityInput("");
       setChipError(null);
-      setReadError(null);
-      setExecutionError(null);
+      setPendingMissQuadrant(null);
       setPhase("chip");
 
       if (next.length >= total) {
@@ -193,20 +199,18 @@ export function ChippingCombine9Runner() {
     return chipPointsFromProximityCm(proximityCmParsed);
   }, [proximityCmParsed]);
 
-  const onSelectChip = useCallback(
-    (_label: ChipResultLabel) => {
-      const cm = parseProximityCm(proximityInput);
-      if (cm === null) {
-        setChipError("Enter distance from hole (cm) first.");
-        return;
-      }
-      setChipError(null);
-      const derived = chipResultLabelFromProximityCm(cm);
-      setPendingChip(derived);
-      setPhase("putt");
-    },
-    [proximityInput],
-  );
+  const zoneLocked = suggestedChip !== null;
+
+  const confirmProximityZone = useCallback(() => {
+    const cm = parseProximityCm(proximityInput);
+    if (cm === null) {
+      setChipError("Enter distance from hole (cm) first.");
+      return;
+    }
+    setChipError(null);
+    setPendingChip(chipResultLabelFromProximityCm(cm));
+    setPhase("putt");
+  }, [proximityInput]);
 
   const onPuttMade = useCallback(() => {
     if (phase !== "putt" || !pendingChip) return;
@@ -227,31 +231,65 @@ export function ChippingCombine9Runner() {
 
   const onPuttMissed = useCallback(() => {
     if (phase !== "putt") return;
-    setPhase("audit");
-    setReadError(null);
-    setExecutionError(null);
+    setPendingMissQuadrant(null);
+    setPhase("audit-quadrant");
   }, [phase]);
 
-  const onSubmitAudit = useCallback(() => {
-    if (phase !== "audit" || !pendingChip || readError === null || executionError === null) return;
-    const cm = parseProximityCm(proximityInput);
-    if (cm === null) return;
-    const chipResult = chipResultLabelFromProximityCm(cm);
-    const chipPts = chipPointsFromProximityCm(cm);
-    const missCategory = `${readError}/${executionError}`;
-    void finishHole({
-      hole: displayHole,
-      distance_m: distanceThisHole,
-      proximity_cm: cm,
-      chip_result: chipResult,
-      chip_points: chipPts,
-      putt_made: false,
-      putt_points: 0,
-      read_error: readError,
-      execution_error: executionError,
-      miss_category: missCategory,
-    });
-  }, [phase, pendingChip, proximityInput, readError, executionError, displayHole, distanceThisHole, finishHole]);
+  const onPickFirstPuttMissQuadrant = useCallback((quadrant: PuttingTestMissCategory) => {
+    if (phase !== "audit-quadrant" || !pendingChip) return;
+    setPendingMissQuadrant(quadrant);
+    setPhase("audit-primary");
+  }, [phase, pendingChip]);
+
+  const onPickPrimaryMissReason = useCallback(
+    (reason: PrimaryMissReason) => {
+      if (phase !== "audit-primary" || !pendingChip || pendingMissQuadrant === null) return;
+      const cm = parseProximityCm(proximityInput);
+      if (cm === null) return;
+      const chipResult = chipResultLabelFromProximityCm(cm);
+      const chipPts = chipPointsFromProximityCm(cm);
+      const quadLabel = PUTTING_TEST_MISS_CATEGORY_LABELS[pendingMissQuadrant];
+      const reasonLabel = PRIMARY_MISS_LABELS[reason];
+      void finishHole({
+        hole: displayHole,
+        distance_m: distanceThisHole,
+        proximity_cm: cm,
+        chip_result: chipResult,
+        chip_points: chipPts,
+        putt_made: false,
+        putt_points: 0,
+        first_putt_miss_quadrant: pendingMissQuadrant,
+        putt_miss_primary_reason: reason,
+        miss_category: `${quadLabel} · ${reasonLabel}`,
+      });
+    },
+    [
+      phase,
+      pendingChip,
+      pendingMissQuadrant,
+      proximityInput,
+      displayHole,
+      distanceThisHole,
+      finishHole,
+    ],
+  );
+
+  const goBackPhase = useCallback(() => {
+    if (phase === "putt") {
+      setPhase("chip");
+      setPendingChip(null);
+      return;
+    }
+    if (phase === "audit-quadrant") {
+      setPhase("putt");
+      setPendingMissQuadrant(null);
+      return;
+    }
+    if (phase === "audit-primary") {
+      setPhase("audit-quadrant");
+      setPendingMissQuadrant(null);
+    }
+  }, [phase]);
 
   const retryPersist = useCallback(async () => {
     if (!user?.id || holes.length < total) return;
@@ -283,6 +321,7 @@ export function ChippingCombine9Runner() {
   const choiceBtn =
     "w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-3 text-sm font-semibold text-gray-900 transition-colors hover:border-[#014421] hover:bg-[#014421]/5 text-left";
   const choiceBtnActive = "border-[#014421] bg-[#014421]/10 ring-2 ring-[#014421]/20";
+  const choiceBtnDisabled = "opacity-40 cursor-not-allowed hover:border-gray-200 hover:bg-white";
 
   if (status === "intro") {
     return (
@@ -290,9 +329,10 @@ export function ChippingCombine9Runner() {
         <p className="text-sm text-gray-600 leading-relaxed">
           Starting draws nine new distances in that same {chippingCombine9Config.distanceMinM}–
           {chippingCombine9Config.distanceMaxM} m window. Each hole: enter chip distance from the hole
-          in centimeters (Online Academy linear proximity scale), confirm the matching zone, log make or
-          miss on the putt, then optional read vs. execution tags on misses. Finish all nine to save this
-          session to your practice history.
+          in centimeters (Online Academy linear proximity scale); your proximity zone is selected from
+          that value (other zones stay locked). Log make or miss on the putt; on misses, pick the
+          first-putt miss quadrant, then the primary reason (Read, Speed, or Start Line). Finish all
+          nine to save this session to your practice history.
         </p>
         <button
           type="button"
@@ -338,7 +378,7 @@ export function ChippingCombine9Runner() {
           </div>
           <div className="border-t border-gray-100 pt-4">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-1">
-              The diagnosis
+              Miss distribution
             </p>
             <p className="text-sm font-medium text-gray-900">{summary.diagnosis}</p>
           </div>
@@ -401,6 +441,8 @@ export function ChippingCombine9Runner() {
         <p className="text-xs text-gray-600 mt-1">Chip to the hole, then log your results.</p>
       </div>
 
+      {phase !== "chip" && <CombineFlowBackControl onBack={goBackPhase} />}
+
       {phase === "chip" && (
         <div className="space-y-4">
           <div className="space-y-1">
@@ -427,6 +469,12 @@ export function ChippingCombine9Runner() {
                   el.select();
                 });
               }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && zoneLocked) {
+                  e.preventDefault();
+                  confirmProximityZone();
+                }
+              }}
               placeholder="e.g. 120"
               className="w-full min-h-[48px] rounded-xl border-2 border-gray-200 bg-white px-4 py-3.5 text-[16px] leading-normal text-gray-900 tabular-nums focus:border-[#014421] focus:outline-none focus:ring-2 focus:ring-[#014421]/20 [-moz-appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
@@ -439,31 +487,46 @@ export function ChippingCombine9Runner() {
               </p>
             )}
             <p className="text-xs text-gray-500 leading-relaxed">
-              Use the iPhone Measure App for exact results.
+              Use the iPhone Measure App for exact results. Zone is set from your cm value; only the
+              matching zone can be confirmed.
             </p>
             {chipError && <p className="text-sm text-red-600">{chipError}</p>}
           </div>
 
           <div className="space-y-2">
             <p className="text-sm font-medium text-gray-800">Confirm your proximity zone</p>
+            {!zoneLocked && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                Enter a valid distance (cm) to unlock the zone that matches your measurement.
+              </p>
+            )}
             <div className="space-y-2">
-              {CHIP_OPTIONS.map((o) => (
-                <button
-                  key={o.label}
-                  type="button"
-                  onClick={() => onSelectChip(o.label)}
-                  className={`${choiceBtn} ${suggestedChip === o.label ? choiceBtnActive : ""}`}
-                >
-                  <span className="block">
-                    {o.label === "Inside Club Length"
-                      ? "Inside Club Length (<90 cm)"
-                      : o.label === "Inside 6ft"
-                        ? "Inside 6ft (<183 cm)"
-                        : o.label}
-                  </span>
-                  <span className="text-xs font-normal text-gray-500">{o.hint}</span>
-                </button>
-              ))}
+              {CHIP_OPTIONS.map((o) => {
+                const isMatch = zoneLocked && suggestedChip === o.label;
+                const isDisabled = zoneLocked && !isMatch;
+                return (
+                  <button
+                    key={o.label}
+                    type="button"
+                    disabled={!zoneLocked || isDisabled}
+                    onClick={() => confirmProximityZone()}
+                    className={`${choiceBtn} ${isMatch ? choiceBtnActive : ""} ${!zoneLocked || isDisabled ? choiceBtnDisabled : ""} ${zoneLocked && isMatch ? "" : ""}`}
+                  >
+                    <span className="block">
+                      {o.label === "Inside Club Length"
+                        ? "Inside Club Length (1–90 cm)"
+                        : o.label === "Inside 6ft"
+                          ? "Inside 6ft (91–183 cm)"
+                          : o.label === "Safety Zone"
+                            ? "Safety Zone (184–299 cm)"
+                            : o.label === "Missed Zone"
+                              ? "Missed Zone (≥300 cm)"
+                              : o.label}
+                    </span>
+                    <span className="text-xs font-normal text-gray-500">{o.hint}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -491,47 +554,57 @@ export function ChippingCombine9Runner() {
         </div>
       )}
 
-      {phase === "audit" && pendingChip && (
-        <div className="space-y-4">
-          <p className="text-sm font-medium text-amber-900">Process audit</p>
-          <div>
-            <p className="text-xs font-medium text-gray-600 mb-2">Read Error</p>
-            <div className="grid grid-cols-2 gap-2">
-              {(["High", "Low"] as const).map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setReadError(r)}
-                  className={`${choiceBtn} text-center ${readError === r ? choiceBtnActive : ""}`}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
+      {phase === "audit-quadrant" && pendingChip && (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">First putt miss — pick category</p>
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                ["highLong", "High / Long"],
+                ["highShort", "High / Short"],
+                ["lowLong", "Low / Long"],
+                ["lowShort", "Low / Short"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onPickFirstPuttMissQuadrant(key)}
+                className="py-2.5 px-3 rounded-lg border-2 border-gray-200 text-sm font-medium text-gray-800 hover:border-[#014421] hover:bg-[#014421]/5 transition-colors"
+              >
+                {label}
+              </button>
+            ))}
           </div>
-          <div>
-            <p className="text-xs font-medium text-gray-600 mb-2">Execution Error</p>
-            <div className="grid grid-cols-2 gap-2">
-              {(["Speed", "Start Line"] as const).map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => setExecutionError(e)}
-                  className={`${choiceBtn} text-center ${executionError === e ? choiceBtnActive : ""}`}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
+        </div>
+      )}
+
+      {phase === "audit-primary" && pendingChip && pendingMissQuadrant !== null && (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">
+            Primary reason for the miss
+            <span className="block text-xs font-normal text-gray-500 mt-1">
+              Quadrant: {PUTTING_TEST_MISS_CATEGORY_LABELS[pendingMissQuadrant]}
+            </span>
+          </p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {(
+              [
+                ["read", "Read"],
+                ["speed", "Speed"],
+                ["startLine", "Start Line"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onPickPrimaryMissReason(key as PrimaryMissReason)}
+                className="py-2.5 px-3 rounded-lg border-2 border-gray-200 text-sm font-medium text-gray-800 hover:border-[#014421] hover:bg-[#014421]/5 transition-colors"
+              >
+                {label}
+              </button>
+            ))}
           </div>
-          <button
-            type="button"
-            disabled={readError === null || executionError === null}
-            onClick={onSubmitAudit}
-            className="w-full py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Next hole
-          </button>
         </div>
       )}
     </div>
