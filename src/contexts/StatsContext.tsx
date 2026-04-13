@@ -495,11 +495,23 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         const summaryLower = summary.toLowerCase();
         const tableMissing =
           err.code === "PGRST205" ||
-          summaryLower.includes("schema cache") ||
           summaryLower.includes("could not find the table");
+        const columnMissing =
+          err.code === "PGRST204" ||
+          err.code === "42703" ||
+          (summaryLower.includes("practice_logs") && summaryLower.includes("does not exist")) ||
+          (summaryLower.includes("schema cache") &&
+            summaryLower.includes("could not find the") &&
+            summaryLower.includes("column"));
         if (tableMissing) {
           console.warn(
             "StatsContext: practice_logs is not in the database yet (PGRST205). Run `supabase db push` or paste supabase/migrations/20260420140000_practice_logs_bootstrap_pgrst205.sql in the SQL Editor, then reload the API schema (Dashboard → Settings → API → Reload schema).",
+            summary,
+            err.hint ? `PostgREST hint: ${err.hint}` : ""
+          );
+        } else if (columnMissing) {
+          console.warn(
+            "StatsContext: practice_logs is missing columns (PGRST204 / 42703). Run `supabase db push`, or paste 20260420150000_practice_logs_missing_columns_pgrst204.sql (and if needed 20260420160000_practice_logs_log_type_created_at.sql) in the SQL Editor, then Dashboard → Settings → API → Reload schema.",
             summary,
             err.hint ? `PostgREST hint: ${err.hint}` : ""
           );

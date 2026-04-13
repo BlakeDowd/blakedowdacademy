@@ -1,5 +1,7 @@
 -- PGRST205: "could not find the table public.practice_logs in the schema cache"
 -- Use on projects that have `public.practice` but never created `practice_logs`.
+-- If the table exists but inserts fail with PGRST204 (missing column), run
+-- 20260420150000_practice_logs_missing_columns_pgrst204.sql as well.
 -- Safe to re-run: IF NOT EXISTS / ADD COLUMN IF NOT EXISTS.
 
 CREATE TABLE IF NOT EXISTS public.practice_logs (
