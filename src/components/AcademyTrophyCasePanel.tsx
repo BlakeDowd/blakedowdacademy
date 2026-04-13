@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Trophy,
   X,
@@ -25,10 +25,20 @@ import {
   achievementContributionsForKey,
   type UserAchievementRow,
 } from "@/lib/userAchievements";
+import {
+  fetchTrophyCollectionLeaderboard,
+  fetchTrophyCollectionRankForUser,
+  runBackfillMyAchievementsFromTrophies,
+  type TrophyCollectionLeaderboardRow,
+} from "@/lib/trophyCollectionLeaderboard";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 export type AcademyTrophyDbRow = {
+  achievement_id: string;
+  earned_at?: string;
+  /** Resolved from `TROPHY_LIST` for labels (not a DB column). */
   trophy_name: string;
-  unlocked_at?: string;
   description?: string;
   id?: string;
   trophy_icon?: string;
@@ -40,9 +50,10 @@ export type AcademySelectedTrophy =
       multiplierContributions?: TrophyContributionLine[];
     })
   | {
+      achievement_id: string;
       trophy_name: string;
       description?: string;
-      unlocked_at?: string;
+      earned_at?: string;
       id?: string;
       trophy_icon?: string;
       isEarned?: boolean;
@@ -67,8 +78,6 @@ type Props = {
   achievementRows: readonly UserAchievementRow[];
   /** Counts from `public.user_achievements` keyed by `achievement_key` (trophy id). */
   achievementCountByKey: ReadonlyMap<string, number>;
-  practiceLogs?: unknown[] | null;
-  roundStatsRowCount: number | null;
 };
 
 export default function AcademyTrophyCasePanel({
@@ -81,25 +90,81 @@ export default function AcademyTrophyCasePanel({
   trophyMultiplierById,
   achievementRows,
   achievementCountByKey,
-  practiceLogs,
-  roundStatsRowCount,
 }: Props) {
+  const { user } = useAuth();
   const [trophiesExpanded, setTrophiesExpanded] = useState(false);
+  const [communityLeaderboard, setCommunityLeaderboard] = useState<readonly TrophyCollectionLeaderboardRow[]>([]);
+  const [communityLoading, setCommunityLoading] = useState(true);
+  const [communityError, setCommunityError] = useState<string | null>(null);
+  const [communityViewerRank, setCommunityViewerRank] = useState<number | null>(null);
+  const [communityViewerTotalDb, setCommunityViewerTotalDb] = useState(0);
   const earnedCount = useMemo(() => dbTrophies.length, [dbTrophies]);
   const totalTrophies = TROPHY_LIST.length;
   const lockedCount = Math.max(0, totalTrophies - earnedCount);
 
+  /** Times earned: max(`user_achievements` rows, heuristic count from activity) so the × badge matches reality. */
+  const collectionCountById = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of TROPHY_LIST) {
+      const table = achievementCountByKey.get(t.id) ?? 0;
+      const legacy = trophyMultiplierById.get(t.id)?.count ?? 0;
+      m.set(t.id, Math.max(table, legacy));
+    }
+    return m;
+  }, [achievementCountByKey, trophyMultiplierById]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setCommunityLoading(true);
+      setCommunityError(null);
+      setCommunityViewerRank(null);
+      setCommunityViewerTotalDb(0);
+      try {
+        const supabase = createClient();
+        await runBackfillMyAchievementsFromTrophies(supabase);
+        const rows = await fetchTrophyCollectionLeaderboard(supabase, 40);
+        if (cancelled) return;
+        setCommunityLeaderboard(rows);
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setCommunityLeaderboard([]);
+          setCommunityError(e instanceof Error ? e.message : "Could not load rankings.");
+        }
+      } finally {
+        if (!cancelled) setCommunityLoading(false);
+      }
+      if (cancelled || !user?.id) return;
+      try {
+        const supabase = createClient();
+        const v = await fetchTrophyCollectionRankForUser(supabase, user.id);
+        if (cancelled) return;
+        setCommunityViewerRank(v.rank);
+        setCommunityViewerTotalDb(v.totalDbEvents);
+      } catch {
+        if (!cancelled) {
+          setCommunityViewerRank(null);
+          setCommunityViewerTotalDb(0);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, achievementRows.length, dbTrophies.length, trophiesExpanded]);
+
   const trophyCaseCards = useMemo((): TrophyCaseCardTrophy[] => {
-    const earnedTrophyNames = new Set(dbTrophies.map((t) => t.trophy_name));
+    const earnedIds = new Set(dbTrophies.map((t) => t.achievement_id));
     const allTrophies: TrophyCaseCardTrophy[] = TROPHY_LIST.map((trophy) => {
-      const isEarned = earnedTrophyNames.has(trophy.name);
-      const dbTrophy = dbTrophies.find((t) => t.trophy_name === trophy.name);
+      const isEarned = earnedIds.has(trophy.id);
+      const dbTrophy = dbTrophies.find((t) => t.achievement_id === trophy.id);
       return {
         id: trophy.id,
+        achievement_id: trophy.id,
         trophy_name: trophy.name,
         trophy_icon: undefined,
         description: trophy.requirement || dbTrophy?.description,
-        unlocked_at: dbTrophy?.unlocked_at,
+        earned_at: dbTrophy?.earned_at,
         isEarned,
         requirement: trophy.requirement,
       };
@@ -110,17 +175,14 @@ export default function AcademyTrophyCasePanel({
   const handleTrophyCaseSelect = useCallback(
     (trophy: TrophyCaseCardTrophy) => {
       const id = trophy.id.trim();
-      const tableCount = achievementCountByKey.get(id) ?? 0;
+      const merged = collectionCountById.get(id) ?? 0;
       const legacy = trophyMultiplierById.get(id);
-      const multiplierCount =
-        tableCount > 1 ? tableCount : legacy && legacy.count > 1 ? legacy.count : undefined;
+      const multiplierCount = merged > 1 ? merged : undefined;
       let multiplierContributions: TrophyContributionLine[] | undefined;
-      if (tableCount > 1) {
+      if (merged > 1) {
         const fromTable = achievementContributionsForKey(achievementRows, id);
         multiplierContributions =
-          fromTable.length > 0 ? fromTable : legacy && legacy.count > 1 ? legacy.contributions : fromTable;
-      } else if (legacy && legacy.count > 1) {
-        multiplierContributions = legacy.contributions;
+          fromTable.length > 0 ? fromTable : legacy?.contributions ?? fromTable;
       }
       onSelectTrophy({
         ...trophy,
@@ -128,7 +190,7 @@ export default function AcademyTrophyCasePanel({
         multiplierContributions,
       });
     },
-    [achievementCountByKey, achievementRows, onSelectTrophy, trophyMultiplierById],
+    [achievementRows, collectionCountById, onSelectTrophy, trophyMultiplierById],
   );
 
   const collapseTrophyCase = () => {
@@ -212,8 +274,15 @@ export default function AcademyTrophyCasePanel({
               <div id="academy-trophy-case-grid" role="region" aria-labelledby="academy-trophy-case-heading">
                 <TrophyCase
                   cards={trophyCaseCards}
-                  achievementCountByKey={achievementCountByKey}
+                  collectionCountById={collectionCountById}
                   onSelectTrophy={handleTrophyCaseSelect}
+                  communityLeaderboard={communityLeaderboard}
+                  communityLoading={communityLoading}
+                  communityError={communityError}
+                  communityViewerId={user?.id ?? null}
+                  communityViewerRank={communityViewerRank}
+                  communityViewerTotalDb={communityViewerTotalDb}
+                  earnedTrophyCount={earnedCount}
                 />
               </div>
             </>
@@ -223,9 +292,9 @@ export default function AcademyTrophyCasePanel({
 
       {selectedTrophy &&
         (() => {
-          const isDbTrophy = "trophy_name" in selectedTrophy;
+          const isDbTrophy = "achievement_id" in selectedTrophy && !("checkUnlocked" in selectedTrophy);
           const trophyId = isDbTrophy
-            ? selectedTrophy.id || selectedTrophy.trophy_name?.toLowerCase().replace(/\s+/g, "-")
+            ? selectedTrophy.id || selectedTrophy.achievement_id
             : selectedTrophy.id;
           const trophyDef = TROPHY_LIST.find(
             (t) =>
@@ -249,7 +318,7 @@ export default function AcademyTrophyCasePanel({
               trophyDef?.requirement ||
               description
             : selectedTrophy.requirement;
-          const unlockedAt = isDbTrophy ? selectedTrophy.unlocked_at : undefined;
+          const earnedAt = isDbTrophy ? selectedTrophy.earned_at : undefined;
 
           return (
             <div
@@ -314,19 +383,7 @@ export default function AcademyTrophyCasePanel({
                         {formatTrophyProgressLine(trophyDef, academyTrophyStats)}
                       </p>
                       <p className="mt-4 border-t border-stone-200/90 pt-3 text-[11px] leading-snug text-stone-500">
-                        Progress reflects your{" "}
-                        <span className="font-semibold text-stone-700">{academyTrophyStats.rounds}</span> logged
-                        rounds
-                        {roundStatsRowCount != null ? (
-                          <>
-                            , <span className="font-semibold text-stone-700">{roundStatsRowCount}</span>{" "}
-                            <code className="rounded bg-stone-100 px-1 text-stone-700">round_stats</code> rows
-                          </>
-                        ) : null}
-                        , practice session history, and{" "}
-                        <span className="font-semibold text-stone-700">{practiceLogs?.length ?? 0}</span>{" "}
-                        <code className="rounded bg-stone-100 px-1 text-stone-700">practice_logs</code> sessions
-                        where relevant.
+                        Progress uses your saved rounds and practice activity in the app.
                       </p>
                     </div>
                   )}
@@ -379,11 +436,11 @@ export default function AcademyTrophyCasePanel({
                     </div>
                   )}
 
-                  {unlockedAt && (
+                  {earnedAt && (
                     <div className="mt-2 w-full border-t border-gray-200 pt-4">
                       <p className="text-sm text-gray-500">
-                        Unlocked on{" "}
-                        {new Date(unlockedAt).toLocaleDateString("en-US", {
+                        Earned on{" "}
+                        {new Date(earnedAt).toLocaleDateString("en-US", {
                           year: "numeric",
                           month: "long",
                           day: "numeric",

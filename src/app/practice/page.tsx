@@ -188,50 +188,10 @@ const facilityInfo: Record<FacilityType, { label: string; icon: any }> = {
 const ALL_FACILITIES: FacilityType[] = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy'];
 
 import { logActivity } from "@/lib/activity";
+import { addProfileXp } from "@/lib/addProfileXp";
 
-// XP Logic: Create a function updateUserXP(points) that adds a specific amount of XP to the user's profiles record in Supabase
 async function updateUserXP(userId: string, points: number): Promise<void> {
-  try {
-    const { createClient } = await import("@/lib/supabase/client");
-    const supabase = createClient();
-
-    // Get current XP from profile
-    const { data: currentProfile, error: fetchError } = await supabase
-      .from('profiles')
-      .select('total_xp')
-      .eq('id', userId)
-      .single();
-
-    if (fetchError && fetchError.code !== 'PGRST116') {
-      console.error('Error fetching current XP:', fetchError);
-    }
-
-    const currentXP = currentProfile?.total_xp || 0;
-    const newXP = currentXP + points;
-
-    // Calculate level based on XP
-    let newLevel = 1;
-    if (newXP < 500) newLevel = 1;
-    else if (newXP < 1500) newLevel = 2;
-    else if (newXP < 3000) newLevel = 3;
-    else newLevel = 4 + Math.floor((newXP - 3000) / 2000);
-
-    // Update XP and level in profiles table
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({ total_xp: newXP, current_level: newLevel })
-      .eq('id', userId);
-
-    if (updateError) {
-      console.error('Error updating XP:', updateError);
-    } else {
-      console.log(`XP updated: ${currentXP} + ${points} = ${newXP} (Level ${newLevel})`);
-      // Global Refresh: Dispatch event to refresh XP leaderboard
-      window.dispatchEvent(new Event('xpUpdated'));
-    }
-  } catch (error) {
-    console.error('Error in updateUserXP:', error);
-  }
+  await addProfileXp(userId, points);
 }
 
 export default function PracticePage() {

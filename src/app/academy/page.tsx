@@ -32,15 +32,16 @@ import TrophyCard from "@/components/TrophyCard";
 import {
   type ParsedPuttingHole,
   parsePuttingHoleSession,
-  bestPuttingCombineScoreForUser,
+  bestClusteredPuttingTestScoreAndSessionEndMs,
+  isCompletePuttingCombineSession,
   parsePutting9HoleSession,
-  bestPutting9HolesScoreForUser,
+  isCompletePutting9Session,
   parsePuttingTest3To6ftSession,
-  bestPuttingTest3To6ftScoreForUser,
+  isCompletePuttingTest3To6ftSession,
   parsePuttingTest8To20Session,
-  bestPuttingTest8To20ScoreForUser,
+  isCompletePuttingTest8To20Session,
   parsePuttingTest20To40Session,
-  bestPuttingTest20To40ScoreForUser,
+  isCompletePuttingTest20To40Session,
 } from "@/lib/puttingTestLeaderboard";
 import { puttingTest9Config } from "@/lib/puttingTest9Config";
 import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
@@ -70,15 +71,18 @@ import {
 import AcademyTrophyCasePanel, {
   type AcademySelectedTrophy,
 } from "@/components/AcademyTrophyCasePanel";
+import { runBackfillMyAchievementsFromTrophies } from "@/lib/trophyCollectionLeaderboard";
+import { fetchUserTrophiesForUser } from "@/lib/userTrophiesDb";
 import {
   practiceSessionMinutesFromRow,
   practiceSessionsForUser,
 } from "@/lib/practiceSessionDuration";
 
 type AcademyDbTrophyRow = {
+  achievement_id: string;
+  earned_at?: string;
   trophy_name: string;
   trophy_icon?: string;
-  unlocked_at?: string;
   description?: string;
   id?: string;
 };
@@ -442,10 +446,8 @@ function estimatedXpFromPracticeRow(session: any): number {
 }
 
 /**
- * Per-user XP in the selected window from `practice` rows only — same sources as updateUserXP on
- * the practice page (freestyle + roadmap drills). Rounds are NOT included: logging a round does not
- * call updateUserXP, so adding XP_PER_ROUND per round would exceed profiles.total_xp (e.g. 11k "this
- * year" vs 3k all-time).
+ * Per-user XP in the selected window from `practice` rows — same sources as updateUserXP on the
+ * practice page (freestyle + roadmap drills). Putting-test rows contribute 0 here.
  */
 function accumulateXpByUserForTimeFilter(
   timeFilter: "week" | "month" | "year" | "allTime",
@@ -465,6 +467,55 @@ function accumulateXpByUserForTimeFilter(
   return out;
 }
 
+/** XP from logged rounds in the window (same award as `XP_AWARD_PER_LOGGED_ROUND` on save). */
+function accumulateRoundXpByUserForTimeFilter(
+  timeFilter: "week" | "month" | "year" | "allTime",
+  communityRounds: any[],
+): Map<string, number> {
+  const out = new Map<string, number>();
+  if (timeFilter === "allTime") return out;
+  for (const round of communityRounds || []) {
+    const uid = round?.user_id;
+    if (!uid) continue;
+    if (!roundPassesLeaderboardTimeFilter(round, timeFilter)) continue;
+    out.set(uid, (out.get(uid) || 0) + XP_PER_ROUND);
+  }
+  return out;
+}
+
+function mergePeriodXpMaps(a: Map<string, number>, b: Map<string, number>): Map<string, number> {
+  const out = new Map(a);
+  for (const [uid, v] of b) {
+    out.set(uid, (out.get(uid) || 0) + v);
+  }
+  return out;
+}
+
+/**
+ * Lifetime XP implied by logged `practice` + `rounds` rows (same rules as period XP).
+ * Used so All-Time can align with week/month when `profiles.total_xp` lagged behind (e.g. rounds
+ * logged before profile XP was updated).
+ */
+function accumulateLifetimeActivityXpByUser(
+  practiceSessions: any[],
+  communityRounds: any[],
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const session of practiceSessions || []) {
+    const uid = session?.user_id;
+    if (!uid) continue;
+    const add = estimatedXpFromPracticeRow(session);
+    if (add <= 0) continue;
+    out.set(uid, (out.get(uid) || 0) + add);
+  }
+  for (const round of communityRounds || []) {
+    const uid = round?.user_id;
+    if (!uid) continue;
+    out.set(uid, (out.get(uid) || 0) + XP_PER_ROUND);
+  }
+  return out;
+}
+
 function ensureCurrentUserOnLeaderboard(
   entries: any[],
   user: { id?: string; preferredIconId?: string } | null | undefined,
@@ -473,28 +524,34 @@ function ensureCurrentUserOnLeaderboard(
     { full_name?: string; preferred_icon_id?: string; xp?: number }
   > | undefined,
   pinnedValue: number,
+  pinnedDateMs?: number,
 ): any[] {
   if (!user?.id || entries.some((e) => e.id === user.id)) return entries;
   const profile = userProfiles?.get(user.id);
-  if (!profile?.full_name) return entries;
+  const displayName = profile?.full_name?.trim() || "Academy Member";
   let nameForAvatar = "U";
-  if (profile.full_name) {
+  if (displayName && displayName !== "Academy Member") {
     nameForAvatar =
-      profile.full_name
+      displayName
         .split(" ")
         .map((n: string) => n[0])
         .join("")
         .toUpperCase() || "U";
   }
-  const userIcon = profile.preferred_icon_id || nameForAvatar;
+  const userIcon = profile?.preferred_icon_id || nameForAvatar;
+  const dateOk =
+    typeof pinnedDateMs === "number" &&
+    Number.isFinite(pinnedDateMs) &&
+    pinnedDateMs > 0;
   return [
     ...entries,
     {
       id: user.id,
-      name: profile.full_name,
+      name: displayName,
       avatar: userIcon,
       value: pinnedValue,
       isCurrentUser: true,
+      ...(dateOk ? { dateMs: pinnedDateMs } : {}),
     },
   ];
 }
@@ -811,8 +868,7 @@ async function fetchUserProfiles(
     const { data, error } = await supabase
       .from("profiles")
       .select("id, full_name, total_xp, preferred_icon_id")
-      .in("id", userIds)
-      .not("full_name", "is", null);
+      .in("id", userIds);
 
     if (error) {
       // Debug the Error: Full error object with JSON.stringify to see actual message
@@ -842,9 +898,13 @@ async function fetchUserProfiles(
       // Show User Icons: Include preferred_icon_id from database for avatar display
       // Standardize Fallback: Use (profile.total_xp || 0) to ensure we aren't trying to add undefined or NaN to the state
       const xpValue = profile.total_xp || 0;
+      const displayName =
+        typeof profile.full_name === "string" && profile.full_name.trim().length > 0
+          ? profile.full_name.trim()
+          : "Academy Member";
       profileMap.set(profile.id, {
-        full_name: profile.full_name,
-        preferred_icon_id: profile.preferred_icon_id, 
+        full_name: displayName,
+        preferred_icon_id: profile.preferred_icon_id,
         xp: xpValue, // Standardize Fallback: Use (profile.total_xp || 0) to ensure we aren't trying to add undefined or NaN to the state
       });
       console.log(
@@ -1559,8 +1619,11 @@ function getLeaderboardData(
 
     const allEntries: any[] = [];
     holesByUser.forEach((holes, userId) => {
-      const best = bestPuttingCombineScoreForUser(holes);
-      if (best <= 0) return;
+      const detail = bestClusteredPuttingTestScoreAndSessionEndMs(
+        holes,
+        isCompletePuttingCombineSession,
+      );
+      if (!detail || detail.score <= 0) return;
       const profile = userProfiles?.get(userId);
       if (!profile || !profile.full_name) return;
       const displayName = profile.full_name;
@@ -1578,7 +1641,8 @@ function getLeaderboardData(
         id: userId,
         name: displayName,
         avatar: userIcon,
-        value: best,
+        value: detail.score,
+        dateMs: detail.sessionEndMs,
         isCurrentUser: user?.id === userId,
       });
     });
@@ -1586,14 +1650,21 @@ function getLeaderboardData(
     allEntries.sort((a, b) => b.value - a.value);
 
     let meBest = 0;
+    let meSessionEndMs: number | undefined;
     if (user?.id) {
-      meBest = bestPuttingCombineScoreForUser(holesByUser.get(user.id) || []);
+      const meDetail = bestClusteredPuttingTestScoreAndSessionEndMs(
+        holesByUser.get(user.id) || [],
+        isCompletePuttingCombineSession,
+      );
+      meBest = meDetail?.score ?? 0;
+      meSessionEndMs = meDetail?.sessionEndMs;
     }
     const withPinned = ensureCurrentUserOnLeaderboard(
       allEntries,
       user,
       userProfiles,
       meBest,
+      meSessionEndMs,
     );
     withPinned.sort((a, b) => b.value - a.value);
 
@@ -1650,8 +1721,8 @@ function getLeaderboardData(
 
     const allEntries: any[] = [];
     holesByUser.forEach((holes, userId) => {
-      const best = bestPutting9HolesScoreForUser(holes);
-      if (best <= 0) return;
+      const detail = bestClusteredPuttingTestScoreAndSessionEndMs(holes, isCompletePutting9Session);
+      if (!detail || detail.score <= 0) return;
       const profile = userProfiles?.get(userId);
       if (!profile || !profile.full_name) return;
       const displayName = profile.full_name;
@@ -1669,7 +1740,8 @@ function getLeaderboardData(
         id: userId,
         name: displayName,
         avatar: userIcon,
-        value: best,
+        value: detail.score,
+        dateMs: detail.sessionEndMs,
         isCurrentUser: user?.id === userId,
       });
     });
@@ -1677,14 +1749,21 @@ function getLeaderboardData(
     allEntries.sort((a, b) => b.value - a.value);
 
     let meBest = 0;
+    let meSessionEndMs: number | undefined;
     if (user?.id) {
-      meBest = bestPutting9HolesScoreForUser(holesByUser.get(user.id) || []);
+      const meDetail = bestClusteredPuttingTestScoreAndSessionEndMs(
+        holesByUser.get(user.id) || [],
+        isCompletePutting9Session,
+      );
+      meBest = meDetail?.score ?? 0;
+      meSessionEndMs = meDetail?.sessionEndMs;
     }
     const withPinned = ensureCurrentUserOnLeaderboard(
       allEntries,
       user,
       userProfiles,
       meBest,
+      meSessionEndMs,
     );
     withPinned.sort((a, b) => b.value - a.value);
 
@@ -1741,8 +1820,11 @@ function getLeaderboardData(
 
     const allEntries: any[] = [];
     holesByUser.forEach((holes, userId) => {
-      const best = bestPuttingTest3To6ftScoreForUser(holes);
-      if (best <= 0) return;
+      const detail = bestClusteredPuttingTestScoreAndSessionEndMs(
+        holes,
+        isCompletePuttingTest3To6ftSession,
+      );
+      if (!detail || detail.score <= 0) return;
       const profile = userProfiles?.get(userId);
       if (!profile || !profile.full_name) return;
       const displayName = profile.full_name;
@@ -1760,7 +1842,8 @@ function getLeaderboardData(
         id: userId,
         name: displayName,
         avatar: userIcon,
-        value: best,
+        value: detail.score,
+        dateMs: detail.sessionEndMs,
         isCurrentUser: user?.id === userId,
       });
     });
@@ -1768,14 +1851,21 @@ function getLeaderboardData(
     allEntries.sort((a, b) => b.value - a.value);
 
     let meBest = 0;
+    let meSessionEndMs: number | undefined;
     if (user?.id) {
-      meBest = bestPuttingTest3To6ftScoreForUser(holesByUser.get(user.id) || []);
+      const meDetail = bestClusteredPuttingTestScoreAndSessionEndMs(
+        holesByUser.get(user.id) || [],
+        isCompletePuttingTest3To6ftSession,
+      );
+      meBest = meDetail?.score ?? 0;
+      meSessionEndMs = meDetail?.sessionEndMs;
     }
     const withPinned = ensureCurrentUserOnLeaderboard(
       allEntries,
       user,
       userProfiles,
       meBest,
+      meSessionEndMs,
     );
     withPinned.sort((a, b) => b.value - a.value);
 
@@ -1832,8 +1922,11 @@ function getLeaderboardData(
 
     const allEntries: any[] = [];
     holesByUser.forEach((holes, userId) => {
-      const best = bestPuttingTest8To20ScoreForUser(holes);
-      if (best <= 0) return;
+      const detail = bestClusteredPuttingTestScoreAndSessionEndMs(
+        holes,
+        isCompletePuttingTest8To20Session,
+      );
+      if (!detail || detail.score <= 0) return;
       const profile = userProfiles?.get(userId);
       if (!profile || !profile.full_name) return;
       const displayName = profile.full_name;
@@ -1851,7 +1944,8 @@ function getLeaderboardData(
         id: userId,
         name: displayName,
         avatar: userIcon,
-        value: best,
+        value: detail.score,
+        dateMs: detail.sessionEndMs,
         isCurrentUser: user?.id === userId,
       });
     });
@@ -1859,14 +1953,21 @@ function getLeaderboardData(
     allEntries.sort((a, b) => b.value - a.value);
 
     let meBest = 0;
+    let meSessionEndMs: number | undefined;
     if (user?.id) {
-      meBest = bestPuttingTest8To20ScoreForUser(holesByUser.get(user.id) || []);
+      const meDetail = bestClusteredPuttingTestScoreAndSessionEndMs(
+        holesByUser.get(user.id) || [],
+        isCompletePuttingTest8To20Session,
+      );
+      meBest = meDetail?.score ?? 0;
+      meSessionEndMs = meDetail?.sessionEndMs;
     }
     const withPinned = ensureCurrentUserOnLeaderboard(
       allEntries,
       user,
       userProfiles,
       meBest,
+      meSessionEndMs,
     );
     withPinned.sort((a, b) => b.value - a.value);
 
@@ -1923,8 +2024,11 @@ function getLeaderboardData(
 
     const allEntries: any[] = [];
     holesByUser.forEach((holes, userId) => {
-      const best = bestPuttingTest20To40ScoreForUser(holes);
-      if (best <= 0) return;
+      const detail = bestClusteredPuttingTestScoreAndSessionEndMs(
+        holes,
+        isCompletePuttingTest20To40Session,
+      );
+      if (!detail || detail.score <= 0) return;
       const profile = userProfiles?.get(userId);
       if (!profile || !profile.full_name) return;
       const displayName = profile.full_name;
@@ -1942,7 +2046,8 @@ function getLeaderboardData(
         id: userId,
         name: displayName,
         avatar: userIcon,
-        value: best,
+        value: detail.score,
+        dateMs: detail.sessionEndMs,
         isCurrentUser: user?.id === userId,
       });
     });
@@ -1950,14 +2055,21 @@ function getLeaderboardData(
     allEntries.sort((a, b) => b.value - a.value);
 
     let meBest = 0;
+    let meSessionEndMs: number | undefined;
     if (user?.id) {
-      meBest = bestPuttingTest20To40ScoreForUser(holesByUser.get(user.id) || []);
+      const meDetail = bestClusteredPuttingTestScoreAndSessionEndMs(
+        holesByUser.get(user.id) || [],
+        isCompletePuttingTest20To40Session,
+      );
+      meBest = meDetail?.score ?? 0;
+      meSessionEndMs = meDetail?.sessionEndMs;
     }
     const withPinned = ensureCurrentUserOnLeaderboard(
       allEntries,
       user,
       userProfiles,
       meBest,
+      meSessionEndMs,
     );
     withPinned.sort((a, b) => b.value - a.value);
 
@@ -3092,33 +3204,52 @@ function getLeaderboardData(
     return result;
   }
 
-  // XP leaderboard: all-time = profile.total_xp; week/month/year = sum of practice-row XP in window
+  // XP leaderboard: all-time = max(profile.total_xp, lifetime practice+round implied XP);
+  // week/month/year = practice XP in window + round XP in window
   if (metric === "xp") {
     const allEntries: any[] = [];
 
-    const periodXpByUser =
+    const lifetimeActivityXpByUser = accumulateLifetimeActivityXpByUser(
+      practiceSessions || [],
+      rounds,
+    );
+
+    const periodXpPractice =
       timeFilter === "allTime"
         ? null
         : accumulateXpByUserForTimeFilter(
             timeFilter,
             practiceSessions || [],
           );
+    const periodXpRounds =
+      timeFilter === "allTime"
+        ? null
+        : accumulateRoundXpByUserForTimeFilter(timeFilter, rounds);
+    const periodXpByUser =
+      timeFilter === "allTime"
+        ? null
+        : mergePeriodXpMaps(
+            periodXpPractice || new Map(),
+            periodXpRounds || new Map(),
+          );
 
     if (userProfiles && userProfiles.size > 0) {
       userProfiles.forEach((profile, userId) => {
-        if (!profile || !profile.full_name) return;
+        if (!profile) return;
+        const profileXp = profile.xp || 0;
+        const activityLifetime = lifetimeActivityXpByUser.get(userId) || 0;
         const xpValue =
           timeFilter === "allTime"
-            ? profile.xp || 0
+            ? Math.max(profileXp, activityLifetime)
             : periodXpByUser?.get(userId) || 0;
         if (xpValue <= 0) return;
 
-        const displayName = profile.full_name;
+        const displayName = profile.full_name?.trim() || "Academy Member";
 
         let nameForAvatar = "A";
-        if (profile.full_name) {
+        if (displayName !== "Academy Member") {
           nameForAvatar =
-            profile.full_name
+            displayName
               .split(" ")
               .map((n: string) => n[0])
               .join("")
@@ -3139,7 +3270,10 @@ function getLeaderboardData(
 
     const meXp =
       user?.id && timeFilter === "allTime"
-        ? userProfiles?.get(user.id)?.xp || 0
+        ? Math.max(
+            userProfiles?.get(user.id)?.xp || 0,
+            lifetimeActivityXpByUser.get(user.id) || 0,
+          )
         : user?.id
           ? periodXpByUser?.get(user.id) || 0
           : 0;
@@ -3309,6 +3443,13 @@ export default function AcademyPage() {
   const { user, refreshUser, isAuthenticated, loading } = useAuth();
   const router = useRouter();
 
+  /** Profiles effect used length-only; iron merge can swap rows without length change — refetch when user set changes. */
+  const practiceLogsIdentity = useMemo(() => {
+    const rows = practiceLogs || [];
+    const ids = [...new Set(rows.map((p: { user_id?: string }) => p.user_id).filter(Boolean))].sort();
+    return `${rows.length}:${ids.join(",")}`;
+  }, [practiceLogs]);
+
   // Create a Name Lookup: Store profile data for all users in the leaderboard
   // Map IDs to Names: Match user IDs to their full_name from profiles table
   // Update fetchUserProfiles to include XP column from profiles table
@@ -3333,6 +3474,10 @@ export default function AcademyPage() {
   const [timeFilter, setTimeFilter] = useState<
     "week" | "month" | "year" | "allTime"
   >("week");
+  /** Combines hall: default all-time so protocol sessions are not hidden behind the stats tab's "This week". */
+  const [combineTimeFilter, setCombineTimeFilter] = useState<
+    "week" | "month" | "year" | "allTime"
+  >("allTime");
   const [isFiltering, setIsFiltering] = useState(false);
   const [showFullLeaderboard, setShowFullLeaderboard] = useState(false);
   const [leaderboardSearch, setLeaderboardSearch] = useState("");
@@ -3382,6 +3527,13 @@ export default function AcademyPage() {
   const [hallLeaderTab, setHallLeaderTab] = useState<"stats" | "combines">("stats");
   const [combineLeaderboardTest, setCombineLeaderboardTest] =
     useState<CombineLeaderboardTestId>("aimpoint_6ft_combine");
+
+  useEffect(() => {
+    if (hallLeaderTab !== "combines" || combineLeaderboardTest !== "ironPrecisionProtocol") return;
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new Event("practiceSessionsUpdated"));
+  }, [hallLeaderTab, combineLeaderboardTest]);
+
   // Stable Identity: Wrap functions and objects in useMemo/useCallback to prevent recreation on every render
   // Calculate total XP (rounds + drills) - filtered by timeframe
   // Safe Logic: If the calculation inside useMemo needs the user, do the check inside the useMemo (e.g., return user ? calculate(...) : 0) rather than skipping the Hook entirely
@@ -3443,11 +3595,9 @@ export default function AcademyPage() {
     userProgress.completedDrills,
   ]);
 
-  const [roundStatsRowCount, setRoundStatsRowCount] = useState<number | null>(null);
   const [roundStatsPlayedAt, setRoundStatsPlayedAt] = useState<string[]>([]);
   useEffect(() => {
     if (!user?.id) {
-      setRoundStatsRowCount(null);
       setRoundStatsPlayedAt([]);
       return;
     }
@@ -3464,18 +3614,15 @@ export default function AcademyPage() {
           .limit(200);
         if (cancelled) return;
         if (error) {
-          setRoundStatsRowCount(null);
           setRoundStatsPlayedAt([]);
           return;
         }
         const rows = Array.isArray(data) ? data : [];
-        setRoundStatsRowCount(rows.length);
         setRoundStatsPlayedAt(
           rows.map((r: { played_at?: string | null }) => r.played_at).filter((x): x is string => !!x),
         );
       } catch {
         if (!cancelled) {
-          setRoundStatsRowCount(null);
           setRoundStatsPlayedAt([]);
         }
       }
@@ -3577,32 +3724,24 @@ export default function AcademyPage() {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
 
-        const { data, error } = await supabase
-          .from("user_trophies")
-          .select("trophy_name, trophy_icon, unlocked_at, description")
-          .eq("user_id", user.id)
-          .order("unlocked_at", { ascending: false });
+        const { rows: raw, error } = await fetchUserTrophiesForUser(supabase, user.id);
 
         if (error) {
           console.error("Academy Trophy Fetch Error:", error);
           return;
         }
 
-        const raw = Array.isArray(data)
-          ? (data as Array<{
-              trophy_name: string;
-              trophy_icon?: string | null;
-              unlocked_at?: string | null;
-              description?: string | null;
-            }>)
-          : [];
-        const trophiesWithIds: AcademyDbTrophyRow[] = raw.map((trophy) => ({
-          trophy_name: trophy.trophy_name,
-          trophy_icon: trophy.trophy_icon ?? undefined,
-          unlocked_at: trophy.unlocked_at ?? undefined,
-          description: trophy.description ?? undefined,
-          id: TROPHY_LIST.find((t) => t.name === trophy.trophy_name)?.id,
-        }));
+        const trophiesWithIds: AcademyDbTrophyRow[] = raw.map((trophy) => {
+          const def = TROPHY_LIST.find((t) => t.id === trophy.achievement_id);
+          return {
+            achievement_id: trophy.achievement_id,
+            earned_at: trophy.earned_at ?? undefined,
+            trophy_name: def?.name ?? trophy.achievement_id,
+            trophy_icon: trophy.trophy_icon ?? undefined,
+            description: trophy.description ?? undefined,
+            id: trophy.achievement_id,
+          };
+        });
 
         setDbTrophies(trophiesWithIds);
       } catch (err) {
@@ -3623,7 +3762,12 @@ export default function AcademyPage() {
       try {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
-        await ensureAchievementsForEarnedTrophies(supabase, user.id, dbTrophies);
+        await runBackfillMyAchievementsFromTrophies(supabase);
+        await ensureAchievementsForEarnedTrophies(
+          supabase,
+          user.id,
+          dbTrophies.map((t) => ({ achievement_id: t.achievement_id, earned_at: t.earned_at ?? null })),
+        );
         const rows = await fetchUserAchievementRows(supabase, user.id);
         if (!cancelled) setUserAchievementRows(rows);
       } catch {
@@ -3863,8 +4007,8 @@ export default function AcademyPage() {
     communityRounds?.length ?? 0,
     drills?.length ?? 0,
     practiceSessions?.length ?? 0,
-    practiceLogs?.length ?? 0,
-  ]); // Re-fetch profiles when source tables change (fixed length: 4)
+    practiceLogsIdentity,
+  ]); // practiceLogsIdentity: refetch when practice_logs rows/users change, not only row count
 
   // Global Refresh: Ensure the XP Leaderboard refreshes immediately after the points are added
   // Realtime Filter: Not using Supabase Realtime - only listening to custom xpUpdated events
@@ -3911,8 +4055,8 @@ export default function AcademyPage() {
     communityRounds?.length ?? 0,
     drills?.length ?? 0,
     practiceSessions?.length ?? 0,
-    practiceLogs?.length ?? 0,
-  ]); // Same four deps as profile fetch — array length must stay constant for React
+    practiceLogsIdentity,
+  ]);
 
   // Calculate score-based leaderboards (lowGross, lowNett, birdies, eagles, putts) with loop guard
   // Always calculate all score-based metrics so they're available when needed
@@ -3983,7 +4127,7 @@ export default function AcademyPage() {
     communityRounds?.length,
     drills?.length,
     practiceSessions?.length,
-    practiceLogs?.length,
+    practiceLogsIdentity,
     timeFilter,
     user?.totalXP,
     userName,
@@ -4186,7 +4330,7 @@ export default function AcademyPage() {
     if (isLeaderboardDrivenCombineId(combineLeaderboardTest)) {
       const data = getLeaderboardData(
         combineLeaderboardTest as Parameters<typeof getLeaderboardData>[0],
-        timeFilter,
+        combineTimeFilter,
         communityRounds || [],
         user?.totalXP || 0,
         userName || "Academy Member",
@@ -4197,31 +4341,43 @@ export default function AcademyPage() {
         practiceLogs || [],
       );
       if (!data?.all?.length) return [];
-      return data.all.map((entry: any) => ({
-        userId: String(entry.id),
-        name: entry.name,
-        scoreDisplay: formatLeaderboardValue(
-          entry.value,
-          combineLeaderboardTest as Parameters<typeof formatLeaderboardValue>[1],
-        ),
-        sortValue:
-          typeof entry.value === "number" && Number.isFinite(entry.value) ? entry.value : 0,
-        dateMs: 0,
-        dateLabel: "—",
-        isCurrentUser: !!entry.isCurrentUser,
-      }));
+      return data.all.map((entry: any) => {
+        const dateMs =
+          typeof entry.dateMs === "number" && Number.isFinite(entry.dateMs) ? entry.dateMs : 0;
+        const dateLabel =
+          dateMs > 0
+            ? new Date(dateMs).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })
+            : "—";
+        return {
+          userId: String(entry.id),
+          name: entry.name,
+          scoreDisplay: formatLeaderboardValue(
+            entry.value,
+            combineLeaderboardTest as Parameters<typeof formatLeaderboardValue>[1],
+          ),
+          sortValue:
+            typeof entry.value === "number" && Number.isFinite(entry.value) ? entry.value : 0,
+          dateMs,
+          dateLabel,
+          isCurrentUser: !!entry.isCurrentUser,
+        };
+      });
     }
     return buildAcademyCombinesLeaderboard(
       combineLeaderboardTest,
       practiceSessions,
       practiceLogs,
       userProfiles,
-      timeFilter,
+      combineTimeFilter,
       user?.id,
     );
   }, [
     combineLeaderboardTest,
-    timeFilter,
+    combineTimeFilter,
     communityRounds,
     user?.totalXP,
     userName,
@@ -4366,8 +4522,6 @@ export default function AcademyPage() {
           trophyMultiplierById={trophyMultiplierById}
           achievementRows={userAchievementRows}
           achievementCountByKey={achievementCountByKey}
-          practiceLogs={practiceLogs}
-          roundStatsRowCount={roundStatsRowCount}
         />
 
         {/* Hall Of Fame Leaderboard */}
@@ -4489,10 +4643,13 @@ export default function AcademyPage() {
                   </p>
                 )}
                 {combineLeaderboardTest === "ironPrecisionProtocol" && (
-                  <p className="text-[11px] text-stone-500 mt-1.5 text-center">
+                  <p className="text-[11px] text-stone-500 mt-1.5 text-center px-1">
                     {ironPrecisionProtocolConfig.testName}: ranks by best session{" "}
                     <span className="font-semibold text-stone-700">total points</span> (higher is
-                    better).
+                    better). If rows exist in Supabase but not here, choose{" "}
+                    <span className="font-semibold text-stone-700">All-Time</span> or a period that
+                    contains the session <span className="font-semibold text-stone-700">created_at</span>{" "}
+                    date.
                   </p>
                 )}
                 {combineLeaderboardTest === "wedge_lateral_9" && (
@@ -4514,29 +4671,39 @@ export default function AcademyPage() {
 
             <div className="px-4 pb-4 w-full">
               <div className="flex items-center justify-center gap-2 sm:gap-2.5 flex-wrap max-w-xl mx-auto">
-                {(["week", "month", "year", "allTime"] as const).map((filter) => {
+                {(() => {
+                  const activeHallFilter =
+                    hallLeaderTab === "combines" ? combineTimeFilter : timeFilter;
+                  const setActiveHallFilter =
+                    hallLeaderTab === "combines" ? setCombineTimeFilter : setTimeFilter;
                   const labels = {
                     week: "This Week",
                     month: "This Month",
                     year: "This Year",
                     allTime: "All-Time",
                   };
-                  return (
+                  return (["week", "month", "year", "allTime"] as const).map((filter) => (
                     <button
                       key={filter}
                       type="button"
-                      onClick={() => setTimeFilter(filter)}
+                      onClick={() => setActiveHallFilter(filter)}
                       className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
-                        timeFilter === filter
+                        activeHallFilter === filter
                           ? "text-white bg-[#014421]"
                           : "text-stone-600 bg-stone-100 hover:bg-stone-200"
                       }`}
                     >
                       {labels[filter]}
                     </button>
-                  );
-                })}
+                  ));
+                })()}
               </div>
+              {hallLeaderTab === "combines" && (
+                <p className="text-center text-[11px] text-stone-500 mt-2 px-2 max-w-xl mx-auto">
+                  Combine rankings use the period above (Combines defaults to All-Time). &quot;This
+                  week&quot; only includes sessions from the last 7 days.
+                </p>
+              )}
             </div>
 
             <div className="px-3 sm:px-5 pb-5">
@@ -4685,7 +4852,8 @@ export default function AcademyPage() {
                     <span className="text-right">{combineScoreColumnLabel}</span>
                     <span className="text-right">Date</span>
                   </div>
-                  {hallCombineRows.slice(0, 40).map((row, index) => {
+                  <div className="max-h-[min(70vh,32rem)] overflow-y-auto overscroll-contain space-y-2 pr-1">
+                  {hallCombineRows.map((row, index) => {
                     const rank = index + 1;
                     const podium =
                       rank === 1
@@ -4732,6 +4900,7 @@ export default function AcademyPage() {
                       </div>
                     );
                   })}
+                  </div>
                 </div>
               )}
             </div>

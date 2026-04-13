@@ -1,12 +1,50 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, Component, ErrorInfo, ReactNode } from "react";
+import React, { useEffect, useState, useMemo, useRef, Component, ErrorInfo, ReactNode } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
-import { ArrowLeft, Sparkles, Loader2, Target, ArrowUpRight, ArrowDownRight, Minus, FileText } from "lucide-react";
+import {
+  ArrowLeft,
+  Target,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus,
+  FileText,
+  BarChart3,
+  Percent,
+  Navigation2,
+  Shuffle,
+  CircleDot,
+  Bird,
+  AlertTriangle,
+  ArrowUpDown,
+  Table2,
+  PieChart,
+  Clock,
+} from "lucide-react";
 import { getBenchmarkGoals } from "@/app/stats/page";
+import type { PlayerGoalRow, GoalFocusArea } from "@/types/playerGoals";
+import type { PracticeLogAccountabilityRow } from "@/types/playerGoals";
+import {
+  computeGoalAccountabilityState,
+  minutesFromPracticeRows,
+  startOfWeekMondayLocal,
+  endOfWeekSundayLocal,
+  DEFAULT_PLAYER_GOAL,
+  normalizeFocusArea,
+} from "@/lib/goalAccountability";
+import { parsePracticeAllocationFromDb } from "@/lib/practiceAllocation";
+import type { PracticeHoursMap } from "@/lib/practiceAllocation";
+import { weeklyHoursToPreset, weeklyHoursPresetToStoredHours } from "@/lib/goalPresetConstants";
+import { buildCoachPlayerCombineSnapshot } from "@/lib/coachPlayerCombineSnapshot";
+import { TROPHY_LIST } from "@/lib/academyTrophies";
+import { fetchUserTrophiesForUser } from "@/lib/userTrophiesDb";
+import type { AcademyTrophyDbRow } from "@/components/AcademyTrophyCasePanel";
+import { CoachDeepDiveProfilePanels } from "@/components/coach/CoachDeepDiveProfilePanels";
+import { CoachDeepDiveRoundTrendCharts } from "@/components/coach/CoachDeepDiveRoundTrendCharts";
+import type { RoundTrendPoint } from "@/components/coach/CoachDeepDiveRoundTrendCharts";
 
 class CoachDeepDiveErrorBoundary extends Component<
   { children: ReactNode },
@@ -51,6 +89,17 @@ function getDefaultRange() {
   };
 }
 
+/** Readable minutes/hours for parent/committee-facing copy */
+function formatReportMinutes(min: number): string {
+  if (!Number.isFinite(min) || min <= 0) return "0 min";
+  const roundedMin = Math.round(min * 10) / 10;
+  if (roundedMin >= 60) {
+    const h = Math.round((roundedMin / 60) * 10) / 10;
+    return `${h} hr`;
+  }
+  return Number.isInteger(roundedMin) ? `${roundedMin} min` : `${roundedMin} min`;
+}
+
 export default function PlayerDeepDivePage() {
   const router = useRouter();
   const params = useParams();
@@ -67,11 +116,30 @@ export default function PlayerDeepDivePage() {
   const [practiceConsistencyData, setPracticeConsistencyData] = useState<any[]>([]);
   const [skillTrendData, setSkillTrendData] = useState<any[]>([]);
   const [roundsData, setRoundsData] = useState<any[]>([]);
+  /** Handicap updates in range (if RLS allows coach read); else charts fall back to per-round handicap. */
+  const [handicapHistoryForChart, setHandicapHistoryForChart] = useState<any[]>([]);
   const [perfStatsData, setPerfStatsData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [aiSummary, setAiSummary] = useState<string[] | null>(null);
-  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [playerGoal, setPlayerGoal] = useState<PlayerGoalRow | null>(null);
+  const [playerPracticeLogs, setPlayerPracticeLogs] = useState<any[]>([]);
+  const [playerPracticeAll, setPlayerPracticeAll] = useState<any[]>([]);
+  const [playerTotalXp, setPlayerTotalXp] = useState<number | null>(null);
+  const [playerUnlockedTrophies, setPlayerUnlockedTrophies] = useState<AcademyTrophyDbRow[]>([]);
+  /** false = strongest vs benchmark first; true = largest benchmark gaps first */
+  const [metricMatrixWorstFirst, setMetricMatrixWorstFirst] = useState(false);
+  /** false = most minutes in range first; true = least first */
+  const [practiceAllocLeastFirst, setPracticeAllocLeastFirst] = useState(false);
+
+  /** After first successful profile load for this player, date-range refetches skip the full-screen loader. */
+  const coachDeepDiveBlockingLoadDoneRef = useRef(false);
+
+  useEffect(() => {
+    coachDeepDiveBlockingLoadDoneRef.current = false;
+    setPlayerName("");
+    setPlayerUnlockedTrophies([]);
+  }, [playerId]);
+
   useEffect(() => {
     if (authLoading || profileLoading) return;
     // REDIRECT: Temporarily disabled - let page render to see errors instead of bouncing
@@ -84,7 +152,10 @@ export default function PlayerDeepDivePage() {
 
   const fetchAllData = async () => {
     try {
-      setIsLoading(true);
+      // Date-range changes should refresh in place; only initial / player switch uses full-screen loading.
+      if (!coachDeepDiveBlockingLoadDoneRef.current) {
+        setIsLoading(true);
+      }
       setError(null);
       const supabase = createClient();
 
@@ -96,23 +167,103 @@ export default function PlayerDeepDivePage() {
       // Fetch player profile
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("full_name, initial_handicap")
+        .select("full_name, initial_handicap, total_xp")
         .eq("id", playerId)
         .single();
       console.log("Supabase Response:", { data: profile, error: profileError });
       if (profileError) {
+        setPlayerUnlockedTrophies([]);
         setError(profileError.message);
         setIsLoading(false);
         return;
       }
       if (!profile) {
+        setPlayerUnlockedTrophies([]);
         setError("Profile not found");
         setIsLoading(false);
         return;
       }
       setPlayerName(profile?.full_name || "Player");
-      const hcap = profile?.initial_handicap ?? 54;
-      setPlayerHandicap(typeof hcap === "number" ? hcap : Number(hcap) || 54);
+      coachDeepDiveBlockingLoadDoneRef.current = true;
+      const hcapRaw = profile?.initial_handicap ?? 54;
+      const hcapNum = typeof hcapRaw === "number" ? hcapRaw : Number(hcapRaw);
+      const hcapInt = Math.min(54, Math.max(-5, Math.round(Number.isFinite(hcapNum) ? hcapNum : 54)));
+      setPlayerHandicap(hcapInt);
+      const xpRaw = (profile as { total_xp?: unknown })?.total_xp;
+      const xpNum = typeof xpRaw === "number" ? xpRaw : Number(xpRaw);
+      setPlayerTotalXp(Number.isFinite(xpNum) ? xpNum : null);
+
+      const [goalRes, logsCombineRes, practiceAllRes] = await Promise.all([
+        supabase
+          .from("player_goals")
+          .select(
+            "user_id, scoring_milestone, focus_area, weekly_hour_commitment, practice_allocation, lowest_score, current_handicap, updated_at",
+          )
+          .eq("user_id", playerId)
+          .maybeSingle(),
+        supabase
+          .from("practice_logs")
+          .select(
+            "id, user_id, log_type, created_at, duration_minutes, total_points, matrix_score_average, perfect_putt_count, strike_data",
+          )
+          .eq("user_id", playerId)
+          .order("created_at", { ascending: false })
+          .limit(900),
+        supabase
+          .from("practice")
+          .select("*")
+          .eq("user_id", playerId)
+          .order("created_at", { ascending: false })
+          .limit(1600),
+      ]);
+
+      const { rows: trophyRows, error: trophiesErr } = await fetchUserTrophiesForUser(supabase, playerId);
+      if (trophiesErr) {
+        console.warn("[CoachDeepDive] user_trophies:", trophiesErr.message);
+        setPlayerUnlockedTrophies([]);
+      } else {
+        const enriched: AcademyTrophyDbRow[] = trophyRows.map((r) => {
+          const def = TROPHY_LIST.find((t) => t.id === r.achievement_id);
+          return {
+            achievement_id: r.achievement_id,
+            earned_at: r.earned_at,
+            id: r.achievement_id,
+            trophy_name: def?.name ?? r.achievement_id,
+            description: r.description,
+            trophy_icon: r.trophy_icon,
+          };
+        });
+        setPlayerUnlockedTrophies(enriched);
+      }
+
+      if (goalRes.error && goalRes.error.code !== "PGRST116") {
+        console.warn("[CoachDeepDive] player_goals:", goalRes.error.message);
+      }
+      setPlayerGoal((goalRes.data as PlayerGoalRow | null) ?? null);
+
+      let logRows: any[] = [];
+      if (logsCombineRes.error) {
+        const msg = (logsCombineRes.error.message || "").toLowerCase();
+        if (msg.includes("duration_minutes") || msg.includes("column")) {
+          const fallback = await supabase
+            .from("practice_logs")
+            .select("id, user_id, log_type, created_at")
+            .eq("user_id", playerId)
+            .order("created_at", { ascending: false })
+            .limit(900);
+          if (!fallback.error && fallback.data) {
+            logRows = fallback.data.map((r) => ({ ...r, duration_minutes: null }));
+          } else {
+            console.warn("[CoachDeepDive] practice_logs:", logsCombineRes.error.message);
+          }
+        } else {
+          console.warn("[CoachDeepDive] practice_logs:", logsCombineRes.error.message);
+        }
+      } else {
+        logRows = logsCombineRes.data || [];
+      }
+      setPlayerPracticeLogs(logRows);
+      setPlayerPracticeAll(practiceAllRes.error ? [] : practiceAllRes.data || []);
 
       // Practice data: try drill_logs first, fallback to practice table
       let practiceRows: any[] = [];
@@ -212,6 +363,19 @@ export default function PlayerDeepDivePage() {
         .order("date", { ascending: true });
 
       setRoundsData(roundsRows || []);
+
+      let handicapHistInRange: any[] = [];
+      const hcpHistRes = await supabase
+        .from("handicap_history")
+        .select("created_at, new_handicap")
+        .eq("user_id", playerId)
+        .gte("created_at", startIso)
+        .lte("created_at", endIso)
+        .order("created_at", { ascending: true });
+      if (!hcpHistRes.error && Array.isArray(hcpHistRes.data) && hcpHistRes.data.length > 0) {
+        handicapHistInRange = hcpHistRes.data;
+      }
+      setHandicapHistoryForChart(handicapHistInRange);
 
       let perfStatsRows: any[] = [];
       const { data: perfStatsData, error: perfStatsErr } = await supabase
@@ -318,6 +482,84 @@ export default function PlayerDeepDivePage() {
       onCourse: getMinutes('On-Course', ['On Course']),
     };
   }, [practiceRawData]);
+
+  const practiceAllocationDisplay = useMemo(() => {
+    const start = new Date(`${dateRange.start}T00:00:00`);
+    const end = new Date(`${dateRange.end}T23:59:59`);
+    const rangeDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+    const weeksInRange = Math.max(1 / 7, rangeDays / 7);
+    const monthsInRange = Math.max(1 / 30, rangeDays / 30.44);
+
+    let targets: PracticeHoursMap | null = null;
+    if (playerGoal) {
+      const budget = weeklyHoursPresetToStoredHours(
+        weeklyHoursToPreset(Number(playerGoal.weekly_hour_commitment)),
+      );
+      targets = parsePracticeAllocationFromDb(
+        playerGoal.practice_allocation,
+        budget,
+        normalizeFocusArea(playerGoal.focus_area),
+      );
+    }
+
+    const rows: {
+      focus: GoalFocusArea;
+      label: string;
+      minutes: number;
+      goalHoursWeek: number;
+    }[] = [
+      { focus: "Driving", label: "Driving", minutes: Number(practiceAllocationData.driving ?? 0), goalHoursWeek: 0 },
+      { focus: "Irons", label: "Irons", minutes: Number(practiceAllocationData.irons ?? 0), goalHoursWeek: 0 },
+      { focus: "Wedges", label: "Wedges", minutes: Number(practiceAllocationData.wedges ?? 0), goalHoursWeek: 0 },
+      { focus: "Chipping", label: "Chipping", minutes: Number(practiceAllocationData.chipping ?? 0), goalHoursWeek: 0 },
+      { focus: "Bunkers", label: "Bunkers", minutes: Number(practiceAllocationData.bunkers ?? 0), goalHoursWeek: 0 },
+      { focus: "Putting", label: "Putting", minutes: Number(practiceAllocationData.putting ?? 0), goalHoursWeek: 0 },
+      {
+        focus: "On-Course",
+        label: "On-course",
+        minutes: Number(practiceAllocationData.onCourse ?? 0),
+        goalHoursWeek: 0,
+      },
+      {
+        focus: "Mental/Strategy",
+        label: "Mental / strategy",
+        minutes: Number(practiceAllocationData.mentalStrategy ?? 0),
+        goalHoursWeek: 0,
+      },
+    ];
+
+    for (const r of rows) {
+      r.goalHoursWeek = targets ? Math.max(0, Number(targets[r.focus] ?? 0)) : 0;
+    }
+
+    const totalMinutes = rows.reduce((s, r) => s + r.minutes, 0);
+    const sorted = [...rows].sort((a, b) => {
+      const d = b.minutes - a.minutes;
+      if (d !== 0) return practiceAllocLeastFirst ? -d : d;
+      return a.label.localeCompare(b.label);
+    });
+
+    const withTime = sorted.filter((r) => r.minutes > 0);
+    const zeroTime = sorted.filter((r) => r.minutes <= 0);
+
+    const avgTotalPerDay = Math.round((totalMinutes / rangeDays) * 10) / 10;
+    const avgTotalPerWeek = Math.round((totalMinutes / weeksInRange) * 10) / 10;
+    const avgTotalPerMonth = Math.round((totalMinutes / monthsInRange) * 10) / 10;
+
+    return {
+      sorted,
+      withTime,
+      zeroTime,
+      totalMinutes,
+      rangeDays,
+      weeksInRange,
+      monthsInRange,
+      avgTotalPerDay,
+      avgTotalPerWeek,
+      avgTotalPerMonth,
+      hasTargets: targets != null,
+    };
+  }, [practiceAllocationData, dateRange, playerGoal, practiceAllocLeastFirst]);
 
   // --- DERIVED METRICS ---
   const { bigSix, penaltyStats, metricMatrix } = useMemo(() => {
@@ -531,92 +773,6 @@ export default function PlayerDeepDivePage() {
     return { bigSix: bigSixResult, penaltyStats: penaltyStatsResult, metricMatrix: matrix };
   }, [roundsData, perfStatsData, playerHandicap]);
 
-  const generateAIAnalysis = async () => {
-    setIsGeneratingAi(true);
-    setAiSummary(null);
-
-    // Coach-style, opinionated analysis from existing stats (no external AI API)
-    const bullets: string[] = [];
-    const totalSessions = practiceData.reduce((a, d) => a + (d.sessions || 0), 0);
-    const totalMinutes = practiceData.reduce((a, d) => a + (d.minutes || 0), 0);
-    const avgFir = skillTrendData.length > 0
-      ? skillTrendData.reduce((a, d) => a + (d["Fairways Hit %"] || 0), 0) / skillTrendData.length
-      : 0;
-    const avgGir = skillTrendData.length > 0
-      ? skillTrendData.reduce((a, d) => a + (d["Green Contact %"] || 0), 0) / skillTrendData.length
-      : 0;
-    const avgSuccess = (avgFir + avgGir) / 2;
-    const hasRounds = roundsData.length > 0;
-
-    if (totalSessions === 0 && !hasRounds) {
-      bullets.push(
-        "Coach take: I do not have enough logged work in this date window to coach properly yet. Log practice sessions and rounds consistently so I can identify real scoring patterns."
-      );
-    } else {
-      if (strokeOpportunityRows.length > 0) {
-        const top = strokeOpportunityRows[0];
-        const second = strokeOpportunityRows[1];
-        if (top) {
-          bullets.push(
-            `Coach priority: the fastest scoring gain is ${top.name}. You are currently at ${top.current} vs goal ${top.goal}, with an estimated ${top.estimatedGain.toFixed(2)} strokes/round available. Make this your main focus until the gap tightens.`
-          );
-          if (second) {
-            bullets.push(
-              `Secondary focus: ${second.name} (${second.category}). Treat this as your #2 priority after ${top.name}; stacking these two improvements gives the best chance to lower scores quickly.`
-            );
-          }
-        }
-      }
-
-      const startD = new Date(dateRange.start);
-      const endD = new Date(dateRange.end);
-      const rangeDays = Math.max(1, Math.ceil((endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24)));
-      const avgPerWeek = rangeDays > 0 ? (totalMinutes / rangeDays) * 7 : 0;
-      if (avgPerWeek < 90) {
-        bullets.push(
-          `Workload check: you are averaging about ${Math.round(avgPerWeek)} minutes/week (${totalSessions} session${totalSessions !== 1 ? "s" : ""} in ${rangeDays} days). I would push this toward 90-120 focused minutes weekly, with extra short-game reps if you want scores to move.`
-        );
-      } else if (totalMinutes > 0) {
-        bullets.push(
-          `Training consistency is solid at about ${Math.round(avgPerWeek)} minutes/week. Keep this volume, but direct more of it into your top stroke-opportunity categories to convert practice into lower scores.`
-        );
-      }
-
-      if (skillTrendData.length > 0) {
-        if (avgSuccess >= 70) {
-          bullets.push(
-            "Ball-striking trend is strong overall. As your coach, I would protect this strength and use practice time to clean up scoring leaks around the green and in penalty situations."
-          );
-        } else if (avgSuccess >= 50) {
-          bullets.push(
-            "Your shot-quality trend is moving in the right direction, but not yet reliable under pressure. Prioritize repeatable drills with clear pass/fail targets, not just volume."
-          );
-        } else {
-          bullets.push(
-            "Shot quality needs a reset. I would run a tighter structure: fewer random balls, more purposeful reps, and measurable goals each session."
-          );
-        }
-      }
-
-      if (hasRounds && bullets.length < 3) {
-        const avgScore =
-          roundsData.reduce((a: number, r: any) => a + (r.score || 0), 0) /
-          roundsData.length;
-        bullets.push(
-          `Rounds logged: ${roundsData.length}. Current scoring average is ${Math.round(avgScore * 10) / 10}. ${avgScore < 95 ? "You are on a solid path; now squeeze out mistakes." : "The fastest route down is reducing costly mistakes and improving conversion inside scoring range."}`
-        );
-      }
-    }
-
-    while (bullets.length < 3) {
-      bullets.push(
-        "Review progress again after more data is logged in the selected date range."
-      );
-    }
-    setAiSummary(bullets.slice(0, 3));
-    setIsGeneratingAi(false);
-  };
-
   const strokeOpportunityRows = useMemo(() => {
     if (!metricMatrix || metricMatrix.length === 0) return [];
 
@@ -669,6 +825,92 @@ export default function PlayerDeepDivePage() {
       .slice(0, 3);
   }, [metricMatrix]);
 
+  /** Gap is defined so higher = better vs benchmark; default sort is strongest vs benchmark first. */
+  const sortedMetricMatrix = useMemo(() => {
+    const gapNum = (row: any) => {
+      const n = Number(row?.gap);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const rows = [...metricMatrix];
+    rows.sort((a: any, b: any) => {
+      const bestFirst = gapNum(b) - gapNum(a);
+      if (bestFirst !== 0) return metricMatrixWorstFirst ? -bestFirst : bestFirst;
+      return String(a?.name ?? "").localeCompare(String(b?.name ?? ""));
+    });
+    return rows;
+  }, [metricMatrix, metricMatrixWorstFirst]);
+
+  const coachGoalMerged = useMemo((): PlayerGoalRow => {
+    return (
+      playerGoal ??
+      ({
+        user_id: playerId,
+        ...DEFAULT_PLAYER_GOAL,
+      } as PlayerGoalRow)
+    );
+  }, [playerGoal, playerId]);
+
+  const coachAccountability = useMemo(() => {
+    if (!playerId) return null;
+    const weekStart = startOfWeekMondayLocal();
+    const weekEnd = endOfWeekSundayLocal(weekStart);
+    const ws = weekStart.getTime();
+    const we = weekEnd.getTime();
+    const weekLogs = (playerPracticeLogs || []).filter((r) => {
+      const t = r.created_at ? new Date(r.created_at).getTime() : NaN;
+      return Number.isFinite(t) && t >= ws && t < we;
+    }) as PracticeLogAccountabilityRow[];
+    const supplemental = minutesFromPracticeRows(playerPracticeAll || [], playerId, weekStart, weekEnd);
+    return computeGoalAccountabilityState(coachGoalMerged, weekLogs, supplemental, playerId);
+  }, [playerId, coachGoalMerged, playerPracticeLogs, playerPracticeAll]);
+
+  const coachCombineSnapshot = useMemo(
+    () =>
+      buildCoachPlayerCombineSnapshot(
+        playerId,
+        playerName || "Player",
+        playerPracticeAll,
+        playerPracticeLogs,
+      ),
+    [playerId, playerName, playerPracticeAll, playerPracticeLogs],
+  );
+
+  const dateRangeLabel = useMemo(
+    () =>
+      `${new Date(dateRange.start + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} – ${new Date(dateRange.end + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
+    [dateRange.start, dateRange.end],
+  );
+
+  const roundTrendChartPoints = useMemo(() => {
+    const parseRoundDayMs = (dateVal: unknown) => {
+      const s = typeof dateVal === "string" ? dateVal.slice(0, 10) : "";
+      if (!s) return NaN;
+      return new Date(`${s}T12:00:00`).getTime();
+    };
+
+    const gross: RoundTrendPoint[] = (roundsData as any[])
+      .filter((r) => Number.isFinite(Number(r?.score)) && Number.isFinite(parseRoundDayMs(r?.date)))
+      .map((r) => ({ sortAt: parseRoundDayMs(r.date), y: Number(r.score) }))
+      .sort((a, b) => a.sortAt - b.sortAt);
+
+    const fromHist: RoundTrendPoint[] = handicapHistoryForChart
+      .filter((h: any) => h?.created_at && Number.isFinite(Number(h?.new_handicap)))
+      .map((h: any) => ({
+        sortAt: new Date(h.created_at).getTime(),
+        y: Number(h.new_handicap),
+      }))
+      .sort((a, b) => a.sortAt - b.sortAt);
+
+    const fromRounds: RoundTrendPoint[] = (roundsData as any[])
+      .filter((r) => Number.isFinite(Number(r?.handicap)) && Number.isFinite(parseRoundDayMs(r?.date)))
+      .map((r) => ({ sortAt: parseRoundDayMs(r.date), y: Number(r.handicap) }))
+      .sort((a, b) => a.sortAt - b.sortAt);
+
+    const handicap = fromHist.length > 0 ? fromHist : fromRounds;
+
+    return { gross, handicap };
+  }, [roundsData, handicapHistoryForChart]);
+
   // Role check removed - app stays on page even if user isn't a coach
   if (!role) console.log("REDIRECTION BLOCKED");
 
@@ -702,7 +944,7 @@ export default function PlayerDeepDivePage() {
 
   return (
     <CoachDeepDiveErrorBoundary>
-    <div className="coach-deepdive-root w-full max-w-md mx-auto min-w-0 flex flex-col bg-gray-50 overflow-x-hidden">
+    <div className="coach-deepdive-root w-full max-w-3xl mx-auto min-w-0 flex flex-col bg-[#f4f6f4] overflow-x-hidden">
       {/* Header */}
       <header className="coach-deepdive-no-print shrink-0 w-full bg-[#014421] text-white pt-3 pb-4 px-4">
         <div className="flex items-start justify-between gap-2 mb-2">
@@ -723,9 +965,10 @@ export default function PlayerDeepDivePage() {
             Generate Report
           </button>
         </div>
-        <h1 className="text-lg font-bold truncate min-w-0 mb-3">
-          {playerName || "Player"} — Deep Dive
+        <h1 className="text-xl font-bold tracking-tight truncate min-w-0 mb-1">
+          {playerName || "Player"}
         </h1>
+        <p className="text-xs text-white/80 font-medium">Coach deep dive · Player profile & performance</p>
         <div className="flex flex-col gap-3 w-full max-w-sm mt-3">
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <label className="flex items-center gap-1.5 text-white/90">
@@ -758,100 +1001,146 @@ export default function PlayerDeepDivePage() {
           <div className="hidden print:block text-sm font-bold text-gray-900 mb-4 pb-2 border-b border-gray-200">
             Player Report — {playerName || "Player"} ({dateRange.start} to {dateRange.end})
           </div>
+
+        <div className="mb-6">
+          <CoachDeepDiveProfilePanels
+            playerName={playerName || "Player"}
+            playerHandicap={playerHandicap}
+            totalXp={playerTotalXp}
+            playerGoal={playerGoal}
+            goalsNotSaved={!playerGoal}
+            accountability={coachAccountability}
+            combineRows={coachCombineSnapshot}
+            roundsInRange={roundsData.length}
+            practiceSessionsInRange={practiceRawData.length}
+            dateRangeLabel={dateRangeLabel}
+            unlockedTrophies={playerUnlockedTrophies}
+          />
+        </div>
+
         {error && (
           <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6">
             {error}
           </div>
         )}
 
-        {/* Target Goal Slider - Moved above Big 6 */}
-        <div className="mb-6 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-          <div className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wider flex items-center gap-2">
-            <Target className="w-4 h-4 text-[#014421]" />
-            Target Goal Handicap
+        {/* Benchmark handicap (coaching slider) */}
+        <div className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#014421]/10 text-[#014421]">
+              <Target className="h-4 w-4" aria-hidden />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold tracking-tight text-stone-900">Benchmark handicap</h3>
+              <p className="text-xs text-stone-500">Used for on-page targets vs tour benchmarks</p>
+            </div>
           </div>
           <div className="flex items-center gap-4 min-w-0">
             <input
               type="range"
               min="-5"
               max="54"
-              step="0.1"
+              step={1}
               value={playerHandicap}
-              onChange={(e) => setPlayerHandicap(parseFloat(e.target.value))}
-              className="flex-1 min-w-0 h-2.5 bg-gray-200 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#014421] [&::-webkit-slider-thumb]:shadow-md"
+              onChange={(e) => {
+                const v = parseInt(e.target.value, 10);
+                setPlayerHandicap(Number.isFinite(v) ? Math.min(54, Math.max(-5, v)) : 54);
+              }}
+              className="flex-1 min-w-0 h-2 bg-stone-200 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#014421] [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:ring-2 [&::-webkit-slider-thumb]:ring-white"
               style={{
-                background: `linear-gradient(to right, #014421 0%, #014421 ${((playerHandicap + 5) / 59) * 100}%, #E5E7EB ${((playerHandicap + 5) / 59) * 100}%, #E5E7EB 100%)`
+                background: `linear-gradient(to right, #014421 0%, #014421 ${((playerHandicap + 5) / 59) * 100}%, #e7e5e4 ${((playerHandicap + 5) / 59) * 100}%, #e7e5e4 100%)`,
               }}
             />
-            <div className="text-lg font-black text-gray-900 whitespace-nowrap shrink-0 w-16 text-right">
-              {playerHandicap >= 0 ? `${playerHandicap.toFixed(1)}` : `+${Math.abs(playerHandicap).toFixed(1)}`}
+            <div className="min-w-[3.5rem] text-right text-lg font-semibold tabular-nums text-stone-900">
+              {playerHandicap >= 0 ? `${playerHandicap}` : `+${Math.abs(playerHandicap)}`}
             </div>
           </div>
         </div>
 
-        {/* 1. "Big Six" Scorecard */}
+        {/* Core scoring metrics (last 5 rounds aggregate) */}
         {bigSix && (
-          <div className="mb-6 w-full overflow-hidden">
-            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-              <Sparkles className="w-3 h-3 text-[#014421]" />
-              The Big Six Scorecard
-            </h2>
-            <div id="coach-deepdive-big-six-grid" className="grid grid-cols-2 gap-3 pb-4">
-              {[
-                { label: "Scoring Avg", statValue: bigSix.scoringAvg, unit: "", icon: "🎯", color: "text-blue-600" },
-                { label: "GIR %", statValue: bigSix.girPct, unit: "%", icon: "⛳", color: "text-green-600" },
-                { label: "Fairway %", statValue: bigSix.firPct, unit: "%", icon: "🛣️", color: "text-[#014421]" },
-                { label: "Scrambling %", statValue: bigSix.scramblePct, unit: "%", icon: "🪄", color: "text-purple-600" },
-                { label: "Putts / Round", statValue: bigSix.puttsPer18, unit: "", icon: "🧤", color: "text-orange-600" },
-                { label: "Birdies / Round", statValue: bigSix.birdiesPer18, unit: "", icon: "🐦", color: "text-red-500" },
-              ].map((stat: any, i) => {
-                const val = (stat as any)?.statValue ?? (stat as any)?.value ?? 0;
-                return (
-                <div key={i} className="coach-deepdive-stat-card bg-white rounded-2xl shadow-md border border-gray-100 p-3 sm:p-4">
-                  <div className="text-xl mb-1">{(stat as any).icon}</div>
-                  <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter truncate">{(stat as any).label}</div>
-                  <div className={`text-2xl font-black ${(stat as any).color}`}>
-                    {val}{(stat as any).unit}
-                  </div>
-                </div>
-              );})}
+          <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+            <div className="mb-5 flex items-center gap-3 border-b border-stone-100 pb-4">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+                <BarChart3 className="h-4 w-4" aria-hidden />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold tracking-tight text-stone-900">Core scoring metrics</h3>
+                <p className="text-xs text-stone-500">Recent form · rolling view in selected date range</p>
+              </div>
             </div>
-          </div>
+            <div
+              id="coach-deepdive-big-six-grid"
+              className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4"
+            >
+              {(
+                [
+                  {
+                    label: "Scoring average",
+                    statValue: bigSix.scoringAvg,
+                    unit: "",
+                    Icon: BarChart3,
+                  },
+                  { label: "GIR", statValue: bigSix.girPct, unit: "%", Icon: Percent },
+                  { label: "Fairways", statValue: bigSix.firPct, unit: "%", Icon: Navigation2 },
+                  { label: "Scrambling", statValue: bigSix.scramblePct, unit: "%", Icon: Shuffle },
+                  { label: "Putts / 18", statValue: bigSix.puttsPer18, unit: "", Icon: CircleDot },
+                  { label: "Birdies / 18", statValue: bigSix.birdiesPer18, unit: "", Icon: Bird },
+                ] as const
+              ).map((stat, i) => {
+                const val = stat.statValue ?? 0;
+                const Icon = stat.Icon;
+                return (
+                  <div
+                    key={i}
+                    className="coach-deepdive-stat-card group rounded-2xl border border-stone-100 bg-stone-50/40 p-4 transition-colors hover:border-stone-200 hover:bg-white"
+                  >
+                    <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-white text-stone-600 shadow-sm ring-1 ring-stone-100 group-hover:text-[#014421]">
+                      <Icon className="h-4 w-4" aria-hidden />
+                    </div>
+                    <p className="text-[11px] font-medium leading-tight text-stone-500">{stat.label}</p>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-stone-900">
+                      {val}
+                      {stat.unit}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
         )}
 
-        {/* 2. Penalty & Error Tracker - dedicated card */}
+        {/* Scoring leaks (penalties & errors per round) */}
         {penaltyStats && (
-          <div className="bg-[#1a1a1a] rounded-3xl p-6 mb-6 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-8 opacity-10">
-              <Target className="w-24 h-24 text-white" />
-            </div>
-            <div className="relative z-10">
-              <h2 className="text-sm font-black text-[#FF4444] uppercase tracking-widest mb-4 flex items-center gap-2">
-                <Target className="w-4 h-4" />
-                Strokes Lost Tracker
-              </h2>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="coach-deepdive-stat-card bg-white/5 rounded-xl p-3 border border-white/10">
-                  <div className="text-white/50 text-[10px] uppercase font-bold mb-1">Penalties</div>
-                  <div className="text-2xl font-bold text-white leading-none">{penaltyStats.penaltiesPerRound}</div>
-                  <div className="text-white/30 text-[9px] mt-1 italic">/ Round</div>
-                </div>
-                <div className="coach-deepdive-stat-card bg-white/5 rounded-xl p-3 border border-white/10">
-                  <div className="text-white/50 text-[10px] uppercase font-bold mb-1">3-Putts</div>
-                  <div className="text-2xl font-bold text-white leading-none">{penaltyStats.threePuttsPerRound}</div>
-                  <div className="text-white/30 text-[9px] mt-1 italic">/ Round</div>
-                </div>
-                <div className="coach-deepdive-stat-card bg-white/5 rounded-xl p-3 border border-white/10">
-                  <div className="text-white/50 text-[10px] uppercase font-bold mb-1">DBL+</div>
-                  <div className="text-2xl font-bold text-white leading-none">{penaltyStats.doublesPerRound}</div>
-                  <div className="text-white/30 text-[9px] mt-1 italic">/ Round</div>
-                </div>
+          <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+            <div className="mb-5 flex items-center gap-3 border-b border-stone-100 pb-4">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-800">
+                <AlertTriangle className="h-4 w-4" aria-hidden />
               </div>
-              <p className="mt-4 text-xs text-white/40 leading-relaxed italic border-l border-white/20 pl-3">
-                "Eliminating these 3 areas is the fastest way to drop 5 shots."
-              </p>
+              <div>
+                <h3 className="text-base font-semibold tracking-tight text-stone-900">Scoring leaks</h3>
+                <p className="text-xs text-stone-500">Penalties, three-putts, and doubles or worse · per round</p>
+              </div>
             </div>
-          </div>
+            <div className="grid grid-cols-3 divide-x divide-stone-100 rounded-2xl border border-stone-100 bg-stone-50/50">
+              {(
+                [
+                  { label: "Penalties", value: penaltyStats.penaltiesPerRound },
+                  { label: "3-putts", value: penaltyStats.threePuttsPerRound },
+                  { label: "Double+", value: penaltyStats.doublesPerRound },
+                ] as const
+              ).map((row) => (
+                <div key={row.label} className="coach-deepdive-stat-card px-3 py-4 text-center sm:px-4">
+                  <p className="text-[11px] font-medium text-stone-500">{row.label}</p>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums text-stone-900">{row.value}</p>
+                  <p className="mt-0.5 text-[10px] text-stone-400">per round</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 border-l-2 border-amber-200 pl-3 text-xs leading-relaxed text-stone-600">
+              Tightening these three areas is often the fastest path to lower scores without changing swing technique.
+            </p>
+          </section>
         )}
 
         {strokeOpportunityRows.length > 0 && (
@@ -882,145 +1171,249 @@ export default function PlayerDeepDivePage() {
           </div>
         )}
 
-        {/* 3. "Full Metric Matrix" - Data Grid */}
+        {/* Full metric matrix — ranked vs benchmark; toggle sort */}
         {metricMatrix.length > 0 && (
-          <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 mb-6">
-            <h2 className="text-lg font-black text-gray-900 mb-6 flex items-center gap-2 uppercase tracking-tighter">
-              <span className="w-2 h-6 bg-[#014421] rounded-full" />
-              Full Metric Matrix
-            </h2>
-            <div className="space-y-4">
-              {metricMatrix.map((stat: any, i) => {
+          <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+            <div className="mb-5 flex flex-col gap-4 border-b border-stone-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#014421]/10 text-[#014421]">
+                  <Table2 className="h-4 w-4" aria-hidden />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold tracking-tight text-stone-900">Full metric matrix</h3>
+                  <p className="text-xs text-stone-500">
+                    {metricMatrixWorstFirst
+                      ? "Largest benchmark gaps first — flip to review strengths."
+                      : "Strongest vs benchmark first — flip to prioritize improvement opportunities."}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMetricMatrixWorstFirst((v) => !v)}
+                className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-800 shadow-sm transition-colors hover:border-stone-300 hover:bg-white sm:self-auto"
+              >
+                <ArrowUpDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                {metricMatrixWorstFirst ? "Show strongest first" : "Show largest gaps first"}
+              </button>
+            </div>
+            <div className="divide-y divide-stone-100">
+              {sortedMetricMatrix.map((stat: any, i) => {
                 const val = (stat as any)?.statValue ?? (stat as any)?.value ?? (stat as any)?.current ?? 0;
                 const goalVal = (stat as any)?.goal ?? 0;
                 const gapVal = (stat as any)?.gap ?? 0;
                 const isMeetingGoal = (stat as any)?.isLowerBetter ? val <= goalVal : val >= goalVal;
                 const isPositive = gapVal > 0;
-                
+                const name = String((stat as any)?.name ?? "");
+
                 return (
-                  <div key={i} className="flex items-center justify-between py-1 border-b border-gray-50 last:border-0 group hover:bg-gray-50 transition-colors px-2 -mx-2 rounded-lg">
-                    <div className="flex-1">
-                      <div className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                        {(stat as any)?.name ?? ""}
-                        {(stat as any)?.trend === "up" && <ArrowUpRight className={`w-3 h-3 ${(stat as any)?.isLowerBetter ? "text-red-500" : "text-green-500"}`} />}
-                        {(stat as any)?.trend === "down" && <ArrowDownRight className={`w-3 h-3 ${(stat as any)?.isLowerBetter ? "text-green-500" : "text-red-500"}`} />}
-                        {(stat as any)?.trend === "neutral" && <Minus className="w-3 h-3 text-gray-300" />}
+                  <div
+                    key={`${name}-${i}`}
+                    className="coach-deepdive-stat-card flex items-center justify-between gap-3 py-3.5 first:pt-0 transition-colors hover:bg-stone-50/80 sm:gap-4"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-stone-900">
+                        <span className="truncate">{name}</span>
+                        {(stat as any)?.trend === "up" && (
+                          <ArrowUpRight
+                            className={`h-3.5 w-3.5 shrink-0 ${(stat as any)?.isLowerBetter ? "text-rose-500" : "text-emerald-600"}`}
+                            aria-hidden
+                          />
+                        )}
+                        {(stat as any)?.trend === "down" && (
+                          <ArrowDownRight
+                            className={`h-3.5 w-3.5 shrink-0 ${(stat as any)?.isLowerBetter ? "text-emerald-600" : "text-rose-500"}`}
+                            aria-hidden
+                          />
+                        )}
+                        {(stat as any)?.trend === "neutral" && (
+                          <Minus className="h-3.5 w-3.5 shrink-0 text-stone-300" aria-hidden />
+                        )}
                       </div>
-                      <div className="text-[10px] text-gray-400 font-medium tracking-tight">
-                        Target: {goalVal} | Gap: {isPositive ? "+" : ""}{gapVal}
-                      </div>
+                      <p className="mt-0.5 text-[11px] font-medium text-stone-500">
+                        Target {goalVal} · Gap {isPositive ? "+" : ""}
+                        {gapVal}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-4 text-right">
-                      <div className="text-lg font-black text-gray-900">{val}</div>
-                      <div className={`w-20 text-center py-1 rounded-full text-[9px] font-black uppercase tracking-tighter ${
-                        isMeetingGoal 
-                        ? "bg-green-100 text-green-700" 
-                        : "bg-red-100 text-red-700"
-                      }`}>
-                        {isMeetingGoal ? "Target Met" : `${isPositive ? "+" : ""}${gapVal}`}
-                      </div>
+                    <div className="flex shrink-0 items-center gap-3 sm:gap-4">
+                      <span className="text-lg font-semibold tabular-nums text-stone-900">{val}</span>
+                      <span
+                        className={`min-w-[5.25rem] rounded-full px-2.5 py-1 text-center text-[10px] font-semibold uppercase tracking-wide ${
+                          isMeetingGoal
+                            ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100"
+                            : "bg-rose-50 text-rose-800 ring-1 ring-rose-100"
+                        }`}
+                      >
+                        {isMeetingGoal ? "On target" : `${isPositive ? "+" : ""}${gapVal}`}
+                      </span>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* 4. Practice Allocation */}
-        <div className="flex flex-col gap-4 mb-6 w-full min-w-0">
-          <div className="bg-white rounded-xl p-6 shadow-sm mb-8 w-full overflow-hidden">
-            <h2 className="font-bold text-lg uppercase tracking-wider italic text-gray-900 mb-4 text-center" style={{ textDecoration: 'underline', textDecorationColor: '#FF9800', textDecorationThickness: '2px', textUnderlineOffset: '8px' }}>
-              PRACTICE ALLOCATION
-            </h2>
-            <div className="grid gap-3">
-              {(() => {
-                const activityRows = [
-                  { category: 'Driving', minutes: Number(practiceAllocationData.driving ?? 0) },
-                  { category: 'Irons', minutes: Number(practiceAllocationData.irons ?? 0) },
-                  { category: 'Wedges', minutes: Number(practiceAllocationData.wedges ?? 0) },
-                  { category: 'Chipping', minutes: Number(practiceAllocationData.chipping ?? 0) },
-                  { category: 'Bunkers', minutes: Number(practiceAllocationData.bunkers ?? 0) },
-                  { category: 'Putting', minutes: Number(practiceAllocationData.putting ?? 0) },
-                  { category: 'On-Course', minutes: Number(practiceAllocationData.onCourse ?? 0) },
-                  { category: 'Mental/Strategy', minutes: Number(practiceAllocationData.mentalStrategy ?? 0) },
-                ];
-                const maxMinutes = Math.max(1, ...activityRows.map((row) => row.minutes));
-                const totalMinutes = activityRows.reduce((sum, row) => sum + row.minutes, 0);
-                const start = new Date(`${dateRange.start}T00:00:00`);
-                const end = new Date(`${dateRange.end}T23:59:59`);
-                const rangeDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
-                const weeksInRange = Math.max(1 / 7, rangeDays / 7);
-                const monthsInRange = Math.max(1 / 30, rangeDays / 30.44);
+        {/* Practice allocation — time by focus vs saved weekly plan */}
+        <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+          <div className="mb-4 flex flex-col gap-4 border-b border-stone-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+                <PieChart className="h-4 w-4" aria-hidden />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold tracking-tight text-stone-900">Practice allocation</h3>
+                <p className="text-xs text-stone-500">
+                  Totals and daily/weekly/monthly averages for the selected period (suitable for player / parent /
+                  committee reports) · sorted by{" "}
+                  {practiceAllocLeastFirst ? "least time first" : "most time first"}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPracticeAllocLeastFirst((v) => !v)}
+              className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-800 shadow-sm transition-colors hover:border-stone-300 hover:bg-white sm:self-auto"
+            >
+              <Clock className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+              {practiceAllocLeastFirst ? "Most time first" : "Least time first"}
+            </button>
+          </div>
 
-                return activityRows.map((row) => {
-                  const fillPercent = Math.round((row.minutes / maxMinutes) * 100);
-                  const practiceShare = totalMinutes > 0 ? Math.round((row.minutes / totalMinutes) * 100) : 0;
-                  const avgWeekly = Math.round((row.minutes / weeksInRange) * 10) / 10;
-                  const avgMonthly = Math.round((row.minutes / monthsInRange) * 10) / 10;
-                  return (
-                    <div key={row.category} className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-sm font-bold text-gray-900">{row.category}</h3>
-                        <span className="text-sm font-bold text-gray-700">{row.minutes}m</span>
-                      </div>
-                      <div className="w-full h-4 rounded-full bg-gray-200 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-[#014421] transition-all duration-500"
-                          style={{ width: `${Math.max(0, Math.min(100, fillPercent))}%` }}
-                        />
-                      </div>
-                      <div className="mt-2 text-xs text-gray-500 font-medium">{row.minutes} min logged</div>
-                      <div className="mt-1 text-xs font-semibold text-[#014421]">{practiceShare}% of selected period</div>
-                      <div className="mt-1 text-xs text-gray-600">
-                        Avg/week: {avgWeekly} min  |  Avg/month: {avgMonthly} min
+          <div className="mb-4 space-y-3 rounded-2xl border border-stone-100 bg-stone-50/80 p-4 text-xs leading-relaxed text-stone-600 print:break-inside-avoid">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Selected date range</p>
+              <p className="mt-0.5 font-semibold text-stone-900">{dateRangeLabel}</p>
+              <p className="mt-2">
+                <span className="font-semibold text-stone-800">{practiceAllocationDisplay.totalMinutes} min</span>{" "}
+                logged across{" "}
+                <span className="font-medium text-stone-800">{practiceAllocationDisplay.rangeDays} calendar days</span>
+                {practiceAllocationDisplay.hasTargets
+                  ? ". Badges compare each category to the player’s saved weekly plan, scaled to this window."
+                  : ". Bar width shows each category’s share of time in this window."}
+              </p>
+            </div>
+            {practiceAllocationDisplay.totalMinutes > 0 ? (
+              <div className="border-t border-stone-200/80 pt-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-stone-500">
+                  All practice combined — averaged over this period
+                </p>
+                <p className="mt-2 text-stone-700">
+                  About{" "}
+                  <span className="font-semibold text-stone-900">
+                    {formatReportMinutes(practiceAllocationDisplay.avgTotalPerDay)}
+                  </span>{" "}
+                  per day ·{" "}
+                  <span className="font-semibold text-stone-900">
+                    {formatReportMinutes(practiceAllocationDisplay.avgTotalPerWeek)}
+                  </span>{" "}
+                  per week ·{" "}
+                  <span className="font-semibold text-stone-900">
+                    {formatReportMinutes(practiceAllocationDisplay.avgTotalPerMonth)}
+                  </span>{" "}
+                  per month
+                </p>
+                <p className="mt-1.5 text-[11px] text-stone-500">
+                  Averages spread totals evenly across every day in the range (including days with no session), so they
+                  reflect overall pace rather than only days with practice logged.
+                </p>
+              </div>
+            ) : (
+              <p className="border-t border-stone-200/80 pt-3 text-[11px] text-stone-500">
+                No minutes in this window — period averages are not shown.
+              </p>
+            )}
+          </div>
+
+          <div className="divide-y divide-stone-100 rounded-2xl border border-stone-100 bg-stone-50/40">
+            {practiceAllocationDisplay.sorted.map((row) => {
+              const isZero = row.minutes <= 0;
+              const total = practiceAllocationDisplay.totalMinutes;
+              const sharePct = total > 0 ? Math.round((row.minutes / total) * 1000) / 10 : 0;
+              const avgDailyMin = Math.round((row.minutes / practiceAllocationDisplay.rangeDays) * 10) / 10;
+              const avgWeeklyMin = Math.round((row.minutes / practiceAllocationDisplay.weeksInRange) * 10) / 10;
+              const avgMonthlyMin = Math.round((row.minutes / practiceAllocationDisplay.monthsInRange) * 10) / 10;
+              const planMinutesThisWindow =
+                row.goalHoursWeek > 0
+                  ? (row.goalHoursWeek / 7) * practiceAllocationDisplay.rangeDays * 60
+                  : 0;
+              const actualBarPct = total > 0 ? Math.min(100, sharePct) : 0;
+              const planVsActual =
+                planMinutesThisWindow > 0 && row.minutes > 0
+                  ? Math.round((row.minutes / planMinutesThisWindow) * 100)
+                  : null;
+              const planMissed = planMinutesThisWindow > 0 && isZero;
+
+              return (
+                <div
+                  key={row.focus}
+                  className={`coach-deepdive-stat-card px-3 transition-colors hover:bg-white/90 sm:px-4 ${isZero ? "py-2.5" : "py-3.5"}`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2 gap-y-1">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-stone-900">{row.label}</p>
+                      {!isZero ? (
+                        <p className="mt-0.5 text-[11px] text-stone-500">
+                          {sharePct}% of all practice time in this window
+                        </p>
+                      ) : row.goalHoursWeek > 0 ? (
+                        <p className="mt-0.5 text-[11px] text-stone-500">
+                          Plan {row.goalHoursWeek.toFixed(1)}h/wk · ~{Math.round(planMinutesThisWindow)}m this window
+                        </p>
+                      ) : (
+                        <p className="mt-0.5 text-[11px] text-stone-400">No time logged</p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-baseline gap-2">
+                      {planVsActual != null ? (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            planVsActual >= 100
+                              ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100"
+                              : "bg-amber-50 text-amber-900 ring-1 ring-amber-100"
+                          }`}
+                        >
+                          {planVsActual}% of plan
+                        </span>
+                      ) : planMissed ? (
+                        <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-semibold text-stone-600 ring-1 ring-stone-200">
+                          0% of plan
+                        </span>
+                      ) : null}
+                      <div className="text-right">
+                        <span className="block text-sm font-semibold tabular-nums text-stone-900">
+                          {row.minutes} min
+                        </span>
+                        {!isZero ? (
+                          <span className="mt-0.5 block text-[10px] font-medium leading-tight text-stone-500">
+                            Avg {formatReportMinutes(avgDailyMin)}/day · {formatReportMinutes(avgWeeklyMin)}/wk ·{" "}
+                            {formatReportMinutes(avgMonthlyMin)}/mo
+                          </span>
+                        ) : null}
                       </div>
                     </div>
-                  );
-                });
-              })()}
-            </div>
-          </div>
-        </div>
-
-        {/* 5. AI Coaching Summary */}
-        <div className="bg-[#f8fafc] rounded-3xl p-6 mb-6 border border-gray-200">
-          <h2 className="text-sm font-black text-gray-900 mb-4 flex items-center gap-2 uppercase tracking-widest">
-            <Sparkles className="w-4 h-4 text-[#014421]" />
-            AI Coach Review
-          </h2>
-          {!aiSummary && !isGeneratingAi && (
-            <p className="text-gray-400 text-xs mb-4 italic">
-              Awaiting data analysis...
-            </p>
-          )}
-          {isGeneratingAi && (
-            <div className="flex items-center gap-2 text-xs text-[#014421] mb-4">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              Analyzing patterns...
-            </div>
-          )}
-          <button
-            onClick={generateAIAnalysis}
-            disabled={isGeneratingAi}
-            className="print:hidden w-full py-3 bg-[#014421] hover:bg-[#013320] text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all disabled:opacity-50"
-          >
-            {isGeneratingAi ? "Processing..." : "Generate Deep Analysis"}
-          </button>
-
-          {aiSummary && (
-            <div className="mt-6 space-y-3">
-              {aiSummary.map((bullet, i) => (
-                <div key={i} className="flex gap-3 items-start bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
-                  <div className="w-5 h-5 rounded-full bg-green-50 flex items-center justify-center shrink-0 mt-0.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#014421]" />
                   </div>
-                  <span className="text-xs text-gray-700 leading-relaxed font-medium">{bullet}</span>
+                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-stone-200/90">
+                    <div className="h-full rounded-full bg-[#014421]" style={{ width: `${actualBarPct}%` }} />
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              );
+            })}
+          </div>
+
+          {practiceAllocationDisplay.zeroTime.length > 0 && practiceAllocationDisplay.totalMinutes === 0 ? (
+            <p className="mt-3 text-center text-[11px] text-stone-500">
+              No practice tagged in this window. Expand the dates or confirm sessions are logging with facility type.
+            </p>
+          ) : null}
+        </section>
+
+        <CoachDeepDiveRoundTrendCharts
+          grossPoints={roundTrendChartPoints.gross}
+          handicapPoints={roundTrendChartPoints.handicap}
+          rangeCaption={`Same date range as this report · ${dateRangeLabel}`}
+        />
+
           {/* Print-only footer */}
           <div className="hidden print:block mt-8 pt-4 border-t border-gray-200 text-center text-xs text-gray-500">
             Blake Dowd Golf — blakedowdgolf.com

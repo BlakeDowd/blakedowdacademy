@@ -281,8 +281,9 @@ export function buildAcademyCombinesLeaderboard(
       }
     }
   } else if (testId === "ironPrecisionProtocol") {
+    const want = ironPrecisionProtocolConfig.practiceLogType.toLowerCase();
     const rows = (practiceLogs || []).filter(
-      (r) => String(r?.log_type ?? "") === ironPrecisionProtocolConfig.practiceLogType,
+      (r) => String(r?.log_type ?? "").trim().toLowerCase() === want,
     );
     for (const row of rows) {
       if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;

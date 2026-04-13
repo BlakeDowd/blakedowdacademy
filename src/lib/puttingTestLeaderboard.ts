@@ -82,6 +82,25 @@ export function bestPuttingCombineScoreForUser(
   return best;
 }
 
+/** Best complete clustered session score and the latest hole timestamp in that session (for leaderboard date column). */
+export function bestClusteredPuttingTestScoreAndSessionEndMs(
+  holes: ParsedPuttingHole[],
+  isCompleteSession: (session: ParsedPuttingHole[]) => boolean,
+): { score: number; sessionEndMs: number } | null {
+  let bestScore = 0;
+  let sessionEndMs = 0;
+  for (const session of clusterPuttingCombineSessions(holes)) {
+    if (!isCompleteSession(session)) continue;
+    const total = session.reduce((acc, h) => acc + h.points, 0);
+    if (total > bestScore) {
+      bestScore = total;
+      sessionEndMs = Math.max(...session.map((h) => h.createdMs));
+    }
+  }
+  if (bestScore <= 0) return null;
+  return { score: bestScore, sessionEndMs };
+}
+
 export function parsePutting9HoleSession(session: any): ParsedPuttingHole | null {
   try {
     const notes = session.notes;

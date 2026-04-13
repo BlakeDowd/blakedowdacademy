@@ -16,7 +16,7 @@ import { puttingTestConfig } from "@/lib/puttingTestConfig";
 import { userIsPuttingTestLeader } from "@/lib/puttingTestLeaderboard";
 import { countUserCombineCompletions } from "@/lib/combineCompletionDetection";
 
-/** Display + DB trophy_name (must match user_trophies rows). */
+/** Display name; catalog label for `achievement_id` stored in `user_trophies`. */
 export const PUTTING_TEST_CHAMPION_TROPHY_NAME = `Champion: ${puttingTestConfig.testName}`;
 
 // Trophy/Achievement data structure
@@ -670,7 +670,7 @@ export const TROPHY_LIST: TrophyData[] = [
     id: "combine-finisher",
     name: "Combine Finisher",
     requirement:
-      "Complete any Academy combine logged to the practice table (session with a combine test_type) or a combine protocol saved to practice_logs",
+      "Finish any Academy combine session (for example Iron or Gauntlet protocol, AimPoint combine, chipping combine, or another listed combine in Practice).",
     category: "Practice",
     icon: Crosshair,
     checkUnlocked: (stats) => countUserCombineCompletions(stats) >= 1,

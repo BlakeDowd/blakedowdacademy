@@ -1,6 +1,33 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { TROPHY_LIST } from "@/lib/academyTrophies";
 import type { TrophyContributionLine } from "@/lib/trophyMultiplierContributions";
+
+/** Map legacy display strings to catalog `achievement_key` / `user_trophies.achievement_id`. */
+export function trophyIdForDbTrophyName(raw: string | null | undefined): string | undefined {
+  if (raw == null) return undefined;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return undefined;
+  const norm = (s: string) =>
+    s
+      .trim()
+      .toLowerCase()
+      .normalize("NFKC")
+      .replace(/[''`´]/g, "'")
+      .replace(/\s+/g, " ");
+  const n = norm(trimmed);
+  const exact = TROPHY_LIST.find((t) => t.name === trimmed);
+  if (exact) return exact.id;
+  const byNorm = TROPHY_LIST.find((t) => norm(t.name) === n);
+  if (byNorm) return byNorm.id;
+  const byId = TROPHY_LIST.find((t) => t.id === trimmed);
+  if (byId) return byId.id;
+  const low = trimmed.toLowerCase();
+  if (low.includes("champion") && (low.includes("putting") || low.includes("18-hole") || low.includes("18 hole"))) {
+    return "champion-putting-test-18";
+  }
+  return undefined;
+}
 
 /** Row shape for `public.user_achievements` (Supabase column `achievement_key`). */
 export type UserAchievementRow = {
@@ -73,15 +100,15 @@ export function achievementContributionsForKey(
 export async function ensureAchievementsForEarnedTrophies(
   supabase: SupabaseClient,
   userId: string,
-  earned: readonly { id?: string | null; trophy_name: string; unlocked_at?: string | null }[],
+  earned: readonly { achievement_id: string; earned_at?: string | null }[],
 ): Promise<void> {
   const existing = await fetchUserAchievementRows(supabase, userId);
   const counts = achievementCountsFromRows(existing);
   for (const t of earned) {
-    const key = String(t.id ?? "").trim();
+    const key = String(t.achievement_id || "").trim();
     if (!key) continue;
     if ((counts.get(key) ?? 0) > 0) continue;
-    await insertUserAchievement(supabase, userId, key, t.unlocked_at ?? undefined);
+    await insertUserAchievement(supabase, userId, key, t.earned_at ?? undefined);
     counts.set(key, 1);
   }
 }

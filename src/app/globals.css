@@ -192,6 +192,13 @@ select option {
   white-space: normal !important;
 }
 
+/* Coach deep dive — value labels above line chart dots (read without hover) */
+.coach-deepdive-point-value {
+  paint-order: stroke fill;
+  stroke: #ffffff;
+  stroke-width: 2.5px;
+}
+
 /* Library: Print styles for Save as PDF (lesson report) */
 /* Coach: Print styles for Player Deep Dive report */
 @media print {
@@ -342,6 +349,58 @@ select option {
   #coach-deepdive-pdf-content * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+
+  /* Coach Deep Dive — round trend charts (Recharts) readable on PDF / print */
+  #coach-deepdive-pdf-content #coach-deepdive-round-charts,
+  #coach-deepdive-pdf-content .coach-deepdive-trend-card {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  #coach-deepdive-pdf-content .coach-deepdive-chart-wrap {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  #coach-deepdive-pdf-content .recharts-cartesian-axis-tick-value,
+  #coach-deepdive-pdf-content .recharts-label {
+    font-size: 10.5pt !important;
+    fill: #0c0a09 !important;
+  }
+  #coach-deepdive-pdf-content .recharts-cartesian-axis-line,
+  #coach-deepdive-pdf-content .recharts-cartesian-grid line {
+    stroke: #78716c !important;
+    stroke-opacity: 1 !important;
+  }
+  #coach-deepdive-pdf-content .recharts-cartesian-grid-horizontal line,
+  #coach-deepdive-pdf-content .recharts-cartesian-grid-vertical line {
+    stroke: #a8a29e !important;
+  }
+  /* Thicker strokes + high-contrast lines for grayscale PDF */
+  #coach-deepdive-pdf-content g.coach-deepdive-chart-gross path,
+  #coach-deepdive-pdf-content .coach-deepdive-chart-gross path {
+    stroke: #022c15 !important;
+    stroke-width: 3px !important;
+  }
+  #coach-deepdive-pdf-content g.coach-deepdive-chart-handicap path,
+  #coach-deepdive-pdf-content .coach-deepdive-chart-handicap path {
+    stroke: #7c2d12 !important;
+    stroke-width: 3px !important;
+  }
+  #coach-deepdive-pdf-content g.coach-deepdive-chart-gross circle,
+  #coach-deepdive-pdf-content g.coach-deepdive-chart-handicap circle {
+    stroke: #0c0a09 !important;
+    stroke-width: 1.25px !important;
+  }
+  #coach-deepdive-pdf-content .recharts-tooltip-wrapper,
+  #coach-deepdive-pdf-content .recharts-default-tooltip {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  #coach-deepdive-pdf-content .coach-deepdive-point-value {
+    font-size: 10pt !important;
+    font-weight: 700 !important;
+    stroke: #ffffff !important;
+    stroke-width: 3px !important;
   }
   @page {
     size: A4;

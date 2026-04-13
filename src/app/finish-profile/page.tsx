@@ -76,8 +76,7 @@ export default function FinishProfile() {
           console.warn('Failed to insert initial handicap history, continuing anyway:', historyError);
         }
 
-        // Refresh the session and context so it has the new name/handicap
-        await supabase.auth.refreshSession();
+        // Profile lives in `profiles`; avoid `refreshSession()` here (races auto-refresh → invalid refresh token).
         await refreshUser();
         
         // Force a router refresh (panic redirect to / removed - stay on page)

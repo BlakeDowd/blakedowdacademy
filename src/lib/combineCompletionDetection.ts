@@ -32,6 +32,24 @@ const COMBINE_PRACTICE_TEST_TYPES = new Set<string>([
   bunker9HoleChallengeConfig.testType,
 ]);
 
+/** User-facing labels for success history (avoid raw DB identifiers in UI). */
+const COMBINE_LOG_TYPE_LABELS: Record<string, string> = {
+  [gauntletPrecisionProtocolConfig.practiceLogType]: gauntletPrecisionProtocolConfig.testName,
+  [ironPrecisionProtocolConfig.practiceLogType]: ironPrecisionProtocolConfig.testName,
+  [startLineAndSpeedControlTestConfig.practiceLogType]: startLineAndSpeedControlTestConfig.testName,
+  [strikeAndSpeedControlTestConfig.practiceLogType]: strikeAndSpeedControlTestConfig.testName,
+};
+
+const COMBINE_TEST_TYPE_LABELS: Record<string, string> = {
+  [aimpoint6ftCombineConfig.testType]: aimpoint6ftCombineConfig.testName,
+  [midRangeSlopeSensingConfig.testType]: midRangeSlopeSensingConfig.testName,
+  [aimpointLongRange2040Config.testType]: aimpointLongRange2040Config.testName,
+  [chippingCombine9Config.testType]: chippingCombine9Config.testName,
+  [wedgeLateral9Config.testType]: wedgeLateral9Config.testName,
+  [teeShotDispersionCombineConfig.testType]: teeShotDispersionCombineConfig.testName,
+  [bunker9HoleChallengeConfig.testType]: bunker9HoleChallengeConfig.testName,
+};
+
 export type CombineCompletionStats = {
   userId?: string;
   practiceSessions?: any[] | null;
@@ -60,7 +78,10 @@ export function listUserCombineCompletionEvents(stats: CombineCompletionStats): 
     const lt = String((row as { log_type?: string }).log_type || "");
     if (COMBINE_PRACTICE_LOG_TYPES.has(lt)) {
       const at = String((row as { created_at?: string }).created_at || "");
-      out.push({ at, label: "Combine protocol (practice_logs)" });
+      out.push({
+        at,
+        label: COMBINE_LOG_TYPE_LABELS[lt] ?? "Combine session",
+      });
     }
   }
 
@@ -71,7 +92,10 @@ export function listUserCombineCompletionEvents(stats: CombineCompletionStats): 
     if (COMBINE_PRACTICE_TEST_TYPES.has(tt)) {
       const r = row as { completed_at?: string; created_at?: string };
       const at = String(r.completed_at || r.created_at || "");
-      out.push({ at, label: `Combine session (${tt})` });
+      out.push({
+        at,
+        label: COMBINE_TEST_TYPE_LABELS[tt] ?? "Combine session",
+      });
     }
   }
 

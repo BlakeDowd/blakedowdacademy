@@ -426,7 +426,7 @@ export function getTrophyMultiplierContributions(
       });
       const c = puttingLogs.length;
       const contrib = puttingLogs.slice(0, MAX_LINES).map((l) => ({
-        label: "Putting test session (practice_logs)",
+        label: "Putting combine session",
         dateLabel: fmt(l.created_at ?? null),
       }));
       return { count: Math.max(c, 0), contributions: contrib };

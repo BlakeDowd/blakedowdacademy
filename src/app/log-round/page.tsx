@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { addProfileXp, XP_AWARD_PER_LOGGED_ROUND } from "@/lib/addProfileXp";
 import { ArrowLeft, Save, Plus, Minus, RotateCcw } from "lucide-react";
 import { logActivity } from "@/lib/activity";
 import { InfoBubble } from "@/components/InfoBubble";
@@ -50,7 +51,7 @@ interface RoundData {
 
 export default function LogRoundPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const today = new Date().toISOString().split('T')[0];
   const [isSaving, setIsSaving] = useState(false);
   
@@ -311,6 +312,9 @@ export default function LogRoundPage() {
       console.log('Round saved successfully!', data);
       console.log('Round saved successfully');
 
+      await addProfileXp(currentUserId, XP_AWARD_PER_LOGGED_ROUND);
+      await refreshUser();
+
       // Log activity to database
       await logActivity(user.id, 'round', `Posted a round of ${roundData.score}`);
 
@@ -347,6 +351,7 @@ export default function LogRoundPage() {
         window.dispatchEvent(new Event('academyLeaderboardRefresh'));
       }
 
+      setIsSaving(false);
       // Navigate to academy page to see the updated leaderboard
       router.push('/academy');
     } catch (error) {

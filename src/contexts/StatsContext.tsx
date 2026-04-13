@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import { useAuth } from "./AuthContext";
 import { COMBINE_PRACTICE_LOG_TYPE_VALUES } from "@/lib/combineCompletionDetection";
+import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
 import { refreshAuthSessionIfPossible } from "@/lib/supabasePersistSession";
 
 interface RoundData {
@@ -496,14 +497,25 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("practice_logs")
-        .select(
-          "id,user_id,log_type,created_at,matrix_score_average,perfect_putt_count,triple_failure_rate,total_points,strike_data",
-        )
-        .in("log_type", [...COMBINE_PRACTICE_LOG_TYPE_VALUES])
-        .order("created_at", { ascending: false })
-        .limit(5000);
+      const practiceLogsSelect =
+        "id,user_id,log_type,created_at,matrix_score_average,perfect_putt_count,triple_failure_rate,total_points,strike_data";
+
+      const [mainRes, ironRes] = await Promise.all([
+        supabase
+          .from("practice_logs")
+          .select(practiceLogsSelect)
+          .in("log_type", [...COMBINE_PRACTICE_LOG_TYPE_VALUES])
+          .order("created_at", { ascending: false })
+          .limit(5000),
+        supabase
+          .from("practice_logs")
+          .select(practiceLogsSelect)
+          .eq("log_type", ironPrecisionProtocolConfig.practiceLogType)
+          .order("created_at", { ascending: false })
+          .limit(4000),
+      ]);
+
+      const { data, error } = mainRes;
 
       if (error) {
         const err = error as {
@@ -563,7 +575,28 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setPracticeLogs((data || []) as PracticeLogRow[]);
+      const mainRows = (data || []) as PracticeLogRow[];
+      const ironRows = (ironRes.data || []) as PracticeLogRow[];
+      if (ironRes.error) {
+        console.warn(
+          "StatsContext: iron-only practice_logs fetch failed (leaderboard may miss older iron rows):",
+          ironRes.error.message ?? JSON.stringify(ironRes.error),
+        );
+      }
+      const byId = new Map<string, PracticeLogRow>();
+      for (const row of ironRows) {
+        if (row?.id) byId.set(row.id, row);
+      }
+      for (const row of mainRows) {
+        if (row?.id) byId.set(row.id, row);
+      }
+      const merged = Array.from(byId.values());
+      merged.sort((a, b) => {
+        const ta = new Date(String(a.created_at ?? 0)).getTime();
+        const tb = new Date(String(b.created_at ?? 0)).getTime();
+        return tb - ta;
+      });
+      setPracticeLogs(merged);
       practiceLogsFetched.current = true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : JSON.stringify(e);

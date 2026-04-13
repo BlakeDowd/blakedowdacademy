@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { CSSProperties } from "react";
 import type { ComponentType } from "react";
 import {
@@ -15,6 +16,8 @@ import {
   Flame,
   Lock,
   Crosshair,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   TROPHY_LIST,
@@ -23,22 +26,41 @@ import {
   unlockedAccentForTrophy,
   type UnlockedAccent,
 } from "@/lib/academyTrophies";
+import {
+  formatCommunityLeaderboardErrorMessage,
+  isMissingLeaderboardRpcError,
+  TROPHY_ACHIEVEMENTS_BACKFILL_MIGRATION,
+  TROPHY_LEADERBOARD_MERGE_MIGRATION,
+  TROPHY_LEADERBOARD_MIGRATION,
+  type TrophyCollectionLeaderboardRow,
+} from "@/lib/trophyCollectionLeaderboard";
 
 export type TrophyCaseCardTrophy = {
+  /** Catalog slug; same as `achievement_id` stored in `user_trophies`. */
   id: string;
+  achievement_id: string;
   trophy_name: string;
   trophy_icon?: string;
   description?: string;
-  unlocked_at?: string;
+  earned_at?: string;
   isEarned: boolean;
   requirement?: string;
 };
 
 type TrophyCaseProps = {
   cards: readonly TrophyCaseCardTrophy[];
-  /** Row counts from `public.user_achievements` grouped by `achievement_key` (same string as `trophy.id`). */
-  achievementCountByKey: ReadonlyMap<string, number>;
+  /** Times collected per trophy id (max of DB rows and heuristic); drives × badge on cards. */
+  collectionCountById: ReadonlyMap<string, number>;
   onSelectTrophy: (trophy: TrophyCaseCardTrophy) => void;
+  /** Academy-wide: who has the most recorded trophy achievement events. */
+  communityLeaderboard: readonly TrophyCollectionLeaderboardRow[];
+  communityLoading: boolean;
+  communityError: string | null;
+  communityViewerId: string | null;
+  communityViewerRank: number | null;
+  communityViewerTotalDb: number;
+  /** Unlocked trophies in `user_trophies` (drives friendlier copy when leaderboard is empty). */
+  earnedTrophyCount: number;
 };
 
 function unlockedCardStyle(accent: UnlockedAccent): CSSProperties {
@@ -101,7 +123,24 @@ export function getTrophyIconComponent(id: string): ComponentType<{ className?: 
   return iconMap[id] || Trophy;
 }
 
-export default function TrophyCase({ cards, achievementCountByKey, onSelectTrophy }: TrophyCaseProps) {
+export default function TrophyCase({
+  cards,
+  collectionCountById,
+  onSelectTrophy,
+  communityLeaderboard,
+  communityLoading,
+  communityError,
+  communityViewerId,
+  communityViewerRank,
+  communityViewerTotalDb,
+  earnedTrophyCount,
+}: TrophyCaseProps) {
+  const [communityBoardExpanded, setCommunityBoardExpanded] = useState(false);
+
+  const viewerLeaderboardRow = communityViewerId
+    ? communityLeaderboard.find((r) => r.userId === communityViewerId)
+    : undefined;
+
   const rowMeta: { key: TrophyCaseRow; label: string }[] = [
     { key: "volume", label: "Volume (Hours)" },
     { key: "performance", label: "Performance (Scores)" },
@@ -110,22 +149,173 @@ export default function TrophyCase({ cards, achievementCountByKey, onSelectTroph
 
   const orderIndex = (id: string) => TROPHY_LIST.findIndex((x) => x.id === id);
 
+  /** Body + admin section already explain sync; skip the extra footnote. */
+  const suppressRankFootnote =
+    Boolean(communityViewerId) &&
+    communityViewerRank == null &&
+    earnedTrophyCount > 0 &&
+    communityLeaderboard.length === 0 &&
+    !communityError;
+
+  const hasLeaderboardList =
+    !communityLoading && !communityError && communityLeaderboard.length > 0;
+
+  /** With a list: hide footnote while collapsed (compact row / copy covers it); when expanded, hide if signed-in with a rank (row is in the list). */
+  const showCommunityRankFootnote =
+    !suppressRankFootnote &&
+    (!hasLeaderboardList ||
+      (hasLeaderboardList &&
+        communityBoardExpanded &&
+        (!communityViewerId || communityViewerRank == null)));
+
+  const communityBlock = (
+    <div className="rounded-xl border border-amber-100/80 bg-amber-50/50 px-3 py-3">
+      <p className="text-center text-xs font-semibold text-stone-900">Community ranking</p>
+      <p className="mt-0.5 text-center text-[11px] leading-snug text-stone-600">
+        More recorded trophy activity ranks higher. Same rules for everyone.
+      </p>
+      {communityLoading ? (
+        <p className="mt-3 text-center text-[11px] text-stone-500">Loading rankings…</p>
+      ) : communityError ? (
+        <p
+          className={`mt-3 whitespace-pre-wrap text-center text-[11px] leading-snug ${
+            isMissingLeaderboardRpcError(communityError) ? "text-amber-900/95" : "text-red-700/90"
+          }`}
+        >
+          {formatCommunityLeaderboardErrorMessage(communityError)}
+        </p>
+      ) : communityLeaderboard.length === 0 ? (
+        <div className="mt-3 space-y-2 text-center text-[11px] leading-snug text-stone-600">
+          <p>
+            {earnedTrophyCount > 0
+              ? "No list yet. Your trophies are saved — player names will appear here when shared rankings are on."
+              : "No list yet — player names will appear here once there is recorded trophy activity to rank."}
+          </p>
+          <details className="rounded-lg bg-white/70 px-2 py-2 text-left ring-1 ring-stone-200/80">
+            <summary className="cursor-pointer list-none text-[10px] font-semibold text-stone-600 [&::-webkit-details-marker]:hidden">
+              For admins: turn on shared rankings
+            </summary>
+            <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-left text-[10px] text-stone-700">
+              <li>In your Supabase project, SQL Editor: run each file below in order (paste the full file from the repo).</li>
+              <li>Project Settings → API → Reload schema.</li>
+              <li>Refresh this page.</li>
+            </ol>
+            <p className="mt-2 text-[10px] font-medium text-stone-500">Files (in order)</p>
+            <code className="mt-0.5 block break-all font-mono text-[10px] text-stone-800">
+              supabase/migrations/{TROPHY_LEADERBOARD_MIGRATION}
+            </code>
+            <code className="mt-1 block break-all font-mono text-[10px] text-stone-800">
+              supabase/migrations/{TROPHY_ACHIEVEMENTS_BACKFILL_MIGRATION}
+            </code>
+            <code className="mt-1 block break-all font-mono text-[10px] text-stone-800">
+              supabase/migrations/{TROPHY_LEADERBOARD_MERGE_MIGRATION}
+            </code>
+          </details>
+        </div>
+      ) : !communityBoardExpanded ? (
+        <div className="mt-2.5 space-y-2">
+          {communityViewerId && communityViewerRank != null ? (
+            <div className="flex items-baseline gap-2 rounded-lg bg-emerald-50/90 px-2 py-2 ring-1 ring-emerald-300/80 text-left text-[11px]">
+              <span className="w-7 shrink-0 tabular-nums font-bold text-stone-500">#{communityViewerRank}</span>
+              <span className="min-w-0 flex-1 font-semibold leading-snug text-stone-900">
+                {viewerLeaderboardRow?.displayName ?? "You"}
+              </span>
+              <span className="shrink-0 tabular-nums font-semibold text-stone-700">
+                {viewerLeaderboardRow?.totalCollections ?? communityViewerTotalDb}
+              </span>
+            </div>
+          ) : (
+            <p className="text-center text-[11px] leading-snug text-stone-600">
+              {!communityViewerId
+                ? "Sign in to see your place on the board."
+                : earnedTrophyCount > 0
+                  ? "Your rank will show here once trophy events sync to the shared list."
+                  : "Earn a trophy to get on the board — then open the full list to see everyone."}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => setCommunityBoardExpanded(true)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-200/90 bg-white/80 py-2 text-[11px] font-semibold text-stone-800 shadow-sm transition hover:bg-white"
+          >
+            Expand leaderboard
+            <ChevronDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+          </button>
+        </div>
+      ) : (
+        <div className="mt-2.5 space-y-2">
+          <ol className="max-h-52 list-none space-y-1 overflow-y-auto pr-0.5 text-left text-[11px]">
+            {communityLeaderboard.map((row) => {
+              const isViewer = Boolean(communityViewerId && row.userId === communityViewerId);
+              return (
+                <li
+                  key={row.userId}
+                  className={`flex items-baseline gap-2 rounded-lg px-2 py-1.5 ring-1 ring-stone-200/70 ${
+                    isViewer ? "bg-emerald-50/90 ring-emerald-300/80" : "bg-white/60"
+                  }`}
+                >
+                  <span className="w-7 shrink-0 tabular-nums font-bold text-stone-500">#{row.boardRank}</span>
+                  <span className="min-w-0 flex-1 font-medium leading-snug text-stone-900">{row.displayName}</span>
+                  <span className="shrink-0 tabular-nums font-semibold text-stone-700">{row.totalCollections}</span>
+                </li>
+              );
+            })}
+          </ol>
+          <button
+            type="button"
+            onClick={() => setCommunityBoardExpanded(false)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-white/90 py-2 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50/90"
+          >
+            Collapse leaderboard
+            <ChevronUp className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+          </button>
+        </div>
+      )}
+      {showCommunityRankFootnote ? (
+        <p className="mt-2.5 border-t border-amber-200/60 pt-2 text-center text-[11px] leading-snug text-stone-700">
+          {!communityViewerId ? (
+            <span className="text-stone-600">Sign in to see your rank among players.</span>
+          ) : communityViewerRank != null ? (
+            <>
+              <span className="font-semibold text-stone-900">You are #{communityViewerRank}</span>
+              {" · "}
+              <span className="text-stone-600">{communityViewerTotalDb} toward rankings</span>
+            </>
+          ) : earnedTrophyCount > 0 ? (
+            <span className="text-stone-600">
+              Your rank will update as new trophy events are recorded.
+            </span>
+          ) : (
+            <span className="text-stone-600">
+              You are not on the board yet — earn a trophy so we can record your first event.
+            </span>
+          )}
+        </p>
+      ) : null}
+    </div>
+  );
+
   if (cards.length === 0) {
     return (
-      <div className="py-10 text-center">
-        <Trophy className="mx-auto mb-3 h-12 w-12 text-stone-300" />
-        <p className="text-sm text-stone-500">No unlocked trophies yet. Keep practicing!</p>
+      <div className="space-y-5">
+        {communityBlock}
+        <div className="py-6 text-center">
+          <Trophy className="mx-auto mb-3 h-12 w-12 text-stone-300" />
+          <p className="text-sm text-stone-500">No unlocked trophies yet. Keep practicing!</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-5">
+      {communityBlock}
       {rowMeta.map(({ key, label }) => {
         const inRow = [...cards]
           .filter((t) => trophyCaseRowForId(t.id) === key)
           .sort((a, b) => orderIndex(a.id) - orderIndex(b.id));
         if (inRow.length === 0) return null;
+
         return (
           <div key={key}>
             <h3 className="mb-2 px-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-stone-500">
@@ -138,8 +328,8 @@ export default function TrophyCase({ cards, achievementCountByKey, onSelectTroph
                 const IconComponent = def?.icon ?? Trophy;
                 const accent = def ? unlockedAccentForTrophy(def) : "silver";
                 const eliteShine = isEarned && def && (def.id === "elite" || def.isRare === true);
-                const achievementCount = achievementCountByKey.get(trophy.id) ?? 0;
-                const showMultiplierBadge = isEarned && achievementCount > 1;
+                const collectionCount = collectionCountById.get((trophy.id || "").trim()) ?? 0;
+                const showMultiplierBadge = isEarned && collectionCount >= 2;
 
                 return (
                   <button
@@ -163,9 +353,9 @@ export default function TrophyCase({ cards, achievementCountByKey, onSelectTroph
                       {showMultiplierBadge && (
                         <span
                           className="absolute right-1 top-1 z-[3] rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-black text-slate-950 shadow-lg shadow-emerald-500/20"
-                          title={`Unlocked ${achievementCount} times`}
+                          title={`Collected ${collectionCount} times`}
                         >
-                          x{achievementCount}
+                          ×{collectionCount}
                         </span>
                       )}
                       {!isEarned && (

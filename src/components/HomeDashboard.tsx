@@ -41,25 +41,29 @@ import {
   type UserAchievementRow,
 } from "@/lib/userAchievements";
 import {
+  fetchUserTrophiesForUser,
+  formatInsertUserTrophyRowError,
+  insertUserTrophyRow,
+  type NormalizedUserTrophyRow,
+} from "@/lib/userTrophiesDb";
+import {
   practiceSessionMinutesFromRow,
   practiceSessionsForUser,
 } from "@/lib/practiceSessionDuration";
 import AcademyTrophyCasePanel, {
   type AcademySelectedTrophy,
 } from "@/components/AcademyTrophyCasePanel";
+import { runBackfillMyAchievementsFromTrophies } from "@/lib/trophyCollectionLeaderboard";
 
-type UserTrophyDbRow = {
-  trophy_name: string;
-  trophy_icon?: string | null;
-  unlocked_at?: string | null;
-  description?: string | null;
-};
+type UserTrophyDbRow = NormalizedUserTrophyRow;
 
+/** Dashboard + Trophy Case row: DB fields (`achievement_id`, `earned_at`) plus catalog display. */
 type DashboardTrophyRow = {
+  achievement_id: string;
+  earned_at?: string;
   trophy_name: string;
   trophy_icon?: string;
-  unlocked_at?: string;
-  id?: string;
+  id: string;
   description?: string;
   isEarned?: boolean;
   requirement?: string;
@@ -794,7 +798,6 @@ export default function HomeDashboard() {
     }
   };
 
-  const [roundStatsRowCount, setRoundStatsRowCount] = useState<number | null>(null);
   const [roundStatsPlayedAt, setRoundStatsPlayedAt] = useState<string[]>([]);
 
   const currentHandicapForTrophies = useMemo(() => {
@@ -840,7 +843,6 @@ export default function HomeDashboard() {
 
   useEffect(() => {
     if (!user?.id) {
-      setRoundStatsRowCount(null);
       setRoundStatsPlayedAt([]);
       return;
     }
@@ -857,18 +859,15 @@ export default function HomeDashboard() {
           .limit(200);
         if (cancelled) return;
         if (error) {
-          setRoundStatsRowCount(null);
           setRoundStatsPlayedAt([]);
           return;
         }
         const rows = Array.isArray(data) ? data : [];
-        setRoundStatsRowCount(rows.length);
         setRoundStatsPlayedAt(
           rows.map((r: { played_at?: string | null }) => r.played_at).filter((x): x is string => !!x),
         );
       } catch {
         if (!cancelled) {
-          setRoundStatsRowCount(null);
           setRoundStatsPlayedAt([]);
         }
       }
@@ -909,8 +908,9 @@ export default function HomeDashboard() {
       (trophies || [])
         .filter((t) => t.isEarned)
         .map((t) => ({
+          achievement_id: t.achievement_id,
+          earned_at: t.earned_at,
           trophy_name: t.trophy_name,
-          unlocked_at: t.unlocked_at,
           description: t.description,
           id: t.id,
           trophy_icon: t.trophy_icon,
@@ -927,20 +927,15 @@ export default function HomeDashboard() {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
         
-        // Fetch Trophies: Pull from user_trophies table
-        // Detailed View: Include description from database for modal display
-        const { data: dbTrophyData, error } = await supabase
-          .from('user_trophies')
-          .select('trophy_name, trophy_icon, unlocked_at, description')
-          .eq('user_id', user.id)
-          .order('unlocked_at', { ascending: false });
+        // Fetch Trophies: `user_trophies` uses `achievement_id` + `earned_at`.
+        const { rows: fetchedTrophyRows, error: trophyFetchError } = await fetchUserTrophiesForUser(
+          supabase,
+          user.id,
+        );
+        let dbRows: UserTrophyDbRow[] = fetchedTrophyRows;
 
-        let dbRows: UserTrophyDbRow[] = Array.isArray(dbTrophyData)
-          ? (dbTrophyData as UserTrophyDbRow[])
-          : [];
-
-        if (error) {
-          console.error('Trophy Error:', JSON.stringify(error, null, 2));
+        if (trophyFetchError) {
+          console.error("Trophy Error:", JSON.stringify(trophyFetchError, null, 2));
           // Continue even if DB fetch fails - we'll still check Academy unlocks
         }
         
@@ -987,53 +982,51 @@ export default function HomeDashboard() {
         );
         
         // Auto-Insert: If a milestone is met but that trophy doesn't exist in user_trophies table yet, automatically INSERT to award it
-        const dbTrophyNamesSet = new Set(dbRows.map((t) => t.trophy_name));
-        const trophiesToInsert = unlockedAcademyTrophies.filter((trophy) => !dbTrophyNamesSet.has(trophy.trophy_name));
+        const dbAchievementIds = new Set(dbRows.map((t) => t.achievement_id));
+        const trophiesToInsert = unlockedAcademyTrophies.filter((trophy) => !dbAchievementIds.has(trophy.id));
 
         if (trophiesToInsert.length > 0) {
           for (const trophy of trophiesToInsert) {
-            const unlockedAt = new Date().toISOString();
-            const { error: insertError } = await supabase.from('user_trophies').insert({
-              user_id: user.id,
-              trophy_name: trophy.trophy_name,
+            const earnedAt = new Date().toISOString();
+            const { error: insertError } = await insertUserTrophyRow(supabase, {
+              userId: user.id,
+              achievementId: trophy.id,
               description: trophy.description,
-              unlocked_at: unlockedAt,
+              earnedAt,
             });
 
             if (insertError) {
-              console.error(`Failed to insert trophy ${trophy.trophy_name}:`, insertError);
+              console.error(
+                `[trophy-insert] ${trophy.trophy_name}: ${formatInsertUserTrophyRowError(insertError)}`,
+              );
             } else {
               console.log(`✅ Auto-awarded trophy: ${trophy.trophy_name}`);
               await logActivity(user.id, 'achievement', `Unlocked the ${trophy.trophy_name} trophy`);
               if (trophy.id) {
-                await insertUserAchievement(supabase, user.id, trophy.id, unlockedAt);
+                await insertUserAchievement(supabase, user.id, trophy.id, earnedAt);
               }
             }
           }
 
-          const { data: updatedDbTrophies } = await supabase
-            .from('user_trophies')
-            .select('trophy_name, trophy_icon, unlocked_at, description')
-            .eq('user_id', user.id)
-            .order('unlocked_at', { ascending: false });
-
-          if (Array.isArray(updatedDbTrophies)) {
-            dbRows = updatedDbTrophies as UserTrophyDbRow[];
+          const { rows: updatedRows } = await fetchUserTrophiesForUser(supabase, user.id);
+          if (updatedRows.length > 0) {
+            dbRows = updatedRows;
           }
         }
 
-        const earnedTrophyNames = new Set(dbRows.map((t) => t.trophy_name));
+        const earnedAchievementIds = new Set(dbRows.map((t) => t.achievement_id));
 
         const allTrophies: DashboardTrophyRow[] = TROPHY_LIST.map((trophy) => {
-          const isEarned = earnedTrophyNames.has(trophy.name);
-          const dbTrophy = dbRows.find((t) => t.trophy_name === trophy.name);
+          const isEarned = earnedAchievementIds.has(trophy.id);
+          const dbTrophy = dbRows.find((t) => t.achievement_id === trophy.id);
 
           return {
+            achievement_id: trophy.id,
             trophy_name: trophy.name,
             trophy_icon: undefined,
             id: trophy.id,
             description: trophy.requirement,
-            unlocked_at: dbTrophy?.unlocked_at ?? undefined,
+            earned_at: dbTrophy?.earned_at ?? undefined,
             isEarned,
             requirement: trophy.requirement,
           };
@@ -1054,10 +1047,10 @@ export default function HomeDashboard() {
         const earnedForEnsure = allTrophies
           .filter((t) => t.isEarned)
           .map((t) => ({
-            id: t.id ?? null,
-            trophy_name: t.trophy_name,
-            unlocked_at: t.unlocked_at ?? null,
+            achievement_id: t.achievement_id,
+            earned_at: t.earned_at ?? null,
           }));
+        await runBackfillMyAchievementsFromTrophies(supabase);
         await ensureAchievementsForEarnedTrophies(supabase, user.id, earnedForEnsure);
         const achRows = await fetchUserAchievementRows(supabase, user.id);
         setUserAchievementRows(achRows);
@@ -1673,8 +1666,6 @@ export default function HomeDashboard() {
             trophyMultiplierById={trophyMultiplierById}
             achievementRows={userAchievementRows}
             achievementCountByKey={achievementCountByKey}
-            practiceLogs={practiceLogs}
-            roundStatsRowCount={roundStatsRowCount}
           />
         </div>
 
