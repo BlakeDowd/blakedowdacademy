@@ -499,7 +499,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
           summaryLower.includes("could not find the table");
         if (tableMissing) {
           console.warn(
-            "StatsContext: practice_logs is not in the database yet (PGRST205). Apply migrations from supabase/migrations (files matching *practice_logs*) using `supabase db push` or the SQL Editor, then reload.",
+            "StatsContext: practice_logs is not in the database yet (PGRST205). Run `supabase db push` or paste supabase/migrations/20260420140000_practice_logs_bootstrap_pgrst205.sql in the SQL Editor, then reload the API schema (Dashboard → Settings → API → Reload schema).",
             summary,
             err.hint ? `PostgREST hint: ${err.hint}` : ""
           );
