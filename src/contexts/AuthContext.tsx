@@ -18,7 +18,7 @@ interface User {
   currentLevel?: number; // Pull current level from database
   startingHandicap?: number; // Store starting_handicap
   currentHandicap?: number; // Store current handicap
-  trophies?: string[]; // Use Profile Data: Pull trophies directly from profile data (trophies or achievements column)
+  trophies?: string[]; // Legacy optional list from profiles.trophies or profiles.achievements (not the public.user_achievements table)
   role?: string; // coach | student - from profiles.role for role-based access
 }
 
@@ -554,7 +554,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               
               // Verify Mapping: Map profile.currentStreak (camelCase) to currentStreak (camelCase in user object)
               // Map the Data: Assign totalXP from profile.total_xp (database column) to user state
-              // Use Profile Data: Pull trophies directly from profile data (trophies or achievements column)
+              // Legacy profile fields profiles.trophies / profiles.achievements (not public.user_achievements)
               setUser({
                 id: supabaseUser.id,
                 email: supabaseUser.email || '',
@@ -567,7 +567,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 currentLevel: (profile as any)?.current_level || 1,
                 startingHandicap: (profile as any)?.starting_handicap,
                 currentHandicap: (profile as any)?.handicap,
-                trophies: (profile as any)?.trophies || (profile as any)?.achievements || [], // Use Profile Data: Pull trophies from profile
+                trophies: (profile as any)?.trophies || (profile as any)?.achievements || [],
                 role: (profile as any)?.role, // coach | student for role-based access
               });
               
@@ -777,7 +777,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 currentLevel: profileDataWithXP.currentLevel,
                 startingHandicap: (profileData as any)?.starting_handicap,
                 currentHandicap: (profileData as any)?.handicap,
-                trophies: (profileData as any)?.trophies || (profileData as any)?.achievements || [], // Use Profile Data: Pull trophies from profile
+                trophies: (profileData as any)?.trophies || (profileData as any)?.achievements || [],
                 role: (profileData as any)?.role,
               });
               setIsAuthenticated(true);

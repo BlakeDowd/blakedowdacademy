@@ -348,3 +348,42 @@ select option {
     margin: 16mm;
   }
 }
+
+/* Academy Trophy Case — subtle shine on elite / rare unlocked trophies (~5s cycle) */
+@keyframes trophy-shine-sweep {
+  0%,
+  82% {
+    transform: translateX(-120%) skewX(-14deg);
+    opacity: 0;
+  }
+  88% {
+    opacity: 0.5;
+  }
+  94% {
+    transform: translateX(160%) skewX(-14deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(160%) skewX(-14deg);
+    opacity: 0;
+  }
+}
+
+.trophy-case-elite-shine {
+  position: relative;
+  overflow: hidden;
+}
+
+.trophy-case-elite-shine::after {
+  content: "";
+  position: absolute;
+  inset: -40% -60%;
+  background: linear-gradient(
+    105deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.55) 50%,
+    transparent 62%
+  );
+  animation: trophy-shine-sweep 5s ease-in-out infinite;
+  pointer-events: none;
+}

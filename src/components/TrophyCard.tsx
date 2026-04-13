@@ -10,7 +10,8 @@ import {
   Zap, 
   Crown, 
   Medal, 
-  Award 
+  Award,
+  Crosshair,
 } from "lucide-react";
 
 interface TrophyCardProps {
@@ -51,6 +52,7 @@ const getTrophyIcon = (trophyId: string) => {
     'wedge-wizard': BookOpen,
     'coachs-pet': Award,
     'champion-putting-test-18': Crown,
+    'combine-finisher': Crosshair,
   };
   return iconMap[trophyId] || Trophy;
 };

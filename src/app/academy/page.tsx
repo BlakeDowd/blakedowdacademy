@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -29,7 +29,6 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { GOLF_ICONS } from "@/components/IconPicker";
 import TrophyCard from "@/components/TrophyCard";
-import { puttingTestConfig } from "@/lib/puttingTestConfig";
 import {
   type ParsedPuttingHole,
   parsePuttingHoleSession,
@@ -42,7 +41,6 @@ import {
   bestPuttingTest8To20ScoreForUser,
   parsePuttingTest20To40Session,
   bestPuttingTest20To40ScoreForUser,
-  userIsPuttingTestLeader,
 } from "@/lib/puttingTestLeaderboard";
 import { puttingTest9Config } from "@/lib/puttingTest9Config";
 import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
@@ -61,9 +59,25 @@ import {
   isLeaderboardDrivenCombineId,
   type CombineLeaderboardTestId,
 } from "@/lib/academyCombinesLeaderboard";
+import { getTrophyMultiplierContributions } from "@/lib/trophyMultiplierContributions";
+import { TROPHY_LIST, buildLibraryCategoryCountsFromStorage } from "@/lib/academyTrophies";
+import {
+  achievementCountsFromRows,
+  ensureAchievementsForEarnedTrophies,
+  fetchUserAchievementRows,
+  type UserAchievementRow,
+} from "@/lib/userAchievements";
+import AcademyTrophyCasePanel, {
+  type AcademySelectedTrophy,
+} from "@/components/AcademyTrophyCasePanel";
 
-/** Display + DB trophy_name (must match HomeDashboard ACADEMY_TROPHIES). */
-const PUTTING_TEST_CHAMPION_TROPHY_NAME = `Champion: ${puttingTestConfig.testName}`;
+type AcademyDbTrophyRow = {
+  trophy_name: string;
+  trophy_icon?: string;
+  unlocked_at?: string;
+  description?: string;
+  id?: string;
+};
 
 interface LeaderboardEntry {
   id: string;
@@ -132,674 +146,6 @@ const getLevel = (tier: "Bronze" | "Silver" | "Gold" | "Platinum"): string => {
   }
 };
 
-// Trophy/Achievement data structure
-interface TrophyData {
-  id: string;
-  name: string;
-  requirement: string;
-  category:
-    | "Practice"
-    | "Knowledge"
-    | "Performance"
-    | "Milestone"
-    | "Scoring Milestones";
-  icon: React.ComponentType<{ className?: string }>;
-  checkUnlocked: (stats: {
-    totalXP: number;
-    completedLessons: number;
-    practiceHours: number;
-    rounds: number;
-    handicap: number;
-    roundsData?: any[]; // Full rounds data for score/birdie/eagle checking
-    practiceHistory?: any[]; // Practice activity history
-    libraryCategories?: Record<string, number>; // Completed drills by category
-    userId?: string;
-    practiceSessions?: any[];
-  }) => boolean;
-  getProgress: (stats: {
-    totalXP: number;
-    completedLessons: number;
-    practiceHours: number;
-    rounds: number;
-    handicap: number;
-    roundsData?: any[];
-    practiceHistory?: any[];
-    libraryCategories?: Record<string, number>;
-    userId?: string;
-    practiceSessions?: any[];
-  }) => { current: number; target: number; percentage: number };
-  isRare?: boolean; // For special styling (e.g., Eagle Eye)
-}
-
-const TROPHY_LIST: TrophyData[] = [
-  // Practice Trophies
-  {
-    id: "first-steps",
-    name: "First Steps",
-    requirement: "Complete 1 hour of practice",
-    category: "Practice",
-    icon: Clock,
-    checkUnlocked: (stats) => stats.practiceHours >= 1,
-    getProgress: (stats) => ({
-      current: stats.practiceHours,
-      target: 1,
-      percentage: Math.min(100, (stats.practiceHours / 1) * 100),
-    }),
-  },
-  {
-    id: "dedicated",
-    name: "Dedicated",
-    requirement: "Complete 10 hours of practice",
-    category: "Practice",
-    icon: Clock,
-    checkUnlocked: (stats) => stats.practiceHours >= 10,
-    getProgress: (stats) => ({
-      current: stats.practiceHours,
-      target: 10,
-      percentage: Math.min(100, (stats.practiceHours / 10) * 100),
-    }),
-  },
-  {
-    id: "practice-master",
-    name: "Practice Master",
-    requirement: "Complete 50 hours of practice",
-    category: "Practice",
-    icon: Target,
-    checkUnlocked: (stats) => stats.practiceHours >= 50,
-    getProgress: (stats) => ({
-      current: stats.practiceHours,
-      target: 50,
-      percentage: Math.min(100, (stats.practiceHours / 50) * 100),
-    }),
-  },
-  {
-    id: "practice-legend",
-    name: "Practice Legend",
-    requirement: "Complete 100 hours of practice",
-    category: "Practice",
-    icon: Flame,
-    checkUnlocked: (stats) => stats.practiceHours >= 100,
-    getProgress: (stats) => ({
-      current: stats.practiceHours,
-      target: 100,
-      percentage: Math.min(100, (stats.practiceHours / 100) * 100),
-    }),
-  },
-  // Knowledge Trophies
-  {
-    id: "student",
-    name: "Student",
-    requirement: "Complete 5 lessons",
-    category: "Knowledge",
-    icon: BookOpen,
-    checkUnlocked: (stats) => stats.completedLessons >= 5,
-    getProgress: (stats) => ({
-      current: stats.completedLessons,
-      target: 5,
-      percentage: Math.min(100, (stats.completedLessons / 5) * 100),
-    }),
-  },
-  {
-    id: "scholar",
-    name: "Scholar",
-    requirement: "Complete 20 lessons",
-    category: "Knowledge",
-    icon: BookOpen,
-    checkUnlocked: (stats) => stats.completedLessons >= 20,
-    getProgress: (stats) => ({
-      current: stats.completedLessons,
-      target: 20,
-      percentage: Math.min(100, (stats.completedLessons / 20) * 100),
-    }),
-  },
-  {
-    id: "expert",
-    name: "Expert",
-    requirement: "Complete 50 lessons",
-    category: "Knowledge",
-    icon: BookOpen,
-    checkUnlocked: (stats) => stats.completedLessons >= 50,
-    getProgress: (stats) => ({
-      current: stats.completedLessons,
-      target: 50,
-      percentage: Math.min(100, (stats.completedLessons / 50) * 100),
-    }),
-  },
-  // Performance Trophies
-  {
-    id: "first-round",
-    name: "First Round",
-    requirement: "Log your first round",
-    category: "Performance",
-    icon: Trophy,
-    checkUnlocked: (stats) => stats.rounds >= 1,
-    getProgress: (stats) => ({
-      current: stats.rounds,
-      target: 1,
-      percentage: Math.min(100, (stats.rounds / 1) * 100),
-    }),
-  },
-  {
-    id: "consistent",
-    name: "Consistent",
-    requirement: "Log 10 rounds",
-    category: "Performance",
-    icon: Trophy,
-    checkUnlocked: (stats) => stats.rounds >= 10,
-    getProgress: (stats) => ({
-      current: stats.rounds,
-      target: 10,
-      percentage: Math.min(100, (stats.rounds / 10) * 100),
-    }),
-  },
-  {
-    id: "tracker",
-    name: "Tracker",
-    requirement: "Log 25 rounds",
-    category: "Performance",
-    icon: Trophy,
-    checkUnlocked: (stats) => stats.rounds >= 25,
-    getProgress: (stats) => ({
-      current: stats.rounds,
-      target: 25,
-      percentage: Math.min(100, (stats.rounds / 25) * 100),
-    }),
-  },
-  // Milestone Trophies
-  {
-    id: "rising-star",
-    name: "Rising Star",
-    requirement: "Earn 1,000 XP",
-    category: "Milestone",
-    icon: Star,
-    checkUnlocked: (stats) => stats.totalXP >= 1000,
-    getProgress: (stats) => ({
-      current: stats.totalXP,
-      target: 1000,
-      percentage: Math.min(100, (stats.totalXP / 1000) * 100),
-    }),
-  },
-  {
-    id: "champion",
-    name: "Champion",
-    requirement: "Earn 5,000 XP",
-    category: "Milestone",
-    icon: Zap,
-    checkUnlocked: (stats) => stats.totalXP >= 5000,
-    getProgress: (stats) => ({
-      current: stats.totalXP,
-      target: 5000,
-      percentage: Math.min(100, (stats.totalXP / 5000) * 100),
-    }),
-  },
-  {
-    id: "elite",
-    name: "Elite",
-    requirement: "Earn 10,000 XP",
-    category: "Milestone",
-    icon: Crown,
-    checkUnlocked: (stats) => stats.totalXP >= 10000,
-    getProgress: (stats) => ({
-      current: stats.totalXP,
-      target: 10000,
-      percentage: Math.min(100, (stats.totalXP / 10000) * 100),
-    }),
-  },
-  {
-    id: "goal-achiever",
-    name: "Goal Achiever",
-    requirement: "Reach 8.7 handicap",
-    category: "Milestone",
-    icon: Medal,
-    checkUnlocked: (stats) => stats.handicap <= 8.7,
-    getProgress: (stats) => {
-      const startHandicap = 12.0;
-      const goalHandicap = 8.7;
-      const improvement = startHandicap - stats.handicap;
-      const totalNeeded = startHandicap - goalHandicap;
-      const percentage = Math.min(
-        100,
-        Math.max(0, (improvement / totalNeeded) * 100),
-      );
-      return { current: stats.handicap, target: goalHandicap, percentage };
-    },
-  },
-  // Scoring Milestones
-  {
-    id: "birdie-hunter",
-    name: "Birdie Hunter",
-    requirement: "Log 1 Birdie in a round",
-    category: "Performance",
-    icon: Target,
-    checkUnlocked: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) return false;
-      return stats.roundsData.some((round: any) => (round.birdies || 0) >= 1);
-    },
-    getProgress: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) {
-        return { current: 0, target: 1, percentage: 0 };
-      }
-      const hasBirdie = stats.roundsData.some(
-        (round: any) => (round.birdies || 0) >= 1,
-      );
-      return {
-        current: hasBirdie ? 1 : 0,
-        target: 1,
-        percentage: hasBirdie ? 100 : 0,
-      };
-    },
-  },
-  {
-    id: "breaking-90",
-    name: "Breaking 90",
-    requirement: "Score below 90 in a round",
-    category: "Performance",
-    icon: Trophy,
-    checkUnlocked: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) return false;
-      return stats.roundsData.some(
-        (round: any) => round.score !== null && round.score < 90,
-      );
-    },
-    getProgress: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) {
-        return { current: 90, target: 89, percentage: 0 };
-      }
-      const bestScore = Math.min(
-        ...stats.roundsData
-          .map((r: any) => (r.score !== null ? r.score : 999))
-          .filter((s: number) => s < 999),
-      );
-      const target = 89;
-      const percentage =
-        bestScore < 90
-          ? 100
-          : Math.max(0, ((90 - bestScore) / (90 - target)) * 100);
-      return {
-        current: bestScore < 999 ? bestScore : 90,
-        target: target,
-        percentage: Math.min(100, percentage),
-      };
-    },
-  },
-  {
-    id: "breaking-80",
-    name: "Breaking 80",
-    requirement: "Score below 80 in a round",
-    category: "Performance",
-    icon: Trophy,
-    checkUnlocked: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) return false;
-      return stats.roundsData.some(
-        (round: any) => round.score !== null && round.score < 80,
-      );
-    },
-    getProgress: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) {
-        return { current: 90, target: 79, percentage: 0 };
-      }
-      const bestScore = Math.min(
-        ...stats.roundsData
-          .map((r: any) => (r.score !== null ? r.score : 999))
-          .filter((s: number) => s < 999),
-      );
-      const target = 79;
-      const percentage =
-        bestScore < 80
-          ? 100
-          : Math.max(0, ((80 - bestScore) / (80 - target)) * 100);
-      return {
-        current: bestScore < 999 ? bestScore : 90,
-        target: target,
-        percentage: Math.min(100, percentage),
-      };
-    },
-  },
-  {
-    id: "breaking-70",
-    name: "Breaking 70",
-    requirement: "Score below 70 in a round",
-    category: "Scoring Milestones",
-    icon: Trophy,
-    checkUnlocked: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) return false;
-      return stats.roundsData.some(
-        (round: any) => round.score !== null && round.score < 70,
-      );
-    },
-    getProgress: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) {
-        return { current: 90, target: 69, percentage: 0 };
-      }
-      const bestScore = Math.min(
-        ...stats.roundsData
-          .map((r: any) => (r.score !== null ? r.score : 999))
-          .filter((s: number) => s < 999),
-      );
-      const target = 69;
-      const percentage =
-        bestScore < 70
-          ? 100
-          : Math.max(0, ((70 - bestScore) / (70 - target)) * 100);
-      return {
-        current: bestScore < 999 ? bestScore : 90,
-        target: target,
-        percentage: Math.min(100, percentage),
-      };
-    },
-  },
-  {
-    id: "eagle-eye",
-    name: "Eagle Eye",
-    requirement: "Score an Eagle in a round",
-    category: "Scoring Milestones",
-    icon: Star,
-    isRare: true,
-    checkUnlocked: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) return false;
-      return stats.roundsData.some((round: any) => (round.eagles || 0) >= 1);
-    },
-    getProgress: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) {
-        return { current: 0, target: 1, percentage: 0 };
-      }
-      const hasEagle = stats.roundsData.some(
-        (round: any) => (round.eagles || 0) >= 1,
-      );
-      return {
-        current: hasEagle ? 1 : 0,
-        target: 1,
-        percentage: hasEagle ? 100 : 0,
-      };
-    },
-  },
-  {
-    id: "birdie-machine",
-    name: "Birdie Machine",
-    requirement: "Score 5 Birdies in a single round",
-    category: "Scoring Milestones",
-    icon: Zap,
-    checkUnlocked: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) return false;
-      return stats.roundsData.some((round: any) => (round.birdies || 0) >= 5);
-    },
-    getProgress: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) {
-        return { current: 0, target: 5, percentage: 0 };
-      }
-      const maxBirdies = Math.max(
-        ...stats.roundsData.map((r: any) => r.birdies || 0),
-      );
-      return {
-        current: maxBirdies,
-        target: 5,
-        percentage: Math.min(100, (maxBirdies / 5) * 100),
-      };
-    },
-  },
-  {
-    id: "par-train",
-    name: "Par Train",
-    requirement: "Score 5 consecutive pars in a round",
-    category: "Scoring Milestones",
-    icon: Trophy,
-    checkUnlocked: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) return false;
-      // Check each round for 5 consecutive pars
-      return stats.roundsData.some((round: any) => {
-        // For now, we'll check if total pars >= 5 (simplified logic)
-        // In a full implementation, we'd track hole-by-hole scores
-        return (round.pars || 0) >= 5;
-      });
-    },
-    getProgress: (stats) => {
-      if (!stats.roundsData || stats.roundsData.length === 0) {
-        return { current: 0, target: 5, percentage: 0 };
-      }
-      const maxPars = Math.max(
-        ...stats.roundsData.map((r: any) => r.pars || 0),
-      );
-      return {
-        current: maxPars,
-        target: 5,
-        percentage: Math.min(100, (maxPars / 5) * 100),
-      };
-    },
-  },
-  {
-    id: "week-warrior",
-    name: "Week Warrior",
-    requirement: "Practice 3 days in a row",
-    category: "Practice",
-    icon: Flame,
-    checkUnlocked: (stats) => {
-      if (!stats.practiceHistory || stats.practiceHistory.length === 0)
-        return false;
-      // Get unique practice dates, sorted
-      const practiceDates = [
-        ...new Set(
-          stats.practiceHistory.map((entry: any) => {
-            const date = new Date(entry.timestamp || entry.date);
-            return date.toISOString().split("T")[0]; // YYYY-MM-DD
-          }),
-        ),
-      ].sort();
-
-      // Check for 3 consecutive days
-      for (let i = 0; i < practiceDates.length - 2; i++) {
-        const date1 = new Date(practiceDates[i]);
-        const date2 = new Date(practiceDates[i + 1]);
-        const date3 = new Date(practiceDates[i + 2]);
-
-        // Check if dates are consecutive
-        date1.setDate(date1.getDate() + 1);
-        date2.setDate(date2.getDate() + 1);
-        if (
-          date1.toISOString().split("T")[0] === practiceDates[i + 1] &&
-          date2.toISOString().split("T")[0] === practiceDates[i + 2]
-        ) {
-          return true;
-        }
-      }
-      return false;
-    },
-    getProgress: (stats) => {
-      if (!stats.practiceHistory || stats.practiceHistory.length === 0) {
-        return { current: 0, target: 3, percentage: 0 };
-      }
-      const practiceDates = [
-        ...new Set(
-          stats.practiceHistory.map((entry: any) => {
-            const date = new Date(entry.timestamp || entry.date);
-            return date.toISOString().split("T")[0];
-          }),
-        ),
-      ].sort();
-
-      let maxConsecutive = 0;
-      let currentConsecutive = 1;
-      for (let i = 1; i < practiceDates.length; i++) {
-        const prevDate = new Date(practiceDates[i - 1]);
-        const currDate = new Date(practiceDates[i]);
-        prevDate.setDate(prevDate.getDate() + 1);
-        if (prevDate.toISOString().split("T")[0] === practiceDates[i]) {
-          currentConsecutive++;
-        } else {
-          maxConsecutive = Math.max(maxConsecutive, currentConsecutive);
-          currentConsecutive = 1;
-        }
-      }
-      maxConsecutive = Math.max(maxConsecutive, currentConsecutive);
-      return {
-        current: maxConsecutive,
-        target: 3,
-        percentage: Math.min(100, (maxConsecutive / 3) * 100),
-      };
-    },
-  },
-  {
-    id: "monthly-legend",
-    name: "Monthly Legend",
-    requirement: "Log 20 total hours in a month",
-    category: "Practice",
-    icon: Crown,
-    checkUnlocked: (stats) => {
-      if (!stats.practiceHistory || stats.practiceHistory.length === 0)
-        return false;
-      // Group practice by month
-      const monthlyHours: Record<string, number> = {};
-      stats.practiceHistory.forEach((entry: any) => {
-        const date = new Date(entry.timestamp || entry.date);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        const minutes =
-          entry.duration || entry.estimatedMinutes || entry.xp / 10 || 0;
-        monthlyHours[monthKey] = (monthlyHours[monthKey] || 0) + minutes / 60;
-      });
-      return Object.values(monthlyHours).some((hours) => hours >= 20);
-    },
-    getProgress: (stats) => {
-      if (!stats.practiceHistory || stats.practiceHistory.length === 0) {
-        return { current: 0, target: 20, percentage: 0 };
-      }
-      const monthlyHours: Record<string, number> = {};
-      stats.practiceHistory.forEach((entry: any) => {
-        const date = new Date(entry.timestamp || entry.date);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        const minutes =
-          entry.duration || entry.estimatedMinutes || entry.xp / 10 || 0;
-        monthlyHours[monthKey] = (monthlyHours[monthKey] || 0) + minutes / 60;
-      });
-      const maxHours = Math.max(...Object.values(monthlyHours), 0);
-      return {
-        current: maxHours,
-        target: 20,
-        percentage: Math.min(100, (maxHours / 20) * 100),
-      };
-    },
-  },
-  {
-    id: "putting-professor",
-    name: "Putting Professor",
-    requirement: "Complete all Putting category lessons",
-    category: "Knowledge",
-    icon: BookOpen,
-    checkUnlocked: (stats) => {
-      if (!stats.libraryCategories) return false;
-      // Check if user has completed at least 5 Putting category drills (as a proxy for "all")
-      return (stats.libraryCategories["Putting"] || 0) >= 5;
-    },
-    getProgress: (stats) => {
-      const puttingCount = stats.libraryCategories?.["Putting"] || 0;
-      return {
-        current: puttingCount,
-        target: 5,
-        percentage: Math.min(100, (puttingCount / 5) * 100),
-      };
-    },
-  },
-  {
-    id: "wedge-wizard",
-    name: "Wedge Wizard",
-    requirement: "Complete all Wedge Play category lessons",
-    category: "Knowledge",
-    icon: BookOpen,
-    checkUnlocked: (stats) => {
-      if (!stats.libraryCategories) return false;
-      // Check if user has completed at least 5 Wedge Play category drills
-      return (stats.libraryCategories["Wedge Play"] || 0) >= 5;
-    },
-    getProgress: (stats) => {
-      const wedgeCount = stats.libraryCategories?.["Wedge Play"] || 0;
-      return {
-        current: wedgeCount,
-        target: 5,
-        percentage: Math.min(100, (wedgeCount / 5) * 100),
-      };
-    },
-  },
-  {
-    id: "coachs-pet",
-    name: "Coach's Pet",
-    requirement: 'Complete a recommended drill from "Most Needed to Improve"',
-    category: "Performance",
-    icon: Award,
-    checkUnlocked: (stats) => {
-      if (typeof window === "undefined") return false;
-      try {
-        // Check if user has completed any recommended drills
-        // Recommended drills are stored when user clicks the "Most Needed to Improve" card
-        const recommendedDrills = JSON.parse(
-          localStorage.getItem("recommendedDrills") || "[]",
-        );
-        const userProgress = JSON.parse(
-          localStorage.getItem("userProgress") || "{}",
-        );
-        const completedDrillIds = userProgress.completedDrills || [];
-        const drillCompletions = userProgress.drillCompletions || {};
-
-        // Check if any recommended drill has been completed
-        return recommendedDrills.some(
-          (drillId: string) =>
-            completedDrillIds.includes(drillId) ||
-            (drillCompletions[drillId] && drillCompletions[drillId] > 0),
-        );
-      } catch (e) {
-        return false;
-      }
-    },
-    getProgress: (stats) => {
-      if (typeof window === "undefined") {
-        return { current: 0, target: 1, percentage: 0 };
-      }
-      try {
-        const recommendedDrills = JSON.parse(
-          localStorage.getItem("recommendedDrills") || "[]",
-        );
-        const userProgress = JSON.parse(
-          localStorage.getItem("userProgress") || "{}",
-        );
-        const completedDrillIds = userProgress.completedDrills || [];
-        const drillCompletions = userProgress.drillCompletions || {};
-
-        const completedCount = recommendedDrills.filter(
-          (drillId: string) =>
-            completedDrillIds.includes(drillId) ||
-            (drillCompletions[drillId] && drillCompletions[drillId] > 0),
-        ).length;
-
-        return {
-          current: completedCount,
-          target: 1,
-          percentage: Math.min(100, (completedCount / 1) * 100),
-        };
-      } catch (e) {
-        return { current: 0, target: 1, percentage: 0 };
-      }
-    },
-  },
-  {
-    id: "champion-putting-test-18",
-    name: PUTTING_TEST_CHAMPION_TROPHY_NAME,
-    requirement: `Hold #1 on the ${puttingTestConfig.testName} leaderboard (all-time best session; ties count)`,
-    category: "Performance",
-    icon: Crown,
-    checkUnlocked: (stats) => {
-      if (!stats.userId || !stats.practiceSessions?.length) return false;
-      return userIsPuttingTestLeader(stats.userId, stats.practiceSessions);
-    },
-    getProgress: (stats) => {
-      const unlocked =
-        !!stats.userId &&
-        !!stats.practiceSessions?.length &&
-        userIsPuttingTestLeader(stats.userId, stats.practiceSessions);
-      return {
-        current: unlocked ? 1 : 0,
-        target: 1,
-        percentage: unlocked ? 100 : 0,
-      };
-    },
-  },
-];
 
 // Helper function to get timeframe dates
 function getTimeframeDates(timeFilter: "week" | "month" | "year" | "allTime") {
@@ -3986,17 +3332,7 @@ export default function AcademyPage() {
   const [isFiltering, setIsFiltering] = useState(false);
   const [showFullLeaderboard, setShowFullLeaderboard] = useState(false);
   const [leaderboardSearch, setLeaderboardSearch] = useState("");
-  const [selectedTrophy, setSelectedTrophy] = useState<
-    | TrophyData
-    | {
-        trophy_name: string;
-        description?: string;
-        unlocked_at?: string;
-        id?: string;
-        trophy_icon?: string;
-      }
-    | null
-  >(null);
+  const [selectedTrophy, setSelectedTrophy] = useState<AcademySelectedTrophy | null>(null);
   const [leaderboardMetric, setLeaderboardMetric] = useState<
     | "xp"
     | "library"
@@ -4017,18 +3353,16 @@ export default function AcademyPage() {
   >("xp");
 
   // Database-First Academy: Fetch trophies from user_trophies table instead of calculating from live scores
-  const [dbTrophies, setDbTrophies] = useState<
-    Array<{
-      trophy_name: string;
-      trophy_icon?: string;
-      unlocked_at?: string;
-      description?: string;
-      id?: string;
-    }>
-  >([]);
+  const [dbTrophies, setDbTrophies] = useState<AcademyDbTrophyRow[]>([]);
 
   // Toggle State: Add a showLocked boolean state (defaulting to true)
-  const [showLocked, setShowLocked] = useState<boolean>(true);
+  const [showLocked, setShowLocked] = useState<boolean>(false);
+
+  const [userAchievementRows, setUserAchievementRows] = useState<UserAchievementRow[]>([]);
+  const achievementCountByKey = useMemo(
+    () => achievementCountsFromRows(userAchievementRows),
+    [userAchievementRows],
+  );
 
   // Fix the 'Hooks called in change of order' error
   // Move Hooks Up: Move all useMemo, useCallback, useState, and useEffect calls to the very top of the AcademyPage function, immediately after useContext and useRef calls
@@ -4060,6 +3394,102 @@ export default function AcademyPage() {
       ? lastRound.handicap
       : STARTING_HANDICAP;
   }, [rounds]);
+
+  /** Stats object passed to `TROPHY_LIST` getProgress / checks — mirrors HomeDashboard trophy logic. */
+  const academyTrophyStats = useMemo(() => {
+    const practiceHours = (practiceSessions || []).reduce((sum: number, s: any) => {
+      const m =
+        Number(s?.duration_minutes) || Number(s?.duration) || Number(s?.estimatedMinutes) || 0;
+      return sum + m / 60;
+    }, 0);
+    let completedLessons = 0;
+    let practiceHistory: any[] = [];
+    let libraryCategories: Record<string, number> = {};
+    if (typeof window !== "undefined") {
+      try {
+        const progress = JSON.parse(localStorage.getItem("userProgress") || "{}");
+        completedLessons = (progress.completedDrills || []).length;
+        practiceHistory = JSON.parse(localStorage.getItem("practiceActivityHistory") || "[]");
+        libraryCategories = buildLibraryCategoryCountsFromStorage();
+      } catch {
+        /* ignore */
+      }
+    }
+    return {
+      totalXP: user?.totalXP || 0,
+      completedLessons,
+      practiceHours,
+      rounds: rounds?.length || 0,
+      handicap: currentHandicap,
+      roundsData: rounds || [],
+      practiceHistory,
+      libraryCategories,
+      userId: user?.id,
+      practiceSessions: practiceSessions || [],
+      practiceLogs: practiceLogs || [],
+    };
+  }, [
+    user?.id,
+    user?.totalXP,
+    rounds,
+    practiceSessions,
+    practiceLogs,
+    currentHandicap,
+    userProgress.completedDrills,
+  ]);
+
+  const [roundStatsRowCount, setRoundStatsRowCount] = useState<number | null>(null);
+  const [roundStatsPlayedAt, setRoundStatsPlayedAt] = useState<string[]>([]);
+  useEffect(() => {
+    if (!user?.id) {
+      setRoundStatsRowCount(null);
+      setRoundStatsPlayedAt([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("round_stats")
+          .select("played_at")
+          .eq("user_id", user.id)
+          .order("played_at", { ascending: false })
+          .limit(200);
+        if (cancelled) return;
+        if (error) {
+          setRoundStatsRowCount(null);
+          setRoundStatsPlayedAt([]);
+          return;
+        }
+        const rows = Array.isArray(data) ? data : [];
+        setRoundStatsRowCount(rows.length);
+        setRoundStatsPlayedAt(
+          rows.map((r: { played_at?: string | null }) => r.played_at).filter((x): x is string => !!x),
+        );
+      } catch {
+        if (!cancelled) {
+          setRoundStatsRowCount(null);
+          setRoundStatsPlayedAt([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const trophyMultiplierById = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof getTrophyMultiplierContributions>>();
+    for (const t of TROPHY_LIST) {
+      m.set(
+        t.id,
+        getTrophyMultiplierContributions(t.id, academyTrophyStats, practiceLogs || [], roundStatsPlayedAt),
+      );
+    }
+    return m;
+  }, [academyTrophyStats, practiceLogs, roundStatsPlayedAt]);
 
   // Calculate scholarship progress (handicap improvement toward goal) - wrap in useMemo
   const scholarshipProgress = useMemo(() => {
@@ -4153,9 +3583,19 @@ export default function AcademyPage() {
           return;
         }
 
-        // Map DB trophies to include id from TROPHY_LIST
-        const trophiesWithIds = (data || []).map((trophy: any) => ({
-          ...trophy,
+        const raw = Array.isArray(data)
+          ? (data as Array<{
+              trophy_name: string;
+              trophy_icon?: string | null;
+              unlocked_at?: string | null;
+              description?: string | null;
+            }>)
+          : [];
+        const trophiesWithIds: AcademyDbTrophyRow[] = raw.map((trophy) => ({
+          trophy_name: trophy.trophy_name,
+          trophy_icon: trophy.trophy_icon ?? undefined,
+          unlocked_at: trophy.unlocked_at ?? undefined,
+          description: trophy.description ?? undefined,
           id: TROPHY_LIST.find((t) => t.name === trophy.trophy_name)?.id,
         }));
 
@@ -4167,6 +3607,28 @@ export default function AcademyPage() {
 
     fetchTrophies();
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setUserAchievementRows([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        await ensureAchievementsForEarnedTrophies(supabase, user.id, dbTrophies);
+        const rows = await fetchUserAchievementRows(supabase, user.id);
+        if (!cancelled) setUserAchievementRows(rows);
+      } catch {
+        if (!cancelled) setUserAchievementRows([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, dbTrophies]);
 
   // Identify the Loop: Locate the useEffect that fetches leaderboard data or user stats
   // Add Fetch Guard: Create a ref called hasFetched = useRef(false). Wrap the fetch logic in if (hasFetched.current) return; and set hasFetched.current = true;
@@ -4889,302 +4351,19 @@ export default function AcademyPage() {
           </div>
         </div>
 
-        {/* Trophy Case - Achievement Gallery */}
-        <div className="mb-6 w-full">
-          <div className="rounded-2xl p-6 bg-white border border-gray-200 shadow-sm w-full">
-            {/* Header with Toggle Button: Place a small 'Show Locked' button/switch in the Trophy Case header */}
-            <div className="flex items-center justify-center gap-3 mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Trophy Case
-              </h2>
-              <button
-                onClick={() => setShowLocked(!showLocked)}
-                className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 transition-colors rounded-md hover:bg-gray-50"
-                aria-label={
-                  showLocked ? "Hide locked trophies" : "Show locked trophies"
-                }
-              >
-                {showLocked ? (
-                  <>
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>Show Locked</span>
-                  </>
-                ) : (
-                  <>
-                    <EyeOff className="w-3.5 h-3.5" />
-                    <span>Hide Locked</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {(() => {
-              // Define the Collection: Show ALL possible trophies from TROPHY_LIST
-              const earnedTrophyNames = new Set(
-                dbTrophies.map((t: any) => t.trophy_name),
-              );
-
-              // Build complete trophy list with earned/locked status (Sync with Database: only earned trophies are in color)
-              const allTrophies = TROPHY_LIST.map((trophy) => {
-                const isEarned = earnedTrophyNames.has(trophy.name);
-                const dbTrophy = dbTrophies.find(
-                  (t: any) => t.trophy_name === trophy.name,
-                );
-
-                return {
-                  trophy_name: trophy.name,
-                  trophy_icon: undefined, // Use icon component via id
-                  id: trophy.id,
-                  description: trophy.requirement || dbTrophy?.description,
-                  unlocked_at: dbTrophy?.unlocked_at,
-                  isEarned: isEarned, // Track if trophy is earned (in database) or locked
-                  requirement: trophy.requirement, // Store requirement for locked trophy modal
-                };
-              });
-
-              // Filter Logic: If showLocked is false, filter to only show earned trophies
-              const displayTrophies = showLocked
-                ? allTrophies
-                : allTrophies.filter((trophy) => trophy.isEarned !== false);
-
-              // Shrink the Grid: Change the layout to grid-cols-6 and reduce the icon size so they look like small badges
-              // Sync with Database: Ensure only earned trophies are in color (matching the Dashboard); the rest should be grayscale and opacity-40
-              // Clickable Interaction: Ensure clicking any icon opens the selectedTrophy modal
-              return displayTrophies.length > 0 ? (
-                <div className="grid grid-cols-6 gap-1.5">
-                  {displayTrophies.map((trophy, index) => {
-                    const isEarned = trophy.isEarned !== false;
-                    const IconComponent = trophy.trophy_icon || Trophy;
-
-                    return (
-                      <button
-                        key={trophy.id || `trophy-${index}`}
-                        onClick={() => setSelectedTrophy(trophy)}
-                        className={`flex flex-col items-center justify-center rounded-md p-0.5 border transition-all duration-200 hover:scale-110 cursor-pointer aspect-square ${
-                          isEarned
-                            ? "border-[#FFA500]/30 bg-white/50 hover:bg-white hover:border-[#FFA500]"
-                            : "border-gray-200 bg-gray-50/50 hover:bg-gray-100"
-                        }`}
-                        style={{
-                          filter: isEarned
-                            ? "none"
-                            : "grayscale(100%) brightness(60%)",
-                          opacity: isEarned ? 1 : 0.4,
-                        }}
-                      >
-                        {isEarned ? (
-                          <>
-                            {/* Shrink the Grid: Reduce icon size so they look like small badges */}
-                            <IconComponent
-                              className="w-4 h-4"
-                              style={{ color: "#FFA500" }}
-                            />
-                            <span className="text-[9px] text-gray-600 text-center mt-0.5 line-clamp-1 w-full leading-tight px-0.5">
-                              {trophy.trophy_name}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <div className="relative">
-                              {/* Shrink the Grid: Reduce icon size so they look like small badges */}
-                              <IconComponent className="w-4 h-4 text-gray-400" />
-                              {/* Lock emoji overlay - smaller */}
-                              <span className="absolute -top-0.5 -right-0.5 text-[7px] leading-none">
-                                🔒
-                              </span>
-                            </div>
-                            <span className="text-[9px] text-gray-400 text-center mt-0.5 line-clamp-1 w-full leading-tight px-0.5">
-                              {trophy.trophy_name}
-                            </span>
-                          </>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Trophy className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                  <p className="text-sm text-gray-500">
-                    {showLocked
-                      ? "Loading trophies..."
-                      : "No unlocked trophies yet. Keep practicing!"}
-                  </p>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-
-        {/* Click for Detail: Ensure the 'Click-to-Expand' modal works on both Dashboard and Academy */}
-        {/* Trophy Info Modal - Updated to work with database trophy format */}
-        {selectedTrophy &&
-          (() => {
-            // Check if selectedTrophy is a TrophyData (old format) or database trophy (new format)
-            const isDbTrophy = "trophy_name" in selectedTrophy;
-            const trophyId = isDbTrophy
-              ? selectedTrophy.id ||
-                selectedTrophy.trophy_name?.toLowerCase().replace(/\s+/g, "-")
-              : selectedTrophy.id;
-            const trophyDef = TROPHY_LIST.find(
-              (t) =>
-                t.id === trophyId ||
-                t.name ===
-                  (isDbTrophy
-                    ? selectedTrophy.trophy_name
-                    : selectedTrophy.name),
-            );
-
-            // Icon mapping for database trophies (matches TrophyCard component)
-            const getTrophyIconComponent = (id: string) => {
-              const iconMap: Record<
-                string,
-                React.ComponentType<{ className?: string }>
-              > = {
-                "first-steps": Clock,
-                dedicated: Clock,
-                "practice-master": Target,
-                "practice-legend": Flame,
-                student: BookOpen,
-                scholar: BookOpen,
-                expert: BookOpen,
-                "first-round": Trophy,
-                consistent: Trophy,
-                tracker: Trophy,
-                "rising-star": Star,
-                champion: Zap,
-                elite: Crown,
-                "goal-achiever": Medal,
-                "birdie-hunter": Target,
-                "breaking-90": Trophy,
-                "breaking-80": Trophy,
-                "breaking-70": Trophy,
-                "eagle-eye": Star,
-                "birdie-machine": Zap,
-                "par-train": Trophy,
-                "week-warrior": Flame,
-                "monthly-legend": Crown,
-                "putting-professor": BookOpen,
-                "wedge-wizard": BookOpen,
-                "coachs-pet": Award,
-                "champion-putting-test-18": Crown,
-              };
-              return iconMap[id] || Trophy;
-            };
-
-            // Fix TS Error 2339: Use icon for TrophyData, trophy_icon for database trophies
-            const IconComponent = isDbTrophy
-              ? selectedTrophy.trophy_icon
-                ? Trophy
-                : getTrophyIconComponent(trophyId || "")
-              : (selectedTrophy as TrophyData).icon || Trophy;
-            const displayIcon = isDbTrophy
-              ? selectedTrophy.trophy_icon || null
-              : null;
-            const trophyName = isDbTrophy
-              ? selectedTrophy.trophy_name
-              : selectedTrophy.name;
-            const isEarned = isDbTrophy
-              ? (selectedTrophy as any).isEarned !== false
-              : true;
-            const description = isDbTrophy
-              ? selectedTrophy.description ||
-                trophyDef?.requirement ||
-                "Achievement unlocked!"
-              : selectedTrophy.requirement;
-            const requirement = isDbTrophy
-              ? (selectedTrophy as any).requirement ||
-                trophyDef?.requirement ||
-                description
-              : selectedTrophy.requirement;
-            const unlockedAt = isDbTrophy
-              ? selectedTrophy.unlocked_at
-              : undefined;
-
-            return (
-              <div
-                className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200"
-                onClick={() => setSelectedTrophy(null)}
-              >
-                <div
-                  className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 relative animate-in zoom-in-95 duration-200"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {/* Close Button */}
-                  <button
-                    onClick={() => setSelectedTrophy(null)}
-                    className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100"
-                    aria-label="Close modal"
-                  >
-                    <X className="w-6 h-6" />
-                  </button>
-
-                  {/* Detailed View: Large version of the trophy icon, trophy name in bold, and full description */}
-                  <div className="flex flex-col items-center text-center">
-                    {/* Large Trophy Icon */}
-                    {displayIcon ? (
-                      <div className="mb-6">
-                        <span className="text-7xl">{displayIcon}</span>
-                      </div>
-                    ) : (
-                      <div
-                        className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 shadow-lg ${
-                          isEarned ? "" : "opacity-50"
-                        }`}
-                        style={{
-                          backgroundColor: isEarned ? "#FFA500" : "#9CA3AF",
-                        }}
-                      >
-                        <IconComponent className="w-12 h-12 text-white" />
-                        {!isEarned && (
-                          <span className="absolute text-2xl">🔒</span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* The full title */}
-                    <h3 className="text-3xl font-bold text-gray-900 mb-3">
-                      {trophyName}
-                    </h3>
-
-                    {/* Detailed Description: Full description of why the trophy was earned or locked requirement */}
-                    {isEarned ? (
-                      <p className="text-gray-600 mb-6 text-base leading-relaxed px-2">
-                        {description}
-                      </p>
-                    ) : (
-                      <div className="bg-gray-100 rounded-lg p-4 mb-6">
-                        <p className="text-gray-800 mb-2 font-semibold">
-                          🔒 Locked
-                        </p>
-                        <p className="text-gray-600 text-base leading-relaxed">
-                          Complete{" "}
-                          <strong>
-                            {requirement || description || "this requirement"}
-                          </strong>{" "}
-                          to unlock this trophy!
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Date Display: Show the 'Unlocked on' date using the unlocked_at timestamp */}
-                    {unlockedAt && (
-                      <div className="mt-2 pt-4 border-t border-gray-200 w-full">
-                        <p className="text-sm text-gray-500">
-                          Unlocked on{" "}
-                          {new Date(unlockedAt).toLocaleDateString("en-US", {
-                            year: "numeric",
-                            month: "long",
-                            day: "numeric",
-                          })}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+        <AcademyTrophyCasePanel
+          dbTrophies={dbTrophies}
+          showLocked={showLocked}
+          onShowLockedChange={setShowLocked}
+          selectedTrophy={selectedTrophy}
+          onSelectTrophy={setSelectedTrophy}
+          academyTrophyStats={academyTrophyStats}
+          trophyMultiplierById={trophyMultiplierById}
+          achievementRows={userAchievementRows}
+          achievementCountByKey={achievementCountByKey}
+          practiceLogs={practiceLogs}
+          roundStatsRowCount={roundStatsRowCount}
+        />
 
         {/* Hall Of Fame Leaderboard */}
         <div className="mb-6 w-full">
@@ -5416,38 +4595,36 @@ export default function AcademyPage() {
                       );
                       const podium =
                         rank === 1
-                          ? "border-l-4 border-amber-400 bg-amber-50/40 ring-1 ring-amber-200/40"
+                          ? "border-l-4 border-amber-400 bg-amber-50/50 ring-1 ring-amber-200/50"
                           : rank === 2
-                            ? "border-l-4 border-slate-400 bg-slate-50/80 ring-1 ring-slate-200/50"
+                            ? "border-l-4 border-slate-400 bg-slate-50/90 ring-1 ring-slate-200/60"
                             : rank === 3
-                              ? "border-l-4 border-amber-800/40 bg-orange-50/40 ring-1 ring-orange-200/40"
-                              : "";
+                              ? "border-l-4 border-amber-800/50 bg-orange-50/50 ring-1 ring-orange-200/50"
+                              : "border-l-4 border-transparent bg-white/60";
                       return (
                         <div
                           key={entry.id ? `${entry.id}-${keySuffix}` : `rank-${rank}-${keySuffix}`}
-                          className={`flex items-center justify-between p-3 rounded-xl transition-all ${podium} ${
-                            isMe
-                              ? "bg-green-50 border-2 border-[#014421] shadow-sm"
-                              : "bg-white/70 border border-stone-200/80 hover:border-stone-300"
+                          className={`grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,5.5rem)] gap-1 sm:gap-2 items-center px-2 py-2 rounded-xl transition-all ${podium} ${
+                            isMe ? "ring-2 ring-[#014421]/40" : ""
                           }`}
                         >
-                          <div className="flex items-center gap-4 min-w-0 flex-1">
-                            <div
-                              className={`text-lg font-bold w-8 shrink-0 text-center ${
-                                rank === 1
-                                  ? "text-amber-600"
-                                  : rank === 2
-                                    ? "text-slate-500"
-                                    : rank === 3
-                                      ? "text-orange-800/80"
-                                      : "text-stone-500"
-                              }`}
-                            >
-                              #{rank}
-                            </div>
+                          <span
+                            className={`text-sm font-bold tabular-nums text-center ${
+                              rank === 1
+                                ? "text-amber-600"
+                                : rank === 2
+                                  ? "text-slate-500"
+                                  : rank === 3
+                                    ? "text-orange-800/80"
+                                    : "text-stone-700"
+                            }`}
+                          >
+                            {rank}
+                          </span>
+                          <div className="flex items-center gap-2 min-w-0">
                             <div className="shrink-0 relative">
                               {rank === 1 && keySuffix === "top" && (
-                                <Crown className="w-5 h-5 absolute -top-3 -right-2 text-amber-500" />
+                                <Crown className="w-4 h-4 absolute -top-2 -right-1 text-amber-500" />
                               )}
                               <CircularAvatar
                                 initial={displayName[0]}
@@ -5457,39 +4634,26 @@ export default function AcademyPage() {
                                     ? entry.avatar
                                     : undefined
                                 }
-                                size={44}
-                                bgColor={
-                                  isMe
-                                    ? "#014421"
-                                    : rank === 1
-                                      ? "#f59e0b"
-                                      : rank === 2
-                                        ? "#94a3b8"
-                                        : rank === 3
-                                          ? "#d97706"
-                                          : "#9CA3AF"
-                                }
+                                size={36}
+                                bgColor={isMe ? "#014421" : rank <= 3 ? "#b45309" : "#78716c"}
                               />
                             </div>
-                            <div
-                              className="text-base font-semibold text-stone-900 truncate pr-2 flex-1"
-                              title={displayName}
-                            >
-                              {displayName}{" "}
+                            <span className="text-sm font-semibold text-stone-900 truncate" title={displayName}>
+                              {displayName}
                               {isMe && (
-                                <span className="text-xs font-bold text-[#014421] ml-1">(You)</span>
+                                <span className="text-[10px] font-bold text-[#014421] ml-1">(You)</span>
                               )}
-                            </div>
+                            </span>
                           </div>
-                          <div className="text-lg font-bold text-[#014421] shrink-0 pl-2 text-right">
+                          <span className="text-sm font-bold text-[#014421] text-right tabular-nums leading-tight">
                             {displayValue}
-                          </div>
+                          </span>
                         </div>
                       );
                     };
 
                     return (
-                      <div className="flex flex-col gap-3 mx-auto w-full max-w-xl">
+                      <div className="mx-auto w-full max-w-xl space-y-2">
                         {top20.map((entry: any, index: number) =>
                           renderRow(entry, index + 1, "top"),
                         )}
