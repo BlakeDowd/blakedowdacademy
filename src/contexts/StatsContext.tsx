@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import { useAuth } from "./AuthContext";
+import { COMBINE_PRACTICE_LOG_TYPE_VALUES } from "@/lib/combineCompletionDetection";
 
 interface RoundData {
   date: string;
@@ -67,6 +68,8 @@ interface PracticeLogRow {
   perfect_putt_count?: number | null;
   triple_failure_rate?: number | null;
   total_points?: number | null;
+  /** Used to recompute iron protocol session totals when `total_points` is missing. */
+  strike_data?: unknown;
 }
 
 interface StatsContextType {
@@ -477,9 +480,11 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("practice_logs")
         .select(
-          "id,user_id,log_type,created_at,matrix_score_average,perfect_putt_count,triple_failure_rate,total_points",
+          "id,user_id,log_type,created_at,matrix_score_average,perfect_putt_count,triple_failure_rate,total_points,strike_data",
         )
-        .order("created_at", { ascending: false });
+        .in("log_type", [...COMBINE_PRACTICE_LOG_TYPE_VALUES])
+        .order("created_at", { ascending: false })
+        .limit(5000);
 
       if (error) {
         const err = error as {

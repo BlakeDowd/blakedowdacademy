@@ -10,13 +10,16 @@ import { strikeAndSpeedControlTestConfig } from "@/lib/strikeAndSpeedControlTest
 import { teeShotDispersionCombineConfig } from "@/lib/teeShotDispersionCombineConfig";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
 
-/** practice_logs rows written when a protocol-style combine is finished */
-const COMBINE_PRACTICE_LOG_TYPES = new Set<string>([
+/** `log_type` values written to `practice_logs` by combine protocol runners (leaderboard + completion stats). */
+export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
   gauntletPrecisionProtocolConfig.practiceLogType,
   ironPrecisionProtocolConfig.practiceLogType,
   startLineAndSpeedControlTestConfig.practiceLogType,
   strikeAndSpeedControlTestConfig.practiceLogType,
-]);
+];
+
+/** practice_logs rows written when a protocol-style combine is finished */
+const COMBINE_PRACTICE_LOG_TYPES = new Set<string>(COMBINE_PRACTICE_LOG_TYPE_VALUES);
 
 /** practice table rows that store test_type for leaderboard-driven combines */
 const COMBINE_PRACTICE_TEST_TYPES = new Set<string>([
