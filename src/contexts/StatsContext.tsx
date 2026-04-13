@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import { useAuth } from "./AuthContext";
 import { COMBINE_PRACTICE_LOG_TYPE_VALUES } from "@/lib/combineCompletionDetection";
+import { refreshAuthSessionIfPossible } from "@/lib/supabasePersistSession";
 
 interface RoundData {
   date: string;
@@ -468,12 +469,30 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
-      const {
+      await refreshAuthSessionIfPossible(supabase);
+      let {
         data: { session },
       } = await supabase.auth.getSession();
+      // AuthContext can have `user` before the Supabase client session is hydrated; retry briefly
+      // so practice_logs (iron / gauntlet leaderboards) do not stay empty after login.
+      if (!session?.user?.id) {
+        await new Promise((r) => setTimeout(r, 200));
+        ({
+          data: { session },
+        } = await supabase.auth.getSession());
+      }
+      if (!session?.user?.id) {
+        await new Promise((r) => setTimeout(r, 500));
+        ({
+          data: { session },
+        } = await supabase.auth.getSession());
+      }
       // RLS on practice_logs is TO authenticated only; querying before session is ready
       // produces a PostgREST error that often prints as "{}" in the browser console.
       if (!session?.user?.id) {
+        console.warn(
+          "StatsContext: practice_logs fetch skipped — no Supabase session after refresh/waits (will retry on auth events).",
+        );
         return;
       }
 
@@ -645,6 +664,29 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     loadDrills();
     loadPracticeSessions();
     loadPracticeLogs();
+  }, [user?.id]);
+
+  // If the first practice_logs fetch ran before JWT hydration, refetch when Supabase auth settles.
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    let subscription: { unsubscribe: () => void } | null = null;
+    void (async () => {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const { data } = supabase.auth.onAuthStateChange((event) => {
+        if (cancelled) return;
+        if (event === "INITIAL_SESSION" || event === "SIGNED_IN") {
+          practiceLogsFetched.current = false;
+          void loadPracticeLogs();
+        }
+      });
+      subscription = data.subscription;
+    })();
+    return () => {
+      cancelled = true;
+      subscription?.unsubscribe();
+    };
   }, [user?.id]);
 
   return (

@@ -168,6 +168,10 @@ function aggregatesFromPractice(row: any): Record<string, unknown> | null {
 
 function num(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "bigint") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
   if (typeof v === "string") {
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
@@ -286,7 +290,11 @@ export function buildAcademyCombinesLeaderboard(
       if (!uid) continue;
       const recomputed = totalIronPointsFromStrikeData(row.strike_data);
       const stored = num(row.total_points);
-      const tp = recomputed ?? stored;
+      let tp = recomputed ?? stored;
+      if (tp == null) {
+        const avg = num(row.matrix_score_average);
+        if (avg != null) tp = avg * ironPrecisionProtocolConfig.clubSequence.length;
+      }
       if (tp == null) continue;
       const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
       const prev = bestByUser.get(uid);

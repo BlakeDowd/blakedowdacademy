@@ -126,16 +126,37 @@ export function horizontalStrikeSummaryLines(
   return lines;
 }
 
+/** Normalize JSONB / API quirks: array, or JSON string of an array. */
+export function coerceIronStrikeDataArray(raw: unknown): unknown[] | null {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      const p = JSON.parse(raw) as unknown;
+      return Array.isArray(p) ? p : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function normalizeIronContact(raw: unknown): IronContact | null {
+  const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (s === "heel" || s === "middle" || s === "toe") return s;
+  return null;
+}
+
 /** Recompute session total from `practice_logs.strike_data` (legacy `clip` → solid for bonus rules). */
 export function totalIronPointsFromStrikeData(strikeData: unknown): number | null {
-  if (!Array.isArray(strikeData)) return null;
+  const strikeArray = coerceIronStrikeDataArray(strikeData);
+  if (!strikeArray) return null;
   let sum = 0;
   let counted = 0;
-  for (const raw of strikeData) {
+  for (const raw of strikeArray) {
     if (!raw || typeof raw !== "object") continue;
     const o = raw as Record<string, unknown>;
-    const contact = o.contact;
-    if (contact !== "heel" && contact !== "middle" && contact !== "toe") continue;
+    const contact = normalizeIronContact(o.contact);
+    if (!contact) continue;
     const fingersRaw = o.fingers;
     let fingers: IronFingerMiss;
     if (fingersRaw === "outside") fingers = "outside";
@@ -147,5 +168,18 @@ export function totalIronPointsFromStrikeData(strikeData: unknown): number | nul
     sum += shotPoints(fingers, String(o.strike ?? "solid"), contact);
     counted++;
   }
-  return counted > 0 ? sum : null;
+  if (counted > 0) return sum;
+  let ptsSum = 0;
+  let ptsN = 0;
+  for (const raw of strikeArray) {
+    if (!raw || typeof raw !== "object") continue;
+    const o = raw as Record<string, unknown>;
+    const p = o.points;
+    const n = typeof p === "number" && Number.isFinite(p) ? p : typeof p === "string" ? Number(p) : NaN;
+    if (Number.isFinite(n)) {
+      ptsSum += n;
+      ptsN++;
+    }
+  }
+  return ptsN > 0 ? ptsSum : null;
 }
