@@ -42,6 +42,7 @@ import { buildCoachPlayerCombineSnapshot } from "@/lib/coachPlayerCombineSnapsho
 import { TROPHY_LIST } from "@/lib/academyTrophies";
 import { fetchUserTrophiesForUser } from "@/lib/userTrophiesDb";
 import type { AcademyTrophyDbRow } from "@/components/AcademyTrophyCasePanel";
+import { AdvancedApproachStatsPanel } from "@/components/stats/AdvancedApproachStatsPanel";
 import { CoachDeepDiveProfilePanels } from "@/components/coach/CoachDeepDiveProfilePanels";
 import { CoachDeepDiveRoundTrendCharts } from "@/components/coach/CoachDeepDiveRoundTrendCharts";
 import type { RoundTrendPoint } from "@/components/coach/CoachDeepDiveRoundTrendCharts";
@@ -130,6 +131,8 @@ export default function PlayerDeepDivePage() {
   const [metricMatrixWorstFirst, setMetricMatrixWorstFirst] = useState(false);
   /** false = most minutes in range first; true = least first */
   const [practiceAllocLeastFirst, setPracticeAllocLeastFirst] = useState(false);
+  /** Advanced approach matrix aggregates: match 9- vs 18-hole rounds */
+  const [deepDiveApproachHoleFilter, setDeepDiveApproachHoleFilter] = useState<"9" | "18">("18");
 
   /** After first successful profile load for this player, date-range refetches skip the full-screen loader. */
   const coachDeepDiveBlockingLoadDoneRef = useRef(false);
@@ -1413,6 +1416,44 @@ export default function PlayerDeepDivePage() {
           handicapPoints={roundTrendChartPoints.handicap}
           rangeCaption={`Same date range as this report · ${dateRangeLabel}`}
         />
+
+        <section
+          id="coach-deepdive-advanced-approach"
+          className="mb-6 print:break-inside-avoid print:shadow-none"
+        >
+          <AdvancedApproachStatsPanel
+            rounds={roundsData}
+            holeFilter={deepDiveApproachHoleFilter}
+            className="border-stone-200 shadow-md print:border-stone-400"
+            description={`Rounds in this report (${dateRangeLabel}). Only ${deepDiveApproachHoleFilter}-hole rounds with directional logs are included.`}
+            headerEnd={
+              <div className="flex gap-0.5 rounded-xl border border-stone-200 bg-stone-50/90 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setDeepDiveApproachHoleFilter("9")}
+                  className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase transition-colors ${
+                    deepDiveApproachHoleFilter === "9"
+                      ? "bg-[#014421] text-white shadow-sm"
+                      : "text-stone-600 hover:bg-white"
+                  }`}
+                >
+                  9
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeepDiveApproachHoleFilter("18")}
+                  className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase transition-colors ${
+                    deepDiveApproachHoleFilter === "18"
+                      ? "bg-[#014421] text-white shadow-sm"
+                      : "text-stone-600 hover:bg-white"
+                  }`}
+                >
+                  18
+                </button>
+              </div>
+            }
+          />
+        </section>
 
           {/* Print-only footer */}
           <div className="hidden print:block mt-8 pt-4 border-t border-gray-200 text-center text-xs text-gray-500">

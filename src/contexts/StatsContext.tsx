@@ -39,6 +39,8 @@ interface RoundData {
   threePutts: number;
   made6ftAndIn: number;
   puttsUnder6ftAttempts: number;
+  /** JSON array from `rounds.approach_directional_shots` (optional). */
+  approachDirectionalShots?: unknown[];
 }
 
 interface DrillData {
@@ -157,6 +159,9 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     threePutts: round.three_putts,
     made6ftAndIn: round.made_under_6ft ?? 0,
     puttsUnder6ftAttempts: round.putts_under_6ft_attempts ?? 0,
+    approachDirectionalShots: Array.isArray(round.approach_directional_shots)
+      ? round.approach_directional_shots
+      : [],
     user_id: round.user_id,
     full_name: undefined,
     profile_icon: undefined,

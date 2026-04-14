@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useRef } from "react";
+import { AdvancedApproachStatsPanel } from "@/components/stats/AdvancedApproachStatsPanel";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { motion, useSpring, useTransform } from "framer-motion";
@@ -1169,6 +1170,8 @@ export default function StatsPage() {
                 />
               </div>
             </div>
+
+            <AdvancedApproachStatsPanel rounds={safeRounds} holeFilter={holeFilter} />
 
             {/* SHORT GAME Section */}
             <div className="bg-white rounded-2xl p-4 shadow-sm">

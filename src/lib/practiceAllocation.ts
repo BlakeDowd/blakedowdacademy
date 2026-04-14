@@ -78,6 +78,17 @@ export function primaryFocusFromAllocation(m: PracticeHoursMap): GoalFocusArea {
   return best;
 }
 
+/** Full weekly budget in at most one category (legacy default / “all in one” prefilled state). */
+export function isCollapsedSingleCategoryAllocation(m: PracticeHoursMap, budget: number): boolean {
+  if (budget <= 0) return true;
+  if (!allocationMatchesBudget(m, budget)) return false;
+  let withHours = 0;
+  for (const k of FOCUS_AREA_PRESETS) {
+    if ((Number(m[k]) || 0) > 0.001) withHours++;
+  }
+  return withHours <= 1;
+}
+
 function roundToQuarter(n: number): number {
   return Math.round(n * 4) / 4;
 }

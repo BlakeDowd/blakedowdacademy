@@ -1,12 +1,107 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { addProfileXp, XP_AWARD_PER_LOGGED_ROUND } from "@/lib/addProfileXp";
-import { ArrowLeft, Save, Plus, Minus, RotateCcw } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  MoveDown,
+  MoveDownLeft,
+  MoveDownRight,
+  MoveLeft,
+  MoveRight,
+  MoveUp,
+  MoveUpLeft,
+  MoveUpRight,
+  Plus,
+  Minus,
+  RotateCcw,
+  Save,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import { logActivity } from "@/lib/activity";
 import { InfoBubble } from "@/components/InfoBubble";
+
+/** Hole results + Tee & Approach: one visual system (2-col grid, centered orphan row). */
+const ROUND_COUNTER_GRID = "grid grid-cols-2 gap-3";
+/** Single column width when spanning 2 (matches one grid cell with gap-3). */
+const ROUND_COUNTER_GRID_SINGLE =
+  "col-span-2 w-[calc((100%-0.75rem)/2)] max-w-full justify-self-center";
+const ROUND_COUNTER_TILE =
+  "flex min-h-[8rem] flex-col items-stretch justify-between gap-2 rounded-2xl border-2 bg-gradient-to-b from-white to-slate-50/90 px-3 py-3.5 shadow-sm transition-all";
+const ROUND_COUNTER_LABEL = "text-center text-sm font-semibold leading-tight text-gray-700";
+const ROUND_COUNTER_LABEL_TALL = `${ROUND_COUNTER_LABEL} flex min-h-[2.75rem] flex-col items-center justify-center gap-1 px-0.5`;
+const ROUND_COUNTER_VALUE =
+  "min-w-[2.5rem] text-center text-[1.75rem] font-bold tabular-nums leading-none tracking-tight text-gray-900 sm:text-3xl";
+const ROUND_STEP_ROW = "flex items-center justify-center gap-2";
+const ROUND_STEP_BTN =
+  "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 transition-colors active:scale-[0.98]";
+
+/** Advanced approach matrix: position → stored `result` string. */
+type AdvancedApproachResult =
+  | "top-left"
+  | "top"
+  | "top-right"
+  | "left"
+  | "gir"
+  | "right"
+  | "bottom-left"
+  | "bottom"
+  | "bottom-right";
+
+type DirectionalApproachShot = {
+  id: string;
+  hole: number;
+  club: string;
+  result: AdvancedApproachResult;
+};
+
+function newApproachShotId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `ap-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+const APPROACH_CLUB_OPTIONS = [
+  "Driver",
+  "3W",
+  "5W",
+  "3H",
+  "4H",
+  "5H",
+  "4i",
+  "5i",
+  "6i",
+  "7i",
+  "8i",
+  "9i",
+  "PW",
+  "GW",
+  "SW",
+  "LW",
+] as const;
+
+const APPROACH_RESULT_ICONS: Record<AdvancedApproachResult, LucideIcon> = {
+  "top-left": MoveUpLeft,
+  top: MoveUp,
+  "top-right": MoveUpRight,
+  left: MoveLeft,
+  gir: Check,
+  right: MoveRight,
+  "bottom-left": MoveDownLeft,
+  bottom: MoveDown,
+  "bottom-right": MoveDownRight,
+};
+
+const APPROACH_MATRIX_ROWS: AdvancedApproachResult[][] = [
+  ["top-left", "top", "top-right"],
+  ["left", "gir", "right"],
+  ["bottom-left", "bottom", "bottom-right"],
+];
 
 interface RoundData {
   // Scoring Card
@@ -89,6 +184,45 @@ export default function LogRoundPage() {
     puttsUnder6ftAttempts: 0,
   });
 
+  const [showAdvancedApproachMatrix, setShowAdvancedApproachMatrix] = useState(false);
+  const [selectedApproachHole, setSelectedApproachHole] = useState(1);
+  const [selectedApproachClub, setSelectedApproachClub] = useState<string>("7i");
+  const [directionalApproachShots, setDirectionalApproachShots] = useState<
+    DirectionalApproachShot[]
+  >([]);
+  const [lastTappedApproachResult, setLastTappedApproachResult] =
+    useState<AdvancedApproachResult | null>(null);
+
+  useEffect(() => {
+    setDirectionalApproachShots((prev) =>
+      prev.filter((s) => s.hole >= 1 && s.hole <= roundData.holes),
+    );
+    setSelectedApproachHole((h) => Math.min(Math.max(1, h), roundData.holes));
+  }, [roundData.holes]);
+
+  const appendDirectionalApproachShot = (result: AdvancedApproachResult) => {
+    const holeForShot = selectedApproachHole;
+    const maxHole = roundData.holes;
+    setDirectionalApproachShots((prev) => [
+      ...prev,
+      {
+        id: newApproachShotId(),
+        hole: holeForShot,
+        club: selectedApproachClub,
+        result,
+      },
+    ]);
+    setLastTappedApproachResult(result);
+    setSelectedApproachHole((h) => Math.min(maxHole, h + 1));
+  };
+
+  const removeDirectionalApproachShot = (id: string) => {
+    setDirectionalApproachShots((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const shotsForSelectedApproachHole = directionalApproachShots.filter(
+    (s) => s.hole === selectedApproachHole,
+  );
 
   const updateField = (field: keyof RoundData, value: any) => {
     setRoundData(prev => {
@@ -156,6 +290,10 @@ export default function LogRoundPage() {
       gir8ft: 0,
       gir20ft: 0,
     }));
+    setDirectionalApproachShots([]);
+    setShowAdvancedApproachMatrix(false);
+    setLastTappedApproachResult(null);
+    setSelectedApproachHole(1);
   };
 
   const clearShortGame = () => {
@@ -167,6 +305,16 @@ export default function LogRoundPage() {
       bunkerSaves: 0,
       chipInside6ft: 0,
       doubleChips: 0,
+    }));
+  };
+
+  const clearPutting = () => {
+    setRoundData(prev => ({
+      ...prev,
+      totalPutts: 0,
+      threePutts: 0,
+      made6ftAndIn: 0,
+      puttsUnder6ftAttempts: 0,
     }));
   };
 
@@ -244,6 +392,7 @@ export default function LogRoundPage() {
         three_putts: roundData.threePutts, // 3-Putt stat
         made_under_6ft: roundData.made6ftAndIn,
         putts_under_6ft_attempts: roundData.puttsUnder6ftAttempts,
+        approach_directional_shots: directionalApproachShots,
       };
 
       console.log('Attempting to save round with user_id:', currentUserId);
@@ -477,141 +626,126 @@ export default function LogRoundPage() {
                 </div>
               </div>
 
-              {/* Hole Results - 2 Column Grid */}
+              {/* Hole Results — same tile chrome as Tee & Approach */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Hole Results</label>
-                <div className="grid grid-cols-2 gap-4">
+                <div className={ROUND_COUNTER_GRID}>
                   {/* Eagle */}
-                  <div className="flex flex-col items-center p-3 rounded-lg border border-gray-200">
-                    <span className="text-xs font-medium text-gray-600 mb-2">Eagle</span>
-                    <div className="flex items-center justify-center gap-2">
+                  <div className={`${ROUND_COUNTER_TILE} border-gray-200`}>
+                    <span className={ROUND_COUNTER_LABEL}>Eagle</span>
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('eagles')}
-                        className="w-10 h-10 rounded-lg flex items-center justify-center border border-gray-300 hover:bg-gray-50 transition-colors"
-                        style={{ minWidth: '44px', minHeight: '44px' }}
+                        type="button"
+                        onClick={() => decrementCounter("eagles")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
                       >
-                        <Minus className="w-4 h-4 text-gray-600" />
+                        <Minus className="h-5 w-5" />
                       </button>
-                      <span 
-                        className="text-lg font-bold w-10 text-center"
-                        style={{ color: roundData.eagles > 0 ? '#FFA500' : '#111827' }}
-                      >
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.eagles > 0 ? "#FFA500" : "#111827" }}>
                         {roundData.eagles}
                       </span>
                       <button
-                        onClick={() => incrementCounter('eagles')}
-                        className="w-10 h-10 rounded-lg flex items-center justify-center border border-gray-300 hover:bg-gray-50 transition-colors"
-                        style={{ minWidth: '44px', minHeight: '44px' }}
+                        type="button"
+                        onClick={() => incrementCounter("eagles")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
                       >
-                        <Plus className="w-4 h-4 text-gray-600" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
 
                   {/* Birdie */}
-                  <div className="flex flex-col items-center p-3 rounded-lg border border-gray-200">
-                    <span className="text-xs font-medium text-gray-600 mb-2">Birdie</span>
-                    <div className="flex items-center justify-center gap-2">
+                  <div className={`${ROUND_COUNTER_TILE} border-gray-200`}>
+                    <span className={ROUND_COUNTER_LABEL}>Birdie</span>
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('birdies')}
-                        className="w-10 h-10 rounded-lg flex items-center justify-center border border-gray-300 hover:bg-gray-50 transition-colors"
-                        style={{ minWidth: '44px', minHeight: '44px' }}
+                        type="button"
+                        onClick={() => decrementCounter("birdies")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
                       >
-                        <Minus className="w-4 h-4 text-gray-600" />
+                        <Minus className="h-5 w-5" />
                       </button>
-                      <span 
-                        className="text-lg font-bold w-10 text-center"
-                        style={{ color: roundData.birdies > 0 ? '#FFA500' : '#111827' }}
-                      >
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.birdies > 0 ? "#FFA500" : "#111827" }}>
                         {roundData.birdies}
                       </span>
                       <button
-                        onClick={() => incrementCounter('birdies')}
-                        className="w-10 h-10 rounded-lg flex items-center justify-center border border-gray-300 hover:bg-gray-50 transition-colors"
-                        style={{ minWidth: '44px', minHeight: '44px' }}
+                        type="button"
+                        onClick={() => incrementCounter("birdies")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
                       >
-                        <Plus className="w-4 h-4 text-gray-600" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
 
                   {/* Par */}
-                  <div className="flex flex-col items-center p-3 rounded-lg border border-gray-200">
-                    <span className="text-xs font-medium text-gray-600 mb-2">Par</span>
-                    <div className="flex items-center justify-center gap-2">
+                  <div className={`${ROUND_COUNTER_TILE} border-gray-200`}>
+                    <span className={ROUND_COUNTER_LABEL}>Par</span>
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('pars')}
-                        className="w-10 h-10 rounded-lg flex items-center justify-center border border-gray-300 hover:bg-gray-50 transition-colors"
-                        style={{ minWidth: '44px', minHeight: '44px' }}
+                        type="button"
+                        onClick={() => decrementCounter("pars")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
                       >
-                        <Minus className="w-4 h-4 text-gray-600" />
+                        <Minus className="h-5 w-5" />
                       </button>
-                      <span 
-                        className="text-lg font-bold w-10 text-center"
-                        style={{ color: roundData.pars > 0 ? '#FFA500' : '#111827' }}
-                      >
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.pars > 0 ? "#FFA500" : "#111827" }}>
                         {roundData.pars}
                       </span>
                       <button
-                        onClick={() => incrementCounter('pars')}
-                        className="w-10 h-10 rounded-lg flex items-center justify-center border border-gray-300 hover:bg-gray-50 transition-colors"
-                        style={{ minWidth: '44px', minHeight: '44px' }}
+                        type="button"
+                        onClick={() => incrementCounter("pars")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
                       >
-                        <Plus className="w-4 h-4 text-gray-600" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
 
                   {/* Bogey */}
-                  <div className="flex flex-col items-center p-3 rounded-lg border border-gray-200">
-                    <span className="text-xs font-medium text-gray-600 mb-2">Bogey</span>
-                    <div className="flex items-center justify-center gap-2">
+                  <div className={`${ROUND_COUNTER_TILE} border-gray-200`}>
+                    <span className={ROUND_COUNTER_LABEL}>Bogey</span>
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('bogeys')}
-                        className="w-10 h-10 rounded-lg flex items-center justify-center border border-gray-300 hover:bg-gray-50 transition-colors"
-                        style={{ minWidth: '44px', minHeight: '44px' }}
+                        type="button"
+                        onClick={() => decrementCounter("bogeys")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
                       >
-                        <Minus className="w-4 h-4 text-gray-600" />
+                        <Minus className="h-5 w-5" />
                       </button>
-                      <span 
-                        className="text-lg font-bold w-10 text-center"
-                        style={{ color: roundData.bogeys > 0 ? '#FFA500' : '#111827' }}
-                      >
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.bogeys > 0 ? "#FFA500" : "#111827" }}>
                         {roundData.bogeys}
                       </span>
                       <button
-                        onClick={() => incrementCounter('bogeys')}
-                        className="w-10 h-10 rounded-lg flex items-center justify-center border border-gray-300 hover:bg-gray-50 transition-colors"
-                        style={{ minWidth: '44px', minHeight: '44px' }}
+                        type="button"
+                        onClick={() => incrementCounter("bogeys")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
                       >
-                        <Plus className="w-4 h-4 text-gray-600" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
 
-                  {/* 2+ Bogey */}
-                  <div className="flex flex-col items-center p-3 rounded-lg border border-gray-200">
-                    <span className="text-xs font-medium text-gray-600 mb-2">2+ Bogey</span>
-                    <div className="flex items-center justify-center gap-2">
+                  {/* 2+ Bogey — centered under 2-col grid */}
+                  <div className={`${ROUND_COUNTER_GRID_SINGLE} ${ROUND_COUNTER_TILE} border-gray-200`}>
+                    <span className={ROUND_COUNTER_LABEL}>2+ Bogey</span>
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('doubleBogeys')}
-                        className="w-10 h-10 rounded-lg flex items-center justify-center border border-gray-300 hover:bg-gray-50 transition-colors"
-                        style={{ minWidth: '44px', minHeight: '44px' }}
+                        type="button"
+                        onClick={() => decrementCounter("doubleBogeys")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
                       >
-                        <Minus className="w-4 h-4 text-gray-600" />
+                        <Minus className="h-5 w-5" />
                       </button>
-                      <span 
-                        className="text-lg font-bold w-10 text-center"
-                        style={{ color: roundData.doubleBogeys > 0 ? '#FFA500' : '#111827' }}
-                      >
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.doubleBogeys > 0 ? "#FFA500" : "#111827" }}>
                         {roundData.doubleBogeys}
                       </span>
                       <button
-                        onClick={() => incrementCounter('doubleBogeys')}
-                        className="w-10 h-10 rounded-lg flex items-center justify-center border border-gray-300 hover:bg-gray-50 transition-colors"
-                        style={{ minWidth: '44px', minHeight: '44px' }}
+                        type="button"
+                        onClick={() => incrementCounter("doubleBogeys")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
                       >
-                        <Plus className="w-4 h-4 text-gray-600" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
@@ -640,147 +774,118 @@ export default function LogRoundPage() {
                   <label className="block text-sm font-medium text-gray-700">Fairways in Regulation</label>
                   <InfoBubble content="The tee shot lands on the fairway on Par 4s and Par 5s." />
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className={ROUND_COUNTER_GRID}>
                   {/* FIR Left */}
                   <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.firLeft > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
+                    className={`${ROUND_COUNTER_TILE} ${
+                      roundData.firLeft > 0 ? "border-[#FFA500]" : "border-gray-200"
                     }`}
                     style={{
-                      backgroundColor: roundData.firLeft > 0 ? '#FFA500' : 'white'
+                      backgroundColor: roundData.firLeft > 0 ? "#FFF7ED" : "white",
                     }}
                   >
-                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.firLeft > 0 ? '#014421' : '#6B7280' }}>
+                    <div className="text-center text-sm font-semibold leading-tight" style={{ color: roundData.firLeft > 0 ? "#014421" : "#6B7280" }}>
                       Left
                     </div>
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('firLeft')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        onClick={() => decrementCounter("firLeft")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.firLeft > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.firLeft > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.firLeft > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.firLeft > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Minus className="w-3.5 h-3.5" />
+                        <Minus className="h-5 w-5" />
                       </button>
-                      <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.firLeft > 0 ? '#014421' : '#111827' }}
-                      >
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.firLeft > 0 ? "#014421" : "#111827" }}>
                         {roundData.firLeft}
                       </span>
                       <button
-                        onClick={() => incrementCounter('firLeft')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        onClick={() => incrementCounter("firLeft")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.firLeft > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.firLeft > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.firLeft > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.firLeft > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
 
                   {/* FIR Hit */}
                   <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.firHit > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
-                    }`}
+                    className={`${ROUND_COUNTER_TILE} ${roundData.firHit > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
                     style={{
-                      backgroundColor: roundData.firHit > 0 ? '#FFA500' : 'white'
+                      backgroundColor: roundData.firHit > 0 ? "#FFF7ED" : "white",
                     }}
                   >
-                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.firHit > 0 ? '#014421' : '#6B7280' }}>
+                    <div className="text-center text-sm font-semibold leading-tight" style={{ color: roundData.firHit > 0 ? "#014421" : "#6B7280" }}>
                       Hit
                     </div>
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('firHit')}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        onClick={() => decrementCounter("firHit")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.firHit > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.firHit > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.firHit > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.firHit > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Minus className="w-4 h-4" />
+                        <Minus className="h-5 w-5" />
                       </button>
-                      <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.firHit > 0 ? '#014421' : '#111827' }}
-                      >
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.firHit > 0 ? "#014421" : "#111827" }}>
                         {roundData.firHit}
                       </span>
                       <button
-                        onClick={() => incrementCounter('firHit')}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        onClick={() => incrementCounter("firHit")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.firHit > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.firHit > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.firHit > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.firHit > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
 
                   {/* FIR Right */}
                   <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.firRight > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
+                    className={`${ROUND_COUNTER_GRID_SINGLE} ${ROUND_COUNTER_TILE} ${
+                      roundData.firRight > 0 ? "border-[#FFA500]" : "border-gray-200"
                     }`}
                     style={{
-                      backgroundColor: roundData.firRight > 0 ? '#FFA500' : 'white'
+                      backgroundColor: roundData.firRight > 0 ? "#FFF7ED" : "white",
                     }}
                   >
-                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.firRight > 0 ? '#014421' : '#6B7280' }}>
+                    <div className="text-center text-sm font-semibold leading-tight" style={{ color: roundData.firRight > 0 ? "#014421" : "#6B7280" }}>
                       Right
                     </div>
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('firRight')}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        onClick={() => decrementCounter("firRight")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.firRight > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.firRight > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.firRight > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.firRight > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Minus className="w-4 h-4" />
+                        <Minus className="h-5 w-5" />
                       </button>
-                      <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.firRight > 0 ? '#014421' : '#111827' }}
-                      >
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.firRight > 0 ? "#014421" : "#111827" }}>
                         {roundData.firRight}
                       </span>
                       <button
-                        onClick={() => incrementCounter('firRight')}
-                        className="w-9 h-9 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        onClick={() => incrementCounter("firRight")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.firRight > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.firRight > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.firRight > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.firRight > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
@@ -790,154 +895,120 @@ export default function LogRoundPage() {
               {/* Penalties */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3">Penalties</label>
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-row justify-between gap-2">
-                    {/* Total Penalties */}
-                    <div
-                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
-                        roundData.totalPenalties > 0
-                          ? 'border-[#FFA500]'
-                          : 'border-gray-200'
-                      }`}
-                      style={{
-                        backgroundColor: roundData.totalPenalties > 0 ? '#FFA500' : 'white'
-                      }}
-                    >
-                      <div className="text-[10px] font-medium mb-2 text-center whitespace-nowrap" style={{ color: roundData.totalPenalties > 0 ? '#014421' : '#6B7280' }}>
-                        Total
-                      </div>
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => decrementCounter('totalPenalties')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.totalPenalties > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.totalPenalties > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span
-                          className="text-sm font-bold w-6 text-center"
-                          style={{ color: roundData.totalPenalties > 0 ? '#014421' : '#111827' }}
-                        >
-                          {roundData.totalPenalties}
-                        </span>
-                        <button
-                          onClick={() => incrementCounter('totalPenalties')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.totalPenalties > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.totalPenalties > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
+                <div className={ROUND_COUNTER_GRID}>
+                  {/* Total Penalties */}
+                  <div
+                    className={`${ROUND_COUNTER_TILE} ${
+                      roundData.totalPenalties > 0 ? "border-[#FFA500]" : "border-gray-200"
+                    }`}
+                    style={{
+                      backgroundColor: roundData.totalPenalties > 0 ? "#FFF7ED" : "white",
+                    }}
+                  >
+                    <div className="text-center text-sm font-semibold leading-tight" style={{ color: roundData.totalPenalties > 0 ? "#014421" : "#6B7280" }}>
+                      Total
                     </div>
-
-                    {/* Tee Penalties */}
-                    <div
-                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
-                        roundData.teePenalties > 0
-                          ? 'border-[#FFA500]'
-                          : 'border-gray-200'
-                      }`}
-                      style={{
-                        backgroundColor: roundData.teePenalties > 0 ? '#FFA500' : 'white'
-                      }}
-                    >
-                      <div className="text-[10px] font-medium mb-2 text-center whitespace-nowrap" style={{ color: roundData.teePenalties > 0 ? '#014421' : '#6B7280' }}>
-                        Tee
-                      </div>
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => decrementCounter('teePenalties')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.teePenalties > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.teePenalties > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span
-                          className="text-sm font-bold w-6 text-center"
-                          style={{ color: roundData.teePenalties > 0 ? '#014421' : '#111827' }}
-                        >
-                          {roundData.teePenalties}
-                        </span>
-                        <button
-                          onClick={() => incrementCounter('teePenalties')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.teePenalties > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.teePenalties > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
+                    <div className={ROUND_STEP_ROW}>
+                      <button
+                        onClick={() => decrementCounter("totalPenalties")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.totalPenalties > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.totalPenalties > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Minus className="h-5 w-5" />
+                      </button>
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.totalPenalties > 0 ? "#014421" : "#111827" }}>
+                        {roundData.totalPenalties}
+                      </span>
+                      <button
+                        onClick={() => incrementCounter("totalPenalties")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.totalPenalties > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.totalPenalties > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Plus className="h-5 w-5" />
+                      </button>
                     </div>
                   </div>
-                  <div className="flex flex-row justify-between gap-2">
-                    {/* Approach Penalties */}
-                    <div
-                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
-                        roundData.approachPenalties > 0
-                          ? 'border-[#FFA500]'
-                          : 'border-gray-200'
-                      }`}
-                      style={{
-                        backgroundColor: roundData.approachPenalties > 0 ? '#FFA500' : 'white'
-                      }}
-                    >
-                      <div className="text-[10px] font-medium mb-2 text-center whitespace-nowrap" style={{ color: roundData.approachPenalties > 0 ? '#014421' : '#6B7280' }}>
-                        Approach
-                      </div>
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => decrementCounter('approachPenalties')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.approachPenalties > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.approachPenalties > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span
-                          className="text-sm font-bold w-6 text-center"
-                          style={{ color: roundData.approachPenalties > 0 ? '#014421' : '#111827' }}
-                        >
-                          {roundData.approachPenalties}
-                        </span>
-                        <button
-                          onClick={() => incrementCounter('approachPenalties')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.approachPenalties > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.approachPenalties > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
+
+                  {/* Tee Penalties */}
+                  <div
+                    className={`${ROUND_COUNTER_TILE} ${roundData.teePenalties > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
+                    style={{
+                      backgroundColor: roundData.teePenalties > 0 ? "#FFF7ED" : "white",
+                    }}
+                  >
+                    <div className="text-center text-sm font-semibold leading-tight" style={{ color: roundData.teePenalties > 0 ? "#014421" : "#6B7280" }}>
+                      Tee
                     </div>
-                    {/* Spacer */}
-                    <div className="flex-1 p-2"></div>
+                    <div className={ROUND_STEP_ROW}>
+                      <button
+                        onClick={() => decrementCounter("teePenalties")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.teePenalties > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.teePenalties > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Minus className="h-5 w-5" />
+                      </button>
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.teePenalties > 0 ? "#014421" : "#111827" }}>
+                        {roundData.teePenalties}
+                      </span>
+                      <button
+                        onClick={() => incrementCounter("teePenalties")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.teePenalties > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.teePenalties > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Plus className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Approach Penalties */}
+                  <div
+                    className={`${ROUND_COUNTER_GRID_SINGLE} ${ROUND_COUNTER_TILE} ${
+                      roundData.approachPenalties > 0 ? "border-[#FFA500]" : "border-gray-200"
+                    }`}
+                    style={{
+                      backgroundColor: roundData.approachPenalties > 0 ? "#FFF7ED" : "white",
+                    }}
+                  >
+                    <div className="text-center text-sm font-semibold leading-tight" style={{ color: roundData.approachPenalties > 0 ? "#014421" : "#6B7280" }}>
+                      Approach
+                    </div>
+                    <div className={ROUND_STEP_ROW}>
+                      <button
+                        onClick={() => decrementCounter("approachPenalties")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.approachPenalties > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.approachPenalties > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Minus className="h-5 w-5" />
+                      </button>
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.approachPenalties > 0 ? "#014421" : "#111827" }}>
+                        {roundData.approachPenalties}
+                      </span>
+                      <button
+                        onClick={() => incrementCounter("approachPenalties")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.approachPenalties > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.approachPenalties > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Plus className="h-5 w-5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -959,229 +1030,351 @@ export default function LogRoundPage() {
                     tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 max-w-[200px]"
                   />
                 </div>
-                <div className="flex flex-col gap-2">
-                  {/* Row 1: Total GIR and Inside 8ft */}
-                  <div className="flex flex-row justify-between gap-2">
-                    {/* Total GIR */}
+                <div className={ROUND_COUNTER_GRID}>
+                  {/* Total GIR */}
+                  <div
+                    className={`${ROUND_COUNTER_TILE} ${roundData.totalGir > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
+                    style={{
+                      backgroundColor: roundData.totalGir > 0 ? "#FFF7ED" : "white",
+                    }}
+                  >
                     <div
-                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
-                        roundData.totalGir > 0
-                          ? 'border-[#FFA500]'
-                          : 'border-gray-200'
-                      }`}
-                      style={{
-                        backgroundColor: roundData.totalGir > 0 ? '#FFA500' : 'white'
-                      }}
+                      className={`${ROUND_COUNTER_LABEL} flex min-h-[2.75rem] items-center justify-center`}
+                      style={{ color: roundData.totalGir > 0 ? "#014421" : "#6B7280" }}
                     >
-                      <div className="text-[10px] font-medium mb-2 text-center whitespace-nowrap" style={{ color: roundData.totalGir > 0 ? '#014421' : '#6B7280' }}>
-                        Total GIR
-                      </div>
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => decrementCounter('totalGir')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.totalGir > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.totalGir > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span
-                          className="text-sm font-bold w-6 text-center"
-                          style={{ color: roundData.totalGir > 0 ? '#014421' : '#111827' }}
-                        >
-                          {roundData.totalGir}
-                        </span>
-                        <button
-                          onClick={() => incrementCounter('totalGir')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.totalGir > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.totalGir > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
+                      Total GIR
                     </div>
-
-                    {/* Inside 8ft */}
-                    <div
-                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
-                        roundData.gir8ft > 0
-                          ? 'border-[#FFA500]'
-                          : 'border-gray-200'
-                      }`}
-                      style={{
-                        backgroundColor: roundData.gir8ft > 0 ? '#FFA500' : 'white'
-                      }}
-                    >
-                      <div className="flex items-center justify-center gap-1 mb-2">
-                        <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.gir8ft > 0 ? '#014421' : '#6B7280' }}>
-                          Inside 8ft
-                        </span>
-                        <InfoBubble
-                          content="2.4m"
-                          buttonClassName="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border"
-                          buttonStyle={{ borderColor: roundData.gir8ft > 0 ? '#014421' : '#E5E7EB', color: roundData.gir8ft > 0 ? '#014421' : '#9CA3AF' }}
-                          tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-24 text-center p-1.5"
-                        />
-                      </div>
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => decrementCounter('gir8ft')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.gir8ft > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.gir8ft > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span
-                          className="text-sm font-bold w-6 text-center"
-                          style={{ color: roundData.gir8ft > 0 ? '#014421' : '#111827' }}
-                        >
-                          {roundData.gir8ft}
-                        </span>
-                        <button
-                          onClick={() => incrementCounter('gir8ft')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.gir8ft > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.gir8ft > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
+                    <div className={ROUND_STEP_ROW}>
+                      <button
+                        onClick={() => decrementCounter("totalGir")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.totalGir > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.totalGir > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Minus className="h-5 w-5" />
+                      </button>
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.totalGir > 0 ? "#014421" : "#111827" }}>
+                        {roundData.totalGir}
+                      </span>
+                      <button
+                        onClick={() => incrementCounter("totalGir")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.totalGir > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.totalGir > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Plus className="h-5 w-5" />
+                      </button>
                     </div>
                   </div>
 
-                  {/* Row 2: Inside 20ft and Going for Green */}
-                  <div className="flex flex-row justify-between gap-2">
-                    {/* Inside 20ft */}
-                    <div
-                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
-                        roundData.gir20ft > 0
-                          ? 'border-[#FFA500]'
-                          : 'border-gray-200'
-                      }`}
-                      style={{
-                        backgroundColor: roundData.gir20ft > 0 ? '#FFA500' : 'white'
-                      }}
-                    >
-                      <div className="flex items-center justify-center gap-1 mb-2">
-                        <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.gir20ft > 0 ? '#014421' : '#6B7280' }}>
-                          Inside 20ft
-                        </span>
-                        <InfoBubble
-                          content="6.1m. Note: Also includes shots inside 8ft."
-                          buttonClassName="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border"
-                          buttonStyle={{ borderColor: roundData.gir20ft > 0 ? '#014421' : '#E5E7EB', color: roundData.gir20ft > 0 ? '#014421' : '#9CA3AF' }}
-                          tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-48 text-center p-1.5"
-                        />
-                      </div>
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => decrementCounter('gir20ft')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.gir20ft > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.gir20ft > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span
-                          className="text-sm font-bold w-6 text-center"
-                          style={{ color: roundData.gir20ft > 0 ? '#014421' : '#111827' }}
-                        >
-                          {roundData.gir20ft}
-                        </span>
-                        <button
-                          onClick={() => incrementCounter('gir20ft')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.gir20ft > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.gir20ft > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
+                  {/* Inside 8ft */}
+                  <div
+                    className={`${ROUND_COUNTER_TILE} ${roundData.gir8ft > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
+                    style={{
+                      backgroundColor: roundData.gir8ft > 0 ? "#FFF7ED" : "white",
+                    }}
+                  >
+                    <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 text-center">
+                      <span className="text-sm font-semibold leading-tight" style={{ color: roundData.gir8ft > 0 ? "#014421" : "#6B7280" }}>
+                        Inside 8ft
+                      </span>
+                      <InfoBubble
+                        content="2.4m"
+                        buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border bg-white/50 text-[8px] font-bold cursor-help"
+                        buttonStyle={{
+                          borderColor: roundData.gir8ft > 0 ? "#014421" : "#E5E7EB",
+                          color: roundData.gir8ft > 0 ? "#014421" : "#9CA3AF",
+                        }}
+                        tooltipClassName="left-1/2 bottom-full mb-2 w-24 -translate-x-1/2 p-1.5 text-center"
+                      />
                     </div>
+                    <div className={ROUND_STEP_ROW}>
+                      <button
+                        onClick={() => decrementCounter("gir8ft")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.gir8ft > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.gir8ft > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Minus className="h-5 w-5" />
+                      </button>
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.gir8ft > 0 ? "#014421" : "#111827" }}>
+                        {roundData.gir8ft}
+                      </span>
+                      <button
+                        onClick={() => incrementCounter("gir8ft")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.gir8ft > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.gir8ft > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Plus className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
 
-                    {/* Going for Green */}
-                    <div
-                      className={`flex-1 p-2 rounded-xl border-2 transition-all ${
-                        roundData.goingForGreen > 0
-                          ? 'border-[#FFA500]'
-                          : 'border-gray-200'
-                      }`}
-                      style={{
-                        backgroundColor: roundData.goingForGreen > 0 ? '#FFA500' : 'white'
-                      }}
-                    >
-                      <div className="flex items-center justify-center gap-1 mb-2">
-                        <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.goingForGreen > 0 ? '#014421' : '#6B7280' }}>
-                          Going for Green
-                        </span>
-                        <InfoBubble
-                          content="Attempts to reach a Par 4 in 1 stroke or a Par 5 in 2 strokes."
-                          buttonClassName="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border"
-                          buttonStyle={{ borderColor: roundData.goingForGreen > 0 ? '#014421' : '#E5E7EB', color: roundData.goingForGreen > 0 ? '#014421' : '#9CA3AF' }}
-                          tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-48 text-center p-1.5"
-                        />
-                      </div>
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => decrementCounter('goingForGreen')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.goingForGreen > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.goingForGreen > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span
-                          className="text-sm font-bold w-6 text-center"
-                          style={{ color: roundData.goingForGreen > 0 ? '#014421' : '#111827' }}
-                        >
-                          {roundData.goingForGreen}
-                        </span>
-                        <button
-                          onClick={() => incrementCounter('goingForGreen')}
-                          className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                          style={{
-                            borderColor: roundData.goingForGreen > 0 ? '#014421' : '#D1D5DB',
-                            color: roundData.goingForGreen > 0 ? '#014421' : '#6B7280',
-                            minWidth: '28px',
-                            minHeight: '28px'
-                          }}
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
+                  {/* Inside 20ft */}
+                  <div
+                    className={`${ROUND_COUNTER_TILE} ${roundData.gir20ft > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
+                    style={{
+                      backgroundColor: roundData.gir20ft > 0 ? "#FFF7ED" : "white",
+                    }}
+                  >
+                    <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 px-0.5 text-center">
+                      <span className="text-sm font-semibold leading-tight" style={{ color: roundData.gir20ft > 0 ? "#014421" : "#6B7280" }}>
+                        Inside 20ft
+                      </span>
+                      <InfoBubble
+                        content="6.1m. Note: Also includes shots inside 8ft."
+                        buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border bg-white/50 text-[8px] font-bold cursor-help"
+                        buttonStyle={{
+                          borderColor: roundData.gir20ft > 0 ? "#014421" : "#E5E7EB",
+                          color: roundData.gir20ft > 0 ? "#014421" : "#9CA3AF",
+                        }}
+                        tooltipClassName="left-1/2 bottom-full mb-2 w-48 max-w-[min(100vw-2rem,12rem)] -translate-x-1/2 p-1.5 text-center"
+                      />
+                    </div>
+                    <div className={ROUND_STEP_ROW}>
+                      <button
+                        onClick={() => decrementCounter("gir20ft")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.gir20ft > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.gir20ft > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Minus className="h-5 w-5" />
+                      </button>
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.gir20ft > 0 ? "#014421" : "#111827" }}>
+                        {roundData.gir20ft}
+                      </span>
+                      <button
+                        onClick={() => incrementCounter("gir20ft")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.gir20ft > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.gir20ft > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Plus className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Going for Green */}
+                  <div
+                    className={`${ROUND_COUNTER_TILE} ${roundData.goingForGreen > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
+                    style={{
+                      backgroundColor: roundData.goingForGreen > 0 ? "#FFF7ED" : "white",
+                    }}
+                  >
+                    <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 px-0.5 text-center">
+                      <span className="text-sm font-semibold leading-tight" style={{ color: roundData.goingForGreen > 0 ? "#014421" : "#6B7280" }}>
+                        Going for Green
+                      </span>
+                      <InfoBubble
+                        content="Attempts to reach a Par 4 in 1 stroke or a Par 5 in 2 strokes."
+                        buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border bg-white/50 text-[8px] font-bold cursor-help"
+                        buttonStyle={{
+                          borderColor: roundData.goingForGreen > 0 ? "#014421" : "#E5E7EB",
+                          color: roundData.goingForGreen > 0 ? "#014421" : "#9CA3AF",
+                        }}
+                        tooltipClassName="left-1/2 bottom-full mb-2 w-48 max-w-[min(100vw-2rem,12rem)] -translate-x-1/2 p-1.5 text-center"
+                      />
+                    </div>
+                    <div className={ROUND_STEP_ROW}>
+                      <button
+                        onClick={() => decrementCounter("goingForGreen")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.goingForGreen > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.goingForGreen > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Minus className="h-5 w-5" />
+                      </button>
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.goingForGreen > 0 ? "#014421" : "#111827" }}>
+                        {roundData.goingForGreen}
+                      </span>
+                      <button
+                        onClick={() => incrementCounter("goingForGreen")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                        style={{
+                          borderColor: roundData.goingForGreen > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.goingForGreen > 0 ? "#014421" : "#6B7280",
+                        }}
+                      >
+                        <Plus className="h-5 w-5" />
+                      </button>
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Advanced Approach Stats (optional) */}
+              <div className="border-t border-gray-100 pt-4">
+                <h3 className="text-sm font-semibold text-gray-900">Advanced Approach Stats</h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Optional: log approach shots per hole (club + direction or GIR) for your full round. Saving works with or without entries.
+                </p>
+                {!showAdvancedApproachMatrix ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedApproachMatrix(true)}
+                    className="mt-3 w-full rounded-xl border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-400 hover:bg-slate-50"
+                  >
+                    Add Directional Misses
+                  </button>
+                ) : (
+                  <div className="mt-4 space-y-4">
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="text-sm font-medium text-gray-800">Approach Shot</span>
+                      <InfoBubble
+                        content="Select the hole and club, then tap a direction or GIR. Each tap logs that hole and moves you to the next hole (on the last hole you stay put so you can add another or pick a hole). Use the hole row anytime to jump holes."
+                        buttonClassName="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-[9px] font-bold text-slate-500 cursor-help"
+                        tooltipClassName="left-1/2 bottom-full mb-2 w-56 max-w-[min(100vw-2rem,14rem)] -translate-x-1/2 p-2 text-center"
+                      />
+                    </div>
+
+                    <div>
+                      <span className="mb-1.5 block text-xs font-medium text-slate-600">
+                        Hole ({roundData.holes}-hole round)
+                      </span>
+                      <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
+                        {Array.from({ length: roundData.holes }, (_, i) => i + 1).map((h) => {
+                          const count = directionalApproachShots.filter((s) => s.hole === h).length;
+                          const active = h === selectedApproachHole;
+                          return (
+                            <button
+                              key={h}
+                              type="button"
+                              onClick={() => setSelectedApproachHole(h)}
+                              className={`relative shrink-0 min-w-[2.75rem] rounded-lg border-2 px-2 py-2 text-sm font-semibold tabular-nums transition-colors ${
+                                active
+                                  ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                              }`}
+                            >
+                              {h}
+                              {count > 0 ? (
+                                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-emerald-500 px-0.5 text-[10px] font-bold text-white">
+                                  {count > 9 ? "9+" : count}
+                                </span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="approach-club"
+                        className="mb-1 block text-xs font-medium text-slate-600"
+                      >
+                        Club used
+                      </label>
+                      <select
+                        id="approach-club"
+                        value={selectedApproachClub}
+                        onChange={(e) => setSelectedApproachClub(e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      >
+                        {APPROACH_CLUB_OPTIONS.map((club) => (
+                          <option key={club} value={club}>
+                            {club}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div
+                      className="mx-auto grid w-full max-w-[220px] grid-cols-3 gap-3"
+                      role="group"
+                      aria-label="Approach shot direction"
+                    >
+                      {APPROACH_MATRIX_ROWS.flatMap((row) =>
+                        row.map((result) => {
+                          const Icon = APPROACH_RESULT_ICONS[result];
+                          const isSelected = lastTappedApproachResult === result;
+                          return (
+                            <button
+                              key={result}
+                              type="button"
+                              onClick={() => appendDirectionalApproachShot(result)}
+                              title={
+                                result === "gir"
+                                  ? "Green in regulation"
+                                  : result.replace(/-/g, " ")
+                              }
+                              className={`flex aspect-square w-full max-w-[4.25rem] shrink-0 items-center justify-center justify-self-center rounded-full border-2 bg-white transition-all active:scale-95 sm:max-w-[4.5rem] ${
+                                isSelected
+                                  ? "border-emerald-500 text-emerald-600 ring-2 ring-emerald-500/30"
+                                  : "border-slate-300 text-slate-600 hover:border-slate-400"
+                              }`}
+                            >
+                              <Icon className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={1.75} />
+                            </button>
+                          );
+                        }),
+                      )}
+                    </div>
+
+                    {directionalApproachShots.length > 0 ? (
+                      <p className="text-center text-[11px] text-slate-500">
+                        {directionalApproachShots.length} shot
+                        {directionalApproachShots.length !== 1 ? "s" : ""} across{" "}
+                        {new Set(directionalApproachShots.map((s) => s.hole)).size} hole
+                        {new Set(directionalApproachShots.map((s) => s.hole)).size !== 1
+                          ? "s"
+                          : ""}
+                      </p>
+                    ) : null}
+
+                    {shotsForSelectedApproachHole.length > 0 ? (
+                      <ul className="max-h-40 space-y-1.5 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/80 p-2">
+                        {shotsForSelectedApproachHole.map((shot) => (
+                          <li
+                            key={shot.id}
+                            className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5 text-xs text-slate-700 shadow-sm"
+                          >
+                            <span className="min-w-0 truncate">
+                              <span className="font-medium text-slate-900">{shot.club}</span>
+                              <span className="text-slate-500"> · </span>
+                              <span className="text-slate-600">{shot.result}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => removeDirectionalApproachShot(shot.id)}
+                              className="shrink-0 rounded-md p-1 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                              aria-label="Remove entry"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 py-3 text-center text-xs text-slate-500">
+                        No approach shots for hole {selectedApproachHole} yet.
+                      </p>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedApproachMatrix(false)}
+                      className="w-full text-center text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-700 hover:underline"
+                    >
+                      Hide matrix
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1206,106 +1399,99 @@ export default function LogRoundPage() {
                   <label className="block text-sm font-medium text-gray-700">Up & Down Conversions</label>
                   <InfoBubble content="Missing the GIR but still making Par or better (The 'Up & Down' %)." tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 max-w-[200px]" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className={ROUND_COUNTER_GRID}>
                   {/* Up & Down Attempts */}
                   <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.missed > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
-                    }`}
+                    className={`${ROUND_COUNTER_TILE} ${roundData.missed > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
                     style={{
-                      backgroundColor: roundData.missed > 0 ? '#FFA500' : 'white'
+                      backgroundColor: roundData.missed > 0 ? "#FFF7ED" : "white",
                     }}
                   >
-                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.missed > 0 ? '#014421' : '#6B7280' }}>
+                    <div
+                      className="text-center text-sm font-semibold leading-tight"
+                      style={{ color: roundData.missed > 0 ? "#014421" : "#6B7280" }}
+                    >
                       Attempts
                     </div>
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('missed')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        type="button"
+                        onClick={() => decrementCounter("missed")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.missed > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.missed > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.missed > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.missed > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Minus className="w-3.5 h-3.5" />
+                        <Minus className="h-5 w-5" />
                       </button>
-                      <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.missed > 0 ? '#014421' : '#111827' }}
-                      >
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.missed > 0 ? "#014421" : "#111827" }}>
                         {roundData.missed}
                       </span>
                       <button
-                        onClick={() => incrementCounter('missed')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        type="button"
+                        onClick={() => incrementCounter("missed")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.missed > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.missed > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.missed > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.missed > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
 
                   {/* Up & Down Made */}
                   <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.upAndDownConversions > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
+                    className={`${ROUND_COUNTER_TILE} ${
+                      roundData.upAndDownConversions > 0 ? "border-[#FFA500]" : "border-gray-200"
                     }`}
                     style={{
-                      backgroundColor: roundData.upAndDownConversions > 0 ? '#FFA500' : 'white'
+                      backgroundColor: roundData.upAndDownConversions > 0 ? "#FFF7ED" : "white",
                     }}
                   >
-                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.upAndDownConversions > 0 ? '#014421' : '#6B7280' }}>
+                    <div
+                      className="text-center text-sm font-semibold leading-tight"
+                      style={{ color: roundData.upAndDownConversions > 0 ? "#014421" : "#6B7280" }}
+                    >
                       Made
                     </div>
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('upAndDownConversions')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        type="button"
+                        onClick={() => decrementCounter("upAndDownConversions")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.upAndDownConversions > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.upAndDownConversions > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.upAndDownConversions > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.upAndDownConversions > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Minus className="w-3.5 h-3.5" />
+                        <Minus className="h-5 w-5" />
                       </button>
                       <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.upAndDownConversions > 0 ? '#014421' : '#111827' }}
+                        className={ROUND_COUNTER_VALUE}
+                        style={{ color: roundData.upAndDownConversions > 0 ? "#014421" : "#111827" }}
                       >
                         {roundData.upAndDownConversions}
                       </span>
                       <button
+                        type="button"
                         onClick={() => {
                           if (roundData.upAndDownConversions < roundData.missed) {
-                            incrementCounter('upAndDownConversions');
+                            incrementCounter("upAndDownConversions");
                           }
                         }}
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors ${
-                          roundData.upAndDownConversions >= roundData.missed ? 'opacity-50 cursor-not-allowed' : ''
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50 ${
+                          roundData.upAndDownConversions >= roundData.missed ? "cursor-not-allowed opacity-50" : ""
                         }`}
                         style={{
-                          borderColor: roundData.upAndDownConversions > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.upAndDownConversions > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.upAndDownConversions > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.upAndDownConversions > 0 ? "#014421" : "#6B7280",
                         }}
                         disabled={roundData.upAndDownConversions >= roundData.missed}
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
@@ -1318,211 +1504,206 @@ export default function LogRoundPage() {
                   <label className="block text-sm font-medium text-gray-700">Bunker Saves</label>
                   <InfoBubble content="Greenside only." tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 max-w-[200px]" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className={ROUND_COUNTER_GRID}>
                   {/* Bunker Attempts */}
                   <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.bunkerAttempts > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
+                    className={`${ROUND_COUNTER_TILE} ${
+                      roundData.bunkerAttempts > 0 ? "border-[#FFA500]" : "border-gray-200"
                     }`}
                     style={{
-                      backgroundColor: roundData.bunkerAttempts > 0 ? '#FFA500' : 'white'
+                      backgroundColor: roundData.bunkerAttempts > 0 ? "#FFF7ED" : "white",
                     }}
                   >
-                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.bunkerAttempts > 0 ? '#014421' : '#6B7280' }}>
+                    <div
+                      className="text-center text-sm font-semibold leading-tight"
+                      style={{ color: roundData.bunkerAttempts > 0 ? "#014421" : "#6B7280" }}
+                    >
                       Attempts
                     </div>
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('bunkerAttempts')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        type="button"
+                        onClick={() => decrementCounter("bunkerAttempts")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.bunkerAttempts > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.bunkerAttempts > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.bunkerAttempts > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.bunkerAttempts > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Minus className="w-3.5 h-3.5" />
+                        <Minus className="h-5 w-5" />
                       </button>
                       <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.bunkerAttempts > 0 ? '#014421' : '#111827' }}
+                        className={ROUND_COUNTER_VALUE}
+                        style={{ color: roundData.bunkerAttempts > 0 ? "#014421" : "#111827" }}
                       >
                         {roundData.bunkerAttempts}
                       </span>
                       <button
-                        onClick={() => incrementCounter('bunkerAttempts')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        type="button"
+                        onClick={() => incrementCounter("bunkerAttempts")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.bunkerAttempts > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.bunkerAttempts > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.bunkerAttempts > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.bunkerAttempts > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
 
                   {/* Bunker Saves */}
                   <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.bunkerSaves > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
-                    }`}
+                    className={`${ROUND_COUNTER_TILE} ${roundData.bunkerSaves > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
                     style={{
-                      backgroundColor: roundData.bunkerSaves > 0 ? '#FFA500' : 'white'
+                      backgroundColor: roundData.bunkerSaves > 0 ? "#FFF7ED" : "white",
                     }}
                   >
-                    <div className="text-xs font-medium mb-2 text-center" style={{ color: roundData.bunkerSaves > 0 ? '#014421' : '#6B7280' }}>
+                    <div
+                      className="text-center text-sm font-semibold leading-tight"
+                      style={{ color: roundData.bunkerSaves > 0 ? "#014421" : "#6B7280" }}
+                    >
                       Made
                     </div>
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('bunkerSaves')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        type="button"
+                        onClick={() => decrementCounter("bunkerSaves")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.bunkerSaves > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.bunkerSaves > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.bunkerSaves > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.bunkerSaves > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Minus className="w-3.5 h-3.5" />
+                        <Minus className="h-5 w-5" />
                       </button>
-                      <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.bunkerSaves > 0 ? '#014421' : '#111827' }}
-                      >
+                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.bunkerSaves > 0 ? "#014421" : "#111827" }}>
                         {roundData.bunkerSaves}
                       </span>
                       <button
+                        type="button"
                         onClick={() => {
                           if (roundData.bunkerSaves < roundData.bunkerAttempts) {
-                            incrementCounter('bunkerSaves');
+                            incrementCounter("bunkerSaves");
                           }
                         }}
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors ${
-                          roundData.bunkerSaves >= roundData.bunkerAttempts ? 'opacity-50 cursor-not-allowed' : ''
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50 ${
+                          roundData.bunkerSaves >= roundData.bunkerAttempts ? "cursor-not-allowed opacity-50" : ""
                         }`}
                         style={{
-                          borderColor: roundData.bunkerSaves > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.bunkerSaves > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.bunkerSaves > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.bunkerSaves > 0 ? "#014421" : "#6B7280",
                         }}
                         disabled={roundData.bunkerSaves >= roundData.bunkerAttempts}
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Chip Inside 6ft and Double Chips - Side by Side */}
+              {/* Chip Inside 6ft and Double Chips */}
               <div>
-                <div className="grid grid-cols-2 gap-3 mb-2">
-                  <div className="flex items-center gap-1">
-                    <label className="text-sm font-medium text-gray-700">Chip Inside 6ft</label>
-                    <InfoBubble content="Approx. 1.8 metres" buttonClassName="w-3.5 h-3.5 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[9px] font-bold cursor-help border border-gray-200" tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-32 text-center" />
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <label className="text-sm font-medium text-gray-700">Double Chips</label>
-                    <InfoBubble content="Any instance where an initial chip or pitch failed to reach the putting surface, requiring a second chip." buttonClassName="w-3.5 h-3.5 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[9px] font-bold cursor-help border border-gray-200" tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-48 text-center" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className={ROUND_COUNTER_GRID}>
                   {/* Chip Inside 6ft */}
                   <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.chipInside6ft > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
+                    className={`${ROUND_COUNTER_TILE} ${
+                      roundData.chipInside6ft > 0 ? "border-[#FFA500]" : "border-gray-200"
                     }`}
                     style={{
-                      backgroundColor: roundData.chipInside6ft > 0 ? '#FFA500' : 'white'
+                      backgroundColor: roundData.chipInside6ft > 0 ? "#FFF7ED" : "white",
                     }}
                   >
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 text-center">
+                      <span className="text-sm font-semibold leading-tight" style={{ color: roundData.chipInside6ft > 0 ? "#014421" : "#6B7280" }}>
+                        Chip inside 6ft
+                      </span>
+                      <InfoBubble
+                        content="Approx. 1.8 metres"
+                        buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-[9px] font-bold text-gray-500 cursor-help"
+                        tooltipClassName="left-1/2 bottom-full mb-2 w-32 -translate-x-1/2 text-center"
+                      />
+                    </div>
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('chipInside6ft')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        type="button"
+                        onClick={() => decrementCounter("chipInside6ft")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.chipInside6ft > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.chipInside6ft > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.chipInside6ft > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.chipInside6ft > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Minus className="w-3.5 h-3.5" />
+                        <Minus className="h-5 w-5" />
                       </button>
                       <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.chipInside6ft > 0 ? '#014421' : '#111827' }}
+                        className={ROUND_COUNTER_VALUE}
+                        style={{ color: roundData.chipInside6ft > 0 ? "#014421" : "#111827" }}
                       >
                         {roundData.chipInside6ft}
                       </span>
                       <button
-                        onClick={() => incrementCounter('chipInside6ft')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        type="button"
+                        onClick={() => incrementCounter("chipInside6ft")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.chipInside6ft > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.chipInside6ft > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.chipInside6ft > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.chipInside6ft > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
 
                   {/* Double Chips */}
                   <div
-                    className={`p-3 rounded-xl border-2 transition-all ${
-                      roundData.doubleChips > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
+                    className={`${ROUND_COUNTER_TILE} ${
+                      roundData.doubleChips > 0 ? "border-[#FFA500]" : "border-gray-200"
                     }`}
                     style={{
-                      backgroundColor: roundData.doubleChips > 0 ? '#FFA500' : 'white'
+                      backgroundColor: roundData.doubleChips > 0 ? "#FFF7ED" : "white",
                     }}
                   >
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 px-0.5 text-center">
+                      <span className="text-sm font-semibold leading-tight" style={{ color: roundData.doubleChips > 0 ? "#014421" : "#6B7280" }}>
+                        Double chips
+                      </span>
+                      <InfoBubble
+                        content="Any instance where an initial chip or pitch failed to reach the putting surface, requiring a second chip."
+                        buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-[9px] font-bold text-gray-500 cursor-help"
+                        tooltipClassName="left-1/2 bottom-full mb-2 w-48 max-w-[min(100vw-2rem,12rem)] -translate-x-1/2 p-1.5 text-center"
+                      />
+                    </div>
+                    <div className={ROUND_STEP_ROW}>
                       <button
-                        onClick={() => decrementCounter('doubleChips')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        type="button"
+                        onClick={() => decrementCounter("doubleChips")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.doubleChips > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.doubleChips > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.doubleChips > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.doubleChips > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Minus className="w-3.5 h-3.5" />
+                        <Minus className="h-5 w-5" />
                       </button>
                       <span
-                        className="text-xl font-bold w-10 text-center"
-                        style={{ color: roundData.doubleChips > 0 ? '#014421' : '#111827' }}
+                        className={ROUND_COUNTER_VALUE}
+                        style={{ color: roundData.doubleChips > 0 ? "#014421" : "#111827" }}
                       >
                         {roundData.doubleChips}
                       </span>
                       <button
-                        onClick={() => incrementCounter('doubleChips')}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors"
+                        type="button"
+                        onClick={() => incrementCounter("doubleChips")}
+                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                         style={{
-                          borderColor: roundData.doubleChips > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.doubleChips > 0 ? '#014421' : '#6B7280',
-                          minWidth: '32px',
-                          minHeight: '32px'
+                          borderColor: roundData.doubleChips > 0 ? "#014421" : "#D1D5DB",
+                          color: roundData.doubleChips > 0 ? "#014421" : "#6B7280",
                         }}
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
@@ -1533,234 +1714,227 @@ export default function LogRoundPage() {
 
           {/* Putting Card */}
           <div className="bg-white rounded-2xl p-4 shadow-lg">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Putting</h2>
-            
-            <div className="space-y-4">
-              {/* Putting Grid */}
-              <div className="flex flex-col gap-2">
-                {/* Row 1: Total Putts and 3-Putts */}
-                <div className="flex flex-row justify-between gap-2">
-                  {/* Total Putts */}
-                  <div
-                    className={`flex-1 p-2 rounded-xl border-2 transition-all ${
-                      roundData.totalPutts > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
-                    }`}
-                    style={{
-                      backgroundColor: roundData.totalPutts > 0 ? '#FFA500' : 'white'
-                    }}
-                  >
-                    <div className="flex items-center justify-center gap-1 mb-2">
-                      <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.totalPutts > 0 ? '#014421' : '#6B7280' }}>
-                        Total *
-                      </span>
-                      <InfoBubble
-                        content="Only strokes taken once the ball is on the putting surface."
-                        buttonClassName="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border"
-                        buttonStyle={{ borderColor: roundData.totalPutts > 0 ? '#014421' : '#E5E7EB', color: roundData.totalPutts > 0 ? '#014421' : '#9CA3AF' }}
-                        tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-32 text-center p-1.5"
-                      />
-                    </div>
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => updateField('totalPutts', Math.max(0, roundData.totalPutts - 1))}
-                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.totalPutts > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.totalPutts > 0 ? '#014421' : '#6B7280',
-                          minWidth: '28px',
-                          minHeight: '28px'
-                        }}
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <span
-                        className="text-sm font-bold w-6 text-center"
-                        style={{ color: roundData.totalPutts > 0 ? '#014421' : '#111827' }}
-                      >
-                        {roundData.totalPutts}
-                      </span>
-                      <button
-                        onClick={() => updateField('totalPutts', roundData.totalPutts + 1)}
-                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.totalPutts > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.totalPutts > 0 ? '#014421' : '#6B7280',
-                          minWidth: '28px',
-                          minHeight: '28px'
-                        }}
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Putting</h2>
+              <button
+                type="button"
+                onClick={clearPutting}
+                className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                title="Clear all"
+              >
+                <RotateCcw className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
 
-                  {/* 3-Putt Counter */}
-                  <div
-                    className={`flex-1 p-2 rounded-xl border-2 transition-all ${
-                      roundData.threePutts > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
-                    }`}
-                    style={{
-                      backgroundColor: roundData.threePutts > 0 ? '#FFA500' : 'white'
-                    }}
+            <div className={ROUND_COUNTER_GRID}>
+              {/* Total putts */}
+              <div
+                className={`${ROUND_COUNTER_TILE} ${
+                  roundData.totalPutts > 0 ? "border-[#FFA500]" : "border-gray-200"
+                }`}
+                style={{
+                  backgroundColor: roundData.totalPutts > 0 ? "#FFF7ED" : "white",
+                }}
+              >
+                <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 text-center">
+                  <span
+                    className="text-sm font-semibold leading-tight"
+                    style={{ color: roundData.totalPutts > 0 ? "#014421" : "#6B7280" }}
                   >
-                    <div className="flex items-center justify-center gap-1 mb-2">
-                      <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.threePutts > 0 ? '#014421' : '#6B7280' }}>
-                        3-Putts
-                      </span>
-                      <InfoBubble
-                        content="Any hole where 3 or more strokes were taken once the ball reached the putting surface."
-                        buttonClassName="w-3 h-3 rounded-full bg-white/50 flex items-center justify-center text-[8px] font-bold cursor-help border"
-                        buttonStyle={{ borderColor: roundData.threePutts > 0 ? '#014421' : '#E5E7EB', color: roundData.threePutts > 0 ? '#014421' : '#9CA3AF' }}
-                        tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-32 text-center p-1.5"
-                      />
-                    </div>
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => decrementCounter('threePutts')}
-                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.threePutts > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.threePutts > 0 ? '#014421' : '#6B7280',
-                          minWidth: '28px',
-                          minHeight: '28px'
-                        }}
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <span
-                        className="text-sm font-bold w-6 text-center"
-                        style={{ color: roundData.threePutts > 0 ? '#014421' : '#111827' }}
-                      >
-                        {roundData.threePutts}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter('threePutts')}
-                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.threePutts > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.threePutts > 0 ? '#014421' : '#6B7280',
-                          minWidth: '28px',
-                          minHeight: '28px'
-                        }}
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
+                    Total putts
+                  </span>
+                  <InfoBubble
+                    content="Only strokes taken once the ball is on the putting surface."
+                    buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-[9px] font-bold text-gray-500 cursor-help"
+                    tooltipClassName="left-1/2 bottom-full mb-2 w-40 max-w-[min(100vw-2rem,12rem)] -translate-x-1/2 p-1.5 text-center"
+                  />
                 </div>
+                <div className={ROUND_STEP_ROW}>
+                  <button
+                    type="button"
+                    onClick={() => updateField("totalPutts", Math.max(0, roundData.totalPutts - 1))}
+                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                    style={{
+                      borderColor: roundData.totalPutts > 0 ? "#014421" : "#D1D5DB",
+                      color: roundData.totalPutts > 0 ? "#014421" : "#6B7280",
+                    }}
+                  >
+                    <Minus className="h-5 w-5" />
+                  </button>
+                  <span
+                    className={ROUND_COUNTER_VALUE}
+                    style={{ color: roundData.totalPutts > 0 ? "#014421" : "#111827" }}
+                  >
+                    {roundData.totalPutts}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => updateField("totalPutts", roundData.totalPutts + 1)}
+                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                    style={{
+                      borderColor: roundData.totalPutts > 0 ? "#014421" : "#D1D5DB",
+                      color: roundData.totalPutts > 0 ? "#014421" : "#6B7280",
+                    }}
+                  >
+                    <Plus className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
 
-                {/* Row 2: < 6ft Group */}
-                <div className="flex flex-row justify-between gap-2">
-                  {/* Attempts */}
-                  <div
-                    className={`flex-1 p-2 rounded-xl border-2 transition-all ${
-                      roundData.puttsUnder6ftAttempts > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
-                    }`}
+              {/* 3-Putts */}
+              <div
+                className={`${ROUND_COUNTER_TILE} ${
+                  roundData.threePutts > 0 ? "border-[#FFA500]" : "border-gray-200"
+                }`}
+                style={{
+                  backgroundColor: roundData.threePutts > 0 ? "#FFF7ED" : "white",
+                }}
+              >
+                <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 text-center">
+                  <span
+                    className="text-sm font-semibold leading-tight"
+                    style={{ color: roundData.threePutts > 0 ? "#014421" : "#6B7280" }}
+                  >
+                    3-Putts
+                  </span>
+                  <InfoBubble
+                    content="Any hole where 3 or more strokes were taken once the ball reached the putting surface."
+                    buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-[9px] font-bold text-gray-500 cursor-help"
+                    tooltipClassName="left-1/2 bottom-full mb-2 w-48 max-w-[min(100vw-2rem,12rem)] -translate-x-1/2 p-1.5 text-center"
+                  />
+                </div>
+                <div className={ROUND_STEP_ROW}>
+                  <button
+                    type="button"
+                    onClick={() => decrementCounter("threePutts")}
+                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                     style={{
-                      backgroundColor: roundData.puttsUnder6ftAttempts > 0 ? '#FFA500' : 'white'
+                      borderColor: roundData.threePutts > 0 ? "#014421" : "#D1D5DB",
+                      color: roundData.threePutts > 0 ? "#014421" : "#6B7280",
                     }}
                   >
-                    <div className="flex items-center justify-center gap-1 mb-2">
-                      <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.puttsUnder6ftAttempts > 0 ? '#014421' : '#6B7280' }}>
-                        &lt; 6ft Att
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => decrementCounter('puttsUnder6ftAttempts')}
-                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.puttsUnder6ftAttempts > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.puttsUnder6ftAttempts > 0 ? '#014421' : '#6B7280',
-                          minWidth: '28px',
-                          minHeight: '28px'
-                        }}
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <span
-                        className="text-sm font-bold w-6 text-center"
-                        style={{ color: roundData.puttsUnder6ftAttempts > 0 ? '#014421' : '#111827' }}
-                      >
-                        {roundData.puttsUnder6ftAttempts}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter('puttsUnder6ftAttempts')}
-                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.puttsUnder6ftAttempts > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.puttsUnder6ftAttempts > 0 ? '#014421' : '#6B7280',
-                          minWidth: '28px',
-                          minHeight: '28px'
-                        }}
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                  
-                  {/* Made */}
-                  <div
-                    className={`flex-1 p-2 rounded-xl border-2 transition-all ${
-                      roundData.made6ftAndIn > 0
-                        ? 'border-[#FFA500]'
-                        : 'border-gray-200'
-                    }`}
+                    <Minus className="h-5 w-5" />
+                  </button>
+                  <span
+                    className={ROUND_COUNTER_VALUE}
+                    style={{ color: roundData.threePutts > 0 ? "#014421" : "#111827" }}
+                  >
+                    {roundData.threePutts}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => incrementCounter("threePutts")}
+                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
                     style={{
-                      backgroundColor: roundData.made6ftAndIn > 0 ? '#FFA500' : 'white'
+                      borderColor: roundData.threePutts > 0 ? "#014421" : "#D1D5DB",
+                      color: roundData.threePutts > 0 ? "#014421" : "#6B7280",
                     }}
                   >
-                    <div className="flex items-center justify-center gap-1 mb-2">
-                      <span className="text-[10px] font-medium text-center whitespace-nowrap" style={{ color: roundData.made6ftAndIn > 0 ? '#014421' : '#6B7280' }}>
-                        &lt; 6ft Made
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => decrementCounter('made6ftAndIn')}
-                        className="w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors"
-                        style={{
-                          borderColor: roundData.made6ftAndIn > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.made6ftAndIn > 0 ? '#014421' : '#6B7280',
-                          minWidth: '28px',
-                          minHeight: '28px'
-                        }}
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <span
-                        className="text-sm font-bold w-6 text-center"
-                        style={{ color: roundData.made6ftAndIn > 0 ? '#014421' : '#111827' }}
-                      >
-                        {roundData.made6ftAndIn}
-                      </span>
-                      <button
-                        onClick={() => {
-                          if (roundData.made6ftAndIn < roundData.puttsUnder6ftAttempts) {
-                            incrementCounter('made6ftAndIn');
-                          }
-                        }}
-                        className={`w-7 h-7 rounded-md flex items-center justify-center border-2 transition-colors ${
-                          roundData.made6ftAndIn >= roundData.puttsUnder6ftAttempts ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        style={{
-                          borderColor: roundData.made6ftAndIn > 0 ? '#014421' : '#D1D5DB',
-                          color: roundData.made6ftAndIn > 0 ? '#014421' : '#6B7280',
-                          minWidth: '28px',
-                          minHeight: '28px'
-                        }}
-                        disabled={roundData.made6ftAndIn >= roundData.puttsUnder6ftAttempts}
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
+                    <Plus className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* &lt; 6ft attempts */}
+              <div
+                className={`${ROUND_COUNTER_TILE} ${
+                  roundData.puttsUnder6ftAttempts > 0 ? "border-[#FFA500]" : "border-gray-200"
+                }`}
+                style={{
+                  backgroundColor: roundData.puttsUnder6ftAttempts > 0 ? "#FFF7ED" : "white",
+                }}
+              >
+                <div
+                  className="flex min-h-[2.75rem] flex-col items-center justify-center text-center text-sm font-semibold leading-tight"
+                  style={{ color: roundData.puttsUnder6ftAttempts > 0 ? "#014421" : "#6B7280" }}
+                >
+                  &lt; 6ft Att
+                </div>
+                <div className={ROUND_STEP_ROW}>
+                  <button
+                    type="button"
+                    onClick={() => decrementCounter("puttsUnder6ftAttempts")}
+                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                    style={{
+                      borderColor: roundData.puttsUnder6ftAttempts > 0 ? "#014421" : "#D1D5DB",
+                      color: roundData.puttsUnder6ftAttempts > 0 ? "#014421" : "#6B7280",
+                    }}
+                  >
+                    <Minus className="h-5 w-5" />
+                  </button>
+                  <span
+                    className={ROUND_COUNTER_VALUE}
+                    style={{ color: roundData.puttsUnder6ftAttempts > 0 ? "#014421" : "#111827" }}
+                  >
+                    {roundData.puttsUnder6ftAttempts}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => incrementCounter("puttsUnder6ftAttempts")}
+                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                    style={{
+                      borderColor: roundData.puttsUnder6ftAttempts > 0 ? "#014421" : "#D1D5DB",
+                      color: roundData.puttsUnder6ftAttempts > 0 ? "#014421" : "#6B7280",
+                    }}
+                  >
+                    <Plus className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* &lt; 6ft made */}
+              <div
+                className={`${ROUND_COUNTER_TILE} ${
+                  roundData.made6ftAndIn > 0 ? "border-[#FFA500]" : "border-gray-200"
+                }`}
+                style={{
+                  backgroundColor: roundData.made6ftAndIn > 0 ? "#FFF7ED" : "white",
+                }}
+              >
+                <div
+                  className="flex min-h-[2.75rem] flex-col items-center justify-center text-center text-sm font-semibold leading-tight"
+                  style={{ color: roundData.made6ftAndIn > 0 ? "#014421" : "#6B7280" }}
+                >
+                  &lt; 6ft Made
+                </div>
+                <div className={ROUND_STEP_ROW}>
+                  <button
+                    type="button"
+                    onClick={() => decrementCounter("made6ftAndIn")}
+                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                    style={{
+                      borderColor: roundData.made6ftAndIn > 0 ? "#014421" : "#D1D5DB",
+                      color: roundData.made6ftAndIn > 0 ? "#014421" : "#6B7280",
+                    }}
+                  >
+                    <Minus className="h-5 w-5" />
+                  </button>
+                  <span
+                    className={ROUND_COUNTER_VALUE}
+                    style={{ color: roundData.made6ftAndIn > 0 ? "#014421" : "#111827" }}
+                  >
+                    {roundData.made6ftAndIn}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (roundData.made6ftAndIn < roundData.puttsUnder6ftAttempts) {
+                        incrementCounter("made6ftAndIn");
+                      }
+                    }}
+                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50 ${
+                      roundData.made6ftAndIn >= roundData.puttsUnder6ftAttempts
+                        ? "cursor-not-allowed opacity-50"
+                        : ""
+                    }`}
+                    style={{
+                      borderColor: roundData.made6ftAndIn > 0 ? "#014421" : "#D1D5DB",
+                      color: roundData.made6ftAndIn > 0 ? "#014421" : "#6B7280",
+                    }}
+                    disabled={roundData.made6ftAndIn >= roundData.puttsUnder6ftAttempts}
+                  >
+                    <Plus className="h-5 w-5" />
+                  </button>
                 </div>
               </div>
             </div>

@@ -52,7 +52,7 @@ type TrophyCaseProps = {
   /** Times collected per trophy id (max of DB rows and heuristic); drives × badge on cards. */
   collectionCountById: ReadonlyMap<string, number>;
   onSelectTrophy: (trophy: TrophyCaseCardTrophy) => void;
-  /** Academy-wide: who has the most recorded trophy achievement events. */
+  /** Academy-wide: merged distinct trophy / achievement keys per user (server RPC). */
   communityLeaderboard: readonly TrophyCollectionLeaderboardRow[];
   communityLoading: boolean;
   communityError: string | null;
@@ -172,7 +172,7 @@ export default function TrophyCase({
     <div className="rounded-xl border border-amber-100/80 bg-amber-50/50 px-3 py-3">
       <p className="text-center text-xs font-semibold text-stone-900">Community ranking</p>
       <p className="mt-0.5 text-center text-[11px] leading-snug text-stone-600">
-        More recorded trophy activity ranks higher. Same rules for everyone.
+        Higher unique trophy / achievement count ranks first (duplicate rows are not counted twice). Same rules for everyone.
       </p>
       {communityLoading ? (
         <p className="mt-3 text-center text-[11px] text-stone-500">Loading rankings…</p>
@@ -189,7 +189,7 @@ export default function TrophyCase({
           <p>
             {earnedTrophyCount > 0
               ? "No list yet. Your trophies are saved — player names will appear here when shared rankings are on."
-              : "No list yet — player names will appear here once there is recorded trophy activity to rank."}
+              : "No list yet — player names will appear here once there are unique trophies to rank."}
           </p>
           <details className="rounded-lg bg-white/70 px-2 py-2 text-left ring-1 ring-stone-200/80">
             <summary className="cursor-pointer list-none text-[10px] font-semibold text-stone-600 [&::-webkit-details-marker]:hidden">

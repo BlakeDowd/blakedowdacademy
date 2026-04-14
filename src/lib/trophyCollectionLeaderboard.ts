@@ -5,6 +5,8 @@ export const TROPHY_LEADERBOARD_MIGRATION = "20260422130000_trophy_collection_le
 export const TROPHY_ACHIEVEMENTS_BACKFILL_MIGRATION = "20260423140000_backfill_user_achievements_from_user_trophies.sql";
 /** Replaces leaderboard RPCs to rank by max(user_trophies count, user_achievements count) so trophies alone count. */
 export const TROPHY_LEADERBOARD_MERGE_MIGRATION = "20260424120000_leaderboard_merge_user_trophies.sql";
+/** Distinct achievement/trophy keys so duplicate DB rows do not inflate leaderboard scores. */
+export const TROPHY_LEADERBOARD_DISTINCT_MIGRATION = "20260425200000_leaderboard_distinct_achievement_counts.sql";
 
 /** True when PostgREST cannot find the leaderboard RPC (migration not applied or schema cache stale). */
 export function isMissingLeaderboardRpcError(message: string): boolean {
@@ -26,6 +28,7 @@ export function formatCommunityLeaderboardErrorMessage(message: string): string 
 1) supabase/migrations/${TROPHY_LEADERBOARD_MIGRATION}
 2) supabase/migrations/${TROPHY_ACHIEVEMENTS_BACKFILL_MIGRATION}
 3) supabase/migrations/${TROPHY_LEADERBOARD_MERGE_MIGRATION} (ranking uses trophies + achievements)
+4) supabase/migrations/${TROPHY_LEADERBOARD_DISTINCT_MIGRATION} (counts distinct trophy keys — avoids inflated scores)
 
 Then: Project Settings → API → Reload schema → refresh this page.`;
   }
@@ -90,7 +93,7 @@ export async function runBackfillMyAchievementsFromTrophies(supabase: SupabaseCl
   return 0;
 }
 
-/** Top players by total `user_achievements` rows (trophy collection events). */
+/** Top players by merged distinct trophy id / achievement key counts (see DB RPC; not raw row totals). */
 export async function fetchTrophyCollectionLeaderboard(
   supabase: SupabaseClient,
   topN = 40,

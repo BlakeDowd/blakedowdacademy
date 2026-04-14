@@ -2,7 +2,7 @@
 
 /**
  * Dashboard goal accountability — `player_goals`, `practice_logs`, and optional `practice` minutes.
- * Goal presets via `GoalSetting`; Accountability Card shows Target vs Actual for the current week.
+ * Goal setting via `GoalSetting`; Accountability Card shows Target vs Actual for the current week.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -40,7 +40,7 @@ import {
 import {
   allocationMatchesBudget,
   buildSuggestedPracticeAllocation,
-  defaultAllocationSingleFocus,
+  isCollapsedSingleCategoryAllocation,
   parsePracticeAllocationFromDb,
   primaryFocusFromAllocation,
   scalePracticeAllocationToBudget,
@@ -48,8 +48,8 @@ import {
 } from "@/lib/practiceAllocation";
 import { AlertCircle, CheckCircle2, Clock, Target } from "lucide-react";
 
-const PANEL_NAVY = "#0f172a";
-const EMERALD = "#10b981";
+/** Home dashboard brand — `globals.css` / HomeDashboard cards. */
+const BRAND_GREEN = "#014421";
 
 function parseBaselineLowestForSave(raw: string): number | null {
   const t = raw.trim();
@@ -91,28 +91,24 @@ function CommitmentHealthBar({
     isHighVolumeCommitment && goalHours > 0 && actualHours < goalHours * 0.5;
   const fillClass = commitmentHealthBarClass(score, { eliteHoursShortfall });
   return (
-    <div
-      className="mt-5 rounded-xl border border-slate-800/80 p-4"
-      style={{ backgroundColor: "#0b1220" }}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-3 text-xs text-slate-400 mb-2">
+    <div className="mt-5 rounded-xl border border-gray-100 bg-gray-50/90 p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-3 text-xs text-gray-500 mb-2">
         <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <span className="font-semibold uppercase tracking-wide text-slate-500 shrink-0">Commitment health</span>
+          <span className="font-semibold uppercase tracking-wide text-gray-500 shrink-0">Commitment health</span>
           {isHighVolumeCommitment && (
             <span
-              className="shrink-0 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300"
-              style={{ borderColor: EMERALD, backgroundColor: `${EMERALD}18` }}
+              className="shrink-0 rounded-full border border-[#014421]/35 bg-[#014421]/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#014421]"
             >
               High Performance
             </span>
           )}
         </div>
-        <span className="tabular-nums font-bold text-slate-200 shrink-0">{pct}%</span>
+        <span className="tabular-nums font-bold text-gray-900 shrink-0">{pct}%</span>
       </div>
-      <p className="text-[11px] text-slate-500 mb-2">
+      <p className="text-[11px] text-gray-600 mb-2">
         Time vs weekly target (70%) and focus alignment (30%). 15h+ under half your target shows as critical.
       </p>
-      <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-800/90">
+      <div className="h-2.5 w-full overflow-hidden rounded-full bg-gray-200">
         <div className={`h-full rounded-full transition-all duration-500 ${fillClass}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -131,77 +127,74 @@ function AccountabilityCard({
   const actualFocusLabel = s.metrics?.topCategory ?? "No combine sessions yet";
   const sessionCount = s.metrics?.logCountThisWeek ?? 0;
   const focusBadge = s.focusMismatch ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-200 ring-1 ring-amber-400/40 shrink-0">
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-300/60 shrink-0">
       <AlertCircle className="w-3 h-3 shrink-0" aria-hidden />
       Mismatch
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 ring-1 ring-emerald-400/30 shrink-0">
+    <span className="inline-flex items-center gap-1 rounded-full bg-[#014421]/10 px-2 py-0.5 text-[11px] font-semibold text-[#014421] ring-1 ring-[#014421]/25 shrink-0">
       <CheckCircle2 className="w-3 h-3 shrink-0" aria-hidden />
       Aligned
     </span>
   );
 
   return (
-    <div
-      className="mt-6 rounded-2xl border border-slate-800/90 p-4 ring-1 ring-slate-800/60 sm:p-5"
-      style={{ backgroundColor: "#0b1220" }}
-    >
+    <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
       <div className="flex items-center gap-2 mb-3">
-        <Target className="w-5 h-5 text-emerald-400 shrink-0" aria-hidden />
+        <Target className="w-5 h-5 shrink-0 text-[#014421]" aria-hidden />
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Accountability</p>
-          <h3 className="text-base font-bold text-slate-50">Target vs actual</h3>
-          <p className="text-[11px] text-slate-500">This week</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Accountability</p>
+          <h3 className="text-base font-bold text-gray-900">Target vs actual</h3>
+          <p className="text-[11px] text-gray-500">This week</p>
         </div>
       </div>
 
       <div className="mb-4">
         <div className="flex items-baseline justify-between gap-2 mb-1.5">
-          <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
-            <Clock className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+          <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+            <Clock className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
             Hours toward {formatWeeklyHoursLabel(targets.hours)}
           </span>
-          <span className="tabular-nums text-xs font-semibold text-slate-200">
+          <span className="tabular-nums text-xs font-semibold text-gray-800">
             {s.actualHours.toFixed(1)}h / {s.commitmentHours}h
           </span>
         </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+        <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500"
+            className="h-full rounded-full bg-gradient-to-r from-[#014421] to-emerald-600 transition-all duration-500"
             style={{ width: `${barPct}%` }}
           />
         </div>
         {s.metrics && s.metrics.totalMinutesFromLogs === 0 && s.metrics.supplementalPracticeMinutes > 0 && (
-          <p className="text-[11px] text-slate-500 mt-1.5">
-            Hours include general practice from the <code className="text-slate-400">practice</code> table when
-            combine logs have no <code className="text-slate-400">duration_minutes</code>.
+          <p className="text-[11px] text-gray-600 mt-1.5">
+            Hours include general practice from the <code className="rounded bg-gray-100 px-1 text-gray-700">practice</code> table when
+            combine logs have no <code className="rounded bg-gray-100 px-1 text-gray-700">duration_minutes</code>.
           </p>
         )}
       </div>
 
-      <div className="divide-y divide-slate-800/80 border-t border-slate-800/80">
+      <div className="divide-y divide-gray-100 border-t border-gray-100">
         <div className="flex items-center justify-between gap-3 py-2.5 first:pt-3">
-          <span className="text-xs text-slate-500 shrink-0">Milestone</span>
-          <span className="min-w-0 text-right text-sm font-semibold text-slate-100">
+          <span className="text-xs text-gray-500 shrink-0">Milestone</span>
+          <span className="min-w-0 text-right text-sm font-semibold text-gray-900">
             {SCORING_MILESTONE_LABELS[targets.milestone]}
           </span>
         </div>
         <div className="flex flex-wrap items-start justify-between gap-2 py-2.5">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="text-xs text-slate-500">Focus</span>
+              <span className="text-xs text-gray-500">Focus</span>
               {focusBadge}
             </div>
-            <p className="mt-0.5 text-sm text-slate-100">
-              <span className="font-semibold text-emerald-100/95">{targets.focus}</span>
-              <span className="mx-1.5 text-slate-600" aria-hidden>
+            <p className="mt-0.5 text-sm text-gray-900">
+              <span className="font-semibold text-[#014421]">{targets.focus}</span>
+              <span className="mx-1.5 text-gray-400" aria-hidden>
                 →
               </span>
-              <span className="font-medium text-slate-300">{actualFocusLabel}</span>
+              <span className="font-medium text-gray-600">{actualFocusLabel}</span>
             </p>
             {sessionCount > 0 && (
-              <p className="mt-1 text-[11px] text-slate-500">
+              <p className="mt-1 text-[11px] text-gray-500">
                 {sessionCount === 1 ? "1 combine session this week" : `${sessionCount} combine sessions this week`}
               </p>
             )}
@@ -224,7 +217,7 @@ export function GoalAccountabilityModule() {
   const [draftScoring, setDraftScoring] = useState<ScoringMilestonePreset>(DEFAULT_SCORING_PRESET);
   const [draftHours, setDraftHours] = useState<WeeklyHoursPreset>(DEFAULT_WEEKLY_HOURS);
   const [draftAllocation, setDraftAllocation] = useState<PracticeHoursMap>(() =>
-    defaultAllocationSingleFocus("Putting", weeklyHoursPresetToStoredHours(DEFAULT_WEEKLY_HOURS)),
+    buildSuggestedPracticeAllocation([], [], weeklyHoursPresetToStoredHours(DEFAULT_WEEKLY_HOURS), null).hours,
   );
   const prevBudgetRef = useRef(weeklyHoursPresetToStoredHours(DEFAULT_WEEKLY_HOURS));
   const [baselineLowest, setBaselineLowest] = useState("");
@@ -338,7 +331,19 @@ export function GoalAccountabilityModule() {
         const budget = weeklyHoursPresetToStoredHours(hoursPreset);
         const legacyFocus = normalizeFocusArea(g.focus_area);
         setDraftHours(hoursPreset);
-        setDraftAllocation(parsePracticeAllocationFromDb(g.practice_allocation, budget, legacyFocus));
+        let alloc = parsePracticeAllocationFromDb(g.practice_allocation, budget, legacyFocus);
+        if (isCollapsedSingleCategoryAllocation(alloc, budget)) {
+          const savedHcpRaw = g.current_handicap;
+          const hasSavedHcp =
+            savedHcpRaw != null && savedHcpRaw !== undefined && String(savedHcpRaw).trim() !== "";
+          const gapN = hasSavedHcp ? parseFloat(String(savedHcpRaw)) : syncedHandicap;
+          const gapVal =
+            gapN != null && Number.isFinite(gapN)
+              ? handicapToMilestoneStrokesGap(gapN, milestoneToPreset(g.scoring_milestone))
+              : null;
+          alloc = buildSuggestedPracticeAllocation(rsRows, [], budget, gapVal).hours;
+        }
+        setDraftAllocation(alloc);
         prevBudgetRef.current = budget;
         setBaselineLowest(g.lowest_score != null && g.lowest_score !== undefined ? String(g.lowest_score) : "");
         const savedHcp = g.current_handicap;
@@ -354,7 +359,7 @@ export function GoalAccountabilityModule() {
         setDraftScoring(DEFAULT_SCORING_PRESET);
         setDraftHours(DEFAULT_WEEKLY_HOURS);
         const budget = weeklyHoursPresetToStoredHours(DEFAULT_WEEKLY_HOURS);
-        setDraftAllocation(defaultAllocationSingleFocus("Putting", budget));
+        setDraftAllocation(buildSuggestedPracticeAllocation(rsRows, [], budget, null).hours);
         prevBudgetRef.current = budget;
         setBaselineLowest("");
         if (syncedHandicap != null && hasRoundContext) {
@@ -414,15 +419,26 @@ export function GoalAccountabilityModule() {
 
   const draftPrimaryFocus = useMemo(() => primaryFocusFromAllocation(draftAllocation), [draftAllocation]);
 
-  const handleWeeklyHoursChange = useCallback((next: WeeklyHoursPreset) => {
-    const oldB = prevBudgetRef.current;
-    const newB = weeklyHoursPresetToStoredHours(next);
-    prevBudgetRef.current = newB;
-    setDraftHours(next);
-    setDraftAllocation((alloc) =>
-      allocationMatchesBudget(alloc, oldB) ? scalePracticeAllocationToBudget(alloc, newB) : alloc,
-    );
-  }, []);
+  const handleWeeklyHoursChange = useCallback(
+    (next: WeeklyHoursPreset) => {
+      const oldB = prevBudgetRef.current;
+      const newB = weeklyHoursPresetToStoredHours(next);
+      prevBudgetRef.current = newB;
+      setDraftHours(next);
+      setDraftAllocation((alloc) => {
+        if (allocationMatchesBudget(alloc, oldB) && isCollapsedSingleCategoryAllocation(alloc, oldB)) {
+          const gapN = parseHandicapForWarning(baselineHandicap);
+          const gapVal = gapN != null ? handicapToMilestoneStrokesGap(gapN, draftScoring) : null;
+          return buildSuggestedPracticeAllocation(roundStatRows, rounds.slice(0, 8), newB, gapVal).hours;
+        }
+        if (allocationMatchesBudget(alloc, oldB)) {
+          return scalePracticeAllocationToBudget(alloc, newB);
+        }
+        return alloc;
+      });
+    },
+    [baselineHandicap, draftScoring, roundStatRows, rounds],
+  );
 
   const suggestedPack = useMemo(() => {
     const gapN = parseHandicapForWarning(baselineHandicap);
@@ -528,11 +544,8 @@ export function GoalAccountabilityModule() {
   if (loading) {
     return (
       <div className="px-4 mb-8 w-full">
-        <div
-          className="rounded-2xl border border-slate-800 p-5 shadow-lg"
-          style={{ backgroundColor: PANEL_NAVY }}
-        >
-          <p className="text-sm text-slate-400">Loading goals…</p>
+        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <p className="text-sm text-gray-500">Loading goals…</p>
         </div>
       </div>
     );
@@ -550,13 +563,12 @@ export function GoalAccountabilityModule() {
   return (
     <div className="px-4 mb-10 w-full">
       <div
-        className="rounded-2xl border border-slate-800 p-5 shadow-xl ring-1 ring-slate-800/70"
-        style={{ backgroundColor: PANEL_NAVY }}
+        className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
+        style={{ boxShadow: "0 8px 24px rgba(0, 0, 0, 0.06)" }}
       >
         <div className="mb-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Goal setting</p>
-          <h2 className="text-lg font-bold text-slate-50 mt-1">Presets</h2>
-          <p className="text-xs text-slate-400 mt-1">
+          <h2 className="text-lg font-bold text-[#014421]">Goal setting</h2>
+          <p className="text-xs text-gray-600 mt-1.5">
             Set your milestone and weekly budget, split hours across practice categories, then review accountability. Save
             only works when your allocation matches your weekly hours.
           </p>
@@ -585,17 +597,17 @@ export function GoalAccountabilityModule() {
           handicapMilestoneGap={handicapMilestoneGapDisplay}
         />
 
-        <div className="flex flex-wrap items-center gap-2 mt-5 pt-4 border-t border-slate-800/80">
+        <div className="flex flex-wrap items-center gap-2 mt-5 pt-4 border-t border-gray-100">
           <button
             type="button"
             disabled={saveBusy || !allocationMatchesBudget(draftAllocation, budgetHoursNum)}
             onClick={() => void saveGoals()}
             className="rounded-lg px-4 py-2 text-sm font-semibold text-white shadow transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundColor: EMERALD }}
+            style={{ backgroundColor: BRAND_GREEN }}
           >
             {saveBusy ? "Saving…" : "Save goals"}
           </button>
-          {saveMsg && <span className="text-xs text-slate-400">{saveMsg}</span>}
+          {saveMsg && <span className="text-xs text-gray-500">{saveMsg}</span>}
         </div>
 
         <AccountabilityCard targets={targets} state={s} />
@@ -607,7 +619,7 @@ export function GoalAccountabilityModule() {
           isHighVolumeCommitment={draftHours === "15+"}
         />
         {volumeEffortWarning && (
-          <p className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.07] px-3 py-2.5 text-xs leading-snug text-amber-100/90">
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-snug text-amber-900">
             Your goal requires a higher volume of effort based on your current handicap.
           </p>
         )}

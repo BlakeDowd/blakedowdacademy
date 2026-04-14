@@ -137,7 +137,7 @@ export function commitmentHealthBarClass(score: number, opts?: CommitmentHealthB
   if (opts?.eliteHoursShortfall) return "bg-rose-600";
   if (score < 0.5) return "bg-red-500";
   if (score <= 0.8) return "bg-amber-400";
-  return "bg-[#10b981]";
+  return "bg-[#014421]";
 }
 
 export function minutesFromPracticeRows(
