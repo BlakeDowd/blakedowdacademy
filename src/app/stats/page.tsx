@@ -168,6 +168,12 @@ function clampTargetGoalHandicap(raw: number): number {
   return Math.min(54, Math.max(-5, r));
 }
 
+function roundSortTimeMs(r: { created_at?: string; date?: string }): number {
+  const raw = r.created_at || r.date;
+  const ms = new Date(raw || 0).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 export default function StatsPage() {
   // ============================================
   // ALL HOOKS MUST BE AT THE TOP - NO EXCEPTIONS
@@ -199,17 +205,6 @@ export default function StatsPage() {
   
   // Ensure rounds is always an array (use personalRounds for stats page)
   const safeRounds = personalRounds || [];
-
-  /** Min/max round dates for loading `performance_stats` rows (same source as coach deep dive matrix extras). */
-  const roundsPerfDateSpan = useMemo(() => {
-    if (!safeRounds.length) return null;
-    const days = safeRounds
-      .map((r) => (typeof r.date === "string" ? r.date.slice(0, 10) : ""))
-      .filter((d) => d.length >= 8)
-      .sort();
-    if (!days.length) return null;
-    return { start: days[0]!, end: days[days.length - 1]! };
-  }, [safeRounds]);
 
   // Debug: Log rounds data
   useEffect(() => {
@@ -284,8 +279,10 @@ export default function StatsPage() {
     }
   }, [user?.initialHandicap]);
   const [selectedMetric, setSelectedMetric] = useState<'nettScore' | 'gross' | 'birdies' | 'pars' | 'bogeys' | 'totalPutts' | 'doubleBogeys' | 'eagles' | 'threePutts' | 'fairwaysHit' | 'gir' | 'gir8ft' | 'gir20ft' | 'upAndDown' | 'bunkerSaves' | 'chipInside6ft' | 'doubleChips' | 'totalPenalties'>('nettScore');
-  const [activeHistory, setActiveHistory] = useState<'LAST 5' | 'LAST 10' | 'LAST 20' | 'ALL'>('LAST 10');
+  const [activeHistory, setActiveHistory] = useState<'LAST 5' | 'LAST 10'>('LAST 10');
   const [holeFilter, setHoleFilter] = useState<'9' | '18'>('18');
+  /** Rounds window for every player-stats section below Trend Analysis (not the trend chart itself). */
+  const [playerStatsScope, setPlayerStatsScope] = useState<"LAST 5" | "LAST 10" | "LAST 20" | "ALL">("ALL");
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [forceLoaded, setForceLoaded] = useState(false);
   const [skillAssessmentFilter, setSkillAssessmentFilter] = useState<'WEEK' | 'MONTH' | 'ALL'>('ALL');
@@ -296,6 +293,25 @@ export default function StatsPage() {
     total: 0,
     rank: null,
   });
+
+  const scopedPlayerStatsRounds = useMemo(() => {
+    if (!safeRounds.length) return [];
+    const chronological = [...safeRounds].sort((a, b) => roundSortTimeMs(a) - roundSortTimeMs(b));
+    if (playerStatsScope === "ALL") return chronological;
+    const cap = playerStatsScope === "LAST 5" ? 5 : playerStatsScope === "LAST 10" ? 10 : 20;
+    return chronological.slice(-Math.min(cap, chronological.length));
+  }, [safeRounds, playerStatsScope]);
+
+  /** Min/max round dates for loading `performance_stats` rows — matches scoped rounds below Trend Analysis. */
+  const roundsPerfDateSpan = useMemo(() => {
+    if (!scopedPlayerStatsRounds.length) return null;
+    const days = scopedPlayerStatsRounds
+      .map((r) => (typeof r.date === "string" ? r.date.slice(0, 10) : ""))
+      .filter((d) => d.length >= 8)
+      .sort();
+    if (!days.length) return null;
+    return { start: days[0]!, end: days[days.length - 1]! };
+  }, [scopedPlayerStatsRounds]);
 
   // Safety Net Mock Data
   const safetyNetData: {val: number, date: string}[] = [
@@ -359,10 +375,10 @@ export default function StatsPage() {
 
   const { bigSix, penaltyStats, metricMatrix } = useMemo(() => {
     const g = getBenchmarkGoals(selectedGoal);
-    return computeDeepDiveRoundMetrics(safeRounds as unknown as Record<string, unknown>[], g, {
+    return computeDeepDiveRoundMetrics(scopedPlayerStatsRounds as unknown as Record<string, unknown>[], g, {
       perfStatsData: perfStatsForMatrix,
     });
-  }, [safeRounds, selectedGoal, perfStatsForMatrix]);
+  }, [scopedPlayerStatsRounds, selectedGoal, perfStatsForMatrix]);
 
   const strokeOpportunityRows = useMemo(
     () => computeStrokeOpportunityTop3(metricMatrix),
@@ -374,7 +390,7 @@ export default function StatsPage() {
     [metricMatrix, metricMatrixWorstFirst],
   );
 
-  const hasRoundData = safeRounds.length > 0;
+  const hasRoundData = scopedPlayerStatsRounds.length > 0;
 
   const statsProfileDisplayName = useMemo(() => {
     if (user?.fullName?.trim()) return user.fullName.trim();
@@ -448,7 +464,7 @@ export default function StatsPage() {
 
   // Calculate ALL performance metrics for tiles (-1 = no data sentinel for AnimatedNumber)
   const performanceMetrics = useMemo(() => {
-    if (safeRounds.length === 0) {
+    if (scopedPlayerStatsRounds.length === 0) {
       return {
         // DRIVING
         firPercent: -1,
@@ -477,62 +493,62 @@ export default function StatsPage() {
     }
 
     // DRIVING: FIR percentage and shot breakdown
-    const totalFir = safeRounds.reduce((sum, r) => sum + (r.firHit || 0) + (r.firLeft || 0) + (r.firRight || 0), 0);
-    const firHit = safeRounds.reduce((sum, r) => sum + (r.firHit || 0), 0);
-    const firLeft = safeRounds.reduce((sum, r) => sum + (r.firLeft || 0), 0);
-    const firRight = safeRounds.reduce((sum, r) => sum + (r.firRight || 0), 0);
+    const totalFir = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.firHit || 0) + (r.firLeft || 0) + (r.firRight || 0), 0);
+    const firHit = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.firHit || 0), 0);
+    const firLeft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.firLeft || 0), 0);
+    const firRight = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.firRight || 0), 0);
     const firMissed = firLeft + firRight;
     const firPercent = totalFir > 0 ? (firHit / totalFir) * 100 : 0;
     const missedLeft = totalFir > 0 ? (firLeft / totalFir) * 100 : 0;
     const missedRight = totalFir > 0 ? (firRight / totalFir) * 100 : 0;
 
     // APPROACH: GIR percentage
-    const totalGir = safeRounds.reduce((sum, r) => sum + (r.totalGir || 0), 0);
-    const totalHoles = safeRounds.reduce((sum, r) => sum + (r.holes || 18), 0);
+    const totalGir = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.totalGir || 0), 0);
+    const totalHoles = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.holes || 18), 0);
     const girPercent = totalHoles > 0 ? (totalGir / totalHoles) * 100 : 0;
 
     // APPROACH: GIR from distances - % of holes (18) hit within 8ft/20ft
-    const totalGir8ft = safeRounds.reduce((sum, r) => sum + (r.gir8ft || 0), 0);
-    const totalGir20ft = safeRounds.reduce((sum, r) => sum + (r.gir20ft || 0), 0);
+    const totalGir8ft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.gir8ft || 0), 0);
+    const totalGir20ft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.gir20ft || 0), 0);
     const gir8ft = totalHoles > 0 ? (totalGir8ft / totalHoles) * 100 : 0;
     const gir20ft = totalHoles > 0 ? (totalGir20ft / totalHoles) * 100 : 0;
 
     // SHORT GAME: Up & Down percentage
-    const totalUpDownAttempts = safeRounds.reduce((sum, r) => sum + (r.upAndDownConversions || 0) + (r.missed || 0), 0);
-    const upDownSuccess = safeRounds.reduce((sum, r) => sum + (r.upAndDownConversions || 0), 0);
+    const totalUpDownAttempts = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.upAndDownConversions || 0) + (r.missed || 0), 0);
+    const upDownSuccess = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.upAndDownConversions || 0), 0);
     const upAndDownPercent = totalUpDownAttempts > 0 ? (upDownSuccess / totalUpDownAttempts) * 100 : 0;
 
     // SHORT GAME: Bunker Saves percentage
-    const totalBunkerAttempts = safeRounds.reduce((sum, r) => sum + (r.bunkerAttempts || 0) + (r.bunkerSaves || 0), 0);
-    const bunkerSavesCount = safeRounds.reduce((sum, r) => sum + (r.bunkerSaves || 0), 0);
+    const totalBunkerAttempts = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.bunkerAttempts || 0) + (r.bunkerSaves || 0), 0);
+    const bunkerSavesCount = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.bunkerSaves || 0), 0);
     const bunkerSaves = totalBunkerAttempts > 0 ? (bunkerSavesCount / totalBunkerAttempts) * 100 : 0;
 
     // SHORT GAME: Chip Inside 6ft (Scrambling %)
-    const totalChips = safeRounds.reduce((sum, r) => sum + (r.chipInside6ft || 0) + (r.doubleChips || 0), 0); // Need to know total chips, using doubleChips as missed for now or just standardizing based on up&down attempts
+    const totalChips = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.chipInside6ft || 0) + (r.doubleChips || 0), 0); // Need to know total chips, using doubleChips as missed for now or just standardizing based on up&down attempts
     // Better way for Chip Inside 6ft percentage: It's usually chip inside 6ft / total chips
     // Let's use totalUpDownAttempts as the denominator since that's roughly total short game shots
-    const chipInside6ft = totalUpDownAttempts > 0 ? (safeRounds.reduce((sum, r) => sum + (r.chipInside6ft || 0), 0) / totalUpDownAttempts) * 100 : 0;
+    const chipInside6ft = totalUpDownAttempts > 0 ? (scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.chipInside6ft || 0), 0) / totalUpDownAttempts) * 100 : 0;
 
     // PUTTING: Average Putts per round
-    const totalPutts = safeRounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0);
-    const avgPutts = safeRounds.length > 0 ? totalPutts / safeRounds.length : 0;
+    const totalPutts = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0);
+    const avgPutts = scopedPlayerStatsRounds.length > 0 ? totalPutts / scopedPlayerStatsRounds.length : 0;
 
     // PUTTING: < 6ft Make percentage (made_under_6ft / putts_under_6ft_attempts)
-    const totalPuttsUnder6ft = safeRounds.reduce((sum, r) => sum + (r.puttsUnder6ftAttempts || 0), 0);
-    const puttsMadeUnder6ft = safeRounds.reduce((sum, r) => sum + (r.made6ftAndIn || 0), 0);
+    const totalPuttsUnder6ft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.puttsUnder6ftAttempts || 0), 0);
+    const puttsMadeUnder6ft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.made6ftAndIn || 0), 0);
     const puttsUnder6ftMake = totalPuttsUnder6ft > 0 ? Math.round((puttsMadeUnder6ft / totalPuttsUnder6ft) * 100) : 0;
 
     // PUTTING: 3-Putts (average per round)
-    const totalThreePutts = safeRounds.reduce((sum, r) => sum + (r.threePutts || 0), 0);
-    const avgThreePutts = safeRounds.length > 0 ? totalThreePutts / safeRounds.length : 0;
+    const totalThreePutts = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.threePutts || 0), 0);
+    const avgThreePutts = scopedPlayerStatsRounds.length > 0 ? totalThreePutts / scopedPlayerStatsRounds.length : 0;
 
     // PENALTIES: All penalty types
-    const totalTeePenalties = safeRounds.reduce((sum, r) => sum + (r.teePenalties || 0), 0);
-    const teePenalties = safeRounds.length > 0 ? totalTeePenalties / safeRounds.length : 0;
-    const totalApproachPenalties = safeRounds.reduce((sum, r) => sum + (r.approachPenalties || 0), 0);
-    const approachPenalties = safeRounds.length > 0 ? totalApproachPenalties / safeRounds.length : 0;
-    const totalPenaltiesCount = safeRounds.reduce((sum, r) => sum + (r.totalPenalties || 0), 0);
-    const totalPenalties = safeRounds.length > 0 ? totalPenaltiesCount / safeRounds.length : 0;
+    const totalTeePenalties = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.teePenalties || 0), 0);
+    const teePenalties = scopedPlayerStatsRounds.length > 0 ? totalTeePenalties / scopedPlayerStatsRounds.length : 0;
+    const totalApproachPenalties = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.approachPenalties || 0), 0);
+    const approachPenalties = scopedPlayerStatsRounds.length > 0 ? totalApproachPenalties / scopedPlayerStatsRounds.length : 0;
+    const totalPenaltiesCount = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.totalPenalties || 0), 0);
+    const totalPenalties = scopedPlayerStatsRounds.length > 0 ? totalPenaltiesCount / scopedPlayerStatsRounds.length : 0;
 
     return {
       // DRIVING
@@ -559,7 +575,7 @@ export default function StatsPage() {
       approachPenalties: Math.round(approachPenalties * 10) / 10,
       totalPenalties: Math.round(totalPenalties * 10) / 10,
     };
-  }, [safeRounds]);
+  }, [scopedPlayerStatsRounds]);
 
   // Full data collection for trend graph
   const fullData: Record<string, {val: number, date: string}[]> = useMemo(() => {
@@ -695,11 +711,7 @@ export default function StatsPage() {
       dataFromDB = safetyNetData;
     }
 
-    let limit: number;
-    if (activeHistory === 'LAST 5') limit = 5;
-    else if (activeHistory === 'LAST 10') limit = 10;
-    else if (activeHistory === 'LAST 20') limit = 20;
-    else limit = dataFromDB.length;
+    const limit = activeHistory === 'LAST 5' ? 5 : 10;
 
     const finalData = dataFromDB.length > 0 
       ? dataFromDB.slice(-Math.min(limit, dataFromDB.length))
@@ -795,14 +807,15 @@ export default function StatsPage() {
     return { yMin, yMax, labels };
   }, [activeDataset, goalValue]);
 
-  // SVG dimensions - Define ONCE
+  // SVG dimensions — x-axis sits on the plot bottom (no gap); viewBox height only fits labels below
   const viewBoxWidth = 400;
-  const viewBoxHeight = 380;
-  const graphWidth = 340;
-  const graphHeight = 240;
-  const graphStartX = 40;
-  const graphStartY = 20;
-  const xAxisY = 280;
+  const graphWidth = 328;
+  const graphHeight = 262;
+  const graphStartX = 52;
+  const graphStartY = 12;
+  const xAxisY = graphStartY + graphHeight;
+  const xLabelY = xAxisY + 18;
+  const viewBoxHeight = xLabelY + 32;
 
   // Coordinate functions - Define ONCE
   const getX = (index: number, totalPoints: number) => {
@@ -944,92 +957,26 @@ export default function StatsPage() {
           </p>
         </section>
 
-        {penaltyStats ? (
-          <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
-            <div className="mb-5 flex items-center gap-3 border-b border-stone-100 pb-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-800">
-                <AlertTriangle className="h-4 w-4" aria-hidden />
-              </div>
-              <div>
-                <h2 className="text-base font-semibold tracking-tight text-stone-900">Scoring Leaks</h2>
-                <p className="text-xs text-stone-500">Penalties, three-putts, and doubles or worse · per round</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 divide-x divide-stone-100 rounded-2xl border border-stone-100 bg-stone-50/50">
-              {(
-                [
-                  { label: "Penalties", value: penaltyStats.penaltiesPerRound },
-                  { label: "3-putts", value: penaltyStats.threePuttsPerRound },
-                  { label: "Double+", value: penaltyStats.doublesPerRound },
-                ] as const
-              ).map((row) => (
-                <div key={row.label} className="px-3 py-4 text-center sm:px-4">
-                  <p className="text-[11px] font-medium text-stone-500">{row.label}</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums text-stone-900">{row.value}</p>
-                  <p className="mt-0.5 text-[10px] text-stone-400">per round</p>
-                </div>
-              ))}
-            </div>
-            <p className="mt-4 border-l-2 border-amber-200 pl-3 text-xs leading-relaxed text-stone-600">
-              Tightening these three areas is often the fastest path to lower scores without changing swing technique.
-            </p>
-          </section>
-        ) : null}
-
-        {strokeOpportunityRows.length > 0 ? (
-          <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
-            <div className="mb-4 flex items-center gap-3 border-b border-stone-100 pb-4">
-              <div className="h-8 w-1 shrink-0 rounded-full bg-[#FF9800]" aria-hidden />
-              <div>
-                <h2 className="text-base font-semibold tracking-tight text-stone-900">Top 3 Stroke Opportunities</h2>
-                <p className="text-xs text-stone-500">Estimated strokes per round if you closed the gap to your target benchmarks</p>
-              </div>
-            </div>
-            <div className="space-y-3">
-              {strokeOpportunityRows.map((row, idx) => (
-                <div
-                  key={`${row.name}-${idx}`}
-                  className="rounded-2xl border border-stone-100 bg-stone-50/40 p-4 transition-colors hover:border-stone-200 hover:bg-white"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-stone-900">{row.name}</p>
-                      <p className="text-xs text-stone-500">{row.category} focus</p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-base font-bold tabular-nums text-[#014421]">-{row.estimatedGain.toFixed(2)}</p>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">strokes / round</p>
-                    </div>
-                  </div>
-                  <p className="mt-2 text-xs text-stone-600">
-                    Current: {row.current} · Goal: {row.goal} ({row.unit})
-                  </p>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
         {/* TREND ANALYSIS — unchanged block; lives on stats only */}
         <section className="mb-8 min-w-0" aria-labelledby="stats-trend-analysis-heading">
           <h2 id="stats-trend-analysis-heading" className="sr-only">
             Trend Analysis
           </h2>
-          <div className="min-w-0 overflow-hidden">
-          <div className="bg-[#05412B] rounded-2xl sm:rounded-[32px] p-3 sm:p-6 text-white shadow-2xl overflow-hidden">
-            <h2 className="text-center font-bold text-base sm:text-lg mb-4 tracking-wider italic" style={{ color: '#FFFFFF', textDecoration: 'underline', textDecorationColor: '#FF9800', textDecorationThickness: '2px', textUnderlineOffset: '8px' }}>
+          <div className="min-w-0 overflow-hidden rounded-3xl border border-stone-200 bg-white p-3 shadow-md sm:p-6">
+          <div className="rounded-2xl border border-stone-100 bg-stone-50/70 p-3 overflow-hidden sm:rounded-[28px] sm:p-6">
+            <h2 className="mb-4 text-center text-base font-bold tracking-wide text-stone-900 sm:text-lg" style={{ textDecoration: 'underline', textDecorationColor: '#FF9800', textDecorationThickness: '2px', textUnderlineOffset: '8px' }}>
               Trend Analysis
             </h2>
             
             {/* Controls */}
-            <div className="bg-white/5 rounded-2xl p-3 sm:p-5 mb-4 border border-white/10 space-y-3">
+            <div className="mb-4 space-y-3 rounded-2xl border border-stone-200 bg-white p-3 sm:p-5">
               {/* Metric Selection */}
               <div className="flex justify-between items-center gap-2 min-w-0">
-                <span className="text-[10px] font-bold text-white/50 uppercase shrink-0">Metric:</span>
+                <span className="text-[10px] font-bold text-stone-500 uppercase shrink-0">Metric:</span>
                 <select 
                   value={selectedMetric} 
                   onChange={(e) => setSelectedMetric(e.target.value as typeof selectedMetric)} 
-                  className="bg-white text-[#05412B] text-xs font-bold py-2 px-3 rounded-xl outline-none max-h-48 overflow-y-auto flex-1 min-w-0"
+                  className="bg-white text-stone-900 border border-stone-200 text-xs font-bold py-2 px-3 rounded-xl outline-none max-h-48 overflow-y-auto flex-1 min-w-0"
                   style={{ maxHeight: '200px' }}
                 >
                   <option value="nettScore">NETT SCORE</option>
@@ -1054,15 +1001,15 @@ export default function StatsPage() {
               </div>
 
               {/* Hole Filter */}
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 border-t border-white/10 pt-4">
-                <span className="text-[10px] font-bold text-white/50 uppercase tracking-tight shrink-0">Filter:</span>
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 border-t border-stone-200 pt-4">
+                <span className="text-[10px] font-bold text-stone-500 uppercase tracking-tight shrink-0">Filter:</span>
                 <div className="flex gap-1 flex-wrap">
                   <button 
                     onClick={() => setHoleFilter('9')} 
                     className={`px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase transition-all ${
                       holeFilter === '9' 
-                        ? 'bg-white text-[#05412B] border-2 border-white' 
-                        : 'bg-white/10 text-white/40'
+                        ? 'bg-[#014421] text-white border border-[#014421]' 
+                        : 'bg-stone-100 text-stone-500 border border-stone-200'
                     }`}
                   >
                     9 HOLES
@@ -1071,8 +1018,8 @@ export default function StatsPage() {
                     onClick={() => setHoleFilter('18')} 
                     className={`px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase transition-all ${
                       holeFilter === '18' 
-                        ? 'bg-white text-[#05412B] border-2 border-white' 
-                        : 'bg-white/10 text-white/40'
+                        ? 'bg-[#014421] text-white border border-[#014421]' 
+                        : 'bg-stone-100 text-stone-500 border border-stone-200'
                     }`}
                   >
                     18 HOLES
@@ -1081,17 +1028,17 @@ export default function StatsPage() {
               </div>
 
               {/* History Filter */}
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 border-t border-white/10 pt-4">
-                <span className="text-[10px] font-bold text-white/50 uppercase tracking-tight shrink-0">History:</span>
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 border-t border-stone-200 pt-4">
+                <span className="text-[10px] font-bold text-stone-500 uppercase tracking-tight shrink-0">History:</span>
                 <div className="flex gap-1 flex-wrap">
-                  {(['LAST 5', 'LAST 10', 'LAST 20', 'ALL'] as const).map(h => (
+                  {(['LAST 5', 'LAST 10'] as const).map((h) => (
                     <button 
                       key={h} 
                       onClick={() => setActiveHistory(h)} 
                       className={`px-2 py-1.5 rounded-xl text-[9px] font-bold uppercase transition-all ${
                         activeHistory === h 
-                          ? 'bg-white text-[#05412B] border-2 border-white' 
-                          : 'bg-white/10 text-white/40'
+                          ? 'bg-[#014421] text-white border border-[#014421]' 
+                          : 'bg-stone-100 text-stone-500 border border-stone-200'
                       }`}
                     >
                       {h}
@@ -1102,8 +1049,8 @@ export default function StatsPage() {
             </div>
 
             {/* SVG Graph */}
-            <div className="relative w-full min-w-0 bg-[#05412B] rounded-2xl p-3 border border-white/5 overflow-hidden" style={{ height: '340px', minHeight: '340px' }}>
-              <div className="w-full h-full min-w-0 overflow-visible" style={{ minHeight: '300px' }}>
+            <div className="relative w-full min-w-0 bg-white rounded-2xl p-3 border border-stone-200 overflow-hidden" style={{ height: "min(72vw, 320px)", minHeight: "280px" }}>
+              <div className="w-full h-full min-h-0 min-w-0 overflow-visible">
                 <svg 
                   key={`${selectedMetric}-${activeHistory}-${yAxisConfig.yMin}-${yAxisConfig.yMax}-${selectedGoal}`}
                   viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`} 
@@ -1131,9 +1078,9 @@ export default function StatsPage() {
                         y1={yPos}
                         x2={graphStartX + graphWidth}
                         y2={yPos}
-                        stroke="#FFFFFF"
+                        stroke="#cbd5e1"
                         strokeWidth="1"
-                        strokeOpacity="0.1"
+                        strokeOpacity="0.45"
                         strokeDasharray="4 4"
                       />
                     );
@@ -1154,15 +1101,15 @@ export default function StatsPage() {
                     return (
                       <text
                         key={`y-label-${idx}`}
-                        x={35}
+                        x={graphStartX - 8}
                         y={yPos}
                         textAnchor="end"
-                        fill={isClosest ? "#FF9800" : "#FFFFFF"}
+                        fill={isClosest ? "#FF9800" : "#334155"}
                         fontWeight="bold"
-                        opacity={isClosest ? "1" : "0.7"}
-                        fontSize={isClosest ? "12" : "10"}
+                        opacity={isClosest ? "1" : "0.95"}
+                        fontSize={isClosest ? "17" : "16"}
                         dominantBaseline="middle"
-                        className="transition-all duration-300"
+                        className="tabular-nums transition-all duration-300"
                       >
                         {label.toFixed(1)}
                       </text>
@@ -1175,7 +1122,7 @@ export default function StatsPage() {
                     y1={graphStartY} 
                     x2={graphStartX} 
                     y2={graphStartY + graphHeight} 
-                    stroke="#FFFFFF" 
+                    stroke="#94a3b8" 
                     strokeWidth="1" 
                   />
                   
@@ -1185,7 +1132,7 @@ export default function StatsPage() {
                     y1={xAxisY} 
                     x2={graphStartX + graphWidth} 
                     y2={xAxisY} 
-                    stroke="#FFFFFF" 
+                    stroke="#94a3b8" 
                     strokeWidth="1" 
                   />
                   
@@ -1217,9 +1164,9 @@ export default function StatsPage() {
                           x={graphStartX + graphWidth - 5}
                           y={goalY + 4}
                           textAnchor="end"
-                          fill="#FFFFFF"
+                          fill="#ffffff"
                           fontWeight="bold"
-                          fontSize="10"
+                          fontSize="11"
                         >
                           GOAL: {goalValue.toFixed(1)}
                         </text>
@@ -1244,7 +1191,7 @@ export default function StatsPage() {
                     <polyline
                       fill="none"
                       stroke="#FF9800"
-                      strokeWidth="5"
+                      strokeWidth="4"
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       points={activeDataset.map((d, i) => {
@@ -1276,18 +1223,18 @@ export default function StatsPage() {
                         <circle
                           cx={nodeX}
                           cy={nodeY}
-                          r={isHovered ? 8 : 6}
-                          fill={isHovered ? "#FF9800" : "#014421"}
-                          stroke="#FFFFFF"
-                          strokeWidth="2"
+                          r={isHovered ? 7.5 : 6}
+                          fill={isHovered ? "#FF9800" : "#ffffff"}
+                          stroke={isHovered ? "#b45309" : "#014421"}
+                          strokeWidth="2.5"
                           style={{ pointerEvents: 'none' }}
                         />
                         
                         {isHovered && (
                           <g transform={`translate(${nodeX - 55}, ${nodeY - 55})`} style={{ pointerEvents: 'none' }}>
-                            <rect width="110" height="50" rx="10" fill="white" stroke="#05412B" strokeWidth="2" />
-                            <text x="55" y="18" textAnchor="middle" fontSize="11" fontWeight="bold" fill="#0F172A" opacity="1">{d?.date || ''}</text>
-                            <text x="55" y="38" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#0F172A" opacity="1">{(d?.val ?? 0).toFixed(1)}</text>
+                            <rect width="116" height="52" rx="10" fill="white" stroke="#0f766e" strokeWidth="2" />
+                            <text x="58" y="19" textAnchor="middle" fontSize="11" fontWeight="700" fill="#0F172A" opacity="1">{d?.date || ''}</text>
+                            <text x="58" y="39" textAnchor="middle" fontSize="16" fontWeight="800" fill="#0F172A" opacity="1">{(d?.val ?? 0).toFixed(1)}</text>
                           </g>
                         )}
                       </g>
@@ -1301,18 +1248,18 @@ export default function StatsPage() {
                       <text
                         key={`x-label-${i}`}
                         x={nodeX}
-                        y={290}
+                        y={xLabelY}
                         textAnchor="end"
-                        fill="#FFFFFF"
+                        fill="#334155"
                         fontWeight="bold"
                         opacity="1"
-                        fontSize="10"
+                        fontSize="16"
                         dominantBaseline="hanging"
-                        className="fill-white text-[10px]"
-                        transform={`rotate(-45 ${nodeX} 290)`}
+                        className="fill-slate-700 tabular-nums"
+                        transform={`rotate(-32 ${nodeX} ${xLabelY})`}
                         style={{ pointerEvents: 'none' }}
                       >
-                        Round {i + 1}
+                        R{i + 1}
                       </text>
                     );
                   })}
@@ -1322,6 +1269,35 @@ export default function StatsPage() {
           </div>
         </div>
         </section>
+
+        <div className="mb-6 rounded-3xl border border-stone-200 bg-white p-4 shadow-md sm:p-5">
+          <p className="mb-3 text-center text-[10px] font-bold uppercase tracking-wide text-stone-500">
+            Player Stats Round Window
+          </p>
+          <p className="mb-3 text-center text-xs text-stone-600">
+            Core metrics, matrix, and category stats below use the rounds you select here. The trend chart above keeps
+            its own history buttons.
+          </p>
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {(["LAST 5", "LAST 10", "LAST 20", "ALL"] as const).map((scope) => (
+              <button
+                key={scope}
+                type="button"
+                onClick={() => setPlayerStatsScope(scope)}
+                className={`rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-tight transition-all sm:px-4 sm:text-[11px] ${
+                  playerStatsScope === scope
+                    ? "border border-[#014421] bg-[#014421] text-white shadow-sm"
+                    : "border border-stone-200 bg-stone-50 text-stone-600 hover:bg-white"
+                }`}
+              >
+                {scope === "ALL" ? "All" : scope.replace("LAST ", "Last ")}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-center text-[11px] tabular-nums text-stone-500">
+            Showing {scopedPlayerStatsRounds.length} of {safeRounds.length} logged rounds
+          </p>
+        </div>
 
         {/* Core scoring metrics — above the matrix so it stays visible (matrix can be very long) */}
         <section
@@ -1338,8 +1314,7 @@ export default function StatsPage() {
                 Core Scoring Metrics
               </h3>
               <p className="text-xs text-stone-500">
-                Recent form · scoring average from your last five rounds; other metrics roll up from every round you
-                have logged
+                Based on the round window you chose above (most recent rounds, oldest to newest in the average).
               </p>
             </div>
           </div>
@@ -1422,7 +1397,7 @@ export default function StatsPage() {
             </button>
           </div>
           {metricMatrix.length > 0 ? (
-            <div className="divide-y divide-stone-100">
+            <div className="max-h-[26rem] overflow-y-auto pr-1 divide-y divide-stone-100">
               {sortedMetricMatrix.map((stat, i) => {
                 const val = stat.current;
                 const goalVal = stat.goal;
@@ -1482,6 +1457,82 @@ export default function StatsPage() {
             </p>
           )}
         </section>
+
+        <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+            <div className="mb-5 flex items-center gap-3 border-b border-stone-100 pb-4">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-800">
+                <AlertTriangle className="h-4 w-4" aria-hidden />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold tracking-tight text-stone-900">Scoring Leaks</h2>
+                <p className="text-xs text-stone-500">Penalties, three-putts, and doubles or worse · per round</p>
+              </div>
+            </div>
+            {penaltyStats ? (
+              <>
+                <div className="grid grid-cols-3 divide-x divide-stone-100 rounded-2xl border border-stone-100 bg-stone-50/50">
+                  {(
+                    [
+                      { label: "Penalties", value: penaltyStats.penaltiesPerRound },
+                      { label: "3-putts", value: penaltyStats.threePuttsPerRound },
+                      { label: "Double+", value: penaltyStats.doublesPerRound },
+                    ] as const
+                  ).map((row) => (
+                    <div key={row.label} className="px-3 py-4 text-center sm:px-4">
+                      <p className="text-[11px] font-medium text-stone-500">{row.label}</p>
+                      <p className="mt-1 text-2xl font-semibold tabular-nums text-stone-900">{row.value}</p>
+                      <p className="mt-0.5 text-[10px] text-stone-400">per round</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-4 border-l-2 border-amber-200 pl-3 text-xs leading-relaxed text-stone-600">
+                  Tightening these three areas is often the fastest path to lower scores without changing swing technique.
+                </p>
+              </>
+            ) : (
+              <p className="py-6 text-center text-sm text-stone-500">
+                Log at least one round to populate Scoring Leaks.
+              </p>
+            )}
+          </section>
+
+        <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+            <div className="mb-4 flex items-center gap-3 border-b border-stone-100 pb-4">
+              <div className="h-8 w-1 shrink-0 rounded-full bg-[#FF9800]" aria-hidden />
+              <div>
+                <h2 className="text-base font-semibold tracking-tight text-stone-900">Top 3 Stroke Opportunities</h2>
+                <p className="text-xs text-stone-500">Estimated strokes per round if you closed the gap to your target benchmarks</p>
+              </div>
+            </div>
+            {strokeOpportunityRows.length > 0 ? (
+              <div className="space-y-3">
+                {strokeOpportunityRows.map((row, idx) => (
+                  <div
+                    key={`${row.name}-${idx}`}
+                    className="rounded-2xl border border-stone-100 bg-stone-50/40 p-4 transition-colors hover:border-stone-200 hover:bg-white"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-stone-900">{row.name}</p>
+                        <p className="text-xs text-stone-500">{row.category} focus</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-base font-bold tabular-nums text-[#014421]">-{row.estimatedGain.toFixed(2)}</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">strokes / round</p>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-stone-600">
+                      Current: {row.current} · Goal: {row.goal} ({row.unit})
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="py-6 text-center text-sm text-stone-500">
+                Log at least one round to calculate Top 3 Stroke Opportunities.
+              </p>
+            )}
+          </section>
 
         <div className="mb-8 min-w-0 space-y-6">
             {/* DRIVING Section */}
@@ -1626,7 +1677,7 @@ export default function StatsPage() {
               className="min-w-0 print:break-inside-avoid print:shadow-none"
             >
               <AdvancedApproachStatsPanel
-                rounds={safeRounds}
+                rounds={scopedPlayerStatsRounds}
                 holeFilter={holeFilter}
                 className="border-stone-200 shadow-md print:border-stone-400 sm:p-6"
                 headerEnd={
