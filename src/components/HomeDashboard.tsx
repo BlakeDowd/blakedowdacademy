@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { 
+import {
   Play,
   Flame,
   Zap,
@@ -25,7 +25,8 @@ import {
   Check,
   Crown,
   Award,
-  Flag
+  Flag,
+  Layers,
 } from "lucide-react";
 import IconPicker, { GOLF_ICONS } from "@/components/IconPicker";
 import Toast from "@/components/Toast";
@@ -50,6 +51,7 @@ import {
   practiceSessionMinutesFromRow,
   practiceSessionsForUser,
 } from "@/lib/practiceSessionDuration";
+import { countUserCombineCompletions } from "@/lib/combineCompletionDetection";
 import AcademyTrophyCasePanel, {
   type AcademySelectedTrophy,
 } from "@/components/AcademyTrophyCasePanel";
@@ -138,109 +140,199 @@ interface CommunityRound {
   timeAgo: string;
 }
 
-function SkillsSnapshot({ 
-  totalXP, 
-  currentLevel, 
-  streak, 
+const SNAPSHOT_ACCENT = "#FFA500";
+
+/** Shared shell for snapshot metric cards (orange accent + white cards). */
+const snapshotCardClass =
+  "group flex min-h-[112px] flex-col rounded-2xl border border-stone-100/90 bg-white p-3.5 shadow-[0_4px_18px_-6px_rgba(15,23,42,0.12)] transition-all duration-200 hover:border-[#FFA500]/25 hover:shadow-[0_10px_28px_-8px_rgba(15,23,42,0.14)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#014421] sm:min-h-[118px] sm:p-4";
+
+function formatPracticeHoursDisplay(hours: number): string {
+  if (!Number.isFinite(hours) || hours <= 0) return "0";
+  if (hours < 10) return String(Math.round(hours * 10) / 10);
+  return String(Math.round(hours));
+}
+
+function SkillsSnapshot({
+  combinesCompleted,
+  practiceHoursTotal,
+  displayLevel,
+  totalXP,
+  xpRemainingToNextLevel,
   currentHandicap,
   startingHandicap,
-  preferredIconId,
+  lowestGrossScore,
+  roundsLogged,
   isLoading,
-  onOpenLevelModal
-}: { 
-  totalXP: number | null;
-  currentLevel: number | null;
-  streak: number | null;
+  preferredIconId: _preferredIconId,
+}: {
+  combinesCompleted: number;
+  practiceHoursTotal: number;
+  displayLevel: number;
+  totalXP: number;
+  xpRemainingToNextLevel: number;
   currentHandicap: number | null;
   startingHandicap: number | null;
-  preferredIconId: string | null;
+  lowestGrossScore: number | null;
+  roundsLogged: number;
   isLoading: boolean;
-  onOpenLevelModal: () => void;
+  preferredIconId: string | null;
 }) {
-  const getLevelInfo = (xp: number) => {
-    if (xp < 500) {
-      return { level: 1, xpForCurrentLevel: xp, xpNeededForNextLevel: 500, xpRemaining: 500 - xp };
-    } else if (xp < 1500) {
-      return { level: 2, xpForCurrentLevel: xp - 500, xpNeededForNextLevel: 1000, xpRemaining: 1500 - xp };
-    } else if (xp < 3000) {
-      return { level: 3, xpForCurrentLevel: xp - 1500, xpNeededForNextLevel: 1500, xpRemaining: 3000 - xp };
-    } else {
-      const level4XP = xp - 3000;
-      const additionalLevels = Math.floor(level4XP / 2000);
-      const level = 4 + additionalLevels;
-      const xpInCurrentLevel = level4XP % 2000;
-      return { level, xpForCurrentLevel: xpInCurrentLevel, xpNeededForNextLevel: 2000, xpRemaining: 2000 - xpInCurrentLevel };
-    }
-  };
-
-  const levelInfo = totalXP !== null ? getLevelInfo(totalXP) : null;
-  const displayLevel = currentLevel ?? levelInfo?.level ?? 1;
-  const xpRemaining = levelInfo?.xpRemaining ?? 500;
+  const roundsLabel = roundsLogged === 1 ? "round logged" : "rounds logged";
+  const combinesLabel =
+    combinesCompleted === 1 ? "combine completed" : "combines completed";
+  const hoursStr = formatPracticeHoursDisplay(practiceHoursTotal);
 
   return (
-    <div className="px-4 mb-6 w-full">
-      <h3 className="text-gray-600 font-medium text-base mb-3">Skills Snapshot</h3>
-      {isLoading || totalXP === null ? (
-        <div className="flex gap-3">
-          <div className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start h-[104px]">
-            <div className="w-6 h-6 mb-2 rounded-full bg-gray-200 animate-pulse"></div>
-            <div className="w-16 h-8 bg-gray-200 rounded animate-pulse mb-1"></div>
-            <div className="w-20 h-3 bg-gray-200 rounded animate-pulse"></div>
-          </div>
-          <div className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start h-[104px]">
-            <div className="w-6 h-6 mb-2 rounded-full bg-gray-200 animate-pulse"></div>
-            <div className="w-16 h-8 bg-gray-200 rounded animate-pulse mb-1"></div>
-            <div className="w-20 h-3 bg-gray-200 rounded animate-pulse mb-1"></div>
-            <div className="w-24 h-2 bg-gray-200 rounded animate-pulse"></div>
-          </div>
-          <div className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start h-[104px]">
-            <div className="w-6 h-6 mb-2 rounded-full bg-gray-200 animate-pulse"></div>
-            <div className="w-16 h-8 bg-gray-200 rounded animate-pulse mb-1"></div>
-            <div className="w-20 h-3 bg-gray-200 rounded animate-pulse"></div>
-          </div>
+    <div className="mb-6 w-full px-4">
+      <h3 className="mb-3 text-lg font-semibold tracking-tight text-stone-800">Skills Snapshot</h3>
+      {isLoading ? (
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className={`${snapshotCardClass} animate-pulse border-stone-50 bg-stone-50/80`}
+            >
+              <div className="h-8 w-8 rounded-lg bg-stone-200/90" />
+              <div className="mt-2.5 h-8 w-12 rounded-md bg-stone-200/90" />
+              <div className="mt-2 h-3 w-20 rounded bg-stone-200/80" />
+              {i === 2 ? <div className="mt-1.5 h-2 w-16 rounded bg-stone-200/70" /> : null}
+              {i === 2 ? <div className="mt-1 h-2 w-24 rounded bg-stone-200/60" /> : null}
+            </div>
+          ))}
         </div>
       ) : (
-        <div className="flex gap-3">
-          <Link 
-            href="/practice"
-            className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97]"
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
+          <Link
+            href="/skill-history/combines"
+            aria-label={`${combinesCompleted} ${combinesLabel}, view completion history`}
+            className={`${snapshotCardClass} min-w-0`}
           >
-            <Flame className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
-            <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{streak ?? 0}</p>
-            <p className="text-gray-400 text-xs mt-1">days streak</p>
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50"
+              style={{ color: SNAPSHOT_ACCENT }}
+            >
+              <Layers className="h-4 w-4" strokeWidth={2.25} aria-hidden />
+            </div>
+            <p
+              className="mt-2.5 text-2xl font-bold tabular-nums tracking-tight sm:text-[1.6rem]"
+              style={{ color: SNAPSHOT_ACCENT }}
+            >
+              {combinesCompleted}
+            </p>
+            <p className="mt-1 text-xs font-medium leading-snug text-stone-500">{combinesLabel}</p>
           </Link>
-          
-          <button
-            onClick={onOpenLevelModal}
-            className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97] text-left"
+
+          <Link
+            href="/skill-history/practice-hours"
+            aria-label={`${hoursStr} practice hours, view practice time history`}
+            className={`${snapshotCardClass} min-w-0`}
           >
-            <Zap className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
-            <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{(totalXP ?? 0).toLocaleString()}</p>
-            <p className="text-gray-400 text-xs mt-1">Total XP</p>
-            <p className="text-gray-500 text-[10px] mt-0.5">{xpRemaining.toLocaleString()} XP to Level {displayLevel + 1}</p>
-          </button>
-          
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50"
+              style={{ color: SNAPSHOT_ACCENT }}
+            >
+              <Clock className="h-4 w-4" strokeWidth={2.25} aria-hidden />
+            </div>
+            <p
+              className="mt-2.5 text-2xl font-bold tabular-nums tracking-tight sm:text-[1.6rem]"
+              style={{ color: SNAPSHOT_ACCENT }}
+            >
+              {hoursStr}
+            </p>
+            <p className="mt-1 text-xs font-medium leading-snug text-stone-500">Practice hours (total)</p>
+          </Link>
+
+          <Link
+            href="/skill-history/xp"
+            aria-label={`Level ${displayLevel}, ${totalXP.toLocaleString()} XP. View XP and activity history.`}
+            className={`${snapshotCardClass} min-w-0 text-left`}
+          >
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50"
+              style={{ color: SNAPSHOT_ACCENT }}
+            >
+              <Crown className="h-4 w-4" strokeWidth={2.25} aria-hidden />
+            </div>
+            <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-stone-400">Level</p>
+            <p
+              className="text-2xl font-bold tabular-nums leading-none tracking-tight sm:text-[1.6rem]"
+              style={{ color: SNAPSHOT_ACCENT }}
+            >
+              {displayLevel}
+            </p>
+            <p className="mt-1.5 text-[10px] leading-snug text-stone-500">{totalXP.toLocaleString()} XP</p>
+            <p className="mt-0.5 text-[10px] leading-snug text-stone-400">
+              {xpRemainingToNextLevel.toLocaleString()} XP to L{displayLevel + 1}
+            </p>
+          </Link>
+
           <Link
             href="/handicap-history"
-            className="flex-1 bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-start cursor-pointer transition-all hover:scale-95 hover:border-[#FFA500] active:scale-[0.97]"
+            aria-label="Handicap, view handicap history"
+            className={`${snapshotCardClass} min-w-0`}
           >
-            <TrendingDown className="w-6 h-6 mb-2" style={{ color: '#FFA500' }} />
-            <p 
-              className="text-2xl font-bold mt-0"
-              style={{ 
-                color: '#FFA500',
-                fontWeight: 700,
-                fontFamily: 'system-ui, -apple-system, sans-serif'
-              }}
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50"
+              style={{ color: SNAPSHOT_ACCENT }}
+            >
+              <TrendingDown className="h-4 w-4" strokeWidth={2.25} aria-hidden />
+            </div>
+            <p
+              className="mt-2.5 text-2xl font-bold tabular-nums tracking-tight sm:text-[1.6rem]"
+              style={{ color: SNAPSHOT_ACCENT }}
             >
               {(() => {
                 const displayHandicap = currentHandicap ?? startingHandicap;
                 return displayHandicap !== null && displayHandicap !== undefined
                   ? Number(displayHandicap).toFixed(1)
-                  : '--';
+                  : "--";
               })()}
             </p>
-            <p className="text-gray-400 text-xs mt-1">Handicap</p>
+            <p className="mt-1 text-xs font-medium text-stone-500">Handicap</p>
+          </Link>
+
+          <Link
+            href="/skill-history/lowest-score"
+            aria-label={
+              lowestGrossScore != null
+                ? `Lowest score ${lowestGrossScore}, view score history`
+                : "Lowest score, view score history"
+            }
+            className={`${snapshotCardClass} min-w-0`}
+          >
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50"
+              style={{ color: SNAPSHOT_ACCENT }}
+            >
+              <Target className="h-4 w-4" strokeWidth={2.25} aria-hidden />
+            </div>
+            <p
+              className="mt-2.5 text-2xl font-bold tabular-nums tracking-tight sm:text-[1.6rem]"
+              style={{ color: SNAPSHOT_ACCENT }}
+            >
+              {lowestGrossScore != null ? lowestGrossScore : "--"}
+            </p>
+            <p className="mt-1 text-xs font-medium leading-snug text-stone-500">Lowest score (gross)</p>
+          </Link>
+
+          <Link
+            href="/skill-history/rounds"
+            aria-label={`${roundsLogged} ${roundsLabel}, view rounds history`}
+            className={`${snapshotCardClass} min-w-0`}
+          >
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50"
+              style={{ color: SNAPSHOT_ACCENT }}
+            >
+              <Flag className="h-4 w-4" strokeWidth={2.25} aria-hidden />
+            </div>
+            <p
+              className="mt-2.5 text-2xl font-bold tabular-nums tracking-tight sm:text-[1.6rem]"
+              style={{ color: SNAPSHOT_ACCENT }}
+            >
+              {roundsLogged}
+            </p>
+            <p className="mt-1 text-xs font-medium leading-snug text-stone-500">{roundsLabel}</p>
           </Link>
         </div>
       )}
@@ -256,15 +348,12 @@ export default function HomeDashboard() {
   const { user, refreshUser, profileLoading } = useAuth();
   
   // Re-initialize simply: Define const { rounds = [] } = useStats();
-  // Sync Dashboard: Ensure the dashboard 'Practice' cards are pulling from this real data instead of mock numbers
-  // Direct Context Access: Ensure this component is using currentStreak from useStats() to get the user data
   const {
     rounds = [],
     communityRounds = [],
     communityRoundsHydrated = false,
     practiceSessions = [],
     practiceLogs = [],
-    currentStreak,
   } = useStats();
   
   // Verify User Object: Log user object to verify it's correctly identifying the user
@@ -326,7 +415,40 @@ export default function HomeDashboard() {
     if (!user?.id) return [];
     return allRounds.filter((round: any) => round?.user_id === user.id);
   }, [allRounds, user?.id]);
-  
+
+  const combinesCompletedDashboard = useMemo(
+    () =>
+      countUserCombineCompletions({
+        userId: user?.id,
+        practiceSessions: practiceSessionsForUser(practiceSessions, user?.id),
+        practiceLogs: practiceLogs || [],
+      }),
+    [user?.id, practiceSessions, practiceLogs],
+  );
+
+  const practiceHoursTotalDashboard = useMemo(() => {
+    const mine = practiceSessionsForUser(practiceSessions, user?.id);
+    if (!mine.length) return 0;
+    const totalMinutes = mine.reduce(
+      (
+        sum: number,
+        session: { duration_minutes?: unknown; duration?: unknown; estimatedMinutes?: unknown },
+      ) => sum + practiceSessionMinutesFromRow(session),
+      0,
+    );
+    return totalMinutes / 60;
+  }, [practiceSessions, user?.id]);
+
+  const lowestGrossScoreDashboard = useMemo(() => {
+    if (!safeRounds.length) return null;
+    const scores = safeRounds
+      .map((r: { score?: unknown }) => r.score)
+      .filter((s): s is number => s !== null && s !== undefined && Number.isFinite(Number(s)))
+      .map((s) => Number(s));
+    if (!scores.length) return null;
+    return Math.min(...scores);
+  }, [safeRounds]);
+
   // Kill the Freeze: Completely removed the useEffect that triggers the 'No rounds found' Toast
   // This useEffect was causing an infinite loop that blocks the navigation bar
   // Removed entirely to prevent navigation freeze
@@ -345,7 +467,6 @@ export default function HomeDashboard() {
   const [snapshotData, setSnapshotData] = useState<{
     total_xp: number | null;
     current_level: number | null;
-    currentStreak: number | null;
     preferred_icon_id: string | null;
     starting_handicap: number | null;
     handicap: number | null;
@@ -361,9 +482,9 @@ export default function HomeDashboard() {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
         const { data, error } = await supabase
-          .from('profiles')
-          .select('total_xp, current_level, "currentStreak", preferred_icon_id, starting_handicap, handicap')
-          .eq('id', user.id)
+          .from("profiles")
+          .select("total_xp, current_level, preferred_icon_id, starting_handicap, handicap")
+          .eq("id", user.id)
           .single();
           
         if (error) {
@@ -518,7 +639,6 @@ export default function HomeDashboard() {
   // Data Source: Use profile?.totalXP from the profile object instead of hardcoded state
   const [dailyVideo, setDailyVideo] = useState(() => getDailyVideo());
   const [refreshKey, setRefreshKey] = useState(0);
-  const [showLevelModal, setShowLevelModal] = useState(false);
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [scoreTab, setScoreTab] = useState<'myRounds' | 'community'>('myRounds');
   
@@ -571,10 +691,7 @@ export default function HomeDashboard() {
   const levelInfo = getLevelInfo(totalXP);
   // Database Sync: Pull level directly from database columns
   const currentLevel = snapshotData?.current_level ?? profile?.currentLevel ?? user?.currentLevel ?? levelInfo.level;
-  const xpForCurrentLevel = levelInfo.xpForCurrentLevel;
-  const xpNeededForNextLevel = levelInfo.xpNeededForNextLevel;
   const xpRemaining = levelInfo.xpRemaining;
-  const levelProgress = (xpForCurrentLevel / xpNeededForNextLevel) * 100;
   
   // Replace Mock Data: Use real rounds from useStats() instead of hardcoded users like 'Alex Chen'
   // Map Real Rounds: Use the rounds array from useStats(). Filter it to show the most recent 5-10 rounds from all users.
@@ -1228,80 +1345,6 @@ export default function HomeDashboard() {
           </div>
         )}
 
-        {/* Video and Daily Focus - Premium Card */}
-        <div className="w-full px-4 mb-4">
-          <div 
-            className="w-full bg-white overflow-hidden"
-            style={{ 
-              borderRadius: '16px',
-              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.08)'
-            }}
-          >
-            <div 
-              className="relative aspect-video flex items-center justify-center overflow-hidden"
-              style={{ background: 'linear-gradient(to bottom right, #f0fdf4, #dcfce7, #bbf7d0)' }}
-            >
-              {/* Golf balls pattern background */}
-              <div className="absolute inset-0 opacity-30">
-                <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2">
-                  <div className="flex flex-col items-center gap-1">
-                    <div className="w-8 h-8 bg-white rounded-full shadow-md"></div>
-                    <div className="flex gap-1">
-                      <div className="w-6 h-6 bg-white rounded-full shadow-md"></div>
-                      <div className="w-6 h-6 bg-white rounded-full shadow-md"></div>
-                    </div>
-                    <div className="flex gap-0.5">
-                      <div className="w-5 h-5 bg-white rounded-full shadow-md"></div>
-                      <div className="w-5 h-5 bg-white rounded-full shadow-md"></div>
-                      <div className="w-5 h-5 bg-white rounded-full shadow-md"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div 
-                className="absolute inset-0"
-                style={{ background: 'linear-gradient(to top, rgba(134, 239, 172, 0.4), transparent)' }}
-              />
-              
-              {/* Glassmorphism Play Button Overlay */}
-              <div 
-                className="relative w-20 h-20 rounded-full flex items-center justify-center backdrop-blur-md z-10 cursor-pointer transition-transform hover:scale-110"
-                onClick={() => router.push(`/library?drill=${dailyVideo.id}`)}
-                style={{
-                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
-                  border: '2px solid rgba(255, 255, 255, 0.5)',
-                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)'
-                }}
-              >
-                <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
-                  <Play className="w-8 h-8 ml-1" style={{ color: '#014421' }} fill="#014421" />
-                </div>
-              </div>
-              
-              <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded backdrop-blur-sm">
-                {dailyVideo.duration}
-              </div>
-            </div>
-            <div className="p-5">
-              <div className="inline-block border border-[#FFA500] rounded-full px-3 py-1 mb-3 bg-transparent">
-                <span className="text-xs font-medium" style={{ color: '#FFA500' }}>Daily Focus</span>
-              </div>
-              <h2 
-                className="font-bold text-xl mb-2 tracking-tight"
-                style={{ 
-                  color: '#014421',
-                  fontFamily: 'system-ui, -apple-system, sans-serif',
-                  fontWeight: 700,
-                  letterSpacing: '-0.02em'
-                }}
-              >
-                {dailyVideo.title}
-              </h2>
-              <p className="text-gray-500 text-sm">{dailyVideo.coach}</p>
-            </div>
-          </div>
-        </div>
-
         {/* Action Buttons - Side by Side */}
         <div className="w-full px-4 mb-6 flex gap-3">
           <button 
@@ -1330,93 +1373,19 @@ export default function HomeDashboard() {
         </div>
 
         {/* Skills Snapshot - Equal Width Cards */}
-        <SkillsSnapshot 
-          totalXP={snapshotData?.total_xp ?? null}
-          currentLevel={snapshotData?.current_level ?? null}
-          streak={snapshotData?.currentStreak ?? null}
+        <SkillsSnapshot
+          combinesCompleted={combinesCompletedDashboard}
+          practiceHoursTotal={practiceHoursTotalDashboard}
+          displayLevel={currentLevel}
+          totalXP={totalXP}
+          xpRemainingToNextLevel={xpRemaining}
           currentHandicap={snapshotData?.handicap ?? null}
           startingHandicap={snapshotData?.starting_handicap ?? null}
-          preferredIconId={snapshotData?.preferred_icon_id ?? user?.preferredIconId ?? null}
+          lowestGrossScore={lowestGrossScoreDashboard}
+          roundsLogged={userRoundsCount}
           isLoading={snapshotLoading}
-          onOpenLevelModal={() => setShowLevelModal(true)}
+          preferredIconId={snapshotData?.preferred_icon_id ?? user?.preferredIconId ?? null}
         />
-        
-        {/* Level Up Modal */}
-        {/* Kill Invisible Overlays: Add pointer-events-auto to backdrop so it doesn't block Navbar */}
-        {/* Z-Index Check: Modal z-40 is lower than Navbar z-[60] so navigation is never covered */}
-        {showLevelModal && (
-          <div 
-            className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 pointer-events-auto"
-            onClick={() => setShowLevelModal(false)}
-          >
-            <div 
-              className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 relative"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                onClick={() => setShowLevelModal(false)}
-                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-              
-              <div className="flex flex-col items-center text-center mb-6">
-                <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: '#FFA500' }}>
-                  <Trophy className="w-8 h-8 text-white" />
-                </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">Level {currentLevel}</h3>
-                {/* Sync Display: Update to show progress bar toward the next level (e.g., '1,000 XP to Level 3') */}
-                <p className="text-gray-600 text-sm mb-4">
-                  {xpRemaining.toLocaleString()} XP to Level {currentLevel + 1}
-                </p>
-                
-                {/* Progress Bar */}
-                <div className="w-full mb-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs font-medium text-gray-600">Progress to Level {currentLevel + 1}</span>
-                    <span className="text-xs font-bold" style={{ color: '#FFA500' }}>
-                      {xpForCurrentLevel} / {xpNeededForNextLevel} XP
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-500 relative overflow-hidden"
-                      style={{ 
-                        width: `${levelProgress}%`,
-                        background: 'linear-gradient(to right, #FFA500, #FF8C00)'
-                      }}
-                    >
-                      <div 
-                        className="absolute inset-0"
-                        style={{
-                          background: 'linear-gradient(to right, transparent, rgba(255, 255, 255, 0.4), transparent)',
-                          animation: 'shimmer 2s infinite ease-in-out'
-                        }}
-                      ></div>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="w-full bg-gray-50 rounded-xl p-4 mt-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-gray-700">Total XP</span>
-                    <span className="text-lg font-bold" style={{ color: '#FFA500' }}>
-                      {totalXP.toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              
-              <button
-                onClick={() => setShowLevelModal(false)}
-                className="w-full py-3 bg-[#FFA500] text-white font-semibold rounded-lg hover:bg-[#FF8C00] transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Recent Activity */}
         <div className="px-4 mb-6 w-full">
@@ -1670,6 +1639,78 @@ export default function HomeDashboard() {
         </div>
 
         <GoalAccountabilityModule />
+
+        {/* Daily Focus video: at bottom for now — move this block up under the header after real videos are ready */}
+        <div className="w-full px-4 mb-4">
+          <div
+            className="w-full bg-white overflow-hidden"
+            style={{
+              borderRadius: "16px",
+              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.08)",
+            }}
+          >
+            <div
+              className="relative aspect-video flex items-center justify-center overflow-hidden"
+              style={{ background: "linear-gradient(to bottom right, #f0fdf4, #dcfce7, #bbf7d0)" }}
+            >
+              <div className="absolute inset-0 opacity-30">
+                <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2">
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="h-8 w-8 rounded-full bg-white shadow-md" />
+                    <div className="flex gap-1">
+                      <div className="h-6 w-6 rounded-full bg-white shadow-md" />
+                      <div className="h-6 w-6 rounded-full bg-white shadow-md" />
+                    </div>
+                    <div className="flex gap-0.5">
+                      <div className="h-5 w-5 rounded-full bg-white shadow-md" />
+                      <div className="h-5 w-5 rounded-full bg-white shadow-md" />
+                      <div className="h-5 w-5 rounded-full bg-white shadow-md" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div
+                className="absolute inset-0"
+                style={{ background: "linear-gradient(to top, rgba(134, 239, 172, 0.4), transparent)" }}
+              />
+              <div
+                className="relative z-10 flex h-20 w-20 cursor-pointer items-center justify-center rounded-full backdrop-blur-md transition-transform hover:scale-110"
+                onClick={() => router.push(`/library?drill=${dailyVideo.id}`)}
+                style={{
+                  backgroundColor: "rgba(255, 255, 255, 0.25)",
+                  border: "2px solid rgba(255, 255, 255, 0.5)",
+                  boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                }}
+              >
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 shadow-lg">
+                  <Play className="ml-1 h-8 w-8" style={{ color: "#014421" }} fill="#014421" />
+                </div>
+              </div>
+              <div className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-xs text-white backdrop-blur-sm">
+                {dailyVideo.duration}
+              </div>
+            </div>
+            <div className="p-5">
+              <div className="mb-3 inline-block rounded-full border border-[#FFA500] bg-transparent px-3 py-1">
+                <span className="text-xs font-medium" style={{ color: "#FFA500" }}>
+                  Daily Focus
+                </span>
+              </div>
+              <h2
+                className="mb-2 text-xl font-bold tracking-tight"
+                style={{
+                  color: "#014421",
+                  fontFamily: "system-ui, -apple-system, sans-serif",
+                  fontWeight: 700,
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {dailyVideo.title}
+              </h2>
+              <p className="text-sm text-gray-500">{dailyVideo.coach}</p>
+            </div>
+          </div>
+        </div>
 
             </div>
           </div>

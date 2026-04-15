@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { addProfileXp, XP_AWARD_PER_LOGGED_ROUND } from "@/lib/addProfileXp";
 import {
+  AlertTriangle,
   ArrowLeft,
   Check,
+  CircleSlash,
   MoveDown,
   MoveDownLeft,
   MoveDownRight,
@@ -40,8 +42,8 @@ const ROUND_STEP_ROW = "flex items-center justify-center gap-2";
 const ROUND_STEP_BTN =
   "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 transition-colors active:scale-[0.98]";
 
-/** Advanced approach matrix: position → stored `result` string. */
-type AdvancedApproachResult =
+/** Direction / GIR taps on the 3×3 matrix. */
+type AdvancedApproachMatrixResult =
   | "top-left"
   | "top"
   | "top-right"
@@ -51,6 +53,12 @@ type AdvancedApproachResult =
   | "bottom-left"
   | "bottom"
   | "bottom-right";
+
+/** Matrix results plus “no realistic GIR” situations (tee trouble or distance / lay-up). */
+type AdvancedApproachResult =
+  | AdvancedApproachMatrixResult
+  | "tee-no-gir"
+  | "distance-no-gir";
 
 type DirectionalApproachShot = {
   id: string;
@@ -85,7 +93,7 @@ const APPROACH_CLUB_OPTIONS = [
   "LW",
 ] as const;
 
-const APPROACH_RESULT_ICONS: Record<AdvancedApproachResult, LucideIcon> = {
+const APPROACH_RESULT_ICONS: Record<AdvancedApproachMatrixResult, LucideIcon> = {
   "top-left": MoveUpLeft,
   top: MoveUp,
   "top-right": MoveUpRight,
@@ -97,11 +105,18 @@ const APPROACH_RESULT_ICONS: Record<AdvancedApproachResult, LucideIcon> = {
   "bottom-right": MoveDownRight,
 };
 
-const APPROACH_MATRIX_ROWS: AdvancedApproachResult[][] = [
+const APPROACH_MATRIX_ROWS: AdvancedApproachMatrixResult[][] = [
   ["top-left", "top", "top-right"],
   ["left", "gir", "right"],
   ["bottom-left", "bottom", "bottom-right"],
 ];
+
+function formatApproachResultLabel(result: AdvancedApproachResult): string {
+  if (result === "tee-no-gir") return "Tee / recovery — no GIR line";
+  if (result === "distance-no-gir") return "Too far / lay-up — no GIR line";
+  if (result === "gir") return "GIR (green hit)";
+  return result.replace(/-/g, " ");
+}
 
 interface RoundData {
   // Scoring Card
@@ -1236,9 +1251,9 @@ export default function LogRoundPage() {
                     <div className="flex items-center justify-center gap-2">
                       <span className="text-sm font-medium text-gray-800">Approach Shot</span>
                       <InfoBubble
-                        content="Select the hole and club, then tap a direction or GIR. Each tap logs that hole and moves you to the next hole (on the last hole you stay put so you can add another or pick a hole). Use the hole row anytime to jump holes."
+                        content="Select the hole and club, then tap a miss direction or center for GIR. If GIR was not realistic (bad tee shot / recovery, or still too far / lay-up), use the two buttons below instead of the matrix. Each tap logs that hole and advances to the next hole (last hole stays selected until you pick another)."
                         buttonClassName="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-[9px] font-bold text-slate-500 cursor-help"
-                        tooltipClassName="left-1/2 bottom-full mb-2 w-56 max-w-[min(100vw-2rem,14rem)] -translate-x-1/2 p-2 text-center"
+                        tooltipClassName="left-1/2 bottom-full mb-2 w-60 max-w-[min(100vw-2rem,15rem)] -translate-x-1/2 p-2 text-center"
                       />
                     </div>
 
@@ -1326,6 +1341,42 @@ export default function LogRoundPage() {
                       )}
                     </div>
 
+                    <div className="space-y-2">
+                      <p className="text-center text-[11px] font-medium text-slate-600">
+                        No GIR opportunity?
+                      </p>
+                      <p className="text-center text-[10px] leading-snug text-slate-500">
+                        Use when a bad tee or recovery means you never had a real look, or when you were
+                        still too far / laid up so going for the green was not on the table.
+                      </p>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => appendDirectionalApproachShot("tee-no-gir")}
+                          className={`flex items-center justify-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-xs font-semibold transition-all active:scale-[0.99] ${
+                            lastTappedApproachResult === "tee-no-gir"
+                              ? "border-emerald-500 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-500/25"
+                              : "border-slate-300 bg-white text-slate-800 hover:border-slate-400"
+                          }`}
+                        >
+                          <AlertTriangle className="h-4 w-4 shrink-0" strokeWidth={2} />
+                          <span>Tee / recovery — no GIR line</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => appendDirectionalApproachShot("distance-no-gir")}
+                          className={`flex items-center justify-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-xs font-semibold transition-all active:scale-[0.99] ${
+                            lastTappedApproachResult === "distance-no-gir"
+                              ? "border-emerald-500 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-500/25"
+                              : "border-slate-300 bg-white text-slate-800 hover:border-slate-400"
+                          }`}
+                        >
+                          <CircleSlash className="h-4 w-4 shrink-0" strokeWidth={2} />
+                          <span>Too far / lay-up — no GIR line</span>
+                        </button>
+                      </div>
+                    </div>
+
                     {directionalApproachShots.length > 0 ? (
                       <p className="text-center text-[11px] text-slate-500">
                         {directionalApproachShots.length} shot
@@ -1347,7 +1398,7 @@ export default function LogRoundPage() {
                             <span className="min-w-0 truncate">
                               <span className="font-medium text-slate-900">{shot.club}</span>
                               <span className="text-slate-500"> · </span>
-                              <span className="text-slate-600">{shot.result}</span>
+                              <span className="text-slate-600">{formatApproachResultLabel(shot.result)}</span>
                             </span>
                             <button
                               type="button"

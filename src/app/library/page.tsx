@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -8,7 +8,6 @@ import {
   Check,
   Circle,
   CircleDot,
-  List,
   Target,
   X,
   Play,
@@ -16,11 +15,13 @@ import {
   Video,
   HelpCircle,
   Search,
+  BookOpen,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useAuth } from "@/contexts/AuthContext";
 import { logActivity } from "@/lib/activity";
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
+// Drills / video authoring field guide: `src/lib/academyContentSchema.ts`
 
 type LessonType = "video" | "text" | "pdf" | "quiz" | "drill";
 
@@ -58,9 +59,10 @@ const FALLBACK_LESSONS: Lesson[] = [
   { id: "4", title: "Short Game Quiz", type: "quiz", description: "Test your knowledge.", source: "", chapter_name: "Chipping Basics", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 4, xpValue: 100 },
 ];
 
+/** Shown in the header on the main library screen and in lesson breadcrumbs. */
+const ONLINE_LEARNING_LIBRARY = "Online Learning Library";
 const COURSE_TITLE = "Golf Fundamentals Course";
 const CATEGORIES = ["All", "Driving", "Short Game", "Putting", "Irons", "Mental"];
-const QUICK_FILTERS = ["Driving", "Short Game", "Putting"];
 const HERO_IMAGE = "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?q=80&w=1200&auto=format&fit=crop";
 
 function getThumbnailUrl(source: string) {
@@ -98,6 +100,8 @@ function LibraryPageContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [collapsedModules, setCollapsedModules] = useState<Set<string>>(() => new Set());
+  const sidebarOpenPrev = useRef(false);
+  const modulesCountPrev = useRef(0);
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(() => new Set());
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
   const [completedIds, setCompletedIds] = useState<Set<string>>(() => new Set());
@@ -230,6 +234,24 @@ function LibraryPageContent() {
     }
   }, [completedIds]);
 
+  /** When Search lessons opens, every module starts collapsed until expanded. */
+  useEffect(() => {
+    const justOpened = sidebarOpen && !sidebarOpenPrev.current;
+    sidebarOpenPrev.current = sidebarOpen;
+
+    const n = modules.length;
+    if (n === 0) {
+      modulesCountPrev.current = 0;
+      return;
+    }
+    const becameReadyWhileOpen = sidebarOpen && modulesCountPrev.current === 0;
+    modulesCountPrev.current = n;
+
+    if (justOpened || becameReadyWhileOpen) {
+      setCollapsedModules(new Set(modules.map((m) => m.name)));
+    }
+  }, [sidebarOpen, modules]);
+
   const toggleModule = useCallback((name: string) => {
     setCollapsedModules(prev => {
       const next = new Set(prev);
@@ -259,9 +281,25 @@ function LibraryPageContent() {
     setExpandedChapters(new Set());
   }, []);
 
-  const selectModule = useCallback((modName: string) => {
-    setSelectedModule(modName);
-  }, []);
+  const selectModule = useCallback(
+    (modName: string) => {
+      setSelectedModule(modName);
+      const mod = modules.find((m) => m.name === modName);
+      if (!mod) {
+        setExpandedChapters(new Set());
+        return;
+      }
+      const withIncomplete = mod.chapters
+        .filter((ch) => ch.lessons.some((l) => !completedIds.has(l.id)))
+        .map((ch) => `${mod.name}::${ch.name}`);
+      const keys =
+        withIncomplete.length > 0
+          ? withIncomplete
+          : mod.chapters.map((ch) => `${mod.name}::${ch.name}`);
+      setExpandedChapters(new Set(keys));
+    },
+    [modules, completedIds],
+  );
 
   const toggleChapter = useCallback((key: string) => {
     setExpandedChapters(prev => {
@@ -286,9 +324,12 @@ function LibraryPageContent() {
     }
   }, [activeLesson, activeLessonIndex, flatLessons, user?.id, selectLesson]);
 
-  const progressPercent = flatLessons.length > 0
-    ? Math.round((completedIds.size / flatLessons.length) * 100)
-    : 0;
+  const progressPercent =
+    flatLessons.length > 0
+      ? Math.round((completedIds.size / flatLessons.length) * 100)
+      : 0;
+
+  const progressRingCirc = 2 * Math.PI * 15.9;
 
   const getStatusIcon = (lesson: Lesson) => {
     const done = completedIds.has(lesson.id);
@@ -319,11 +360,18 @@ function LibraryPageContent() {
       .reduce((sum, l) => sum + l.xpValue, 0);
   }, [flatLessons, completedIds]);
 
+  /** Next lesson in path order, preferring first incomplete (e-learning “resume”). */
   const continueLesson = useMemo(() => {
-    if (typeof window === "undefined" || flatLessons.length === 0) return null;
-    const id = localStorage.getItem("libraryLastWatchedLessonId");
-    return id ? flatLessons.find(l => l.id === id) ?? flatLessons[0] : flatLessons[0];
-  }, [flatLessons]);
+    if (flatLessons.length === 0) return null;
+    const firstIncomplete = flatLessons.find((l) => !completedIds.has(l.id));
+    if (firstIncomplete) return firstIncomplete;
+    if (typeof window !== "undefined") {
+      const id = localStorage.getItem("libraryLastWatchedLessonId");
+      const last = id ? flatLessons.find((l) => l.id === id) : null;
+      if (last) return last;
+    }
+    return flatLessons[0];
+  }, [flatLessons, completedIds]);
 
   const downloadPlayerReport = useCallback(() => {
     window.print();
@@ -331,16 +379,17 @@ function LibraryPageContent() {
 
   const sidebarContent = (
     <div className="flex flex-col h-full w-full">
-      {/* Filters & Search */}
+      {/* Search & category filters — only in this panel (not duplicated on the home view). */}
       <div className="px-4 py-3 border-b border-gray-100 bg-white shrink-0">
+        <p className="mb-2 text-xs text-gray-500">Find a lesson by name or filter by focus area.</p>
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
-            placeholder="Search lessons..."
+            placeholder="Search…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-[#FFA500] outline-none"
+            className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm focus:ring-2 focus:ring-[#FFA500] outline-none"
           />
         </div>
         <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
@@ -430,8 +479,8 @@ function LibraryPageContent() {
         </div>
       )}
       {/* Header - Sticky */}
-      <header className="library-no-print sticky top-0 shrink-0 z-40 w-full h-14 px-4 flex items-center justify-between bg-[#014421] text-white shadow-md">
-        <div className="flex items-center gap-3 min-w-0">
+      <header className="library-no-print sticky top-0 z-40 flex min-h-16 w-full shrink-0 items-center justify-between gap-2 bg-[#014421] px-3 py-2 text-white shadow-md sm:min-h-[4.25rem] sm:px-4">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
           {isViewingLesson ? (
             <button
               onClick={backToDashboard}
@@ -451,25 +500,34 @@ function LibraryPageContent() {
           ) : (
             <div className="w-9" />
           )}
-          <h1 className="text-base font-bold truncate">
-            {selectedModule && !isViewingLesson ? selectedModule : COURSE_TITLE}
+          <h1 className="truncate text-sm font-bold leading-snug sm:text-base">
+            {isViewingLesson
+              ? COURSE_TITLE
+              : selectedModule
+                ? selectedModule
+                : ONLINE_LEARNING_LIBRARY}
           </h1>
         </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="flex items-center justify-center p-1.5 rounded-lg hover:bg-white/10 text-white"
-            aria-label="Browse full curriculum"
-          >
-            <List className="w-5 h-5" />
-          </button>
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] font-medium text-white/80">
-              {progressPercent}% Complete
-            </span>
-            <div className="w-16 h-1.5 bg-black/30 rounded-full overflow-hidden mt-0.5">
+        <div className="flex shrink-0 items-center gap-2">
+          {(selectedModule || isViewingLesson) && (
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="flex items-center justify-center rounded-xl bg-white/15 p-2 text-white ring-1 ring-white/30 hover:bg-white/25"
+              aria-label={`Search lessons — ${ONLINE_LEARNING_LIBRARY}`}
+            >
+              <BookOpen className="h-5 w-5 shrink-0" aria-hidden />
+            </button>
+          )}
+          <div className="flex flex-col items-end gap-0.5">
+            <div className="flex items-baseline gap-0.5 text-white">
+              <span className="text-2xl font-extrabold tabular-nums leading-none sm:text-3xl">{progressPercent}</span>
+              <span className="text-lg font-bold leading-none text-white/90 sm:text-xl">%</span>
+            </div>
+            <span className="text-xs font-semibold text-white/80">Complete</span>
+            <div className="mt-0.5 h-2 w-[4.75rem] overflow-hidden rounded-full bg-black/30 sm:w-28">
               <div
-                className="h-full bg-[#FFA500] rounded-full transition-all duration-300"
+                className="h-full rounded-full bg-[#FFA500] transition-all duration-300"
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
@@ -487,7 +545,12 @@ function LibraryPageContent() {
           />
           <aside className="sidebar library-no-print fixed inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-md z-[70] bg-white flex flex-col shadow-2xl transition-transform duration-300 ease-out">
             <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100 bg-gray-50 shrink-0">
-              <span className="font-bold text-gray-900 text-lg">Course Curriculum</span>
+              <div className="min-w-0 pr-2">
+                <span className="block text-lg font-bold leading-tight text-gray-900">
+                  {ONLINE_LEARNING_LIBRARY}
+                </span>
+                <span className="text-xs text-gray-500">{COURSE_TITLE}</span>
+              </div>
               <button
                 onClick={() => setSidebarOpen(false)}
                 className="p-2 rounded-full hover:bg-gray-200 text-gray-600 bg-white shadow-sm"
@@ -508,52 +571,56 @@ function LibraryPageContent() {
         {!selectedModule && !isViewingLesson ? (
           /* === LIBRARY DASHBOARD === */
           <div className="w-full flex flex-col pb-24">
-            {/* Search Bar */}
-            <div className="px-4 py-4 bg-white border-b border-gray-100 shrink-0">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search lessons..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 bg-gray-50 rounded-xl text-base border-none focus:ring-2 focus:ring-[#FFA500] outline-none"
-                />
-              </div>
-              <div className="flex gap-2 mt-3 overflow-x-auto scrollbar-hide">
-                {QUICK_FILTERS.map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => setSelectedCategory(selectedCategory === cat ? "All" : cat)}
-                    className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ${
-                      selectedCategory === cat ? "bg-[#014421] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
+            {/* Academy path */}
+            <div className="mx-4 mt-4 rounded-xl border border-[#014421]/20 bg-stone-50 px-4 py-3">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#014421] text-white">
+                  <BookOpen className="h-4 w-4" aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#014421]">
+                    {ONLINE_LEARNING_LIBRARY}
+                  </p>
+                  <p className="text-sm font-semibold text-gray-900">{COURSE_TITLE}</p>
+                  <p className="mt-0.5 text-xs leading-snug text-gray-600">
+                    Tap the orange <span className="font-semibold text-gray-800">Search lessons</span> button under
+                    your stats to open the full list and filters. Then open a{" "}
+                    <span className="font-semibold text-gray-800">module</span> to see its chapters.
+                  </p>
+                </div>
               </div>
             </div>
 
             {/* Hero Section - Logo only */}
-            <div className="relative w-full aspect-[16/9] min-h-[180px] overflow-hidden bg-gray-100 flex flex-col items-center justify-center gap-4 p-6">
+            <div className="relative w-full aspect-[16/9] min-h-[180px] overflow-hidden bg-gray-100 flex flex-col items-center justify-center gap-3 p-6">
               <img src="/logo.png" alt={COURSE_TITLE} className="w-full max-w-[320px] h-20 sm:h-28 md:h-32 object-contain" />
               {continueLesson && (
-                <button
-                  onClick={() => { setSelectedModule(continueLesson.module_name); selectLesson(continueLesson); }}
-                  className="w-full py-3 px-4 bg-[#FFA500] hover:bg-amber-500 text-black font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg transition-colors shrink-0"
-                >
-                  <Play className="w-5 h-5 fill-current" />
-                  Continue Learning
-                </button>
+                <div className="w-full shrink-0 space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedModule(continueLesson.module_name);
+                      selectLesson(continueLesson);
+                    }}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#FFA500] px-4 py-3 text-sm font-bold text-black shadow-lg transition-colors hover:bg-amber-500"
+                  >
+                    <Play className="h-5 w-5 fill-current" aria-hidden />
+                    {completedIds.has(continueLesson.id) ? "Review lesson" : "Continue learning"}
+                  </button>
+                  <p className="line-clamp-2 px-1 text-center text-[11px] text-gray-600">
+                    <span className="font-medium text-gray-800">{continueLesson.module_name}</span>
+                    <span className="text-gray-400"> · </span>
+                    {continueLesson.title}
+                  </p>
+                </div>
               )}
             </div>
 
             {/* Course Stats */}
             <div className="px-4 py-4 grid grid-cols-3 gap-3">
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-center">
-                <div className="relative w-14 h-14">
-                  <svg className="w-14 h-14 -rotate-90" viewBox="0 0 36 36">
+                <div className="relative h-[4.5rem] w-[4.5rem] sm:h-20 sm:w-20">
+                  <svg className="h-full w-full -rotate-90" viewBox="0 0 36 36" aria-hidden>
                     <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e5e7eb" strokeWidth="2.5" />
                     <circle
                       cx="18"
@@ -562,13 +629,16 @@ function LibraryPageContent() {
                       fill="none"
                       stroke="#FFA500"
                       strokeWidth="2.5"
-                      strokeDasharray={`${progressPercent} 100`}
                       strokeLinecap="round"
+                      strokeDasharray={progressRingCirc}
+                      strokeDashoffset={progressRingCirc * (1 - progressPercent / 100)}
                     />
                   </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-gray-900">{progressPercent}%</span>
+                  <span className="absolute inset-0 flex items-center justify-center text-base font-extrabold tabular-nums text-gray-900 sm:text-lg">
+                    {progressPercent}%
+                  </span>
                 </div>
-                <span className="text-[10px] font-medium text-gray-500 mt-1">Complete</span>
+                <span className="mt-1.5 text-xs font-medium text-gray-500">Complete</span>
               </div>
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-center justify-center">
                 <span className="text-xl font-bold text-gray-900">{completedIds.size}</span>
@@ -583,8 +653,16 @@ function LibraryPageContent() {
 
             {/* Module Cards - Click to open Deep-Dive */}
             <div className="px-4 pb-8">
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#FFA500] px-4 py-3 text-sm font-bold text-black shadow-lg transition-colors hover:bg-amber-500"
+              >
+                <BookOpen className="h-5 w-5 shrink-0" aria-hidden />
+                Search lessons
+              </button>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-base font-bold text-gray-900">Course Contents</h3>
+                <h3 className="text-base font-bold text-gray-900">Modules</h3>
                 {(searchQuery || selectedCategory !== "All") && (
                   <button
                     type="button"
@@ -788,6 +866,15 @@ function LibraryPageContent() {
                 {activeLesson.type} Lesson
               </div>
               
+              <p className="mb-1 text-[11px] font-medium text-gray-500">
+                {ONLINE_LEARNING_LIBRARY}
+                <span className="text-gray-300"> · </span>
+                {COURSE_TITLE}
+                <span className="text-gray-300"> · </span>
+                {activeLesson.module_name}
+                <span className="text-gray-300"> · </span>
+                {activeLesson.chapter_name}
+              </p>
               <h2 className="text-2xl font-black text-gray-900 mb-2 leading-tight">
                 {activeLesson.title}
               </h2>

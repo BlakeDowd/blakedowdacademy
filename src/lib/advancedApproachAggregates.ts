@@ -1,5 +1,5 @@
-/** Result keys stored from log-round advanced approach matrix. */
-export type ApproachResultKey =
+/** 3×3 matrix cells only (direction + GIR center). */
+export type ApproachMatrixCellKey =
   | "top-left"
   | "top"
   | "top-right"
@@ -9,6 +9,12 @@ export type ApproachResultKey =
   | "bottom-left"
   | "bottom"
   | "bottom-right";
+
+/** Matrix cells plus “no realistic GIR” (tee/recovery or distance / lay-up). */
+export type ApproachResultKey =
+  | ApproachMatrixCellKey
+  | "tee-no-gir"
+  | "distance-no-gir";
 
 const VALID_RESULTS = new Set<string>([
   "top-left",
@@ -20,6 +26,8 @@ const VALID_RESULTS = new Set<string>([
   "bottom-left",
   "bottom",
   "bottom-right",
+  "tee-no-gir",
+  "distance-no-gir",
 ]);
 
 export type ParsedApproachShot = {
@@ -28,7 +36,7 @@ export type ParsedApproachShot = {
   result: ApproachResultKey;
 };
 
-export const APPROACH_MATRIX_ROWS: ApproachResultKey[][] = [
+export const APPROACH_MATRIX_ROWS: ApproachMatrixCellKey[][] = [
   ["top-left", "top", "top-right"],
   ["left", "gir", "right"],
   ["bottom-left", "bottom", "bottom-right"],
@@ -86,6 +94,12 @@ export type AdvancedApproachAggregate = {
   shots: ParsedApproachShot[];
   total: number;
   girCount: number;
+  /** Matrix / GIR taps only (excludes tee-no-gir & distance-no-gir). */
+  approachTrackedCount: number;
+  /** GIR center taps ÷ approach-tracked taps (0 if none). */
+  girRateAmongTrackedPct: number;
+  noGirTeeCount: number;
+  noGirDistanceCount: number;
   roundsWithData: number;
   byResult: Record<ApproachResultKey, number>;
   topClubs: { club: string; count: number }[];
@@ -104,6 +118,16 @@ export function aggregateAdvancedApproach(
   }
   const byResult = countByResult(shots);
   const girCount = byResult.gir;
+  const noGirTeeCount = byResult["tee-no-gir"];
+  const noGirDistanceCount = byResult["distance-no-gir"];
+  const approachTrackedCount = Math.max(
+    0,
+    shots.length - noGirTeeCount - noGirDistanceCount,
+  );
+  const girRateAmongTrackedPct =
+    approachTrackedCount > 0
+      ? Math.round((girCount / approachTrackedCount) * 1000) / 10
+      : 0;
   let maxCellCount = 0;
   for (const row of APPROACH_MATRIX_ROWS) {
     for (const k of row) {
@@ -114,6 +138,10 @@ export function aggregateAdvancedApproach(
     shots,
     total: shots.length,
     girCount,
+    approachTrackedCount,
+    girRateAmongTrackedPct,
+    noGirTeeCount,
+    noGirDistanceCount,
     roundsWithData,
     byResult,
     topClubs: topClubs(shots, 8),

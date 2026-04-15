@@ -57,11 +57,21 @@ function TrendCard({
   const lineClass =
     dataKey === "gross" ? "coach-deepdive-chart-gross" : "coach-deepdive-chart-handicap";
   const labelSize = data.length > 16 ? 10 : data.length > 10 ? 11 : 12;
-  const chartTopMargin = data.length > 12 ? 34 : 28;
+  const sortAts = data.map((d) => d.sortAt);
+  const dayMs = 86_400_000;
+  /** Oldest→newest: leftmost two dots are tight in x when those rounds are close in time. */
+  const firstGapMs =
+    sortAts.length >= 2 ? Math.abs(sortAts[1]! - sortAts[0]!) : Number.POSITIVE_INFINITY;
+  const firstPairStackLabels =
+    sortAts.length >= 2 && Number.isFinite(firstGapMs) && firstGapMs < 56 * dayMs;
+  const numericYs = data.map((d) => d.y);
+  /** Headroom for labels just above dots; extra when the first two labels stack vertically. */
+  const chartTopMargin =
+    30 + (data.length > 10 ? 8 : 0) + (data.length > 16 ? 6 : 0) + (firstPairStackLabels ? 14 : 0);
 
   return (
     <div className="coach-deepdive-trend-card rounded-2xl border border-stone-200 bg-white p-4 shadow-md sm:p-5 print:break-inside-avoid print:shadow-none print:rounded-xl print:border-stone-400 print:p-3">
-      <div className="mb-3 print:mb-2">
+      <div className="mb-4 print:mb-2">
         <h3 className="text-base font-semibold tracking-tight text-stone-900 print:text-[13pt] print:text-black">
           {title}
         </h3>
@@ -75,7 +85,7 @@ function TrendCard({
         </p>
       ) : (
         <>
-          <div className="coach-deepdive-chart-wrap h-[240px] w-full min-w-0 print:h-[280px] print:min-h-[260px]">
+          <div className="coach-deepdive-chart-wrap h-[248px] w-full min-w-0 print:h-[280px] print:min-h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={chartData}
@@ -134,13 +144,56 @@ function TrendCard({
                 >
                   <LabelList
                     dataKey={dataKey}
-                    position="top"
-                    offset={6}
-                    className="coach-deepdive-point-value"
-                    fill={dataKey === "gross" ? "#022c15" : "#9a3412"}
-                    fontSize={labelSize}
-                    fontWeight={700}
-                    formatter={(label) => formatPointLabel(label, dataKey)}
+                    content={(raw) => {
+                      const x = raw.x;
+                      const y = raw.y;
+                      const index = raw.index;
+                      const value = raw.value;
+                      if (typeof x !== "number" || typeof y !== "number" || typeof index !== "number") {
+                        return null;
+                      }
+                      const str = formatPointLabel(value, dataKey);
+                      const fill = dataKey === "gross" ? "#022c15" : "#9a3412";
+                      const v = typeof value === "number" ? value : Number(value);
+                      const prev = index > 0 ? numericYs[index - 1] : null;
+                      const next = index < numericYs.length - 1 ? numericYs[index + 1] : null;
+                      const valueClose =
+                        Number.isFinite(v) &&
+                        ((prev != null && Math.abs(v - prev) <= (dataKey === "gross" ? 3 : 0.6)) ||
+                          (next != null && Math.abs(v - next) <= (dataKey === "gross" ? 3 : 0.6)));
+                      /** Recharts passes dot-center (x,y); keep dx=0 so labels stay centered on the dot. */
+                      const baseLift = 12;
+                      let dx = 0;
+                      let dy: number;
+                      if (firstPairStackLabels && index === 0) {
+                        dy = -baseLift;
+                      } else if (firstPairStackLabels && index === 1) {
+                        /** Second of a tight left pair: lift a bit more so values do not overlap, without sliding sideways off the dot. */
+                        dy = -(baseLift + 14);
+                      } else {
+                        const extraLift = valueClose ? (index % 2) * 10 : 0;
+                        dy = -(baseLift + extraLift);
+                        if (valueClose) {
+                          dx = index % 3 === 0 ? -18 : index % 3 === 1 ? 0 : 18;
+                        }
+                      }
+                      return (
+                        <text
+                          x={x}
+                          y={y}
+                          dx={dx}
+                          dy={dy}
+                          textAnchor="middle"
+                          dominantBaseline="auto"
+                          fill={fill}
+                          fontSize={labelSize}
+                          fontWeight={700}
+                          className="coach-deepdive-point-value"
+                        >
+                          {str}
+                        </text>
+                      );
+                    }}
                   />
                 </Line>
               </LineChart>
@@ -184,8 +237,8 @@ type Props = {
 
 export function CoachDeepDiveRoundTrendCharts({ grossPoints, handicapPoints, rangeCaption }: Props) {
   return (
-    <section id="coach-deepdive-round-charts" className="mb-6 space-y-4 print:mb-4">
-      <div className="flex items-center gap-3 print:mb-1">
+    <section id="coach-deepdive-round-charts" className="mb-10 space-y-6 print:mb-6">
+      <div className="mb-5 flex items-center gap-3 sm:mb-6 print:mb-2">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-700 print:border print:border-stone-400 print:bg-white">
           <Activity className="h-4 w-4 print:h-5 print:w-5" aria-hidden />
         </div>
@@ -197,7 +250,7 @@ export function CoachDeepDiveRoundTrendCharts({ grossPoints, handicapPoints, ran
         </div>
       </div>
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-7 sm:gap-8">
         <TrendCard
           title="Gross score by round"
           subtitle="Total gross score for each logged round in the selected window."

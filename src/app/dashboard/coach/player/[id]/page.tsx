@@ -46,6 +46,11 @@ import { AdvancedApproachStatsPanel } from "@/components/stats/AdvancedApproachS
 import { CoachDeepDiveProfilePanels } from "@/components/coach/CoachDeepDiveProfilePanels";
 import { CoachDeepDiveRoundTrendCharts } from "@/components/coach/CoachDeepDiveRoundTrendCharts";
 import type { RoundTrendPoint } from "@/components/coach/CoachDeepDiveRoundTrendCharts";
+import {
+  computeDeepDiveRoundMetrics,
+  computeStrokeOpportunityTop3,
+  sortMetricMatrix,
+} from "@/lib/deepDiveRoundMetrics";
 
 class CoachDeepDiveErrorBoundary extends Component<
   { children: ReactNode },
@@ -564,284 +569,26 @@ export default function PlayerDeepDivePage() {
     };
   }, [practiceAllocationData, dateRange, playerGoal, practiceAllocLeastFirst]);
 
-  // --- DERIVED METRICS ---
-  const { bigSix, penaltyStats, metricMatrix } = useMemo(() => {
-    const getNum = (val: any, fallback = 0) => {
-      if (val === undefined || val === null || val === '') return fallback;
-      const n = Number(val);
-      return isNaN(n) ? fallback : n;
-    };
+  // --- DERIVED METRICS (shared with stats page) ---
+  const benchmarkGoalsForMatrix = useMemo(
+    () => getBenchmarkGoals(playerHandicap),
+    [playerHandicap],
+  );
 
-    // Normalize rounds: ensure chip + up/down fields exist (handle all DB column variants)
-    const normalizedRounds = roundsData.map((r: any) => ({
-      ...r,
-      _chipInside6ft: getNum(r.chip_inside_6ft ?? r.inside_6ft ?? r.chipInside6ft ?? r.inside6ft),
-      _upDownAttempts: getNum(r.up_and_down_conversions ?? r.conversions) + getNum(r.missed ?? r.up_and_down_missed),
-    }));
+  const { bigSix, penaltyStats, metricMatrix } = useMemo(
+    () =>
+      computeDeepDiveRoundMetrics(roundsData as Record<string, unknown>[], benchmarkGoalsForMatrix, {
+        perfStatsData,
+      }),
+    [roundsData, benchmarkGoalsForMatrix, perfStatsData],
+  );
 
-    const sortedRounds = [...normalizedRounds].sort((a: any, b: any) =>
-      new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
-    const nRounds = sortedRounds.length;
-    const goals = getBenchmarkGoals(playerHandicap);
+  const strokeOpportunityRows = useMemo(() => computeStrokeOpportunityTop3(metricMatrix), [metricMatrix]);
 
-    if (nRounds === 0) {
-      return { bigSix: null, penaltyStats: null, metricMatrix: [] };
-    }
-
-    const getChipInside6ft = (r: any) => r._chipInside6ft ?? getNum(r.chip_inside_6ft ?? r.inside_6ft);
-    const getUpDownAttempts = (r: any) => r._upDownAttempts ?? (getNum(r.up_and_down_conversions) + getNum(r.missed, getNum(r.up_and_down_missed, 0)));
-
-    // 1. BIG SIX
-    const last5 = sortedRounds.slice(-5);
-    const scoringAvg = last5.reduce((s: number, r: any) => s + getNum(r.score), 0) / Math.max(1, last5.length);
-    
-    const totalGir = sortedRounds.reduce((s: number, r: any) => s + getNum(r.total_gir), 0);
-    const totalHolesForGir = sortedRounds.reduce((s: number, r: any) => s + getNum(r.holes, 18), 0);
-    const girPct = totalHolesForGir > 0 ? (totalGir / totalHolesForGir) * 100 : 0;
-
-    const totalFirHit = sortedRounds.reduce((s: number, r: any) => s + getNum(r.fir_hit), 0);
-    const totalFirShots = sortedRounds.reduce((s: number, r: any) => s + getNum(r.fir_hit) + getNum(r.fir_left) + getNum(r.fir_right), 0);
-    const firPct = totalFirShots > 0 ? (totalFirHit / totalFirShots) * 100 : 0;
-
-    const totalScrambleSuccess = sortedRounds.reduce((s: number, r: any) => s + getNum(r.up_and_down_conversions), 0);
-    const totalScrambleAttempts = sortedRounds.reduce((s: number, r: any) => s + getNum(r.up_and_down_conversions) + getNum(r.missed), 0);
-    const scramblePct = totalScrambleAttempts > 0 ? (totalScrambleSuccess / totalScrambleAttempts) * 100 : 0;
-
-    const totalPutts = sortedRounds.reduce((s: number, r: any) => s + getNum(r.total_putts), 0);
-    const totalHoles = sortedRounds.reduce((s: number, r: any) => s + getNum(r.holes, 18), 0);
-    const puttsPer18 = totalHoles > 0 ? (totalPutts / totalHoles) * 18 : 0;
-
-    const totalBirdies = sortedRounds.reduce((s: number, r: any) => s + getNum(r.birdies), 0);
-    const birdiesPer18 = totalHoles > 0 ? (totalBirdies / totalHoles) * 18 : 0;
-
-    const bigSixResult = {
-      scoringAvg: Math.round(scoringAvg * 10) / 10,
-      girPct: Math.round(girPct * 10) / 10,
-      firPct: Math.round(firPct * 10) / 10,
-      scramblePct: Math.round(scramblePct * 10) / 10,
-      puttsPer18: Math.round(puttsPer18 * 10) / 10,
-      birdiesPer18: Math.round(birdiesPer18 * 10) / 10,
-    };
-
-    // 2. PENALTY & ERROR TRACKER
-    const totalPenalties = sortedRounds.reduce((s: number, r: any) => s + getNum(r.tee_penalties) + getNum(r.approach_penalties), 0);
-    const total3Putts = sortedRounds.reduce((s: number, r: any) => s + getNum(r.three_putts), 0);
-    const totalDoublePlus = sortedRounds.reduce((s: number, r: any) => s + getNum(r.double_bogeys), 0);
-
-    const penaltyStatsResult = {
-      penaltiesPerRound: Math.round((totalPenalties / nRounds) * 10) / 10,
-      threePuttsPerRound: Math.round((total3Putts / nRounds) * 10) / 10,
-      doublesPerRound: Math.round((totalDoublePlus / nRounds) * 10) / 10,
-    };
-
-        const calculateMetric = (name: string, rounds: any[], extractor: (r: any) => number, goal: number, isLowerBetter = false) => {
-      if (!rounds || rounds.length === 0) {
-        return { name, current: 0, goal: Math.round(goal * 10) / 10, gap: 0, isLowerBetter, trend: "neutral" as const };
-      }
-      // Sum the extracted values rather than taking an average of percentages
-      if (name.includes("%") && name !== "Scoring Avg") {
-        let totalNumerator = 0;
-        let totalDenominator = 0;
-        
-        rounds.forEach(r => {
-          if (name === "GIR %") {
-            totalNumerator += getNum(r.total_gir);
-            totalDenominator += getNum(r.holes, 18);
-          } else if (name === "FIR %") {
-            totalNumerator += getNum(r.fir_hit);
-            totalDenominator += getNum(r.fir_hit) + getNum(r.fir_left) + getNum(r.fir_right);
-          } else if (name === "Scrambling %") {
-            totalNumerator += getNum(r.up_and_down_conversions);
-            totalDenominator += getNum(r.up_and_down_conversions) + getNum(r.missed);
-          } else if (name === "Bunker Save %") {
-            totalNumerator += getNum(r.bunker_saves);
-            totalDenominator += getNum(r.bunker_attempts) + getNum(r.bunker_saves);
-          } else if (name === "GIR 8ft %") {
-            totalNumerator += getNum(r.gir_8ft);
-            totalDenominator += getNum(r.holes, 18);
-          } else if (name === "GIR 20ft %") {
-            totalNumerator += getNum(r.gir_20ft);
-            totalDenominator += getNum(r.holes, 18);
-          } else if (name === "Chips Inside 6ft %") {
-            totalNumerator += getChipInside6ft(r);
-            totalDenominator += getUpDownAttempts(r);
-          } else if (name === "Putts Under 6ft %") {
-            const attempts = getNum(r.putts_under_6ft_attempts);
-            totalNumerator += getNum(r.made_under_6ft, getNum(r.made6ftAndIn, attempts > 0 ? attempts - getNum(r.missed_6ft_and_in) : 0));
-            totalDenominator += attempts;
-          }
-        });
-        
-        const current = totalDenominator > 0 ? (totalNumerator / totalDenominator) * 100 : 0;
-        const gap = isLowerBetter ? goal - current : current - goal;
-        
-        let trend: "up" | "down" | "neutral" = "neutral";
-        if (rounds.length > 1) {
-          const latestVal = extractor(rounds[rounds.length - 1]);
-          if (latestVal > current * 1.05) trend = "up";
-          else if (latestVal < current * 0.95) trend = "down";
-        }
-        
-        return { name, current: Math.round(current * 10) / 10, goal: Math.round(goal * 10) / 10, gap: Math.round(gap * 10) / 10, isLowerBetter, trend };
-      }
-      
-      const current = rounds.reduce((s: number, r: any) => s + extractor(r), 0) / Math.max(1, rounds.length);
-      const gap = isLowerBetter ? goal - current : current - goal;
-      
-      let trend: "up" | "down" | "neutral" = "neutral";
-      if (rounds.length > 1) {
-        const latest = extractor(rounds[rounds.length - 1]);
-        const prevAvg = rounds.slice(0, -1).reduce((s: number, r: any) => s + extractor(r), 0) / (rounds.length - 1);
-        if (latest > prevAvg * 1.05) trend = "up";
-        else if (latest < prevAvg * 0.95) trend = "down";
-      }
-      
-      return { name, current: Math.round(current * 10) / 10, goal: Math.round(goal * 10) / 10, gap: Math.round(gap * 10) / 10, isLowerBetter, trend };
-    };
-
-    const matrix = [
-      calculateMetric("Scoring Avg", sortedRounds, (r: any) => getNum(r.score), goals.score, true),
-      calculateMetric("GIR %", sortedRounds, (r: any) => (getNum(r.total_gir) / getNum(r.holes, 18)) * 100, goals.gir),
-      calculateMetric("FIR %", sortedRounds, (r: any) => {
-        const tot = getNum(r.fir_hit) + getNum(r.fir_left) + getNum(r.fir_right);
-        return tot > 0 ? (getNum(r.fir_hit) / tot) * 100 : 0;
-      }, goals.fir),
-      calculateMetric("Scrambling %", sortedRounds, (r: any) => {
-        const tot = getNum(r.up_and_down_conversions) + getNum(r.missed);
-        return tot > 0 ? (getNum(r.up_and_down_conversions) / tot) * 100 : 0;
-      }, goals.upAndDown),
-      calculateMetric("Putts Per 18", sortedRounds, (r: any) => (getNum(r.total_putts) / getNum(r.holes, 18)) * 18, goals.putts, true),
-      calculateMetric("Bunker Save %", sortedRounds, (r: any) => {
-        const tot = getNum(r.bunker_attempts) + getNum(r.bunker_saves);
-        return tot > 0 ? (getNum(r.bunker_saves) / tot) * 100 : 0;
-      }, goals.bunkerSaves),
-      calculateMetric("GIR 8ft %", sortedRounds, (r: any) => {
-        const holes = getNum(r.holes, 18);
-        return holes > 0 ? (getNum(r.gir_8ft) / holes) * 100 : 0;
-      }, goals.within8ft),
-      calculateMetric("GIR 20ft %", sortedRounds, (r: any) => {
-        const holes = getNum(r.holes, 18);
-        return holes > 0 ? (getNum(r.gir_20ft) / holes) * 100 : 0;
-      }, goals.within20ft),
-      calculateMetric("Chips Inside 6ft %", sortedRounds, (r: any) => {
-        if (!r) return 0;
-        const denominator = getUpDownAttempts(r);
-        const numerator = getChipInside6ft(r);
-        if (denominator <= 0) return 0;
-        return (Number(numerator) / Number(denominator)) * 100;
-      }, goals.chipsInside6ft),
-      calculateMetric("Putts Under 6ft %", sortedRounds, (r: any) => {
-        const tot = getNum(r.putts_under_6ft_attempts);
-        // Account for different app versions saving the 'made' count to different columns
-        const made = Math.max(getNum(r.made_under_6ft), getNum(r.missed_6ft_and_in), getNum(r.made6ftAndIn));
-        return tot > 0 ? (made / tot) * 100 : 0;
-      }, goals.puttMake6ft),
-      calculateMetric("3-Putts / Round", sortedRounds, (r: any) => (getNum(r.three_putts) / getNum(r.holes, 18)) * 18, Math.max(0, goals.putts / 18 - 1), true),
-      calculateMetric("Tee Penalties", sortedRounds, (r: any) => (getNum(r.tee_penalties) / getNum(r.holes, 18)) * 18, goals.teePenalties, true),
-      calculateMetric("Approach Penalties", sortedRounds, (r: any) => (getNum(r.approach_penalties) / getNum(r.holes, 18)) * 18, goals.approachPenalties, true),
-      calculateMetric("Total Penalties", sortedRounds, (r: any) => ((getNum(r.tee_penalties) + getNum(r.approach_penalties)) / getNum(r.holes, 18)) * 18, goals.totalPenalties, true),
-      calculateMetric("Birdies / Round", sortedRounds, (r: any) => (getNum(r.birdies) / getNum(r.holes, 18)) * 18, goals.birdies),
-      calculateMetric("Pars / Round", sortedRounds, (r: any) => (getNum(r.pars) / getNum(r.holes, 18)) * 18, goals.pars),
-      calculateMetric("Bogeys / Round", sortedRounds, (r: any) => (getNum(r.bogeys) / getNum(r.holes, 18)) * 18, goals.bogeys, true),
-      calculateMetric("Double Bogeys+ / Round", sortedRounds, (r: any) => (getNum(r.double_bogeys) / getNum(r.holes, 18)) * 18, goals.doubleBogeys, true),
-    ];
-
-    if (perfStatsData && perfStatsData.length > 0) {
-      const latestStats = perfStatsData[perfStatsData.length - 1];
-      const standardKeys = [
-        "id", "user_id", "date", "created_at", "updated_at",
-        "fairways_pct", "fir_pct", "fairways_hit_pct", 
-        "gir_pct", "green_contact_pct"
-      ];
-      
-      Object.keys(latestStats).forEach(key => {
-        if (!standardKeys.includes(key) && typeof latestStats[key] === "number") {
-          const label = key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
-          const current = latestStats[key];
-          const goal = (goals as any)[key] || 0;
-          
-          matrix.push({ 
-            name: label, 
-            current: Math.round(current * 10) / 10, 
-            goal: Math.round(goal * 10) / 10, 
-            gap: Math.round((current - goal) * 10) / 10, 
-            isLowerBetter: key.includes("penalties") || key.includes("score") || key.includes("putts"), 
-            trend: "neutral" 
-          });
-        }
-      });
-    }
-
-    return { bigSix: bigSixResult, penaltyStats: penaltyStatsResult, metricMatrix: matrix };
-  }, [roundsData, perfStatsData, playerHandicap]);
-
-  const strokeOpportunityRows = useMemo(() => {
-    if (!metricMatrix || metricMatrix.length === 0) return [];
-
-    const impactConfig: Record<string, { strokesPerUnit: number; unit: string; category: string }> = {
-      "Total Penalties": { strokesPerUnit: 1.0, unit: "strokes/penalty", category: "Driving + Approach" },
-      "3-Putts / Round": { strokesPerUnit: 1.0, unit: "strokes/3-putt", category: "Putting" },
-      "Double Bogeys+ / Round": { strokesPerUnit: 1.0, unit: "strokes/double+", category: "Course Management" },
-      "Putts Per 18": { strokesPerUnit: 0.8, unit: "strokes/putt", category: "Putting" },
-      "Tee Penalties": { strokesPerUnit: 1.0, unit: "strokes/penalty", category: "Driving" },
-      "Approach Penalties": { strokesPerUnit: 1.0, unit: "strokes/penalty", category: "Approach" },
-      "Scrambling %": { strokesPerUnit: 0.05, unit: "strokes/%", category: "Short Game" },
-      "Bunker Save %": { strokesPerUnit: 0.035, unit: "strokes/%", category: "Bunkers" },
-      "Chips Inside 6ft %": { strokesPerUnit: 0.03, unit: "strokes/%", category: "Chipping" },
-      "Putts Under 6ft %": { strokesPerUnit: 0.035, unit: "strokes/%", category: "Putting" },
-      "GIR %": { strokesPerUnit: 0.02, unit: "strokes/%", category: "Approach" },
-      "FIR %": { strokesPerUnit: 0.01, unit: "strokes/%", category: "Driving" },
-      "GIR 8ft %": { strokesPerUnit: 0.01, unit: "strokes/%", category: "Approach" },
-      "GIR 20ft %": { strokesPerUnit: 0.008, unit: "strokes/%", category: "Approach" },
-      "Scoring Avg": { strokesPerUnit: 1.0, unit: "strokes", category: "Overall" },
-    };
-
-    return metricMatrix
-      .map((stat: any) => {
-        const name = String(stat?.name ?? "");
-        const current = Number(stat?.current ?? stat?.value ?? 0);
-        const goal = Number(stat?.goal ?? 0);
-        const isLowerBetter = Boolean(stat?.isLowerBetter);
-        const config = impactConfig[name];
-
-        if (!config) return null;
-
-        const improvementUnits = isLowerBetter
-          ? Math.max(0, current - goal)
-          : Math.max(0, goal - current);
-        const estimatedGain = improvementUnits * config.strokesPerUnit;
-
-        if (estimatedGain <= 0) return null;
-
-        return {
-          name,
-          current: Math.round(current * 10) / 10,
-          goal: Math.round(goal * 10) / 10,
-          category: config.category,
-          estimatedGain: Math.round(estimatedGain * 100) / 100,
-          unit: config.unit,
-        };
-      })
-      .filter(Boolean)
-      .sort((a: any, b: any) => b.estimatedGain - a.estimatedGain)
-      .slice(0, 3);
-  }, [metricMatrix]);
-
-  /** Gap is defined so higher = better vs benchmark; default sort is strongest vs benchmark first. */
-  const sortedMetricMatrix = useMemo(() => {
-    const gapNum = (row: any) => {
-      const n = Number(row?.gap);
-      return Number.isFinite(n) ? n : 0;
-    };
-    const rows = [...metricMatrix];
-    rows.sort((a: any, b: any) => {
-      const bestFirst = gapNum(b) - gapNum(a);
-      if (bestFirst !== 0) return metricMatrixWorstFirst ? -bestFirst : bestFirst;
-      return String(a?.name ?? "").localeCompare(String(b?.name ?? ""));
-    });
-    return rows;
-  }, [metricMatrix, metricMatrixWorstFirst]);
+  const sortedMetricMatrix = useMemo(
+    () => sortMetricMatrix(metricMatrix, metricMatrixWorstFirst),
+    [metricMatrix, metricMatrixWorstFirst],
+  );
 
   const coachGoalMerged = useMemo((): PlayerGoalRow => {
     return (
@@ -1258,7 +1005,7 @@ export default function PlayerDeepDivePage() {
         )}
 
         {/* Practice allocation — time by focus vs saved weekly plan */}
-        <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+        <section className="mb-8 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
           <div className="mb-4 flex flex-col gap-4 border-b border-stone-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
@@ -1419,7 +1166,7 @@ export default function PlayerDeepDivePage() {
 
         <section
           id="coach-deepdive-advanced-approach"
-          className="mb-6 print:break-inside-avoid print:shadow-none"
+          className="mb-8 mt-2 print:mt-0 print:break-inside-avoid print:shadow-none"
         >
           <AdvancedApproachStatsPanel
             rounds={roundsData}

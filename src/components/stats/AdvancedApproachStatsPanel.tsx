@@ -4,7 +4,7 @@ import { useMemo, type ReactNode } from "react";
 import {
   aggregateAdvancedApproach,
   APPROACH_MATRIX_ROWS,
-  type ApproachResultKey,
+  type ApproachMatrixCellKey,
 } from "@/lib/advancedApproachAggregates";
 import {
   Check,
@@ -19,7 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-const RESULT_ICONS: Record<ApproachResultKey, LucideIcon> = {
+const RESULT_ICONS: Record<ApproachMatrixCellKey, LucideIcon> = {
   "top-left": MoveUpLeft,
   top: MoveUp,
   "top-right": MoveUpRight,
@@ -76,7 +76,7 @@ export function AdvancedApproachStatsPanel({
     [filteredRounds],
   );
 
-  const girRate = agg.total > 0 ? Math.round((agg.girCount / agg.total) * 1000) / 10 : 0;
+  const showNoGirRow = agg.noGirTeeCount > 0 || agg.noGirDistanceCount > 0;
 
   return (
     <div
@@ -119,16 +119,36 @@ export function AdvancedApproachStatsPanel({
               <div className="text-xl font-bold text-slate-900 tabular-nums">{agg.girCount}</div>
             </div>
             <div className="rounded-xl bg-slate-50 border border-slate-100 px-2 py-2">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+              <div className="text-[10px] font-semibold uppercase leading-tight text-slate-600">
                 GIR rate
+                <span className="block font-normal normal-case text-[9px] text-slate-400">
+                  (matrix only)
+                </span>
               </div>
-              <div className="text-xl font-bold text-slate-900 tabular-nums">{girRate}%</div>
+              <div className="text-xl font-bold text-slate-900 tabular-nums">
+                {agg.approachTrackedCount > 0 ? `${agg.girRateAmongTrackedPct}%` : "—"}
+              </div>
             </div>
           </div>
 
+          {showNoGirRow ? (
+            <div className="grid grid-cols-2 gap-2 text-center text-[11px]">
+              <div className="rounded-lg border border-amber-100 bg-amber-50/80 px-2 py-2 text-amber-950">
+                <div className="font-semibold text-amber-900/90">Tee / recovery</div>
+                <div className="text-lg font-bold tabular-nums">{agg.noGirTeeCount}</div>
+                <div className="text-[10px] text-amber-800/80">No GIR line</div>
+              </div>
+              <div className="rounded-lg border border-sky-100 bg-sky-50/80 px-2 py-2 text-sky-950">
+                <div className="font-semibold text-sky-900/90">Too far / lay-up</div>
+                <div className="text-lg font-bold tabular-nums">{agg.noGirDistanceCount}</div>
+                <div className="text-[10px] text-sky-800/80">No GIR line</div>
+              </div>
+            </div>
+          ) : null}
+
           <div>
             <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-2">
-              Miss pattern (all logged taps)
+              Miss pattern (direction + GIR taps)
             </div>
             <div className="mx-auto grid w-full max-w-[240px] grid-cols-3 gap-2.5">
               {APPROACH_MATRIX_ROWS.flatMap((row) =>
