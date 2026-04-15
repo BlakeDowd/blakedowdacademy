@@ -22,6 +22,7 @@ import {
 import {
   DEFAULT_SCORING_PRESET,
   DEFAULT_WEEKLY_HOURS,
+  FOCUS_AREA_PRESETS,
   SCORING_MILESTONE_LABELS,
   formatWeeklyHoursLabel,
   milestoneToPreset,
@@ -44,8 +45,10 @@ import {
   parsePracticeAllocationFromDb,
   primaryFocusFromAllocation,
   scalePracticeAllocationToBudget,
+  sumPracticeAllocation,
   type PracticeHoursMap,
 } from "@/lib/practiceAllocation";
+import { resolveAuthUserId } from "@/lib/resolveAuthUserId";
 import { AlertCircle, CheckCircle2, Clock, Target } from "lucide-react";
 
 /** Home dashboard brand — `globals.css` / HomeDashboard cards. */
@@ -65,6 +68,16 @@ function parseBaselineHandicapForSave(raw: string): number | null {
   const n = parseFloat(t);
   if (!Number.isFinite(n) || n < -12 || n > 54) return null;
   return Math.round(n * 10) / 10;
+}
+
+/** Plain JSON object for `player_goals.practice_allocation` (jsonb). */
+function practiceAllocationForDb(m: PracticeHoursMap): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const k of FOCUS_AREA_PRESETS) {
+    const v = Number(m[k]);
+    out[k] = Number.isFinite(v) ? Math.round(Math.max(0, v) * 1000) / 1000 : 0;
+  }
+  return out;
 }
 
 function parseHandicapForWarning(raw: string): number | null {
@@ -94,7 +107,7 @@ function CommitmentHealthBar({
     <div className="mt-5 rounded-xl border border-gray-100 bg-gray-50/90 p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-3 text-xs text-gray-500 mb-2">
         <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <span className="font-semibold uppercase tracking-wide text-gray-500 shrink-0">Commitment health</span>
+          <span className="font-semibold capitalize tracking-wide text-gray-500 shrink-0">Commitment health</span>
           {isHighVolumeCommitment && (
             <span
               className="shrink-0 rounded-full border border-[#014421]/35 bg-[#014421]/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#014421]"
@@ -143,7 +156,7 @@ function AccountabilityCard({
       <div className="flex items-center gap-2 mb-3">
         <Target className="w-5 h-5 shrink-0 text-[#014421]" aria-hidden />
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Accountability</p>
+          <p className="text-xs font-semibold capitalize tracking-wider text-gray-500">Accountability</p>
           <h3 className="text-base font-bold text-gray-900">Target vs actual</h3>
           <p className="text-[11px] text-gray-500">This week</p>
         </div>
@@ -213,6 +226,8 @@ export function GoalAccountabilityModule() {
   const [loading, setLoading] = useState(true);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  /** Set when `player_goals` SELECT fails — do not overwrite local drafts (avoids "save then reset"). */
+  const [goalsLoadError, setGoalsLoadError] = useState<string | null>(null);
 
   const [draftScoring, setDraftScoring] = useState<ScoringMilestonePreset>(DEFAULT_SCORING_PRESET);
   const [draftHours, setDraftHours] = useState<WeeklyHoursPreset>(DEFAULT_WEEKLY_HOURS);
@@ -235,6 +250,16 @@ export function GoalAccountabilityModule() {
     try {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
+      const uid = await resolveAuthUserId(supabase);
+      if (!uid) {
+        console.warn("[GoalAccountability] No Supabase auth user — cannot load player_goals (RLS needs JWT).");
+        setLogs([]);
+        setRoundStatRows([]);
+        setHandicapStatsDefault(null);
+        setLoading(false);
+        return;
+      }
+
       const weekStart = startOfWeekMondayLocal();
       const weekEnd = endOfWeekSundayLocal(weekStart);
 
@@ -244,25 +269,25 @@ export function GoalAccountabilityModule() {
           .select(
             "user_id,scoring_milestone,focus_area,weekly_hour_commitment,practice_allocation,lowest_score,current_handicap,updated_at",
           )
-          .eq("user_id", user.id)
+          .eq("user_id", uid)
           .maybeSingle(),
         supabase
           .from("practice_logs")
           .select("id,user_id,log_type,created_at,duration_minutes")
-          .eq("user_id", user.id)
+          .eq("user_id", uid)
           .gte("created_at", weekStart.toISOString())
           .lt("created_at", weekEnd.toISOString())
           .order("created_at", { ascending: false }),
         supabase
           .from("round_stats")
           .select("loss_off_tee,loss_approach,loss_short_game,loss_putting,handicap_index,played_at")
-          .eq("user_id", user.id)
+          .eq("user_id", uid)
           .order("played_at", { ascending: false })
           .limit(5),
         supabase
           .from("rounds")
           .select("handicap,created_at")
-          .eq("user_id", user.id)
+          .eq("user_id", uid)
           .order("created_at", { ascending: false })
           .limit(5),
       ]);
@@ -301,7 +326,7 @@ export function GoalAccountabilityModule() {
           const fallback = await supabase
             .from("practice_logs")
             .select("id,user_id,log_type,created_at")
-            .eq("user_id", user.id)
+            .eq("user_id", uid)
             .gte("created_at", weekStart.toISOString())
             .lt("created_at", weekEnd.toISOString())
             .order("created_at", { ascending: false });
@@ -320,19 +345,56 @@ export function GoalAccountabilityModule() {
         logRows = (logsRes.data || []) as PracticeLogAccountabilityRow[];
       }
 
-      if (goalRes.error && goalRes.error.code !== "PGRST116") {
-        console.warn("[GoalAccountability] player_goals:", goalRes.error.message);
+      let g = goalRes.data as PlayerGoalRow | null;
+      const goalErr = goalRes.error;
+
+      if (goalErr && !g) {
+        const em = (goalErr.message || "").toLowerCase();
+        if (em.includes("multiple") || String((goalErr as { details?: string }).details || "").toLowerCase().includes("multiple")) {
+          const pick = await supabase
+            .from("player_goals")
+            .select(
+              "user_id,scoring_milestone,focus_area,weekly_hour_commitment,practice_allocation,lowest_score,current_handicap,updated_at",
+            )
+            .eq("user_id", uid)
+            .order("updated_at", { ascending: false, nullsFirst: false })
+            .limit(1)
+            .maybeSingle();
+          if (!pick.error && pick.data) g = pick.data as PlayerGoalRow;
+        }
       }
-      const g = goalRes.data as PlayerGoalRow | null;
+
+      const goalFetchFailed = Boolean(goalErr && !g);
+      const emLow = (goalErr?.message || "").toLowerCase();
+      const schemaOrCacheIssue =
+        goalFetchFailed &&
+        ((goalErr as { code?: string }).code === "PGRST204" ||
+          emLow.includes("schema cache") ||
+          emLow.includes("could not find") ||
+          emLow.includes("does not exist"));
+
+      if (goalErr && goalErr.code !== "PGRST116") {
+        console.warn("[GoalAccountability] player_goals:", goalErr.message, (goalErr as { code?: string }).code ?? "");
+      }
+
       const hasRoundContext = hasStatsRoundContext(rsRows, recentRoundRows);
       if (g) {
+        setGoalsLoadError(null);
         setDraftScoring(milestoneToPreset(g.scoring_milestone));
         const hoursPreset = weeklyHoursToPreset(Number(g.weekly_hour_commitment));
         const budget = weeklyHoursPresetToStoredHours(hoursPreset);
         const legacyFocus = normalizeFocusArea(g.focus_area);
         setDraftHours(hoursPreset);
         let alloc = parsePracticeAllocationFromDb(g.practice_allocation, budget, legacyFocus);
-        if (isCollapsedSingleCategoryAllocation(alloc, budget)) {
+        const rawAlloc = g.practice_allocation;
+        const hadSavedAllocation =
+          rawAlloc != null &&
+          typeof rawAlloc === "object" &&
+          !Array.isArray(rawAlloc) &&
+          Object.keys(rawAlloc as Record<string, unknown>).length > 0;
+        // Only expand "all hours in one bucket" when there was no stored JSON split (legacy rows).
+        // Otherwise a deliberate single-category plan would look like it did not save after reload.
+        if (isCollapsedSingleCategoryAllocation(alloc, budget) && !hadSavedAllocation) {
           const savedHcpRaw = g.current_handicap;
           const hasSavedHcp =
             savedHcpRaw != null && savedHcpRaw !== undefined && String(savedHcpRaw).trim() !== "";
@@ -355,7 +417,8 @@ export function GoalAccountabilityModule() {
         } else {
           setBaselineHandicap("");
         }
-      } else {
+      } else if (!goalFetchFailed) {
+        setGoalsLoadError(null);
         setDraftScoring(DEFAULT_SCORING_PRESET);
         setDraftHours(DEFAULT_WEEKLY_HOURS);
         const budget = weeklyHoursPresetToStoredHours(DEFAULT_WEEKLY_HOURS);
@@ -367,6 +430,13 @@ export function GoalAccountabilityModule() {
         } else {
           setBaselineHandicap("");
         }
+      } else {
+        const hint = schemaOrCacheIssue
+          ? "The live `player_goals` table is missing columns the app expects. In Supabase: SQL editor → run migration `20260430180000_player_goals_ensure_scoring_milestone_core.sql` (or `supabase db push`), then Settings → API restart or wait for schema reload."
+          : "Could not load saved goals from the database. Your edits stay on screen until this is fixed.";
+        setGoalsLoadError(
+          goalErr?.message ? `${goalErr.message}${goalErr.message.endsWith(".") ? "" : "."} ${hint}` : hint,
+        );
       }
 
       setLogs(logRows);
@@ -405,6 +475,36 @@ export function GoalAccountabilityModule() {
       if (typeof window !== "undefined") {
         window.removeEventListener("roundsUpdated", onRounds);
       }
+    };
+  }, [loadData]);
+
+  /** Re-load goals once Supabase session is ready (avoids empty reads before JWT is attached). */
+  useEffect(() => {
+    let cancelled = false;
+    let subscription: { unsubscribe: () => void } | null = null;
+    void (async () => {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        if (cancelled) return;
+        const supabase = createClient();
+        const {
+          data: { subscription: sub },
+        } = supabase.auth.onAuthStateChange((event, session) => {
+          if (
+            (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "TOKEN_REFRESHED") &&
+            session?.user
+          ) {
+            void loadData();
+          }
+        });
+        subscription = sub;
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      subscription?.unsubscribe();
     };
   }, [loadData]);
 
@@ -499,36 +599,87 @@ export function GoalAccountabilityModule() {
   const saveGoals = async () => {
     if (!user?.id) return;
     const commitment = weeklyHoursPresetToStoredHours(draftHours);
-    if (!allocationMatchesBudget(draftAllocation, commitment)) {
-      setSaveMsg("Balance your practice hours to match your weekly target before saving.");
-      return;
+    let allocationToSave: PracticeHoursMap = draftAllocation;
+    if (!allocationMatchesBudget(allocationToSave, commitment)) {
+      const drift = Math.abs(sumPracticeAllocation(allocationToSave) - commitment);
+      if (drift < 0.2) {
+        allocationToSave = scalePracticeAllocationToBudget(allocationToSave, commitment);
+        setDraftAllocation(allocationToSave);
+      } else {
+        setSaveMsg("Balance your practice hours to match your weekly target before saving.");
+        return;
+      }
     }
     setSaveBusy(true);
     setSaveMsg(null);
     try {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
+      const uid = await resolveAuthUserId(supabase);
+      if (!uid) {
+        setSaveMsg("Still signing in — wait a moment, refresh the page, then try Save again.");
+        return;
+      }
+      if (uid !== user.id) {
+        console.warn("[GoalAccountability] saveGoals: Supabase uid !== AuthContext user.id", { uid, ctx: user.id });
+      }
       const lowestSave = parseBaselineLowestForSave(baselineLowest);
       const handicapSave = parseBaselineHandicapForSave(baselineHandicap);
 
       const { error } = await supabase.from("player_goals").upsert(
         {
-          user_id: user.id,
+          user_id: uid,
           scoring_milestone: draftScoring,
-          focus_area: draftPrimaryFocus,
+          focus_area: primaryFocusFromAllocation(allocationToSave),
           weekly_hour_commitment: weeklyHoursPresetToStoredHours(draftHours),
-          practice_allocation: draftAllocation,
+          practice_allocation: practiceAllocationForDb(allocationToSave),
           lowest_score: lowestSave,
           current_handicap: handicapSave,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "user_id" },
       );
+
       if (error) {
-        setSaveMsg(error.message.includes("relation") ? "Run the latest Supabase migration (player_goals)." : error.message);
+        const code = "code" in error ? String((error as { code?: string }).code) : "";
+        const details = "details" in error ? String((error as { details?: string }).details || "") : "";
+        const hint = "hint" in error ? String((error as { hint?: string }).hint || "") : "";
+        const extra = [code, details, hint].filter(Boolean).join(" · ");
+        const msgLower = error.message.toLowerCase();
+        setSaveMsg(
+          error.message.includes("relation")
+            ? "Run the latest Supabase migration (player_goals)."
+            : msgLower.includes("duplicate key") || msgLower.includes("unique")
+              ? `${error.message} Run the Supabase migration \`20260430140000_player_goals_dedupe_unique_user_id.sql\` (dedupe rows + UNIQUE on user_id).${extra ? ` ${extra}` : ""}`
+              : extra
+                ? `${error.message} (${extra})`
+                : error.message,
+        );
       } else {
-        setSaveMsg("Saved.");
+        const { data: row, error: readErr } = await supabase
+          .from("player_goals")
+          .select("scoring_milestone,weekly_hour_commitment,focus_area,updated_at")
+          .eq("user_id", uid)
+          .maybeSingle();
+
+        if (readErr) {
+          setSaveMsg(`Database write returned OK, but reading your goals back failed: ${readErr.message}`);
+        } else if (!row) {
+          setSaveMsg(
+            "Database did not return a goals row for your account after save. Check RLS policies on player_goals (SELECT) and that GRANT SELECT exists for role authenticated.",
+          );
+        } else {
+          const ms = String(row.scoring_milestone ?? "").trim();
+          if (ms !== String(draftScoring).trim()) {
+            setSaveMsg(`Saved, but the server stored milestone "${row.scoring_milestone ?? ""}" instead of "${draftScoring}".`);
+          } else {
+            setSaveMsg("Saved.");
+          }
+        }
         await loadData();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("playerGoalsUpdated"));
+        }
       }
     } catch (e) {
       setSaveMsg(e instanceof Error ? e.message : "Save failed");
@@ -572,6 +723,15 @@ export function GoalAccountabilityModule() {
             Set your milestone and weekly budget, split hours across practice categories, then review accountability. Save
             only works when your allocation matches your weekly hours.
           </p>
+          {goalsLoadError && (
+            <div
+              className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs leading-snug text-amber-950"
+              role="alert"
+            >
+              <span className="font-semibold">Could not load saved goals. </span>
+              {goalsLoadError}
+            </div>
+          )}
         </div>
 
         <GoalSetting

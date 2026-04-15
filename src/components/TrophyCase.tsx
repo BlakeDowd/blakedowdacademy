@@ -318,7 +318,7 @@ export default function TrophyCase({
 
         return (
           <div key={key}>
-            <h3 className="mb-2 px-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-stone-500">
+            <h3 className="mb-2 px-0.5 text-[10px] font-bold capitalize tracking-[0.18em] text-stone-500">
               {label}
             </h3>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5 lg:grid-cols-4">

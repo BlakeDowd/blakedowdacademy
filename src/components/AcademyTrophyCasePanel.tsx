@@ -364,11 +364,11 @@ export default function AcademyTrophyCasePanel({
 
                   {trophyDef && (
                     <div className="mb-6 w-full rounded-xl border border-stone-200 bg-gradient-to-b from-stone-50 to-white p-4 text-left shadow-sm">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                      <p className="text-[10px] font-bold capitalize tracking-wider text-stone-500">
                         Unlock criteria
                       </p>
                       <p className="mt-1 text-sm text-stone-800">{trophyDef.requirement}</p>
-                      <p className="mt-4 text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                      <p className="mt-4 text-[10px] font-bold capitalize tracking-wider text-stone-500">
                         Your progress
                       </p>
                       <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-stone-200">
@@ -392,7 +392,7 @@ export default function AcademyTrophyCasePanel({
                     typeof selectedTrophy.multiplierCount === "number" &&
                     selectedTrophy.multiplierCount > 1 && (
                       <div className="mb-6 w-full rounded-xl border border-emerald-200/70 bg-emerald-50/40 p-4 text-left shadow-sm">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                        <p className="text-[10px] font-bold capitalize tracking-wider text-emerald-800">
                           Success history{" "}
                           <span className="font-extrabold text-emerald-900">
                             (x{selectedTrophy.multiplierCount})

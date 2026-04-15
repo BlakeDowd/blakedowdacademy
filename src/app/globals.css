@@ -42,6 +42,18 @@ body, #__next {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
+/* Title case: first letter of each word (semantic headings). `uppercase` / `normal-case` on the element still override. */
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    text-transform: capitalize;
+  }
+}
+
 /* Hide scrollbar for horizontal scrolling tabs */
 .scrollbar-hide {
   -ms-overflow-style: none;

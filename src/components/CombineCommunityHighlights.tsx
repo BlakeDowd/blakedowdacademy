@@ -208,7 +208,7 @@ export function CombineCommunityHighlights({
 
   return (
     <div className="mt-8 space-y-4 border-t border-gray-200 pt-6">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Combine community</h2>
+      <h2 className="text-sm font-semibold tracking-wide text-gray-500">Combine community</h2>
 
       <div className="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 shadow-sm">
         <p className="text-sm font-semibold text-gray-900 mb-3">Combine leaders</p>

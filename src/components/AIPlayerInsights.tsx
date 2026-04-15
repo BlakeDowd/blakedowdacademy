@@ -205,7 +205,7 @@ export function AIPlayerInsights({ drills: drillsProp, performanceMetrics, goals
             <Sparkles className="w-5 h-5 text-[#FF9800]" />
           </div>
           <div>
-            <h2 className="font-bold text-lg uppercase tracking-wider">Coach&apos;s Insights</h2>
+            <h2 className="font-bold text-lg tracking-wider">Coach&apos;s Insights</h2>
             <p className="text-white/70 text-xs">Full-Game Performance Analysis</p>
           </div>
         </div>
@@ -228,7 +228,7 @@ export function AIPlayerInsights({ drills: drillsProp, performanceMetrics, goals
 
         {/* ===== TOP 5 WEAKNESSES (The Fix) ===== */}
         <div className="space-y-4 mb-6">
-          <h3 className="text-xs font-bold text-[#FF9800] uppercase tracking-wider flex items-center gap-2">
+          <h3 className="text-xs font-bold text-[#FF9800] tracking-wider flex items-center gap-2">
             <Target className="w-4 h-4" /> Top {weaknesses.length} Priority Areas
           </h3>
 
@@ -292,7 +292,7 @@ export function AIPlayerInsights({ drills: drillsProp, performanceMetrics, goals
 
         {/* ===== PLAYING IDENTITY (The Fuel) ===== */}
         <div className="bg-[#01301F] rounded-2xl p-5 border border-[#FF9800]/30 shadow-inner">
-          <h3 className="text-xs font-bold text-[#FF9800] uppercase tracking-wider mb-3 flex items-center gap-2">
+          <h3 className="text-xs font-bold text-[#FF9800] tracking-wider mb-3 flex items-center gap-2">
             <TrendingUp className="w-4 h-4" /> Your Playing Identity
           </h3>
 

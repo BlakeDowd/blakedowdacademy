@@ -118,7 +118,9 @@ export function CoachDeepDiveProfilePanels({
           <div>
             <h3 className={`font-bold text-stone-900 ${noSavedGoals ? "text-base" : "text-lg"}`}>Goal setting</h3>
             <p className={noSavedGoals ? "text-[10px] text-stone-500" : "text-xs text-stone-500"}>
-              Targets saved in the app for this player
+              {noSavedGoals
+                ? "Targets saved in the app for this player"
+                : "Synced from their Home · Goal setting card"}
             </p>
           </div>
         </div>
@@ -139,20 +141,20 @@ export function CoachDeepDiveProfilePanels({
             ) : (
               <>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Scoring milestone</p>
+                  <p className="text-[10px] font-bold capitalize tracking-wider text-stone-500">Scoring milestone</p>
                   <p className="mt-1 text-xl font-semibold text-stone-900">{milestoneLabel}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Weekly commitment</p>
+                  <p className="text-[10px] font-bold capitalize tracking-wider text-stone-500">Weekly commitment</p>
                   <p className="mt-1 text-xl font-semibold text-stone-900">{weeklyHoursLabel}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Primary focus</p>
+                  <p className="text-[10px] font-bold capitalize tracking-wider text-stone-500">Primary focus</p>
                   <p className="mt-1 text-xl font-semibold text-stone-900">{focus}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3 pt-2">
                   <div className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-stone-100">
-                    <p className="text-[10px] font-bold uppercase text-stone-500">Score goal</p>
+                    <p className="text-[10px] font-bold capitalize text-stone-500">Score goal</p>
                     <p className="mt-1 text-lg font-bold text-stone-900">
                       {playerGoal.lowest_score != null && Number.isFinite(Number(playerGoal.lowest_score))
                         ? String(playerGoal.lowest_score)
@@ -161,7 +163,7 @@ export function CoachDeepDiveProfilePanels({
                     <p className="text-[10px] text-stone-400">Best round target</p>
                   </div>
                   <div className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-stone-100">
-                    <p className="text-[10px] font-bold uppercase text-stone-500">Handicap goal</p>
+                    <p className="text-[10px] font-bold capitalize text-stone-500">Handicap goal</p>
                     <p className="mt-1 text-lg font-bold text-stone-900">
                       {playerGoal.current_handicap != null &&
                       String(playerGoal.current_handicap).trim() !== "" &&
@@ -190,7 +192,7 @@ export function CoachDeepDiveProfilePanels({
             className={`flex flex-col justify-between rounded-2xl border border-emerald-100/80 bg-gradient-to-b from-emerald-50/40 to-white shadow-inner ${weekQuiet || goalsNotSaved ? "p-3" : "p-5"}`}
           >
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">This week</p>
+              <p className="text-[10px] font-bold capitalize tracking-wider text-emerald-800">This week</p>
               <p className={weekQuiet ? "mt-0.5 text-[11px] text-stone-600" : "mt-1 text-sm text-stone-600"}>
                 Practice time vs weekly goal (includes combine protocol logs when timed).
               </p>
@@ -285,7 +287,7 @@ export function CoachDeepDiveProfilePanels({
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-stone-900">{row.label}</p>
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-stone-400">Personal best</p>
+                  <p className="text-[10px] font-medium capitalize tracking-wide text-stone-400">Personal best</p>
                 </div>
                 <span className="shrink-0 rounded-lg bg-[#014421]/10 px-3 py-1.5 text-sm font-bold text-[#014421]">
                   {row.scoreDisplay}

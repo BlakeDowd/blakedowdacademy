@@ -21,11 +21,9 @@ import {
   AlertTriangle,
   ArrowUpDown,
   Table2,
-  PieChart,
-  Clock,
 } from "lucide-react";
 import { getBenchmarkGoals } from "@/app/stats/page";
-import type { PlayerGoalRow, GoalFocusArea } from "@/types/playerGoals";
+import type { PlayerGoalRow } from "@/types/playerGoals";
 import type { PracticeLogAccountabilityRow } from "@/types/playerGoals";
 import {
   computeGoalAccountabilityState,
@@ -33,11 +31,7 @@ import {
   startOfWeekMondayLocal,
   endOfWeekSundayLocal,
   DEFAULT_PLAYER_GOAL,
-  normalizeFocusArea,
 } from "@/lib/goalAccountability";
-import { parsePracticeAllocationFromDb } from "@/lib/practiceAllocation";
-import type { PracticeHoursMap } from "@/lib/practiceAllocation";
-import { weeklyHoursToPreset, weeklyHoursPresetToStoredHours } from "@/lib/goalPresetConstants";
 import { buildCoachPlayerCombineSnapshot } from "@/lib/coachPlayerCombineSnapshot";
 import { TROPHY_LIST } from "@/lib/academyTrophies";
 import { fetchUserTrophiesForUser } from "@/lib/userTrophiesDb";
@@ -45,6 +39,8 @@ import type { AcademyTrophyDbRow } from "@/components/AcademyTrophyCasePanel";
 import { AdvancedApproachStatsPanel } from "@/components/stats/AdvancedApproachStatsPanel";
 import { CoachDeepDiveProfilePanels } from "@/components/coach/CoachDeepDiveProfilePanels";
 import { CoachDeepDiveRoundTrendCharts } from "@/components/coach/CoachDeepDiveRoundTrendCharts";
+import { PracticeVsGoalsSection } from "@/components/stats/PracticeVsGoalsSection";
+import type { PracticeVsGoalsRow } from "@/lib/practiceVsGoalsModel";
 import type { RoundTrendPoint } from "@/components/coach/CoachDeepDiveRoundTrendCharts";
 import {
   computeDeepDiveRoundMetrics,
@@ -95,17 +91,6 @@ function getDefaultRange() {
   };
 }
 
-/** Readable minutes/hours for parent/committee-facing copy */
-function formatReportMinutes(min: number): string {
-  if (!Number.isFinite(min) || min <= 0) return "0 min";
-  const roundedMin = Math.round(min * 10) / 10;
-  if (roundedMin >= 60) {
-    const h = Math.round((roundedMin / 60) * 10) / 10;
-    return `${h} hr`;
-  }
-  return Number.isInteger(roundedMin) ? `${roundedMin} min` : `${roundedMin} min`;
-}
-
 export default function PlayerDeepDivePage() {
   const router = useRouter();
   const params = useParams();
@@ -134,8 +119,6 @@ export default function PlayerDeepDivePage() {
   const [playerUnlockedTrophies, setPlayerUnlockedTrophies] = useState<AcademyTrophyDbRow[]>([]);
   /** false = strongest vs benchmark first; true = largest benchmark gaps first */
   const [metricMatrixWorstFirst, setMetricMatrixWorstFirst] = useState(false);
-  /** false = most minutes in range first; true = least first */
-  const [practiceAllocLeastFirst, setPracticeAllocLeastFirst] = useState(false);
   /** Advanced approach matrix aggregates: match 9- vs 18-hole rounds */
   const [deepDiveApproachHoleFilter, setDeepDiveApproachHoleFilter] = useState<"9" | "18">("18");
 
@@ -465,109 +448,25 @@ export default function PlayerDeepDivePage() {
     }
   };
 
-  const practiceAllocationData = useMemo(() => {
-    if (!practiceRawData || practiceRawData.length === 0) {
-      return {
-        driving: 0, irons: 0, wedges: 0, chipping: 0, bunkers: 0, putting: 0, mentalStrategy: 0, onCourse: 0,
-      };
-    }
-    
-    const getMinutes = (category: string, altTypes?: string[]) => {
-      const types = [category, ...(altTypes || [])];
-      return practiceRawData
-        .filter((p: any) => types.some(t => (p.type || '').toLowerCase() === t.toLowerCase()))
-        .reduce((sum: number, p: any) => sum + (p.duration_minutes || 0), 0);
+  /** Rolling week/month/all buckets: merge date-range drill/practice rows with recent `practice` table rows (deduped). */
+  const practiceRowsForGoals = useMemo((): PracticeVsGoalsRow[] => {
+    const m = new Map<string, PracticeVsGoalsRow>();
+    const add = (r: { type?: string; duration_minutes?: number; created_at?: string; practice_date?: string }) => {
+      if (!r) return;
+      const k = `${String(r.created_at || "")}|${String(r.type || "")}|${Number(r.duration_minutes || 0)}`;
+      if (!m.has(k)) {
+        m.set(k, {
+          type: r.type,
+          duration_minutes: r.duration_minutes,
+          created_at: r.created_at,
+          practice_date: r.practice_date,
+        });
+      }
     };
-
-    return {
-      driving: getMinutes('Driving', ['Range Mat', 'Tee']),
-      irons: getMinutes('Irons', ['Approach', 'Range Grass', 'Full Swing']),
-      wedges: getMinutes('Wedges', ['Wedge Play']),
-      chipping: getMinutes('Chipping', ['Short Game', 'Chipping Green']),
-      bunkers: getMinutes('Bunkers', ['Bunker', 'Sand Play']),
-      putting: getMinutes('Putting', ['Putting Green']),
-      mentalStrategy: getMinutes('Mental/Strategy', ['Mental Game', 'Mental', 'Strategy']),
-      onCourse: getMinutes('On-Course', ['On Course']),
-    };
-  }, [practiceRawData]);
-
-  const practiceAllocationDisplay = useMemo(() => {
-    const start = new Date(`${dateRange.start}T00:00:00`);
-    const end = new Date(`${dateRange.end}T23:59:59`);
-    const rangeDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
-    const weeksInRange = Math.max(1 / 7, rangeDays / 7);
-    const monthsInRange = Math.max(1 / 30, rangeDays / 30.44);
-
-    let targets: PracticeHoursMap | null = null;
-    if (playerGoal) {
-      const budget = weeklyHoursPresetToStoredHours(
-        weeklyHoursToPreset(Number(playerGoal.weekly_hour_commitment)),
-      );
-      targets = parsePracticeAllocationFromDb(
-        playerGoal.practice_allocation,
-        budget,
-        normalizeFocusArea(playerGoal.focus_area),
-      );
-    }
-
-    const rows: {
-      focus: GoalFocusArea;
-      label: string;
-      minutes: number;
-      goalHoursWeek: number;
-    }[] = [
-      { focus: "Driving", label: "Driving", minutes: Number(practiceAllocationData.driving ?? 0), goalHoursWeek: 0 },
-      { focus: "Irons", label: "Irons", minutes: Number(practiceAllocationData.irons ?? 0), goalHoursWeek: 0 },
-      { focus: "Wedges", label: "Wedges", minutes: Number(practiceAllocationData.wedges ?? 0), goalHoursWeek: 0 },
-      { focus: "Chipping", label: "Chipping", minutes: Number(practiceAllocationData.chipping ?? 0), goalHoursWeek: 0 },
-      { focus: "Bunkers", label: "Bunkers", minutes: Number(practiceAllocationData.bunkers ?? 0), goalHoursWeek: 0 },
-      { focus: "Putting", label: "Putting", minutes: Number(practiceAllocationData.putting ?? 0), goalHoursWeek: 0 },
-      {
-        focus: "On-Course",
-        label: "On-course",
-        minutes: Number(practiceAllocationData.onCourse ?? 0),
-        goalHoursWeek: 0,
-      },
-      {
-        focus: "Mental/Strategy",
-        label: "Mental / strategy",
-        minutes: Number(practiceAllocationData.mentalStrategy ?? 0),
-        goalHoursWeek: 0,
-      },
-    ];
-
-    for (const r of rows) {
-      r.goalHoursWeek = targets ? Math.max(0, Number(targets[r.focus] ?? 0)) : 0;
-    }
-
-    const totalMinutes = rows.reduce((s, r) => s + r.minutes, 0);
-    const sorted = [...rows].sort((a, b) => {
-      const d = b.minutes - a.minutes;
-      if (d !== 0) return practiceAllocLeastFirst ? -d : d;
-      return a.label.localeCompare(b.label);
-    });
-
-    const withTime = sorted.filter((r) => r.minutes > 0);
-    const zeroTime = sorted.filter((r) => r.minutes <= 0);
-
-    const avgTotalPerDay = Math.round((totalMinutes / rangeDays) * 10) / 10;
-    const avgTotalPerWeek = Math.round((totalMinutes / weeksInRange) * 10) / 10;
-    const avgTotalPerMonth = Math.round((totalMinutes / monthsInRange) * 10) / 10;
-
-    return {
-      sorted,
-      withTime,
-      zeroTime,
-      totalMinutes,
-      rangeDays,
-      weeksInRange,
-      monthsInRange,
-      avgTotalPerDay,
-      avgTotalPerWeek,
-      avgTotalPerMonth,
-      hasTargets: targets != null,
-    };
-  }, [practiceAllocationData, dateRange, playerGoal, practiceAllocLeastFirst]);
+    (practiceRawData || []).forEach((r) => add(r));
+    (playerPracticeAll || []).forEach((r) => add(r));
+    return Array.from(m.values());
+  }, [playerPracticeAll, practiceRawData]);
 
   // --- DERIVED METRICS (shared with stats page) ---
   const benchmarkGoalsForMatrix = useMemo(
@@ -895,7 +794,7 @@ export default function PlayerDeepDivePage() {
 
         {strokeOpportunityRows.length > 0 && (
           <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 mb-6">
-            <h2 className="text-lg font-black text-gray-900 mb-5 flex items-center gap-2 uppercase tracking-tighter">
+            <h2 className="text-lg font-black text-gray-900 mb-5 flex items-center gap-2 tracking-tighter">
               <span className="w-2 h-6 bg-[#FF9800] rounded-full" />
               Top 3 Stroke Opportunities
             </h2>
@@ -1004,159 +903,13 @@ export default function PlayerDeepDivePage() {
           </section>
         )}
 
-        {/* Practice allocation — time by focus vs saved weekly plan */}
-        <section className="mb-8 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
-          <div className="mb-4 flex flex-col gap-4 border-b border-stone-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
-                <PieChart className="h-4 w-4" aria-hidden />
-              </div>
-              <div>
-                <h3 className="text-base font-semibold tracking-tight text-stone-900">Practice allocation</h3>
-                <p className="text-xs text-stone-500">
-                  Totals and daily/weekly/monthly averages for the selected period (suitable for player / parent /
-                  committee reports) · sorted by{" "}
-                  {practiceAllocLeastFirst ? "least time first" : "most time first"}
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setPracticeAllocLeastFirst((v) => !v)}
-              className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-800 shadow-sm transition-colors hover:border-stone-300 hover:bg-white sm:self-auto"
-            >
-              <Clock className="h-3.5 w-3.5 text-stone-500" aria-hidden />
-              {practiceAllocLeastFirst ? "Most time first" : "Least time first"}
-            </button>
-          </div>
-
-          <div className="mb-4 space-y-3 rounded-2xl border border-stone-100 bg-stone-50/80 p-4 text-xs leading-relaxed text-stone-600 print:break-inside-avoid">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Selected date range</p>
-              <p className="mt-0.5 font-semibold text-stone-900">{dateRangeLabel}</p>
-              <p className="mt-2">
-                <span className="font-semibold text-stone-800">{practiceAllocationDisplay.totalMinutes} min</span>{" "}
-                logged across{" "}
-                <span className="font-medium text-stone-800">{practiceAllocationDisplay.rangeDays} calendar days</span>
-                {practiceAllocationDisplay.hasTargets
-                  ? ". Badges compare each category to the player’s saved weekly plan, scaled to this window."
-                  : ". Bar width shows each category’s share of time in this window."}
-              </p>
-            </div>
-            {practiceAllocationDisplay.totalMinutes > 0 ? (
-              <div className="border-t border-stone-200/80 pt-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-stone-500">
-                  All practice combined — averaged over this period
-                </p>
-                <p className="mt-2 text-stone-700">
-                  About{" "}
-                  <span className="font-semibold text-stone-900">
-                    {formatReportMinutes(practiceAllocationDisplay.avgTotalPerDay)}
-                  </span>{" "}
-                  per day ·{" "}
-                  <span className="font-semibold text-stone-900">
-                    {formatReportMinutes(practiceAllocationDisplay.avgTotalPerWeek)}
-                  </span>{" "}
-                  per week ·{" "}
-                  <span className="font-semibold text-stone-900">
-                    {formatReportMinutes(practiceAllocationDisplay.avgTotalPerMonth)}
-                  </span>{" "}
-                  per month
-                </p>
-                <p className="mt-1.5 text-[11px] text-stone-500">
-                  Averages spread totals evenly across every day in the range (including days with no session), so they
-                  reflect overall pace rather than only days with practice logged.
-                </p>
-              </div>
-            ) : (
-              <p className="border-t border-stone-200/80 pt-3 text-[11px] text-stone-500">
-                No minutes in this window — period averages are not shown.
-              </p>
-            )}
-          </div>
-
-          <div className="divide-y divide-stone-100 rounded-2xl border border-stone-100 bg-stone-50/40">
-            {practiceAllocationDisplay.sorted.map((row) => {
-              const isZero = row.minutes <= 0;
-              const total = practiceAllocationDisplay.totalMinutes;
-              const sharePct = total > 0 ? Math.round((row.minutes / total) * 1000) / 10 : 0;
-              const avgDailyMin = Math.round((row.minutes / practiceAllocationDisplay.rangeDays) * 10) / 10;
-              const avgWeeklyMin = Math.round((row.minutes / practiceAllocationDisplay.weeksInRange) * 10) / 10;
-              const avgMonthlyMin = Math.round((row.minutes / practiceAllocationDisplay.monthsInRange) * 10) / 10;
-              const planMinutesThisWindow =
-                row.goalHoursWeek > 0
-                  ? (row.goalHoursWeek / 7) * practiceAllocationDisplay.rangeDays * 60
-                  : 0;
-              const actualBarPct = total > 0 ? Math.min(100, sharePct) : 0;
-              const planVsActual =
-                planMinutesThisWindow > 0 && row.minutes > 0
-                  ? Math.round((row.minutes / planMinutesThisWindow) * 100)
-                  : null;
-              const planMissed = planMinutesThisWindow > 0 && isZero;
-
-              return (
-                <div
-                  key={row.focus}
-                  className={`coach-deepdive-stat-card px-3 transition-colors hover:bg-white/90 sm:px-4 ${isZero ? "py-2.5" : "py-3.5"}`}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-2 gap-y-1">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-stone-900">{row.label}</p>
-                      {!isZero ? (
-                        <p className="mt-0.5 text-[11px] text-stone-500">
-                          {sharePct}% of all practice time in this window
-                        </p>
-                      ) : row.goalHoursWeek > 0 ? (
-                        <p className="mt-0.5 text-[11px] text-stone-500">
-                          Plan {row.goalHoursWeek.toFixed(1)}h/wk · ~{Math.round(planMinutesThisWindow)}m this window
-                        </p>
-                      ) : (
-                        <p className="mt-0.5 text-[11px] text-stone-400">No time logged</p>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 items-baseline gap-2">
-                      {planVsActual != null ? (
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                            planVsActual >= 100
-                              ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100"
-                              : "bg-amber-50 text-amber-900 ring-1 ring-amber-100"
-                          }`}
-                        >
-                          {planVsActual}% of plan
-                        </span>
-                      ) : planMissed ? (
-                        <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-semibold text-stone-600 ring-1 ring-stone-200">
-                          0% of plan
-                        </span>
-                      ) : null}
-                      <div className="text-right">
-                        <span className="block text-sm font-semibold tabular-nums text-stone-900">
-                          {row.minutes} min
-                        </span>
-                        {!isZero ? (
-                          <span className="mt-0.5 block text-[10px] font-medium leading-tight text-stone-500">
-                            Avg {formatReportMinutes(avgDailyMin)}/day · {formatReportMinutes(avgWeeklyMin)}/wk ·{" "}
-                            {formatReportMinutes(avgMonthlyMin)}/mo
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-stone-200/90">
-                    <div className="h-full rounded-full bg-[#014421]" style={{ width: `${actualBarPct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {practiceAllocationDisplay.zeroTime.length > 0 && practiceAllocationDisplay.totalMinutes === 0 ? (
-            <p className="mt-3 text-center text-[11px] text-stone-500">
-              No practice tagged in this window. Expand the dates or confirm sessions are logging with facility type.
-            </p>
-          ) : null}
-        </section>
+        <PracticeVsGoalsSection
+          practiceRows={practiceRowsForGoals}
+          playerGoalRow={playerGoal}
+          playerGoalsLoaded={!isLoading}
+          variant="coach"
+          typeMatch="coach"
+        />
 
         <CoachDeepDiveRoundTrendCharts
           grossPoints={roundTrendChartPoints.gross}

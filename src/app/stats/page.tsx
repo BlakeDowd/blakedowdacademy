@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
+import Link from "next/link";
 import { AdvancedApproachStatsPanel } from "@/components/stats/AdvancedApproachStatsPanel";
 import { CoachDeepDiveProfileHero } from "@/components/coach/CoachDeepDiveProfileHero";
 import type { AcademyTrophyDbRow } from "@/components/AcademyTrophyCasePanel";
@@ -18,7 +19,6 @@ import {
   Minus,
   Navigation2,
   Percent,
-  PieChart,
   Shuffle,
   Table2,
   Target,
@@ -31,7 +31,9 @@ import {
 import { TROPHY_LIST } from "@/lib/academyTrophies";
 import { fetchTrophyCollectionRankForUser } from "@/lib/trophyCollectionLeaderboard";
 import { fetchUserTrophiesForUser } from "@/lib/userTrophiesDb";
-
+import { resolveAuthUserId } from "@/lib/resolveAuthUserId";
+import type { PlayerGoalRow } from "@/types/playerGoals";
+import { PracticeVsGoalsSection } from "@/components/stats/PracticeVsGoalsSection";
 
 function AnimatedNumber({ value, isPercentage = false }: { value: number; isPercentage?: boolean }) {
   const spring = useSpring(value >= 0 ? value : 0, { mass: 0.8, stiffness: 75, damping: 15 });
@@ -285,8 +287,9 @@ export default function StatsPage() {
   const [playerStatsScope, setPlayerStatsScope] = useState<"LAST 5" | "LAST 10" | "LAST 20" | "ALL">("ALL");
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [forceLoaded, setForceLoaded] = useState(false);
-  const [skillAssessmentFilter, setSkillAssessmentFilter] = useState<'WEEK' | 'MONTH' | 'ALL'>('ALL');
   const [metricMatrixWorstFirst, setMetricMatrixWorstFirst] = useState(false);
+  const [playerGoalRow, setPlayerGoalRow] = useState<PlayerGoalRow | null>(null);
+  const [playerGoalsLoaded, setPlayerGoalsLoaded] = useState(false);
   const [perfStatsForMatrix, setPerfStatsForMatrix] = useState<Record<string, unknown>[]>([]);
   const [statsProfileTrophies, setStatsProfileTrophies] = useState<AcademyTrophyDbRow[]>([]);
   const [statsTrophySummary, setStatsTrophySummary] = useState<{ total: number; rank: number | null }>({
@@ -369,6 +372,95 @@ export default function StatsPage() {
       cancelled = true;
     };
   }, [user?.id, roundsPerfDateSpan?.start, roundsPerfDateSpan?.end]);
+
+  const fetchPlayerGoals = useCallback(async () => {
+    if (!user?.id) {
+      setPlayerGoalRow(null);
+      setPlayerGoalsLoaded(true);
+      return;
+    }
+    setPlayerGoalsLoaded(false);
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const uid = await resolveAuthUserId(supabase);
+      if (!uid) {
+        console.warn("[StatsPage] player_goals: no Supabase auth user (JWT not ready for RLS).");
+        setPlayerGoalRow(null);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("player_goals")
+        .select(
+          "user_id, scoring_milestone, focus_area, weekly_hour_commitment, practice_allocation, lowest_score, current_handicap, updated_at",
+        )
+        .eq("user_id", uid)
+        .maybeSingle();
+
+      if (error) {
+        console.warn("[StatsPage] player_goals:", error.message, error.code);
+        setPlayerGoalRow(null);
+      } else {
+        setPlayerGoalRow((data ?? null) as PlayerGoalRow | null);
+      }
+    } catch (e) {
+      console.warn("[StatsPage] player_goals fetch failed", e);
+      setPlayerGoalRow(null);
+    } finally {
+      setPlayerGoalsLoaded(true);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    void fetchPlayerGoals();
+  }, [fetchPlayerGoals]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onGoalsUpdated = () => void fetchPlayerGoals();
+    window.addEventListener("playerGoalsUpdated", onGoalsUpdated);
+    return () => window.removeEventListener("playerGoalsUpdated", onGoalsUpdated);
+  }, [fetchPlayerGoals]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      if (typeof window !== "undefined" && !window.location.pathname.includes("stats")) return;
+      void fetchPlayerGoals();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [fetchPlayerGoals]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let subscription: { unsubscribe: () => void } | null = null;
+    void (async () => {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        if (cancelled) return;
+        const supabase = createClient();
+        const {
+          data: { subscription: sub },
+        } = supabase.auth.onAuthStateChange((event, session) => {
+          if (
+            (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "TOKEN_REFRESHED") &&
+            session?.user
+          ) {
+            void fetchPlayerGoals();
+          }
+        });
+        subscription = sub;
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      subscription?.unsubscribe();
+    };
+  }, [fetchPlayerGoals]);
 
   // Get benchmark goals based on selected goal handicap
   const goals = getBenchmarkGoals(selectedGoal);
@@ -835,40 +927,6 @@ export default function StatsPage() {
     const calculatedY = graphStartY + graphHeight - (normalized * graphHeight);
     return Math.max(graphStartY, Math.min(graphStartY + graphHeight, calculatedY));
   };
-
-  // Calculate Practice Allocation Chart values (7 categories)
-  const practiceAllocationData = useMemo(() => {
-    // Filter practice sessions based on selected timeframe
-    const now = new Date();
-    let startDate = new Date(0); // ALL
-    if (skillAssessmentFilter === 'WEEK') {
-      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
-    } else if (skillAssessmentFilter === 'MONTH') {
-      startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-    }
-
-    const filteredPractice = personalPractice.filter((p: any) => {
-      const pDate = new Date(p.created_at || p.practice_date || new Date());
-      return pDate >= startDate;
-    });
-
-    const getMinutes = (category: string) => {
-      return filteredPractice
-        .filter((p: any) => p.type === category)
-        .reduce((sum: number, p: any) => sum + (p.duration_minutes || 0), 0);
-    };
-
-    return {
-      driving: getMinutes('Driving'),
-      irons: getMinutes('Irons'),
-      wedges: getMinutes('Wedges'),
-      chipping: getMinutes('Chipping'),
-      bunkers: getMinutes('Bunkers'),
-      putting: getMinutes('Putting'),
-      mentalStrategy: getMinutes('Mental/Strategy'),
-      onCourse: getMinutes('On-Course'),
-    };
-  }, [personalPractice, skillAssessmentFilter]);
 
   // ============================================
   // NOW WE CAN DO CONDITIONAL RETURNS
@@ -1397,7 +1455,7 @@ export default function StatsPage() {
             </button>
           </div>
           {metricMatrix.length > 0 ? (
-            <div className="max-h-[26rem] overflow-y-auto pr-1 divide-y divide-stone-100">
+            <div className="divide-y divide-stone-100">
               {sortedMetricMatrix.map((stat, i) => {
                 const val = stat.current;
                 const goalVal = stat.goal;
@@ -1826,132 +1884,13 @@ export default function StatsPage() {
             </section>
         </div>
 
-        {/* Practice by area — coach-style section */}
-        <section className="mb-8 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6 min-w-0">
-            <div className="mb-4 flex flex-col gap-4 border-b border-stone-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
-                  <PieChart className="h-4 w-4" aria-hidden />
-                </div>
-                <div className="min-w-0 pr-2">
-                  <h2 className="text-base font-semibold tracking-tight text-stone-900 sm:text-lg">
-                    Practice by Area
-                  </h2>
-                  <p className="mt-0.5 text-xs text-stone-500">
-                    Bars match the share of your time in each area (same % as below).
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {(['WEEK', 'MONTH', 'ALL'] as const).map((filter) => (
-                  <button
-                    key={filter}
-                    type="button"
-                    onClick={() => setSkillAssessmentFilter(filter)}
-                    className={`rounded-xl border px-2.5 py-1.5 text-[11px] font-bold uppercase transition-all sm:px-3 sm:text-xs ${
-                      skillAssessmentFilter === filter
-                        ? "border-[#014421] bg-[#014421] text-white shadow-sm"
-                        : "border-stone-200 bg-stone-50 text-stone-600 hover:border-stone-300 hover:bg-white"
-                    }`}
-                  >
-                    {filter}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="grid gap-3 sm:gap-4">
-              {(() => {
-                const activityRows = [
-                  { category: 'Driving', minutes: Number(practiceAllocationData.driving ?? 0) },
-                  { category: 'Irons', minutes: Number(practiceAllocationData.irons ?? 0) },
-                  { category: 'Wedges', minutes: Number(practiceAllocationData.wedges ?? 0) },
-                  { category: 'Chipping', minutes: Number(practiceAllocationData.chipping ?? 0) },
-                  { category: 'Bunkers', minutes: Number(practiceAllocationData.bunkers ?? 0) },
-                  { category: 'Putting', minutes: Number(practiceAllocationData.putting ?? 0) },
-                  { category: 'On-Course', minutes: Number(practiceAllocationData.onCourse ?? 0) },
-                  { category: 'Mental/Strategy', minutes: Number(practiceAllocationData.mentalStrategy ?? 0) },
-                ];
-                const weeklyRecommended: Record<string, { min: number; max: number }> = {
-                  'Putting': { min: 90, max: 120 },
-                  'Chipping': { min: 60, max: 90 },
-                  'Bunkers': { min: 30, max: 45 },
-                  'Irons': { min: 60, max: 90 },
-                  'Wedges': { min: 45, max: 75 },
-                  'Driving': { min: 60, max: 90 },
-                  'Mental/Strategy': { min: 30, max: 45 },
-                  'On-Course': { min: 120, max: 240 },
-                };
-                const totalMinutes = activityRows.reduce((sum, row) => sum + row.minutes, 0);
-                const rangeMultiplier = skillAssessmentFilter === 'MONTH' ? 4 : skillAssessmentFilter === 'ALL' ? 8 : 1;
-                const rangeLabel = skillAssessmentFilter === 'MONTH' ? 'this month' : skillAssessmentFilter === 'ALL' ? 'this period' : 'this week';
-                const isAllTimeView = skillAssessmentFilter === 'ALL';
-
-                return (
-                  <>
-                    {totalMinutes > 0 ? (
-                      <p className="mb-2 text-sm font-semibold text-stone-800">
-                        {totalMinutes} min total <span className="font-normal text-stone-500">· all areas</span>
-                      </p>
-                    ) : (
-                      <p className="mb-2 text-sm text-stone-500">No practice logged {rangeLabel} yet.</p>
-                    )}
-                    {activityRows.map((row) => {
-                  const rec = weeklyRecommended[row.category] || { min: 0, max: 0 };
-                  const recMin = rec.min * rangeMultiplier;
-                  const recMax = rec.max * rangeMultiplier;
-                  const practiceShare = totalMinutes > 0 ? Math.round((row.minutes / totalMinutes) * 100) : 0;
-                  /** Bar width = share of total time (must match practiceShare, not vs. single busiest category). */
-                  const barWidth = totalMinutes > 0 ? Math.round((row.minutes / totalMinutes) * 100) : 0;
-                  const status =
-                    row.minutes < recMin ? 'Needs attention' :
-                    row.minutes > recMax ? 'Strong focus' :
-                    'On track';
-                  return (
-                    <div
-                      key={row.category}
-                      className="rounded-2xl border border-stone-100 bg-stone-50/40 p-4 transition-colors hover:border-stone-200 hover:bg-white sm:px-4"
-                    >
-                      <div className="mb-3 flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-stone-900">{row.category}</h3>
-                        <span className="text-sm font-semibold tabular-nums text-stone-800">{row.minutes}m</span>
-                      </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-stone-200/90">
-                        <div
-                          className="h-full rounded-full bg-[#014421] transition-all duration-500"
-                          style={{ width: `${Math.max(0, Math.min(100, barWidth))}%` }}
-                        />
-                      </div>
-                      <div className="mt-2 text-xs font-medium text-stone-500">
-                        {row.minutes} min logged {rangeLabel}
-                      </div>
-                      <div className="mt-1 text-base font-bold tabular-nums text-[#014421]">
-                        {totalMinutes > 0 ? `${practiceShare}%` : "—"}
-                        <span className="ml-1 text-xs font-semibold text-stone-600">
-                          of your practice {rangeLabel}
-                        </span>
-                      </div>
-                      {!isAllTimeView ? (
-                        <>
-                          <div className="mt-1 text-xs text-gray-600">Recommended: {recMin}-{recMax} min</div>
-                          <div className={`mt-1 text-xs font-semibold ${
-                            status === 'Needs attention'
-                              ? 'text-red-600'
-                              : status === 'Strong focus'
-                                ? 'text-[#014421]'
-                                : 'text-amber-600'
-                          }`}>
-                            {status}
-                          </div>
-                        </>
-                      ) : null}
-                    </div>
-                  );
-                })}
-                  </>
-                );
-              })()}
-            </div>
-        </section>
+        <PracticeVsGoalsSection
+          practiceRows={personalPractice}
+          playerGoalRow={playerGoalRow}
+          playerGoalsLoaded={playerGoalsLoaded}
+          variant="self"
+          typeMatch="strict"
+        />
       </div>
     </div>
   );

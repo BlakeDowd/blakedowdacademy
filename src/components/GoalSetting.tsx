@@ -19,8 +19,8 @@ import {
   type PracticeHoursMap,
 } from "@/lib/practiceAllocation";
 
-const tierLabel = "text-xs font-semibold uppercase tracking-wider text-gray-500";
-const tierTitle = "text-xs font-semibold text-gray-800 mb-3";
+const tierLabel = "text-xs font-semibold capitalize tracking-wider text-gray-500";
+const tierTitle = "text-xs font-semibold capitalize text-gray-800 mb-3";
 
 const chipIdle =
   "border border-gray-200 bg-white text-gray-700 shadow-sm hover:border-gray-300 hover:bg-gray-50";
@@ -207,7 +207,7 @@ export function GoalSetting({
               role="status"
               aria-label="Coach suggestion"
             >
-              <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.14em] text-amber-800">Coach Suggestion</p>
+              <p className="mb-1 text-[9px] font-bold capitalize tracking-[0.14em] text-amber-800">Coach Suggestion</p>
               <p className="text-[12px] leading-snug text-amber-900">{coachAmbitiousBadge}</p>
             </div>
           )}
@@ -252,7 +252,7 @@ export function GoalSetting({
           <button
             type="button"
             onClick={() => setSuggestOpen(true)}
-            className="shrink-0 rounded-lg border border-[#014421]/35 bg-[#014421]/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-[#014421] transition-colors hover:bg-[#014421]/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#014421]/30"
+            className="shrink-0 rounded-lg border border-[#014421]/35 bg-[#014421]/10 px-3 py-1.5 text-[11px] font-bold capitalize tracking-wide text-[#014421] transition-colors hover:bg-[#014421]/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#014421]/30"
           >
             Suggested allocation
           </button>
@@ -316,7 +316,7 @@ export function GoalSetting({
             className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 ring-1 ring-amber-100"
             role="status"
           >
-            <p className="mb-2 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.14em] text-amber-900">
+            <p className="mb-2 flex items-center gap-1.5 text-[9px] font-bold capitalize tracking-[0.14em] text-amber-900">
               <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden />
               Disparity alert
             </p>
@@ -340,7 +340,7 @@ export function GoalSetting({
             <div className="flex gap-2.5">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" aria-hidden />
               <div className="min-w-0 space-y-1">
-                <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-rose-800">High priority</p>
+                <p className="text-[9px] font-bold capitalize tracking-[0.14em] text-rose-800">High priority</p>
                 <p className="text-[12px] font-medium leading-snug text-rose-950">{accountabilityLeakAlert}</p>
               </div>
             </div>
