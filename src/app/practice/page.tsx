@@ -1618,23 +1618,36 @@ export default function PracticePage() {
 
         // One insert per completion (multiple same drill / same day allowed). XP stacks via updateUserXP.
         const stableDrillId = (drill as any).drill_id || drill.id;
+        const typeForRow = String(stableDrillId ?? drill.id ?? "drill").trim() || "drill";
+        const durationMinutes = Math.max(
+          0,
+          Math.min(24 * 60, Math.round(Number(drill.estimatedMinutes ?? 0)) || 0),
+        );
         const completedAt = new Date().toISOString();
-        const { data: practiceData, error: practiceError } = await supabase
-          .from('practice')
-          .insert({
-            user_id: user.id,
-            type: stableDrillId,
-            duration_minutes: drill.estimatedMinutes,
-            notes: `Completed Drill: ${drill.category}`,
-            // Leaderboard week/month/year filters read completed_at first (see parseLeaderboardEventMs).
-            completed_at: completedAt,
-          })
-          .select();
+        // Omit `.select()`: some setups fail RETURNING (empty-looking PostgrestError) even when the row inserts.
+        const { error: practiceError } = await supabase.from("practice").insert({
+          user_id: user.id,
+          type: typeForRow,
+          duration_minutes: durationMinutes,
+          notes: `Completed Drill: ${drill.category ?? "General"}`,
+          completed_at: completedAt,
+        });
 
         if (practiceError) {
-          console.error('Practice: Error saving to practice table:', practiceError);
+          const pe = practiceError as {
+            message?: string;
+            code?: string;
+            details?: string;
+            hint?: string;
+          };
+          console.error("Practice: Error saving to practice table:", {
+            message: pe?.message,
+            code: pe?.code,
+            details: pe?.details,
+            hint: pe?.hint,
+          });
         } else {
-          console.log('Practice: Drill saved to practice table:', practiceData);
+          console.log("Practice: Drill saved to practice table (user_id + type + completed_at).");
 
           await updateUserXP(user.id, xpEarned);
           console.log(`Practice: Added ${xpEarned} XP for drill completion`);
@@ -2505,6 +2518,7 @@ export default function PracticePage() {
                               setExpandedScheduleDrill(null);
                             }}
                             onSwap={swapDrill}
+                            onClear={requestClearDrillFromDay}
                             onLevelToggle={updateLevelCompletion}
                             onYoutubeOpen={(url) => setYoutubeModal({ open: true, url })}
                             onExpandToggle={(dayIdx, drillIdx) => {
@@ -2515,6 +2529,7 @@ export default function PracticePage() {
                               }
                             }}
                             defaultExpanded={isExpanded}
+                            userId={user?.id ?? null}
                           />
                         );
                       })}
@@ -2871,6 +2886,7 @@ export default function PracticePage() {
                               setExpandedScheduleDrill(null);
                             }}
                             onSwap={swapDrill}
+                            onClear={requestClearDrillFromDay}
                             onLevelToggle={updateLevelCompletion}
                             onYoutubeOpen={(url) => setYoutubeModal({ open: true, url })}
                             onExpandToggle={(dayIdx, drillIdx) => {
@@ -2881,6 +2897,7 @@ export default function PracticePage() {
                               }
                             }}
                             defaultExpanded={isExpanded}
+                            userId={user?.id ?? null}
                           />
                         );
                       })}
@@ -2945,6 +2962,7 @@ export default function PracticePage() {
                                     }
                                   }}
                                   defaultExpanded={isExpanded}
+                                  userId={user?.id ?? null}
                                   compact
                                 />
                               );

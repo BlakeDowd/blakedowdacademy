@@ -1,7 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { CheckCircle2, Check, PlayCircle, File, RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { Award, CheckCircle2, Check, PlayCircle, File, RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
+import {
+  fetchDrillPersonalBest,
+  stableDrillKey,
+  upsertDrillPersonalBest,
+  userFacingDrillPersonalBestsError,
+} from "@/lib/drillPersonalBests";
 import { DESCRIPTION_BY_DRILL_ID, DESCRIPTION_BY_ID } from "@/data/official_drills";
 
 export type FacilityType = 'Driving' | 'Irons' | 'Wedges' | 'Chipping' | 'Bunkers' | 'Putting' | 'Mental/Strategy' | 'On-Course';
@@ -44,6 +50,8 @@ interface DrillCardProps {
   onExpandToggle?: (dayIndex: number, drillIndex: number) => void;
   defaultExpanded?: boolean; // FORCE VISIBILITY: Default to expanded
   compact?: boolean; // Smaller layout for Weekly view
+  /** When set, card loads/saves a personal best for this drill in Supabase (visible collapsed + expanded). */
+  userId?: string | null;
 }
 
 export default function DrillCard({
@@ -62,12 +70,86 @@ export default function DrillCard({
   onExpandToggle,
   defaultExpanded = false, // FORCE VISIBILITY: Default to false
   compact = false,
+  userId = null,
 }: DrillCardProps) {
   // FIX THE TOGGLE: Default to collapsed
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const isCompleted = drill.completed || false;
-  // SMOOTH TRANSITION: Show content only when expanded or just swapped
+  const drillKey = useMemo(() => stableDrillKey(drill), [drill]);
+  /** Last value persisted in Supabase (drives “to beat” on collapsed card). */
+  const [pbSavedAchievement, setPbSavedAchievement] = useState("");
+  /** New entry only — not a copy of the saved record (cleared when you open this section). */
+  const [pbDraft, setPbDraft] = useState("");
+  const [pbLoading, setPbLoading] = useState(false);
+  const [pbSaving, setPbSaving] = useState(false);
+  const [pbMsg, setPbMsg] = useState<string | null>(null);
+  const prevExpandedRef = useRef<boolean | null>(null);
+
   const shouldShowContent = isExpanded || justSwapped;
+
+  // Load whenever the signed-in user opens this drill identity (not only when expanded) so
+  // returning to the drill still shows what they saved to beat.
+  useEffect(() => {
+    if (!userId) {
+      setPbSavedAchievement("");
+      setPbDraft("");
+      return;
+    }
+    let cancelled = false;
+    setPbDraft("");
+    void (async () => {
+      setPbLoading(true);
+      setPbMsg(null);
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const row = await fetchDrillPersonalBest(supabase, userId, drillKey);
+        const text = row?.achievement ?? "";
+        if (!cancelled) {
+          setPbSavedAchievement(text);
+          // Intentionally do not copy server text into pbDraft — draft is for logging a new result.
+        }
+      } finally {
+        if (!cancelled) setPbLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, drillKey]);
+
+  // Fresh input each time they expand the card (record to beat stays in pbSavedAchievement / “To beat”).
+  useEffect(() => {
+    const prev = prevExpandedRef.current;
+    prevExpandedRef.current = isExpanded;
+    if (isExpanded && prev === false) {
+      setPbDraft("");
+      setPbMsg(null);
+    }
+  }, [isExpanded]);
+
+  const savePersonalBest = useCallback(async () => {
+    if (!userId) return;
+    const trimmed = pbDraft.trim().slice(0, 500);
+    if (!trimmed) return;
+    setPbSaving(true);
+    setPbMsg(null);
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const { error } = await upsertDrillPersonalBest(supabase, userId, drillKey, trimmed);
+      if (error) setPbMsg(userFacingDrillPersonalBestsError(error.message));
+      else {
+        setPbSavedAchievement(trimmed);
+        setPbDraft("");
+        setPbMsg("Saved.");
+      }
+    } catch (e) {
+      setPbMsg(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setPbSaving(false);
+    }
+  }, [userId, drillKey, pbDraft]);
 
   // Sync with parent's expand state - but allow user to toggle
   useEffect(() => {
@@ -115,6 +197,22 @@ export default function DrillCard({
                 {drill.title}
               </h4>
             </div>
+
+            {userId && pbSavedAchievement.trim() && !isExpanded && (
+              <div
+                className={`mt-1 flex items-start gap-1.5 rounded-md bg-amber-50/90 px-2 py-1.5 text-amber-950 ring-1 ring-amber-200/80 ${
+                  compact ? "text-[11px] leading-snug" : "text-xs leading-snug"
+                }`}
+              >
+                <Award className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <span className="font-semibold text-amber-900">To beat: </span>
+                  <span className="whitespace-pre-wrap break-words text-amber-950 line-clamp-2">
+                    {pbSavedAchievement}
+                  </span>
+                </div>
+              </div>
+            )}
             
             <div className={`flex items-center gap-3 ${compact ? "text-xs" : "text-sm"} text-gray-600`}>
               <span className="flex items-center gap-1">
@@ -248,6 +346,85 @@ export default function DrillCard({
                 <p className="text-sm text-gray-500 italic">No goals/reps set for this drill</p>
               )}
             </div>
+
+            {userId && (
+              <div
+                className={`rounded-lg border border-amber-200/90 bg-amber-50/60 ${compact ? "p-2 space-y-1.5" : "p-3 space-y-2"}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className={`flex items-center gap-2 font-semibold text-amber-950 ${compact ? "text-xs" : "text-sm"}`}>
+                  <Award className={compact ? "h-3.5 w-3.5 shrink-0" : "h-4 w-4 shrink-0"} />
+                  Personal best
+                </div>
+                <p className={`text-gray-600 ${compact ? "text-[11px] leading-snug" : "text-xs"}`}>
+                  Type a new result below when you beat your record; it replaces your bar to beat. It syncs to your
+                  account.
+                </p>
+                {pbSavedAchievement.trim() && (
+                  <p
+                    className={`rounded-md bg-white/80 px-2 py-1.5 text-amber-950 ring-1 ring-amber-200/60 ${compact ? "text-[11px]" : "text-xs"}`}
+                  >
+                    <span className="font-semibold">Record to beat: </span>
+                    <span className="whitespace-pre-wrap break-words">{pbSavedAchievement}</span>
+                  </p>
+                )}
+                {pbLoading ? (
+                  <p className="text-xs text-gray-500">Loading…</p>
+                ) : (
+                  <textarea
+                    value={pbDraft}
+                    onChange={(e) => {
+                      setPbDraft(e.target.value);
+                      setPbMsg(null);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    maxLength={500}
+                    rows={compact ? 2 : 3}
+                    placeholder={
+                      pbSavedAchievement.trim()
+                        ? `New best to save — current bar: ${
+                            pbSavedAchievement.length > 50
+                              ? `${pbSavedAchievement.slice(0, 50)}…`
+                              : pbSavedAchievement
+                          }`
+                        : "e.g. 12 in a row, 85% makes, 45 ft longest make"
+                    }
+                    className={`w-full resize-y rounded-md border border-amber-200/80 bg-white text-gray-900 placeholder:text-gray-400 focus:border-[#014421] focus:outline-none focus:ring-1 focus:ring-[#014421]/30 ${
+                      compact ? "px-2 py-1.5 text-xs" : "px-3 py-2 text-sm"
+                    }`}
+                  />
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={pbSaving || pbLoading || !userId || !pbDraft.trim()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void savePersonalBest();
+                    }}
+                    className={`rounded-md bg-[#014421] font-semibold text-white transition-colors hover:bg-[#014421]/90 disabled:cursor-not-allowed disabled:opacity-50 ${
+                      compact ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm"
+                    }`}
+                  >
+                    {pbSaving ? "Saving…" : "Save"}
+                  </button>
+                  {pbMsg && (
+                    <span
+                      className={`text-xs ${
+                        pbMsg === "Saved."
+                          ? "text-green-700"
+                          : "max-w-full text-left leading-snug text-red-600"
+                      }`}
+                    >
+                      {pbMsg}
+                    </span>
+                  )}
+                  {!pbLoading && (
+                    <span className="ml-auto text-xs text-gray-400 tabular-nums">{pbDraft.length}/500</span>
+                  )}
+                </div>
+              </div>
+            )}
             
             {/* BUTTON PLACEMENT: Complete Drill and Swap Drill buttons stay here */}
             {/* Action Buttons - Side by Side */}
@@ -307,7 +484,7 @@ export default function DrillCard({
               )}
             </div>
 
-            {compact && onClear && (
+            {onClear && (
               <div className="flex justify-end">
                 <button
                   type="button"
@@ -317,7 +494,9 @@ export default function DrillCard({
                       onClear(dayIndex, actualDrillIndex);
                     }
                   }}
-                  className="text-xs text-red-600 hover:text-red-700 underline underline-offset-2"
+                  className={`text-red-600 hover:text-red-700 underline underline-offset-2 ${
+                    compact ? "text-xs" : "text-sm"
+                  }`}
                 >
                   Clear Drill
                 </button>
