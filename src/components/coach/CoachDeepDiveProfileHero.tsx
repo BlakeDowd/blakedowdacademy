@@ -1,6 +1,6 @@
 "use client";
 
-import { Award, Flag, TrendingUp, Trophy, User } from "lucide-react";
+import { Award, Clock3, Flag, Target, TrendingUp, Trophy, User } from "lucide-react";
 import type { AcademyTrophyDbRow } from "@/components/AcademyTrophyCasePanel";
 
 export type CoachDeepDiveProfileHeroProps = {
@@ -30,6 +30,10 @@ export type CoachDeepDiveProfileHeroProps = {
   academyTrophyDistinctTotal?: number | null;
   /** Academy leaderboard rank when known (signed-in user only on stats). */
   academyTrophyLeaderboardRank?: number | null;
+  /** Optional summary chips shown under profile pills. */
+  practiceHoursTotal?: number | null;
+  bestScore?: number | null;
+  combinesCompleted?: number | null;
 };
 
 function initials(name: string): string {
@@ -53,6 +57,9 @@ export function CoachDeepDiveProfileHero({
   allEnteredData = false,
   academyTrophyDistinctTotal,
   academyTrophyLeaderboardRank,
+  practiceHoursTotal = null,
+  bestScore = null,
+  combinesCompleted = null,
 }: CoachDeepDiveProfileHeroProps) {
   const activityScope = allEnteredData ? "logged" : "in range";
 
@@ -101,63 +108,92 @@ export function CoachDeepDiveProfileHero({
                   <span className="font-semibold text-stone-800">{dateRangeLabel}</span>
                 </p>
               ) : null}
-              <div
-                className={`flex w-full min-w-0 flex-wrap justify-start gap-2 ${
-                  showPerformanceSnapshot
-                    ? heroCompact
-                      ? "mt-2"
-                      : "mt-4"
-                    : heroCompact
-                      ? "mt-2"
-                      : "mt-3 sm:mt-4"
-                } sm:grid sm:max-w-xl sm:grid-cols-2 sm:gap-x-3 sm:gap-y-2`}
-              >
-                <span
-                  className={
-                    heroCompact
-                      ? "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-stone-800 shadow-sm"
-                      : "inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-1 text-xs font-semibold text-stone-800 shadow-sm"
-                  }
-                >
-                  <Flag className={heroCompact ? "h-3 w-3 text-[#014421]" : "h-3.5 w-3.5 text-[#014421]"} aria-hidden />
-                  Hcp Index{" "}
-                  {playerHandicap >= 0 ? Math.round(playerHandicap) : `+${Math.abs(Math.round(playerHandicap))}`}
-                </span>
-                {totalXp != null && totalXp > 0 ? (
-                  <span
-                    className={
-                      heroCompact
-                        ? "inline-flex items-center gap-1 rounded-full border border-amber-200/80 bg-amber-50/90 px-2 py-0.5 text-[10px] font-semibold text-amber-950 shadow-sm"
-                        : "inline-flex items-center gap-1.5 rounded-full border border-amber-200/80 bg-amber-50/90 px-3 py-1 text-xs font-semibold text-amber-950 shadow-sm"
-                    }
-                  >
-                    <Award className={heroCompact ? "h-3 w-3" : "h-3.5 w-3.5"} aria-hidden />
-                    {totalXp.toLocaleString()} XP
-                  </span>
-                ) : null}
-                <span
-                  className={
-                    heroCompact
-                      ? "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-stone-700 shadow-sm"
-                      : "inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-1 text-xs font-semibold text-stone-700 shadow-sm"
-                  }
-                >
-                  <User className={heroCompact ? "h-3 w-3 text-stone-500" : "h-3.5 w-3.5 text-stone-500"} aria-hidden />
-                  {roundsInRange} round{roundsInRange !== 1 ? "s" : ""} {activityScope}
-                </span>
-                <span
-                  className={
-                    heroCompact
-                      ? "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-stone-700 shadow-sm"
-                      : "inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-1 text-xs font-semibold text-stone-700 shadow-sm"
-                  }
-                >
-                  <TrendingUp className={heroCompact ? "h-3 w-3 text-emerald-600" : "h-3.5 w-3.5 text-emerald-600"} aria-hidden />
-                  {practiceSessionsInRange} practice {practiceSessionsInRange === 1 ? "entry" : "entries"}{" "}
-                  {activityScope}
-                </span>
-              </div>
             </div>
+          </div>
+
+          <div
+            className={`ml-0 flex w-full min-w-0 flex-wrap content-start items-start justify-start gap-1.5 pl-0 ${
+              showPerformanceSnapshot ? (heroCompact ? "mt-1" : "mt-2") : heroCompact ? "mt-1" : "mt-2"
+            } sm:gap-2`}
+          >
+            <span
+              className={
+                heroCompact
+                  ? "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold text-stone-800 shadow-sm"
+                  : "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-stone-800 shadow-sm"
+              }
+            >
+              <Flag className={heroCompact ? "h-3 w-3 text-[#014421]" : "h-3.5 w-3.5 text-[#014421]"} aria-hidden />
+              Hcp Index {playerHandicap >= 0 ? Math.round(playerHandicap) : `+${Math.abs(Math.round(playerHandicap))}`}
+            </span>
+            {totalXp != null && totalXp > 0 ? (
+              <span
+                className={
+                  heroCompact
+                    ? "inline-flex items-center gap-1 rounded-full border border-amber-200/80 bg-amber-50/90 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950 shadow-sm"
+                    : "inline-flex items-center gap-1 rounded-full border border-amber-200/80 bg-amber-50/90 px-2 py-0.5 text-[11px] font-semibold text-amber-950 shadow-sm"
+                }
+              >
+                <Award className={heroCompact ? "h-3 w-3" : "h-3.5 w-3.5"} aria-hidden />
+                {totalXp.toLocaleString()} XP
+              </span>
+            ) : null}
+            <span
+              className={
+                heroCompact
+                  ? "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold text-stone-700 shadow-sm"
+                  : "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-stone-700 shadow-sm"
+              }
+            >
+              <User className={heroCompact ? "h-3 w-3 text-stone-500" : "h-3.5 w-3.5 text-stone-500"} aria-hidden />
+              {roundsInRange} round{roundsInRange !== 1 ? "s" : ""} {activityScope}
+            </span>
+            <span
+              className={
+                heroCompact
+                  ? "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold text-stone-700 shadow-sm"
+                  : "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-stone-700 shadow-sm"
+              }
+            >
+              <TrendingUp className={heroCompact ? "h-3 w-3 text-emerald-600" : "h-3.5 w-3.5 text-emerald-600"} aria-hidden />
+              {practiceSessionsInRange} practice {practiceSessionsInRange === 1 ? "entry" : "entries"} {activityScope}
+            </span>
+            {practiceHoursTotal != null ? (
+              <span
+                className={
+                  heroCompact
+                    ? "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold text-stone-700 shadow-sm"
+                    : "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-stone-700 shadow-sm"
+                }
+              >
+                <Clock3 className={heroCompact ? "h-3 w-3 text-stone-500" : "h-3.5 w-3.5 text-stone-500"} aria-hidden />
+                {practiceHoursTotal.toFixed(1)}h practice
+              </span>
+            ) : null}
+            {bestScore != null ? (
+              <span
+                className={
+                  heroCompact
+                    ? "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold text-stone-700 shadow-sm"
+                    : "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-stone-700 shadow-sm"
+                }
+              >
+                <Trophy className={heroCompact ? "h-3 w-3 text-stone-500" : "h-3.5 w-3.5 text-stone-500"} aria-hidden />
+                Best score {Math.round(bestScore)}
+              </span>
+            ) : null}
+            {combinesCompleted != null ? (
+              <span
+                className={
+                  heroCompact
+                    ? "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold text-stone-700 shadow-sm"
+                    : "inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-stone-700 shadow-sm"
+                }
+              >
+                <Target className={heroCompact ? "h-3 w-3 text-stone-500" : "h-3.5 w-3.5 text-stone-500"} aria-hidden />
+                {combinesCompleted} combines completed
+              </span>
+            ) : null}
           </div>
 
           <div

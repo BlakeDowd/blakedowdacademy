@@ -15,10 +15,13 @@ import {
   ArrowUpRight,
   BarChart3,
   Bird,
+  ChevronDown,
+  ChevronUp,
   CircleDot,
   Minus,
   Navigation2,
   Percent,
+  PieChart,
   Shuffle,
   Table2,
   Target,
@@ -34,6 +37,8 @@ import { fetchUserTrophiesForUser } from "@/lib/userTrophiesDb";
 import { resolveAuthUserId } from "@/lib/resolveAuthUserId";
 import type { PlayerGoalRow } from "@/types/playerGoals";
 import { PracticeVsGoalsSection } from "@/components/stats/PracticeVsGoalsSection";
+import { countUserCombineCompletions } from "@/lib/combineCompletionDetection";
+import { practiceSessionMinutesFromRow, practiceSessionsForUser } from "@/lib/practiceSessionDuration";
 
 function AnimatedNumber({ value, isPercentage = false }: { value: number; isPercentage?: boolean }) {
   const spring = useSpring(value >= 0 ? value : 0, { mass: 0.8, stiffness: 75, damping: 15 });
@@ -182,7 +187,7 @@ export default function StatsPage() {
   // ============================================
   
   // Context hooks
-  const { rounds, practiceSessions, loading: statsLoading, refreshRounds } = useStats();
+  const { rounds, practiceSessions, practiceLogs, loading: statsLoading, refreshRounds } = useStats();
   const { user, loading: authLoading } = useAuth();
   
   // Filter by User ID: StatsContext `rounds` are already loaded with `.eq("user_id", authUser.id)`.
@@ -204,6 +209,37 @@ export default function StatsPage() {
     if (!practiceSessions || !user?.id) return [];
     return practiceSessions.filter((p: any) => p.user_id === user.id);
   }, [practiceSessions, user?.id]);
+
+  const practiceHoursTotal = useMemo(() => {
+    const mine = practiceSessionsForUser(practiceSessions, user?.id);
+    if (!mine.length) return 0;
+    const totalMinutes = mine.reduce(
+      (sum: number, session: { duration_minutes?: unknown; duration?: unknown; estimatedMinutes?: unknown }) =>
+        sum + practiceSessionMinutesFromRow(session),
+      0,
+    );
+    return Math.round((totalMinutes / 60) * 10) / 10;
+  }, [practiceSessions, user?.id]);
+
+  const bestScore = useMemo(() => {
+    if (!personalRounds.length) return null;
+    const validScores = personalRounds
+      .map((r: { score?: unknown }) => r.score)
+      .filter((s): s is number => s !== null && s !== undefined && Number.isFinite(Number(s)))
+      .map((s) => Number(s));
+    if (!validScores.length) return null;
+    return Math.min(...validScores);
+  }, [personalRounds]);
+
+  const combinesCompleted = useMemo(
+    () =>
+      countUserCombineCompletions({
+        userId: user?.id,
+        practiceSessions: practiceSessionsForUser(practiceSessions, user?.id),
+        practiceLogs: practiceLogs || [],
+      }),
+    [user?.id, practiceSessions, practiceLogs],
+  );
   
   // Ensure rounds is always an array (use personalRounds for stats page)
   const safeRounds = personalRounds || [];
@@ -267,6 +303,21 @@ export default function StatsPage() {
           if (error) {
             console.error('Error updating goal handicap:', error);
           }
+
+          // Keep Goal Setting + Stats in sync so the target slider remembers the user's chosen goal.
+          const uid = await resolveAuthUserId(supabase);
+          if (uid) {
+            const { error: goalSyncError } = await supabase
+              .from("player_goals")
+              .update({
+                current_handicap: newGoal,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("user_id", uid);
+            if (goalSyncError) {
+              console.warn("[StatsPage] player_goals handicap sync failed:", goalSyncError.message);
+            }
+          }
         } catch (err) {
           console.error('Failed to update goal handicap:', err);
         }
@@ -274,12 +325,6 @@ export default function StatsPage() {
     }, 1000); // 1 second debounce for the DB update
   };
   
-  // Update selectedGoal when user's initialHandicap changes
-  useEffect(() => {
-    if (user?.initialHandicap !== undefined) {
-      setSelectedGoal(clampTargetGoalHandicap(user.initialHandicap));
-    }
-  }, [user?.initialHandicap]);
   const [selectedMetric, setSelectedMetric] = useState<'nettScore' | 'gross' | 'birdies' | 'pars' | 'bogeys' | 'totalPutts' | 'doubleBogeys' | 'eagles' | 'threePutts' | 'fairwaysHit' | 'gir' | 'gir8ft' | 'gir20ft' | 'upAndDown' | 'bunkerSaves' | 'chipInside6ft' | 'doubleChips' | 'totalPenalties'>('nettScore');
   const [activeHistory, setActiveHistory] = useState<'LAST 5' | 'LAST 10'>('LAST 10');
   const [holeFilter, setHoleFilter] = useState<'9' | '18'>('18');
@@ -290,12 +335,51 @@ export default function StatsPage() {
   const [metricMatrixWorstFirst, setMetricMatrixWorstFirst] = useState(false);
   const [playerGoalRow, setPlayerGoalRow] = useState<PlayerGoalRow | null>(null);
   const [playerGoalsLoaded, setPlayerGoalsLoaded] = useState(false);
+  const [collapsedCards, setCollapsedCards] = useState<Record<string, boolean>>({
+    trendAnalysis: true,
+    coreScoring: true,
+    fullMatrix: true,
+    scoringLeaks: true,
+    strokeOpportunities: true,
+    driving: true,
+    approach: true,
+    advancedApproach: true,
+    shortGame: true,
+    putting: true,
+    penalties: true,
+    practiceVsGoals: true,
+  });
   const [perfStatsForMatrix, setPerfStatsForMatrix] = useState<Record<string, unknown>[]>([]);
   const [statsProfileTrophies, setStatsProfileTrophies] = useState<AcademyTrophyDbRow[]>([]);
   const [statsTrophySummary, setStatsTrophySummary] = useState<{ total: number; rank: number | null }>({
     total: 0,
     rank: null,
   });
+
+  const toggleCard = useCallback((key: string) => {
+    setCollapsedCards((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  // Prefer Goal Setting's saved handicap, fallback to profile handicap.
+  useEffect(() => {
+    const goalHandicapRaw = playerGoalRow?.current_handicap;
+    const hasGoalHandicap =
+      goalHandicapRaw !== null &&
+      goalHandicapRaw !== undefined &&
+      String(goalHandicapRaw).trim() !== "";
+
+    if (hasGoalHandicap) {
+      const parsed = Number(goalHandicapRaw);
+      if (Number.isFinite(parsed)) {
+        setSelectedGoal(clampTargetGoalHandicap(parsed));
+        return;
+      }
+    }
+
+    if (user?.initialHandicap !== undefined) {
+      setSelectedGoal(clampTargetGoalHandicap(user.initialHandicap));
+    }
+  }, [playerGoalRow?.current_handicap, user?.initialHandicap]);
 
   const scopedPlayerStatsRounds = useMemo(() => {
     if (!safeRounds.length) return [];
@@ -968,6 +1052,9 @@ export default function StatsPage() {
           totalXp={user?.totalXP ?? null}
           roundsInRange={safeRounds.length}
           practiceSessionsInRange={personalPractice.length}
+          practiceHoursTotal={practiceHoursTotal}
+          bestScore={bestScore}
+          combinesCompleted={combinesCompleted}
           unlockedTrophies={statsProfileTrophies}
           heroCompact={statsProfileHeroCompact}
           showPerformanceSnapshot={false}
@@ -982,7 +1069,7 @@ export default function StatsPage() {
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#014421]/10 text-[#014421]">
               <Target className="h-4 w-4" aria-hidden />
             </div>
-            <div>
+            <div className="flex-1">
               <h2 className="text-base font-semibold tracking-tight text-stone-900">Target Goal</h2>
               <p className="text-xs text-stone-500">
                 Sets benchmark targets for stats below (GIR, FIR, putting, and more).
@@ -1021,11 +1108,30 @@ export default function StatsPage() {
             Trend Analysis
           </h2>
           <div className="min-w-0 overflow-hidden rounded-3xl border border-stone-200 bg-white p-3 shadow-md sm:p-6">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+                <BarChart3 className="h-4 w-4" aria-hidden />
+              </div>
+              <h2
+                className="text-base font-semibold tracking-tight text-stone-900 sm:text-lg"
+                style={{ textDecoration: "underline", textDecorationColor: "#FF9800", textDecorationThickness: "2px", textUnderlineOffset: "8px" }}
+              >
+                Trend Analysis
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleCard("trendAnalysis")}
+              className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+              aria-expanded={!collapsedCards.trendAnalysis}
+              aria-label={collapsedCards.trendAnalysis ? "Expand trend analysis" : "Collapse trend analysis"}
+            >
+              {collapsedCards.trendAnalysis ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+            </button>
+          </div>
+          {!collapsedCards.trendAnalysis && (
           <div className="rounded-2xl border border-stone-100 bg-stone-50/70 p-3 overflow-hidden sm:rounded-[28px] sm:p-6">
-            <h2 className="mb-4 text-center text-base font-bold tracking-wide text-stone-900 sm:text-lg" style={{ textDecoration: 'underline', textDecorationColor: '#FF9800', textDecorationThickness: '2px', textUnderlineOffset: '8px' }}>
-              Trend Analysis
-            </h2>
-            
             {/* Controls */}
             <div className="mb-4 space-y-3 rounded-2xl border border-stone-200 bg-white p-3 sm:p-5">
               {/* Metric Selection */}
@@ -1325,13 +1431,19 @@ export default function StatsPage() {
               </div>
             </div>
           </div>
-        </div>
+          )}
+          </div>
         </section>
 
         <div className="mb-6 rounded-3xl border border-stone-200 bg-white p-4 shadow-md sm:p-5">
-          <p className="mb-3 text-center text-[10px] font-bold uppercase tracking-wide text-stone-500">
-            Player Stats Round Window
-          </p>
+          <div className="mb-3 flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-700">
+              <Table2 className="h-4 w-4" aria-hidden />
+            </div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-stone-500">
+              Player Stats Round Window
+            </p>
+          </div>
           <p className="mb-3 text-center text-xs text-stone-600">
             Core metrics, matrix, and category stats below use the rounds you select here. The trend chart above keeps
             its own history buttons.
@@ -1367,7 +1479,7 @@ export default function StatsPage() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
               <BarChart3 className="h-4 w-4" aria-hidden />
             </div>
-            <div>
+            <div className="flex-1">
               <h3 id="stats-core-scoring-heading" className="text-base font-semibold tracking-tight text-stone-900">
                 Core Scoring Metrics
               </h3>
@@ -1375,8 +1487,17 @@ export default function StatsPage() {
                 Based on the round window you chose above (most recent rounds, oldest to newest in the average).
               </p>
             </div>
+            <button
+              type="button"
+              onClick={() => toggleCard("coreScoring")}
+              className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+              aria-expanded={!collapsedCards.coreScoring}
+              aria-label={collapsedCards.coreScoring ? "Expand core scoring metrics" : "Collapse core scoring metrics"}
+            >
+              {collapsedCards.coreScoring ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+            </button>
           </div>
-          {bigSix ? (
+          {!collapsedCards.coreScoring && (bigSix ? (
             <div
               id="coach-deepdive-big-six-grid"
               className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4"
@@ -1420,7 +1541,7 @@ export default function StatsPage() {
               Log at least one round with scores to see scoring average, GIR, fairways, scrambling, putts per 18, and
               birdies per 18.
             </p>
-          )}
+          ))}
         </section>
 
         {/* Full metric matrix — below core scoring; same card as coach deep dive */}
@@ -1445,16 +1566,27 @@ export default function StatsPage() {
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setMetricMatrixWorstFirst((v) => !v)}
-              className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-800 shadow-sm transition-colors hover:border-stone-300 hover:bg-white sm:self-auto"
-            >
-              <ArrowUpDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
-              {metricMatrixWorstFirst ? "Show strongest first" : "Show largest gaps first"}
-            </button>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setMetricMatrixWorstFirst((v) => !v)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-800 shadow-sm transition-colors hover:border-stone-300 hover:bg-white"
+              >
+                <ArrowUpDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                {metricMatrixWorstFirst ? "Show strongest first" : "Show largest gaps first"}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleCard("fullMatrix")}
+                className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                aria-expanded={!collapsedCards.fullMatrix}
+                aria-label={collapsedCards.fullMatrix ? "Expand full metric matrix" : "Collapse full metric matrix"}
+              >
+                {collapsedCards.fullMatrix ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+              </button>
+            </div>
           </div>
-          {metricMatrix.length > 0 ? (
+          {!collapsedCards.fullMatrix && (metricMatrix.length > 0 ? (
             <div className="divide-y divide-stone-100">
               {sortedMetricMatrix.map((stat, i) => {
                 const val = stat.current;
@@ -1513,7 +1645,7 @@ export default function StatsPage() {
             <p className="py-8 text-center text-sm text-stone-500">
               Log at least one round with scores to see every benchmark row vs your averages (same view as coach deep dive).
             </p>
-          )}
+          ))}
         </section>
 
         <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
@@ -1521,12 +1653,21 @@ export default function StatsPage() {
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-800">
                 <AlertTriangle className="h-4 w-4" aria-hidden />
               </div>
-              <div>
+              <div className="flex-1">
                 <h2 className="text-base font-semibold tracking-tight text-stone-900">Scoring Leaks</h2>
                 <p className="text-xs text-stone-500">Penalties, three-putts, and doubles or worse · per round</p>
               </div>
+              <button
+                type="button"
+                onClick={() => toggleCard("scoringLeaks")}
+                className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                aria-expanded={!collapsedCards.scoringLeaks}
+                aria-label={collapsedCards.scoringLeaks ? "Expand scoring leaks" : "Collapse scoring leaks"}
+              >
+                {collapsedCards.scoringLeaks ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+              </button>
             </div>
-            {penaltyStats ? (
+            {!collapsedCards.scoringLeaks && (penaltyStats ? (
               <>
                 <div className="grid grid-cols-3 divide-x divide-stone-100 rounded-2xl border border-stone-100 bg-stone-50/50">
                   {(
@@ -1551,18 +1692,29 @@ export default function StatsPage() {
               <p className="py-6 text-center text-sm text-stone-500">
                 Log at least one round to populate Scoring Leaks.
               </p>
-            )}
+            ))}
           </section>
 
         <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
             <div className="mb-4 flex items-center gap-3 border-b border-stone-100 pb-4">
-              <div className="h-8 w-1 shrink-0 rounded-full bg-[#FF9800]" aria-hidden />
-              <div>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-800">
+                <Target className="h-4 w-4" aria-hidden />
+              </div>
+              <div className="flex-1">
                 <h2 className="text-base font-semibold tracking-tight text-stone-900">Top 3 Stroke Opportunities</h2>
                 <p className="text-xs text-stone-500">Estimated strokes per round if you closed the gap to your target benchmarks</p>
               </div>
+              <button
+                type="button"
+                onClick={() => toggleCard("strokeOpportunities")}
+                className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                aria-expanded={!collapsedCards.strokeOpportunities}
+                aria-label={collapsedCards.strokeOpportunities ? "Expand stroke opportunities" : "Collapse stroke opportunities"}
+              >
+                {collapsedCards.strokeOpportunities ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+              </button>
             </div>
-            {strokeOpportunityRows.length > 0 ? (
+            {!collapsedCards.strokeOpportunities && (strokeOpportunityRows.length > 0 ? (
               <div className="space-y-3">
                 {strokeOpportunityRows.map((row, idx) => (
                   <div
@@ -1589,7 +1741,7 @@ export default function StatsPage() {
               <p className="py-6 text-center text-sm text-stone-500">
                 Log at least one round to calculate Top 3 Stroke Opportunities.
               </p>
-            )}
+            ))}
           </section>
 
         <div className="mb-8 min-w-0 space-y-6">
@@ -1599,12 +1751,23 @@ export default function StatsPage() {
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
                   <Navigation2 className="h-4 w-4" aria-hidden />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="text-base font-semibold tracking-tight text-stone-900">Driving</h3>
                   <p className="text-xs text-stone-500">Fairways and miss pattern vs your goal benchmarks</p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("driving")}
+                  className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                  aria-expanded={!collapsedCards.driving}
+                  aria-label={collapsedCards.driving ? "Expand driving" : "Collapse driving"}
+                >
+                  {collapsedCards.driving ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+                </button>
               </div>
 
+              {!collapsedCards.driving && (
+                <>
               {/* Top Level FIR % */}
               <StatDisplay 
                 label="FIR %"
@@ -1688,6 +1851,8 @@ export default function StatsPage() {
                 <p className="text-xs text-gray-400">No rounds logged yet</p>
               </div>
               )}
+                </>
+              )}
             </section>
 
             {/* APPROACH Section */}
@@ -1696,11 +1861,21 @@ export default function StatsPage() {
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
                   <BarChart3 className="h-4 w-4" aria-hidden />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="text-base font-semibold tracking-tight text-stone-900">Approach</h3>
                   <p className="text-xs text-stone-500">GIR and proximity benchmarks</p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("approach")}
+                  className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                  aria-expanded={!collapsedCards.approach}
+                  aria-label={collapsedCards.approach ? "Expand approach" : "Collapse approach"}
+                >
+                  {collapsedCards.approach ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+                </button>
               </div>
+              {!collapsedCards.approach && (
               <div className="space-y-0">
                 <StatDisplay 
                   label="GIR %"
@@ -1728,15 +1903,34 @@ export default function StatsPage() {
                   isAdjustingGoal={isAdjustingGoal}
                 />
               </div>
+              )}
             </section>
 
             <section
               id="stats-advanced-approach"
-              className="min-w-0 print:break-inside-avoid print:shadow-none"
+              className="min-w-0 overflow-hidden rounded-3xl border border-stone-200 bg-white p-5 shadow-md print:break-inside-avoid print:shadow-none sm:p-6"
             >
-              <AdvancedApproachStatsPanel
+              <div className="mb-4 flex items-center justify-between gap-3 border-b border-stone-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+                    <Navigation2 className="h-4 w-4" aria-hidden />
+                  </div>
+                  <h3 className="text-base font-semibold tracking-tight text-stone-900">Advanced Approach</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("advancedApproach")}
+                  className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                  aria-expanded={!collapsedCards.advancedApproach}
+                  aria-label={collapsedCards.advancedApproach ? "Expand advanced approach" : "Collapse advanced approach"}
+                >
+                  {collapsedCards.advancedApproach ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+                </button>
+              </div>
+              {!collapsedCards.advancedApproach && <AdvancedApproachStatsPanel
                 rounds={scopedPlayerStatsRounds}
                 holeFilter={holeFilter}
+                showHeader={false}
                 className="border-stone-200 shadow-md print:border-stone-400 sm:p-6"
                 headerEnd={
                   <div className="flex gap-0.5 rounded-xl border border-stone-200 bg-stone-50/90 p-0.5">
@@ -1764,7 +1958,7 @@ export default function StatsPage() {
                     </button>
                   </div>
                 }
-              />
+              />}
             </section>
 
             {/* SHORT GAME Section */}
@@ -1773,11 +1967,21 @@ export default function StatsPage() {
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
                   <Shuffle className="h-4 w-4" aria-hidden />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="text-base font-semibold tracking-tight text-stone-900">Short Game</h3>
                   <p className="text-xs text-stone-500">Scrambling, bunkers, and chips inside 6 ft</p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("shortGame")}
+                  className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                  aria-expanded={!collapsedCards.shortGame}
+                  aria-label={collapsedCards.shortGame ? "Expand short game" : "Collapse short game"}
+                >
+                  {collapsedCards.shortGame ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+                </button>
               </div>
+              {!collapsedCards.shortGame && (
               <div className="space-y-0">
                 <StatDisplay 
                   label="Up & Down %"
@@ -1804,6 +2008,7 @@ export default function StatsPage() {
                   isAdjustingGoal={isAdjustingGoal}
                 />
               </div>
+              )}
             </section>
 
             {/* PUTTING PRECISION Section */}
@@ -1812,11 +2017,21 @@ export default function StatsPage() {
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
                   <CircleDot className="h-4 w-4" aria-hidden />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="text-base font-semibold tracking-tight text-stone-900">Putting</h3>
                   <p className="text-xs text-stone-500">Putts per round, short putt makes, and three-putts</p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("putting")}
+                  className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                  aria-expanded={!collapsedCards.putting}
+                  aria-label={collapsedCards.putting ? "Expand putting" : "Collapse putting"}
+                >
+                  {collapsedCards.putting ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+                </button>
               </div>
+              {!collapsedCards.putting && (
               <div className="space-y-0">
                 <StatDisplay 
                   label="Total Putts"
@@ -1843,6 +2058,7 @@ export default function StatsPage() {
                   isAdjustingGoal={isAdjustingGoal}
                 />
               </div>
+              )}
             </section>
 
             {/* PENALTIES Section */}
@@ -1851,11 +2067,21 @@ export default function StatsPage() {
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-800">
                   <AlertTriangle className="h-4 w-4" aria-hidden />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="text-base font-semibold tracking-tight text-stone-900">Penalties</h3>
                   <p className="text-xs text-stone-500">Tee, approach, and total penalties per round</p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("penalties")}
+                  className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                  aria-expanded={!collapsedCards.penalties}
+                  aria-label={collapsedCards.penalties ? "Expand penalties" : "Collapse penalties"}
+                >
+                  {collapsedCards.penalties ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+                </button>
               </div>
+              {!collapsedCards.penalties && (
               <div className="space-y-0">
                 <StatDisplay 
                   label="Tee Penalties"
@@ -1881,16 +2107,39 @@ export default function StatsPage() {
                   isAdjustingGoal={isAdjustingGoal}
                 />
               </div>
+              )}
             </section>
         </div>
 
-        <PracticeVsGoalsSection
-          practiceRows={personalPractice}
-          playerGoalRow={playerGoalRow}
-          playerGoalsLoaded={playerGoalsLoaded}
-          variant="self"
-          typeMatch="strict"
-        />
+        <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+          <div className="mb-4 flex items-center justify-between gap-3 border-b border-stone-100 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+                <PieChart className="h-4 w-4" aria-hidden />
+              </div>
+              <h3 className="text-base font-semibold tracking-tight text-stone-900">Practice vs Goals</h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleCard("practiceVsGoals")}
+              className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+              aria-expanded={!collapsedCards.practiceVsGoals}
+              aria-label={collapsedCards.practiceVsGoals ? "Expand practice vs goals" : "Collapse practice vs goals"}
+            >
+              {collapsedCards.practiceVsGoals ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+            </button>
+          </div>
+          {!collapsedCards.practiceVsGoals && (
+            <PracticeVsGoalsSection
+              practiceRows={personalPractice}
+              playerGoalRow={playerGoalRow}
+              playerGoalsLoaded={playerGoalsLoaded}
+              variant="self"
+              typeMatch="strict"
+              showHeader={false}
+            />
+          )}
+        </section>
       </div>
     </div>
   );

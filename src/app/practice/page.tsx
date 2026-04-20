@@ -206,6 +206,10 @@ export default function PracticePage() {
   const [xpNotification, setXpNotification] = useState<{ show: boolean; amount: number }>({ show: false, amount: 0 });
   const [expandedDrill, setExpandedDrill] = useState<string | null>(null); // Track which drill is expanded
   const [durationModal, setDurationModal] = useState<{ open: boolean; facility: FacilityType | null }>({ open: false, facility: null });
+  const [coachInsightsExpanded, setCoachInsightsExpanded] = useState<boolean>(false);
+  const [freestyleExpanded, setFreestyleExpanded] = useState<boolean>(false);
+  const [drillLibraryExpanded, setDrillLibraryExpanded] = useState<boolean>(false);
+  const [combineTestsExpanded, setCombineTestsExpanded] = useState<boolean>(false);
   const [onCourseConfirm, setOnCourseConfirm] = useState<{ open: boolean; duration: number; label: string }>({
     open: false,
     duration: 0,
@@ -223,7 +227,7 @@ export default function PracticePage() {
     drillTitle: '',
   });
   const [totalPracticeMinutes, setTotalPracticeMinutes] = useState<number>(0);
-  const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(true); // Weekly schedule expanded state
+  const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(false); // Weekly schedule expanded state
   // SINGLE DAY VIEW: Initialize to today's day index
   const getTodayDayIndex = () => {
     const today = new Date();
@@ -2551,72 +2555,135 @@ export default function PracticePage() {
         )}
 
         {/* AI Player Insights */}
-        <AIPlayerInsights drills={drills} performanceMetrics={performanceMetrics} goals={goals} roundCount={myRounds.length} />
+        <div className="mb-6">
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5" style={{ color: '#014421' }} />
+                  <h3 className="text-lg font-semibold text-gray-900">Coach&apos;s Insights</h3>
+                </div>
+                <p className="text-xs text-gray-600 mt-1">Full-game performance analysis</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCoachInsightsExpanded((prev) => !prev)}
+                className="flex items-center justify-center rounded-lg border border-stone-200 bg-white/90 px-2.5 py-2 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50/90"
+                aria-expanded={coachInsightsExpanded}
+                aria-controls="coach-insights-content"
+                aria-label={coachInsightsExpanded ? "Collapse coach insights" : "Expand coach insights"}
+                title={coachInsightsExpanded ? "Collapse coach insights" : "Expand coach insights"}
+              >
+                {coachInsightsExpanded ? (
+                  <ChevronUp className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                )}
+              </button>
+            </div>
+            {coachInsightsExpanded && (
+              <div id="coach-insights-content">
+                <AIPlayerInsights
+                  drills={drills}
+                  performanceMetrics={performanceMetrics}
+                  goals={goals}
+                  roundCount={myRounds.length}
+                  showHeader={false}
+                />
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Log Freestyle Practice Section */}
         <div className="mb-6">
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
-            <h3 className="font-semibold text-gray-900 mb-4">Log Freestyle Practice</h3>
-            <p className="text-xs text-gray-600 mb-4">Tap a category to log freestyle practice</p>
-            <div className="grid grid-cols-3 gap-3">
-              {/* Top Row: Driving, Irons, Wedges */}
-              {(['Driving', 'Irons', 'Wedges'] as FacilityType[]).map((facilityType) => {
-                const info = facilityInfo[facilityType];
-                const Icon = info.icon;
-                return (
-                  <button
-                    key={`freestyle-${facilityType}`}
-                    type="button"
-                    onClick={() => setDurationModal({ open: true, facility: facilityType })}
-                    className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
-                  >
-                    <Icon className="w-5 h-5 text-gray-600" />
-                    <span className="text-xs font-medium text-center text-gray-700">{info.label}</span>
-                  </button>
-                );
-              })}
-              {/* Middle Row: Chipping, Bunkers, Putting */}
-              {(['Chipping', 'Bunkers', 'Putting'] as FacilityType[]).map((facilityType) => {
-                const info = facilityInfo[facilityType];
-                const Icon = info.icon;
-                return (
-                  <button
-                    key={`freestyle-${facilityType}`}
-                    type="button"
-                    onClick={() => setDurationModal({ open: true, facility: facilityType })}
-                    className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
-                  >
-                    <Icon className="w-5 h-5 text-gray-600" />
-                    <span className="text-xs font-medium text-center text-gray-700">{info.label}</span>
-                  </button>
-                );
-              })}
-              {/* Bottom Row: Mental/Strategy, 9-Hole Round, 18-Hole Round */}
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <BookOpen className="w-5 h-5" style={{ color: '#014421' }} />
+                  <h3 className="text-lg font-semibold text-gray-900">Log Freestyle Practice</h3>
+                </div>
+                <p className="text-xs text-gray-600 mt-1">Tap a category to log freestyle practice</p>
+              </div>
               <button
                 type="button"
-                onClick={() => setDurationModal({ open: true, facility: 'Mental/Strategy' })}
-                className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                onClick={() => setFreestyleExpanded((prev) => !prev)}
+                className="flex items-center justify-center rounded-lg border border-stone-200 bg-white/90 px-2.5 py-2 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50/90"
+                aria-expanded={freestyleExpanded}
+                aria-controls="freestyle-practice-content"
+                aria-label={freestyleExpanded ? "Collapse freestyle practice" : "Expand freestyle practice"}
+                title={freestyleExpanded ? "Collapse freestyle practice" : "Expand freestyle practice"}
               >
-                <BookOpen className="w-5 h-5 text-gray-600" />
-                <span className="text-xs font-medium text-center text-gray-700">Mental/Strategy</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setOnCourseConfirm({ open: true, duration: 135, label: '9-Hole Round' })}
-                className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
-              >
-                <FlagTriangleRight className="w-5 h-5 text-gray-600" />
-                <span className="text-xs font-medium text-center text-gray-700">9-Hole Round</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setOnCourseConfirm({ open: true, duration: 270, label: '18-Hole Round' })}
-                className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
-              >
-                <FlagTriangleRight className="w-5 h-5 text-gray-600" />
-                <span className="text-xs font-medium text-center text-gray-700">18-Hole Round</span>
+                {freestyleExpanded ? (
+                  <ChevronUp className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                )}
               </button>
             </div>
+
+            {freestyleExpanded && (
+              <div id="freestyle-practice-content" className="grid grid-cols-3 gap-3">
+                {/* Top Row: Driving, Irons, Wedges */}
+                {(['Driving', 'Irons', 'Wedges'] as FacilityType[]).map((facilityType) => {
+                  const info = facilityInfo[facilityType];
+                  const Icon = info.icon;
+                  return (
+                    <button
+                      key={`freestyle-${facilityType}`}
+                      type="button"
+                      onClick={() => setDurationModal({ open: true, facility: facilityType })}
+                      className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                    >
+                      <Icon className="w-5 h-5 text-gray-600" />
+                      <span className="text-xs font-medium text-center text-gray-700">{info.label}</span>
+                    </button>
+                  );
+                })}
+                {/* Middle Row: Chipping, Bunkers, Putting */}
+                {(['Chipping', 'Bunkers', 'Putting'] as FacilityType[]).map((facilityType) => {
+                  const info = facilityInfo[facilityType];
+                  const Icon = info.icon;
+                  return (
+                    <button
+                      key={`freestyle-${facilityType}`}
+                      type="button"
+                      onClick={() => setDurationModal({ open: true, facility: facilityType })}
+                      className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                    >
+                      <Icon className="w-5 h-5 text-gray-600" />
+                      <span className="text-xs font-medium text-center text-gray-700">{info.label}</span>
+                    </button>
+                  );
+                })}
+                {/* Bottom Row: Mental/Strategy, 9-Hole Round, 18-Hole Round */}
+                <button
+                  type="button"
+                  onClick={() => setDurationModal({ open: true, facility: 'Mental/Strategy' })}
+                  className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                >
+                  <BookOpen className="w-5 h-5 text-gray-600" />
+                  <span className="text-xs font-medium text-center text-gray-700">Mental/Strategy</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOnCourseConfirm({ open: true, duration: 135, label: '9-Hole Round' })}
+                  className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                >
+                  <FlagTriangleRight className="w-5 h-5 text-gray-600" />
+                  <span className="text-xs font-medium text-center text-gray-700">9-Hole Round</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOnCourseConfirm({ open: true, duration: 270, label: '18-Hole Round' })}
+                  className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                >
+                  <FlagTriangleRight className="w-5 h-5 text-gray-600" />
+                  <span className="text-xs font-medium text-center text-gray-700">18-Hole Round</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -2979,74 +3046,129 @@ export default function PracticePage() {
         </div>
 
         {/* Drill Library */}
-        <DrillLibrary onAssignToDay={addDrillToDay} />
+        <div className="mb-6">
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5" style={{ color: '#014421' }} />
+                <h3 className="text-lg font-semibold text-gray-900">Drill Library</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDrillLibraryExpanded((prev) => !prev)}
+                className="flex items-center justify-center rounded-lg border border-stone-200 bg-white/90 px-2.5 py-2 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50/90"
+                aria-expanded={drillLibraryExpanded}
+                aria-controls="drill-library-content"
+                aria-label={drillLibraryExpanded ? "Collapse drill library" : "Expand drill library"}
+                title={drillLibraryExpanded ? "Collapse drill library" : "Expand drill library"}
+              >
+                {drillLibraryExpanded ? (
+                  <ChevronUp className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                )}
+              </button>
+            </div>
+            {drillLibraryExpanded && (
+              <div id="drill-library-content">
+                <DrillLibrary onAssignToDay={addDrillToDay} showHeader={false} />
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Combine Tests */}
         <div className="mb-6">
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
-            <h3 className="font-semibold text-gray-900 mb-3">Combine Tests</h3>
-            <p className="text-xs text-gray-600 mb-3">Tap a test to start a session</p>
-
-            <div
-              className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-1 px-1 scroll-smooth [scrollbar-width:thin]"
-              role="tablist"
-              aria-label="Combine test categories"
-            >
-              {COMBINE_CATEGORY_IDS.map((cat) => {
-                const active = combineCategoryTab === cat;
-                return (
-                  <button
-                    key={cat}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setCombineCategoryTab(cat)}
-                    className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition-colors sm:text-sm border-2 ${
-                      active
-                        ? "border-gray-900 bg-gray-900 text-white shadow-sm"
-                        : "border-transparent bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                );
-              })}
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Target className="w-5 h-5" style={{ color: '#014421' }} />
+                  <h3 className="text-lg font-semibold text-gray-900">Combine Tests</h3>
+                </div>
+                <p className="text-xs text-gray-600 mt-1">Tap a test to start a session</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCombineTestsExpanded((prev) => !prev)}
+                className="flex items-center justify-center rounded-lg border border-stone-200 bg-white/90 px-2.5 py-2 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50/90"
+                aria-expanded={combineTestsExpanded}
+                aria-controls="combine-tests-content"
+                aria-label={combineTestsExpanded ? "Collapse combine tests" : "Expand combine tests"}
+                title={combineTestsExpanded ? "Collapse combine tests" : "Expand combine tests"}
+              >
+                {combineTestsExpanded ? (
+                  <ChevronUp className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                )}
+              </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {combineCardsForTab.length === 0 ? (
-                <p className="col-span-2 sm:col-span-3 text-center text-sm text-gray-500 py-10 px-2">
-                  Coming Soon To Online Academy.
-                </p>
-              ) : (
-                combineCardsForTab.map((card) => {
-                  const isGauntlet = card.visualVariant === "gauntlet";
-                  return (
-                    <button
-                      key={card.id}
-                      type="button"
-                      onClick={() => router.push(card.href)}
-                      className={`flex min-h-[5.25rem] flex-col items-center justify-center gap-1.5 px-2 py-3 rounded-xl transition-all border-2 ${
-                        isGauntlet
-                          ? "border-gray-900 bg-gray-900 text-white ring-2 ring-gray-900/20 ring-offset-2 ring-offset-white hover:border-[#FFA500] hover:bg-gray-800"
-                          : "bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
-                      }`}
-                    >
-                      <Target
-                        className={`w-5 h-5 shrink-0 ${isGauntlet ? "text-white" : "text-gray-600"}`}
-                      />
-                      <span
-                        className={`text-[11px] font-medium leading-tight text-center sm:text-xs max-w-full ${
-                          isGauntlet ? "text-white" : "text-gray-700"
+            {combineTestsExpanded && (
+              <div id="combine-tests-content">
+                <div
+                  className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-1 px-1 scroll-smooth [scrollbar-width:thin]"
+                  role="tablist"
+                  aria-label="Combine test categories"
+                >
+                  {COMBINE_CATEGORY_IDS.map((cat) => {
+                    const active = combineCategoryTab === cat;
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => setCombineCategoryTab(cat)}
+                        className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition-colors sm:text-sm border-2 ${
+                          active
+                            ? "border-gray-900 bg-gray-900 text-white shadow-sm"
+                            : "border-transparent bg-gray-100 text-gray-700 hover:bg-gray-200"
                         }`}
                       >
-                        {card.label}
-                      </span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
+                        {cat}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {combineCardsForTab.length === 0 ? (
+                    <p className="col-span-2 sm:col-span-3 text-center text-sm text-gray-500 py-10 px-2">
+                      Coming Soon To Online Academy.
+                    </p>
+                  ) : (
+                    combineCardsForTab.map((card) => {
+                      const isGauntlet = card.visualVariant === "gauntlet";
+                      return (
+                        <button
+                          key={card.id}
+                          type="button"
+                          onClick={() => router.push(card.href)}
+                          className={`flex min-h-[5.25rem] flex-col items-center justify-center gap-1.5 px-2 py-3 rounded-xl transition-all border-2 ${
+                            isGauntlet
+                              ? "border-gray-900 bg-gray-900 text-white ring-2 ring-gray-900/20 ring-offset-2 ring-offset-white hover:border-[#FFA500] hover:bg-gray-800"
+                              : "bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                          }`}
+                        >
+                          <Target
+                            className={`w-5 h-5 shrink-0 ${isGauntlet ? "text-white" : "text-gray-600"}`}
+                          />
+                          <span
+                            className={`text-[11px] font-medium leading-tight text-center sm:text-xs max-w-full ${
+                              isGauntlet ? "text-white" : "text-gray-700"
+                            }`}
+                          >
+                            {card.label}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

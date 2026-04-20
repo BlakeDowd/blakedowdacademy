@@ -49,7 +49,7 @@ import {
   type PracticeHoursMap,
 } from "@/lib/practiceAllocation";
 import { resolveAuthUserId } from "@/lib/resolveAuthUserId";
-import { AlertCircle, CheckCircle2, Clock, Target } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Clock, Target } from "lucide-react";
 
 /** Home dashboard brand — `globals.css` / HomeDashboard cards. */
 const BRAND_GREEN = "#014421";
@@ -226,6 +226,7 @@ export function GoalAccountabilityModule() {
   const [loading, setLoading] = useState(true);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [isGoalSettingOpen, setIsGoalSettingOpen] = useState(false);
   /** Set when `player_goals` SELECT fails — do not overwrite local drafts (avoids "save then reset"). */
   const [goalsLoadError, setGoalsLoadError] = useState<string | null>(null);
 
@@ -718,11 +719,30 @@ export function GoalAccountabilityModule() {
         style={{ boxShadow: "0 8px 24px rgba(0, 0, 0, 0.06)" }}
       >
         <div className="mb-4">
-          <h2 className="text-lg font-bold text-[#014421]">Goal setting</h2>
-          <p className="text-xs text-gray-600 mt-1.5">
-            Set your milestone and weekly budget, split hours across practice categories, then review accountability. Save
-            only works when your allocation matches your weekly hours.
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-[#014421]">Goal setting</h2>
+              <p className="text-xs text-gray-600 mt-1.5">
+                Set your milestone and weekly budget, split hours across practice categories, then review accountability. Save
+                only works when your allocation matches your weekly hours.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsGoalSettingOpen((prev) => !prev)}
+              className="flex items-center justify-center rounded-lg border border-stone-200 bg-white/90 px-2.5 py-2 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50/90"
+              aria-expanded={isGoalSettingOpen}
+              aria-controls="goal-setting-content"
+              aria-label={isGoalSettingOpen ? "Collapse goal setting" : "Expand goal setting"}
+              title={isGoalSettingOpen ? "Collapse goal setting" : "Expand goal setting"}
+            >
+              {isGoalSettingOpen ? (
+                <ChevronUp className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+              )}
+            </button>
+          </div>
           {goalsLoadError && (
             <div
               className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs leading-snug text-amber-950"
@@ -734,54 +754,62 @@ export function GoalAccountabilityModule() {
           )}
         </div>
 
-        <GoalSetting
-          scoringMilestone={draftScoring}
-          weeklyHours={draftHours}
-          budgetHours={budgetHoursNum}
-          allocation={draftAllocation}
-          onAllocationChange={setDraftAllocation}
-          lowestScore={baselineLowest}
-          currentHandicap={baselineHandicap}
-          onScoringMilestone={setDraftScoring}
-          onWeeklyHours={handleWeeklyHoursChange}
-          onLowestScoreChange={setBaselineLowest}
-          onCurrentHandicapChange={setBaselineHandicap}
-          dataInsightMessage={dataInsightMessage}
-          suggestedHoursLine={suggestedHoursLine}
-          coachAmbitiousBadge={coachAmbitiousBadge}
-          accountabilityLeakAlert={accountabilityLeakAlert}
-          handicapHasStatsSync={handicapHasStatsSync}
-          handicapMatchesSyncedDefault={handicapMatchesSyncedDefault}
-          suggestedAllocation={suggestedPack.hours}
-          suggestedSource={suggestedPack.source}
-          handicapMilestoneGap={handicapMilestoneGapDisplay}
-        />
+        {isGoalSettingOpen && (
+          <div id="goal-setting-content">
+            <GoalSetting
+              scoringMilestone={draftScoring}
+              weeklyHours={draftHours}
+              budgetHours={budgetHoursNum}
+              allocation={draftAllocation}
+              onAllocationChange={setDraftAllocation}
+              lowestScore={baselineLowest}
+              currentHandicap={baselineHandicap}
+              onScoringMilestone={setDraftScoring}
+              onWeeklyHours={handleWeeklyHoursChange}
+              onLowestScoreChange={setBaselineLowest}
+              onCurrentHandicapChange={setBaselineHandicap}
+              dataInsightMessage={dataInsightMessage}
+              suggestedHoursLine={suggestedHoursLine}
+              coachAmbitiousBadge={coachAmbitiousBadge}
+              accountabilityLeakAlert={accountabilityLeakAlert}
+              handicapHasStatsSync={handicapHasStatsSync}
+              handicapMatchesSyncedDefault={handicapMatchesSyncedDefault}
+              suggestedAllocation={suggestedPack.hours}
+              suggestedSource={suggestedPack.source}
+              handicapMilestoneGap={handicapMilestoneGapDisplay}
+            />
 
-        <div className="flex flex-wrap items-center gap-2 mt-5 pt-4 border-t border-gray-100">
-          <button
-            type="button"
-            disabled={saveBusy || !allocationMatchesBudget(draftAllocation, budgetHoursNum)}
-            onClick={() => void saveGoals()}
-            className="rounded-lg px-4 py-2 text-sm font-semibold text-white shadow transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundColor: BRAND_GREEN }}
-          >
-            {saveBusy ? "Saving…" : "Save goals"}
-          </button>
-          {saveMsg && <span className="text-xs text-gray-500">{saveMsg}</span>}
-        </div>
+            <div className="flex flex-wrap items-center gap-2 mt-5 pt-4 border-t border-gray-100">
+              <button
+                type="button"
+                disabled={saveBusy || !allocationMatchesBudget(draftAllocation, budgetHoursNum)}
+                onClick={() => void saveGoals()}
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-white shadow transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: BRAND_GREEN }}
+              >
+                {saveBusy ? "Saving…" : "Save goals"}
+              </button>
+              {saveMsg && <span className="text-xs text-gray-500">{saveMsg}</span>}
+            </div>
+          </div>
+        )}
 
-        <AccountabilityCard targets={targets} state={s} />
+        {isGoalSettingOpen && (
+          <>
+            <AccountabilityCard targets={targets} state={s} />
 
-        <CommitmentHealthBar
-          actualHours={s.actualHours}
-          goalHours={s.commitmentHours}
-          focusMismatch={s.focusMismatch}
-          isHighVolumeCommitment={draftHours === "15+"}
-        />
-        {volumeEffortWarning && (
-          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-snug text-amber-900">
-            Your goal requires a higher volume of effort based on your current handicap.
-          </p>
+            <CommitmentHealthBar
+              actualHours={s.actualHours}
+              goalHours={s.commitmentHours}
+              focusMismatch={s.focusMismatch}
+              isHighVolumeCommitment={draftHours === "15+"}
+            />
+            {volumeEffortWarning && (
+              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-snug text-amber-900">
+                Your goal requires a higher volume of effort based on your current handicap.
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>

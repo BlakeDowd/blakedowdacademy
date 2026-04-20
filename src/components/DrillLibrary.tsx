@@ -261,9 +261,10 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
 
 interface DrillLibraryProps {
   onAssignToDay?: (drill: DrillRecord, dayIndex: number) => void;
+  showHeader?: boolean;
 }
 
-export function DrillLibrary({ onAssignToDay }: DrillLibraryProps) {
+export function DrillLibrary({ onAssignToDay, showHeader = true }: DrillLibraryProps) {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [selectedDrill, setSelectedDrill] = useState<DrillRecord | null>(null);
   const [drills, setDrills] = useState<DrillRecord[]>(OFFICIAL_DRILLS);
@@ -408,10 +409,12 @@ export function DrillLibrary({ onAssignToDay }: DrillLibraryProps) {
   return (
     <div className="mb-6">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Drill Library</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Browse and assign drills by category</p>
-        </div>
+        {showHeader && (
+          <div className="p-4 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">Drill Library</h2>
+            <p className="text-sm text-gray-500 mt-0.5">Browse and assign drills by category</p>
+          </div>
+        )}
         <div className="divide-y divide-gray-100">
           {LIBRARY_CATEGORIES.map((category) => {
             const categoryDrills = getDrillsForCategory(category);

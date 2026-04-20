@@ -73,6 +73,7 @@ interface AIPlayerInsightsProps {
     totalPenalties: number;
   };
   roundCount?: number;
+  showHeader?: boolean;
 }
 
 const DRILL_CATEGORY_MAP: Record<string, string[]> = {
@@ -100,7 +101,13 @@ function findDrillForCategory(
   return null;
 }
 
-export function AIPlayerInsights({ drills: drillsProp, performanceMetrics, goals, roundCount = -1 }: AIPlayerInsightsProps) {
+export function AIPlayerInsights({
+  drills: drillsProp,
+  performanceMetrics,
+  goals,
+  roundCount = -1,
+  showHeader = true,
+}: AIPlayerInsightsProps) {
   const hasData = roundCount > 0 || (roundCount === -1 && Object.entries(performanceMetrics).some(([k, v]) => k !== '_attempts' && (v as number) > 0));
 
   const { weaknesses, identityItems, noDataMetrics } = useMemo(() => {
@@ -200,15 +207,17 @@ export function AIPlayerInsights({ drills: drillsProp, performanceMetrics, goals
       </div>
 
       <div className="relative z-10">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-[#FF9800]" />
+        {showHeader && (
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-[#FF9800]" />
+            </div>
+            <div>
+              <h2 className="font-bold text-lg tracking-wider">Coach&apos;s Insights</h2>
+              <p className="text-white/70 text-xs">Full-Game Performance Analysis</p>
+            </div>
           </div>
-          <div>
-            <h2 className="font-bold text-lg tracking-wider">Coach&apos;s Insights</h2>
-            <p className="text-white/70 text-xs">Full-Game Performance Analysis</p>
-          </div>
-        </div>
+        )}
 
         {!hasData ? (
           <div className="text-center py-8">

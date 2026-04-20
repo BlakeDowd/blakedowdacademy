@@ -43,6 +43,8 @@ type Props = {
   holeFilter: "9" | "18";
   /** When set, replaces the default subtitle under the section title. */
   description?: string;
+  /** Hide built-in title/subtitle block when wrapped by an external card header. */
+  showHeader?: boolean;
   /** e.g. 9/18 filter controls on coach deep dive */
   headerEnd?: ReactNode;
   className?: string;
@@ -52,6 +54,7 @@ export function AdvancedApproachStatsPanel({
   rounds,
   holeFilter,
   description,
+  showHeader = true,
   headerEnd,
   className = "",
 }: Props) {
@@ -82,18 +85,22 @@ export function AdvancedApproachStatsPanel({
     <div
       className={`rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5 ${className}`.trim()}
     >
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-bold uppercase tracking-wide text-black">
-            Advanced approach
+      {showHeader ? (
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-bold uppercase tracking-wide text-black">
+              Advanced approach
+            </div>
+            <p className="mt-0.5 text-[11px] text-gray-500">
+              {description ??
+                `From directional logs on round entry (${holeFilter}-hole rounds only).`}
+            </p>
           </div>
-          <p className="mt-0.5 text-[11px] text-gray-500">
-            {description ??
-              `From directional logs on round entry (${holeFilter}-hole rounds only).`}
-          </p>
+          {headerEnd ? <div className="shrink-0">{headerEnd}</div> : null}
         </div>
-        {headerEnd ? <div className="shrink-0">{headerEnd}</div> : null}
-      </div>
+      ) : headerEnd ? (
+        <div className="mb-3 flex justify-end">{headerEnd}</div>
+      ) : null}
 
       {agg.total === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/80 py-6 px-3 text-center">

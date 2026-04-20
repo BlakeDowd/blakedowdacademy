@@ -20,6 +20,7 @@ export function PracticeVsGoalsSection({
   playerGoalsLoaded,
   variant = "self",
   typeMatch = "strict",
+  showHeader = true,
 }: {
   practiceRows: PracticeVsGoalsRow[];
   playerGoalRow: PlayerGoalRow | null;
@@ -27,6 +28,7 @@ export function PracticeVsGoalsSection({
   variant?: Variant;
   /** `coach` uses the same type aliases as the legacy coach allocation block. */
   typeMatch?: "strict" | "coach";
+  showHeader?: boolean;
 }) {
   const practiceAllocationByRange = useMemo(
     () => buildPracticeAllocationByRange(practiceRows, typeMatch),
@@ -76,37 +78,39 @@ export function PracticeVsGoalsSection({
 
   return (
     <section className="mb-8 min-w-0 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
-      <div className="mb-4 flex items-center gap-3 border-b border-stone-100 pb-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
-          <PieChart className="h-4 w-4" aria-hidden />
+      {showHeader && (
+        <div className="mb-4 flex items-center gap-3 border-b border-stone-100 pb-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+            <PieChart className="h-4 w-4" aria-hidden />
+          </div>
+          <div className="min-w-0 pr-2">
+            <h2 className="text-base font-semibold tracking-tight text-stone-900 sm:text-lg">Practice vs goals</h2>
+            <p className="mt-0.5 text-xs text-stone-500">
+              {variant === "self" ? (
+                <>
+                  Logged practice time compared to the weekly plan you save in{" "}
+                  <Link href="/" className="font-medium text-[#014421] underline-offset-2 hover:underline">
+                    Goal setting on Home
+                  </Link>
+                  . <span className="font-medium text-stone-600">Actual / committed</span> uses the same area split as
+                  your goal card. Month commitments scale your weekly totals across the rolling month window (
+                  {Math.round(practiceAllocationByRange.monthWindowDays)} days).
+                </>
+              ) : (
+                <>
+                  Logged practice time compared to the weekly plan the player saves in{" "}
+                  <Link href="/" className="font-medium text-[#014421] underline-offset-2 hover:underline">
+                    Goal setting on Home
+                  </Link>
+                  . <span className="font-medium text-stone-600">Actual / committed</span> matches their goal split.
+                  Month scales weekly totals across the rolling month window (
+                  {Math.round(practiceAllocationByRange.monthWindowDays)} days).
+                </>
+              )}
+            </p>
+          </div>
         </div>
-        <div className="min-w-0 pr-2">
-          <h2 className="text-base font-semibold tracking-tight text-stone-900 sm:text-lg">Practice vs goals</h2>
-          <p className="mt-0.5 text-xs text-stone-500">
-            {variant === "self" ? (
-              <>
-                Logged practice time compared to the weekly plan you save in{" "}
-                <Link href="/" className="font-medium text-[#014421] underline-offset-2 hover:underline">
-                  Goal setting on Home
-                </Link>
-                . <span className="font-medium text-stone-600">Actual / committed</span> uses the same area split as
-                your goal card. Month commitments scale your weekly totals across the rolling month window (
-                {Math.round(practiceAllocationByRange.monthWindowDays)} days).
-              </>
-            ) : (
-              <>
-                Logged practice time compared to the weekly plan the player saves in{" "}
-                <Link href="/" className="font-medium text-[#014421] underline-offset-2 hover:underline">
-                  Goal setting on Home
-                </Link>
-                . <span className="font-medium text-stone-600">Actual / committed</span> matches their goal split.
-                Month scales weekly totals across the rolling month window (
-                {Math.round(practiceAllocationByRange.monthWindowDays)} days).
-              </>
-            )}
-          </p>
-        </div>
-      </div>
+      )}
 
       <>
         {!playerGoalsLoaded ? (
