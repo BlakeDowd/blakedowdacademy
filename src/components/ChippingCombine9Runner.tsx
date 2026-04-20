@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { CombinePerformanceGradeBadge } from "@/components/CombinePerformanceGradeBadge";
+import { performanceGradeFromSessionTotal } from "@/lib/combinePerformanceGrade";
 import { useAuth } from "@/contexts/AuthContext";
 import { chippingCombine9Config } from "@/lib/chippingCombine9Config";
 import {
@@ -68,6 +70,11 @@ async function persistSession(
         primary_reason: h.putt_miss_primary_reason ?? null,
       }));
 
+    const grade = performanceGradeFromSessionTotal(
+      aggregates.total_points as number,
+      MAX_SESSION_POINTS,
+    );
+
     const { error } = await supabase.from("practice").insert({
       user_id: userId,
       type: chippingCombine9Config.testType,
@@ -80,6 +87,7 @@ async function persistSession(
         miss_categories: missCategories,
         holes,
         aggregates,
+        performance_grade: grade.label,
       },
       notes: JSON.stringify({
         kind: chippingCombine9Config.noteKind,
@@ -318,6 +326,11 @@ export function ChippingCombine9Runner() {
     };
   }, [holes, total]);
 
+  const sessionGrade = useMemo(() => {
+    if (!summary) return null;
+    return performanceGradeFromSessionTotal(summary.totalPts, MAX_SESSION_POINTS);
+  }, [summary]);
+
   const choiceBtn =
     "w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-3 text-sm font-semibold text-gray-900 transition-colors hover:border-[#014421] hover:bg-[#014421]/5 text-left";
   const choiceBtnActive = "border-[#014421] bg-[#014421]/10 ring-2 ring-[#014421]/20";
@@ -382,14 +395,23 @@ export function ChippingCombine9Runner() {
             </p>
             <p className="text-sm font-medium text-gray-900">{summary.diagnosis}</p>
           </div>
-          <div className="border-t border-gray-100 pt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-xs text-gray-500">Total points (chip + putts)</p>
-              <p className="text-lg font-semibold text-gray-900 tabular-nums">
-                {summary.totalPts.toFixed(1)} / {MAX_SESSION_POINTS}
-              </p>
+          <div className="border-t border-gray-100 pt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex min-w-0 flex-col gap-3">
+              <div>
+                <p className="text-xs text-gray-500">Total points (chip + putts)</p>
+                <p className="text-lg font-semibold text-gray-900 tabular-nums">
+                  {summary.totalPts.toFixed(1)} / {MAX_SESSION_POINTS}
+                </p>
+              </div>
+              {sessionGrade && (
+                <CombinePerformanceGradeBadge
+                  gradeId={sessionGrade.id}
+                  label={sessionGrade.label}
+                  className="w-full max-w-md sm:w-auto"
+                />
+              )}
             </div>
-            <div>
+            <div className="shrink-0">
               <p className="text-xs text-gray-500">Average proximity</p>
               <p className="text-lg font-semibold text-gray-900 tabular-nums">
                 {summary.avgProximityCm !== null

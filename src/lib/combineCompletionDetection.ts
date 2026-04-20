@@ -9,6 +9,10 @@ import { startLineAndSpeedControlTestConfig } from "@/lib/startLineAndSpeedContr
 import { strikeAndSpeedControlTestConfig } from "@/lib/strikeAndSpeedControlTestConfig";
 import { teeShotDispersionCombineConfig } from "@/lib/teeShotDispersionCombineConfig";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
+import { flopShotCombineConfig } from "@/lib/flopShotCombineConfig";
+import { standardChippingCombineConfig } from "@/lib/standardChippingCombineConfig";
+import { survival20Config } from "@/lib/survival20Config";
+import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
 
 /** `log_type` values written to `practice_logs` by combine protocol runners (leaderboard + completion stats). */
 export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
@@ -16,6 +20,10 @@ export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
   ironPrecisionProtocolConfig.practiceLogType,
   startLineAndSpeedControlTestConfig.practiceLogType,
   strikeAndSpeedControlTestConfig.practiceLogType,
+  flopShotCombineConfig.practiceLogType,
+  standardChippingCombineConfig.practiceLogType,
+  survival20Config.practiceLogType,
+  ironFaceControlConfig.practiceLogType,
 ];
 
 /** practice_logs rows written when a protocol-style combine is finished */
@@ -38,6 +46,10 @@ const COMBINE_LOG_TYPE_LABELS: Record<string, string> = {
   [ironPrecisionProtocolConfig.practiceLogType]: ironPrecisionProtocolConfig.testName,
   [startLineAndSpeedControlTestConfig.practiceLogType]: startLineAndSpeedControlTestConfig.testName,
   [strikeAndSpeedControlTestConfig.practiceLogType]: strikeAndSpeedControlTestConfig.testName,
+  [flopShotCombineConfig.practiceLogType]: flopShotCombineConfig.testName,
+  [standardChippingCombineConfig.practiceLogType]: standardChippingCombineConfig.testName,
+  [survival20Config.practiceLogType]: survival20Config.testName,
+  [ironFaceControlConfig.practiceLogType]: ironFaceControlConfig.testName,
 };
 
 const COMBINE_TEST_TYPE_LABELS: Record<string, string> = {

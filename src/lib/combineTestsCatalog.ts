@@ -14,6 +14,11 @@ import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
 import { teeShotDispersionCombineConfig } from "@/lib/teeShotDispersionCombineConfig";
 import { bunker9HoleChallengeConfig } from "@/lib/bunker9HoleChallengeConfig";
+import { flopShotCombineConfig } from "@/lib/flopShotCombineConfig";
+import { standardChippingCombineConfig } from "@/lib/standardChippingCombineConfig";
+import { lowChipCombineConfig } from "@/lib/lowChipCombineConfig";
+import { survival20Config } from "@/lib/survival20Config";
+import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
 
 export const COMBINE_CATEGORY_IDS = [
   "Putting",
@@ -114,16 +119,46 @@ export const COMBINE_TEST_CARDS: CombineTestCard[] = [
     label: chippingCombine9Config.testName,
   },
   {
+    id: "flop-shot-combine",
+    category: "Chipping",
+    href: "/practice/flop-shot-combine",
+    label: flopShotCombineConfig.testName,
+  },
+  {
+    id: "standard-chipping-combine",
+    category: "Chipping",
+    href: "/practice/standard-chipping-combine",
+    label: standardChippingCombineConfig.testName,
+  },
+  {
+    id: "low-chip-combine",
+    category: "Chipping",
+    href: "/practice/low-chip-combine",
+    label: lowChipCombineConfig.testName,
+  },
+  {
     id: "wedge-lateral-9",
     category: "Wedges",
     href: "/practice/wedge-lateral-9",
     label: wedgeLateral9Config.testName,
   },
   {
+    id: "survival-20",
+    category: "Wedges",
+    href: "/practice/survival-20",
+    label: survival20Config.testName,
+  },
+  {
     id: "iron-precision-protocol",
     category: "Irons",
     href: "/practice/iron-precision-protocol",
     label: ironPrecisionProtocolConfig.testName,
+  },
+  {
+    id: "iron-face-control-protocol",
+    category: "Irons",
+    href: "/practice/iron-face-control-protocol",
+    label: ironFaceControlConfig.testName,
   },
   {
     id: "tee-shot-dispersion-combine",

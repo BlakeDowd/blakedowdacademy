@@ -3146,7 +3146,7 @@ export default function PracticePage() {
                           key={card.id}
                           type="button"
                           onClick={() => router.push(card.href)}
-                          className={`flex min-h-[5.25rem] flex-col items-center justify-center gap-1.5 px-2 py-3 rounded-xl transition-all border-2 ${
+                          className={`flex min-h-[5.25rem] flex-col items-center justify-center gap-1 px-2 py-3 rounded-xl transition-all border-2 ${
                             isGauntlet
                               ? "border-gray-900 bg-gray-900 text-white ring-2 ring-gray-900/20 ring-offset-2 ring-offset-white hover:border-[#FFA500] hover:bg-gray-800"
                               : "bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"

@@ -13,6 +13,8 @@ import {
   parseLeaderboardEventMs,
   rowInTimeWindow,
 } from "@/lib/leaderboardTimeWindow";
+import { survival20Config } from "@/lib/survival20Config";
+import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
 
 export type CombineLeaderboardTestId =
   | "gauntlet"
@@ -27,7 +29,11 @@ export type CombineLeaderboardTestId =
   | "puttingTest3To6ft"
   | "puttingTest8To20"
   | "puttingTest20To40"
-  | "gauntletBlackLabel";
+  | "gauntletBlackLabel"
+  | "flop_shot"
+  | "chipping"
+  | "survival_20"
+  | "iron_face_control";
 
 /** Resolved in Academy via getLeaderboardData — practice table builder skips these. */
 const LEADERBOARD_DRIVEN_COMBINE_IDS: CombineLeaderboardTestId[] = [
@@ -146,6 +152,34 @@ export const COMBINE_LEADERBOARD_OPTIONS: CombineLeaderboardTestOption[] = [
     higherIsBetter: true,
     scoreHeader: "Perfect Putts",
   },
+  {
+    id: "flop_shot",
+    label: "Flop Shot Combine",
+    source: "practice_logs",
+    higherIsBetter: true,
+    scoreHeader: "Total Pts",
+  },
+  {
+    id: "chipping",
+    label: "Standard Chipping",
+    source: "practice_logs",
+    higherIsBetter: true,
+    scoreHeader: "Total Pts",
+  },
+  {
+    id: "survival_20",
+    label: survival20Config.testName,
+    source: "practice_logs",
+    higherIsBetter: true,
+    scoreHeader: "Shots survived",
+  },
+  {
+    id: "iron_face_control",
+    label: ironFaceControlConfig.testName,
+    source: "practice_logs",
+    higherIsBetter: true,
+    scoreHeader: "Score (/100)",
+  },
 ];
 
 export type AcademyCombineLeaderboardRow = {
@@ -189,6 +223,10 @@ type PracticeMetadataCombineId = Exclude<
   | "puttingTest8To20"
   | "puttingTest20To40"
   | "gauntletBlackLabel"
+  | "flop_shot"
+  | "chipping"
+  | "survival_20"
+  | "iron_face_control"
 >;
 
 function extractPracticeScore(
@@ -307,6 +345,109 @@ export function buildAcademyCombinesLeaderboard(
         bestByUser.set(uid, {
           sortValue: tp,
           display: `${Math.round(tp)} Pts`,
+          dateMs,
+        });
+      }
+    }
+  } else if (testId === "flop_shot") {
+    const rows = (practiceLogs || []).filter(
+      (r) => String(r?.log_type ?? "").trim().toLowerCase() === "flop_shot",
+    );
+    for (const row of rows) {
+      if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
+      const uid = row.user_id;
+      if (!uid) continue;
+      const tp = num(row.score) ?? num(row.total_points);
+      if (tp == null) continue;
+      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
+      const prev = bestByUser.get(uid);
+      const better =
+        !prev ||
+        tp > prev.sortValue ||
+        (tp === prev.sortValue && dateMs > prev.dateMs);
+      if (better) {
+        bestByUser.set(uid, {
+          sortValue: tp,
+          display: `${tp.toFixed(1)} Pts`,
+          dateMs,
+        });
+      }
+    }
+  } else if (testId === "chipping") {
+    const rows = (practiceLogs || []).filter((r) => {
+      if (String(r?.log_type ?? "").trim().toLowerCase() !== "chipping") return false;
+      const st =
+        r.sub_type != null && String(r.sub_type).trim() !== ""
+          ? String(r.sub_type).trim().toLowerCase()
+          : null;
+      return st === "standard" || st === null;
+    });
+    for (const row of rows) {
+      if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
+      const uid = row.user_id;
+      if (!uid) continue;
+      const tp = num(row.score) ?? num(row.total_points);
+      if (tp == null) continue;
+      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
+      const prev = bestByUser.get(uid);
+      const better =
+        !prev ||
+        tp > prev.sortValue ||
+        (tp === prev.sortValue && dateMs > prev.dateMs);
+      if (better) {
+        bestByUser.set(uid, {
+          sortValue: tp,
+          display: `${tp.toFixed(1)} Pts`,
+          dateMs,
+        });
+      }
+    }
+  } else if (testId === "survival_20") {
+    const want = survival20Config.practiceLogType.toLowerCase();
+    const rows = (practiceLogs || []).filter(
+      (r) => String(r?.log_type ?? "").trim().toLowerCase() === want,
+    );
+    for (const row of rows) {
+      if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
+      const uid = row.user_id;
+      if (!uid) continue;
+      const tp = num(row.score) ?? num(row.total_points);
+      if (tp == null || tp < 0) continue;
+      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
+      const prev = bestByUser.get(uid);
+      const better =
+        !prev ||
+        tp > prev.sortValue ||
+        (tp === prev.sortValue && dateMs > prev.dateMs);
+      if (better) {
+        bestByUser.set(uid, {
+          sortValue: tp,
+          display: `${Math.round(tp)} shots`,
+          dateMs,
+        });
+      }
+    }
+  } else if (testId === "iron_face_control") {
+    const want = ironFaceControlConfig.practiceLogType.toLowerCase();
+    const rows = (practiceLogs || []).filter(
+      (r) => String(r?.log_type ?? "").trim().toLowerCase() === want,
+    );
+    for (const row of rows) {
+      if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
+      const uid = row.user_id;
+      if (!uid) continue;
+      const tp = num(row.score) ?? num(row.total_points);
+      if (tp == null || tp < 0 || tp > ironFaceControlConfig.maxSessionPoints) continue;
+      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
+      const prev = bestByUser.get(uid);
+      const better =
+        !prev ||
+        tp > prev.sortValue ||
+        (tp === prev.sortValue && dateMs > prev.dateMs);
+      if (better) {
+        bestByUser.set(uid, {
+          sortValue: tp,
+          display: `${Math.round(tp)} / 100`,
           dateMs,
         });
       }

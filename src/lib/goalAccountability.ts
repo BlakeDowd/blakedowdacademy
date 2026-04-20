@@ -27,6 +27,8 @@ export function logTypeToFocusArea(logType: string | null | undefined): GoalFocu
   const key = (logType || "").toLowerCase().trim();
   if (!key) return "Putting";
 
+  if (key === "flop_shot") return "Chipping";
+  if (key === "survival_20") return "Wedges";
   if (key.includes("bunker")) return "Bunkers";
   if (key.includes("chipping") || key.includes("chip")) return "Chipping";
   if (key.includes("wedge") || key.includes("lateral")) return "Wedges";
