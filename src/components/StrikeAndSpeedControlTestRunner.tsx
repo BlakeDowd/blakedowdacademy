@@ -14,6 +14,7 @@ import {
 } from "@/lib/strikeAndSpeedControlTestConfig";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 
 type PuttRecord = {
   putt: number;
@@ -55,6 +56,8 @@ async function persistSession(
     console.warn("[StrikeSpeedControl] practice_logs insert:", msg);
     return msg;
   }
+
+  await awardCombineCompletionXp(userId);
 
   const { data: profileRow, error: profileFetchError } = await supabase
     .from("profiles")

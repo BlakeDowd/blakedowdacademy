@@ -28,6 +28,7 @@ import {
   PUTTING_TEST_MISS_CATEGORY_LABELS,
 } from "@/lib/puttingTestMissScoring";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 
 function parseProximityCm(raw: string): number | null {
   const t = raw.trim();
@@ -78,31 +79,33 @@ async function persistSession(userId: string, holes: BunkerHoleLog[], aggregates
         quadrant: h.first_putt_miss_quadrant ?? null,
         primary_reason: h.putt_miss_primary_reason ?? null,
       }));
+    const payload = {
+      version: 1,
+      proximity_scores: proximityScores,
+      miss_categories: missCategories,
+      holes,
+      aggregates,
+    };
 
     const { error } = await supabase.from("practice").insert({
       user_id: userId,
       type: bunker9HoleChallengeConfig.testType,
       test_type: bunker9HoleChallengeConfig.testType,
       duration_minutes: 0,
-      metadata: {
-        version: 1,
-        proximity_scores: proximityScores,
-        miss_categories: missCategories,
-        holes,
-        aggregates,
-      },
       notes: JSON.stringify({
         kind: bunker9HoleChallengeConfig.noteKind,
         scramble_rate: aggregates.scramble_rate,
         proximity_rating: aggregates.proximity_rating,
         diagnosis: aggregates.diagnosis,
         total_points: aggregates.total_points,
+        payload,
       }),
     });
     if (error) {
       console.warn("[Bunker9HoleChallenge] practice insert:", error.message);
       return false;
     }
+    await awardCombineCompletionXp(userId);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));
     }

@@ -13,6 +13,7 @@ import {
 import { PuttingMissDiagnosticsSection } from "@/components/PuttingMissDiagnostics";
 import { PuttingTestResultsSummaryCard } from "@/components/PuttingTestResultsSummaryCard";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 
 type ShapeKey = (typeof puttingTestConfig.shapes)[number];
 type MissCategory = "highLong" | "highShort" | "lowLong" | "lowShort";
@@ -91,8 +92,13 @@ async function persistHoleToSupabase(userId: string, record: Putting8To20HoleRec
     });
     if (error) {
       console.warn("[PuttingTest8To20] Supabase save:", error.message);
-    } else if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("practiceSessionsUpdated"));
+    } else {
+      if (record.holeIndex === puttingTest8To20Config.holeCount - 1) {
+        void awardCombineCompletionXp(userId);
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("practiceSessionsUpdated"));
+      }
     }
   } catch (e) {
     console.warn("[PuttingTest8To20] Supabase save failed", e);

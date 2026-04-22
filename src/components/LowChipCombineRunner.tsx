@@ -9,6 +9,7 @@ import {
   roundLowChipPointsOneDecimal,
 } from "@/lib/lowChipCombineScoring";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 import { performanceGradeFromOutOf150 } from "@/lib/combinePerformanceGrade";
 import { CombinePerformanceGradeBadge } from "@/components/CombinePerformanceGradeBadge";
 
@@ -62,24 +63,12 @@ async function persistLowChipSession(
       typeof totalScore === "number" && Number.isFinite(totalScore) ? totalScore : 0;
     const { label: performanceGrade } = performanceGradeFromOutOf150(sessionScore);
 
-    const metadata: LowChipCombineMetadata = {
-      version: 1,
-      scoring: "low_chip_metres",
-      sub_type: "low_chip",
-      metres_5m: m5,
-      metres_10m: m10,
-      metres_20m: m20,
-      total_score: sessionScore,
-      performance_grade: performanceGrade,
-    };
-
     const { error } = await supabase.from("practice_logs").insert({
       user_id: userId,
       log_type: lowChipCombineConfig.practiceLogType,
       sub_type: lowChipCombineConfig.practiceLogSubType,
       score: sessionScore,
       total_points: sessionScore,
-      metadata,
     });
 
     if (error) {
@@ -87,6 +76,8 @@ async function persistLowChipSession(
       console.warn("[LowChipCombine] practice_logs insert:", msg);
       return msg;
     }
+
+    await awardCombineCompletionXp(userId);
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));

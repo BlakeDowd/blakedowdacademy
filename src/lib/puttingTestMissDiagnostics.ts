@@ -15,7 +15,7 @@ const DOMINANT_ADVICE: Record<PrimaryMissReason, string> = {
 };
 
 export type HoleLogForDiagnostics = {
-  outcome: "make" | "miss";
+  outcome: "make" | "lipOut" | "miss";
   primaryMissReason?: PrimaryMissReason | null;
 };
 

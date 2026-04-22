@@ -193,11 +193,39 @@ export type AcademyCombineLeaderboardRow = {
 };
 
 function aggregatesFromPractice(row: any): Record<string, unknown> | null {
-  const m = row?.metadata;
+  const m = metadataFromPractice(row);
   if (!m || typeof m !== "object") return null;
   const ag = (m as { aggregates?: unknown }).aggregates;
   if (!ag || typeof ag !== "object") return null;
   return ag as Record<string, unknown>;
+}
+
+function parseNotesObject(row: any): Record<string, unknown> | null {
+  const n = row?.notes;
+  if (!n) return null;
+  if (typeof n === "object" && !Array.isArray(n)) return n as Record<string, unknown>;
+  if (typeof n === "string") {
+    try {
+      const p = JSON.parse(n) as unknown;
+      return p && typeof p === "object" && !Array.isArray(p) ? (p as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function metadataFromPractice(row: any): Record<string, unknown> | null {
+  const direct = row?.metadata;
+  if (direct && typeof direct === "object" && !Array.isArray(direct)) {
+    return direct as Record<string, unknown>;
+  }
+  const notes = parseNotesObject(row);
+  const payload = notes?.payload;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    return payload as Record<string, unknown>;
+  }
+  return null;
 }
 
 function num(v: unknown): number | null {
@@ -258,7 +286,7 @@ function extractPracticeScore(
     return null;
   }
   if (testId === "wedge_lateral_9") {
-    const meta = row?.metadata as Record<string, unknown> | undefined;
+    const meta = metadataFromPractice(row) ?? undefined;
     const recomputed = totalPointsFromWedgeShotsJson(meta?.shots);
     const stored = num(ag?.total_points);
     const tp = recomputed ?? stored;
@@ -319,9 +347,20 @@ export function buildAcademyCombinesLeaderboard(
       }
     }
   } else if (testId === "ironPrecisionProtocol") {
-    const want = ironPrecisionProtocolConfig.practiceLogType.toLowerCase();
+    const accepted = new Set(
+      [
+        ironPrecisionProtocolConfig.practiceLogType,
+        "iron_precision_protocol",
+        "ironPrecisionProtocol",
+      ].map((v) => v.toLowerCase()),
+    );
     const rows = (practiceLogs || []).filter(
-      (r) => String(r?.log_type ?? "").trim().toLowerCase() === want,
+      (r) => {
+        const lt = String(r?.log_type ?? "").trim().toLowerCase();
+        if (accepted.has(lt)) return true;
+        // Backward/forward compatible matcher for suffixed variants.
+        return lt.includes("iron_precision_protocol") || lt.includes("ironprecisionprotocol");
+      },
     );
     for (const row of rows) {
       if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
@@ -329,7 +368,8 @@ export function buildAcademyCombinesLeaderboard(
       if (!uid) continue;
       const recomputed = totalIronPointsFromStrikeData(row.strike_data);
       const stored = num(row.total_points);
-      let tp = recomputed ?? stored;
+      const scoreOnly = num(row.score);
+      let tp = recomputed ?? stored ?? scoreOnly;
       if (tp == null) {
         const avg = num(row.matrix_score_average);
         if (avg != null) tp = avg * ironPrecisionProtocolConfig.clubSequence.length;
@@ -341,6 +381,36 @@ export function buildAcademyCombinesLeaderboard(
         !prev ||
         tp > prev.sortValue ||
         (tp === prev.sortValue && dateMs > prev.dateMs);
+      if (better) {
+        bestByUser.set(uid, {
+          sortValue: tp,
+          display: `${Math.round(tp)} Pts`,
+          dateMs,
+        });
+      }
+    }
+    // Backward-compatible fallback: some older deployments stored iron protocol sessions in `practice`.
+    const practiceRows = (practiceSessions || []).filter((r) => {
+      const tt = String(r?.test_type ?? r?.type ?? "").trim().toLowerCase();
+      return tt.includes("iron_precision_protocol") || tt.includes("ironprecisionprotocol");
+    });
+    for (const row of practiceRows) {
+      if (!rowInTimeWindow(row, timeFilter)) continue;
+      const uid = row.user_id;
+      if (!uid) continue;
+      const ag = aggregatesFromPractice(row);
+      const notes = parseNotesObject(row);
+      const tp =
+        num(ag?.total_points) ??
+        num((row as { total_points?: unknown }).total_points) ??
+        num(notes?.total_points);
+      if (tp == null) continue;
+      const dateMs =
+        parseLeaderboardEventMs((row as { completed_at?: string }).completed_at) ??
+        parseLeaderboardEventMs(row.created_at) ??
+        0;
+      const prev = bestByUser.get(uid);
+      const better = !prev || tp > prev.sortValue || (tp === prev.sortValue && dateMs > prev.dateMs);
       if (better) {
         bestByUser.set(uid, {
           sortValue: tp,

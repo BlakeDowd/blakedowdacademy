@@ -31,6 +31,66 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const XP_PER_ROUND = 500;
+/** Keep in sync with src/lib/combineXp.ts — awarded once per finished combine at runtime. */
+const XP_PER_COMBINE_SESSION = 330;
+
+/** practice.test_type / practice.type for single-row leaderboard combines */
+const COMBINE_TEST_TYPES = new Set([
+  'aimpoint_6ft_combine',
+  'slope_mid_20ft',
+  'aimpoint_long_40ft',
+  'chipping_combine_9',
+  'wedge_lateral_9',
+  'tee_shot_dispersion_combine',
+  'bunker_9_hole_challenge',
+]);
+
+/** practice_logs.log_type — distinct combine protocols (not generic "chipping"; see isChippingCombineLog) */
+const COMBINE_PRACTICE_LOG_TYPES = [
+  'gauntlet_protocol_session',
+  'iron_precision_protocol_session',
+  'start_line_speed_test',
+  'strike_speed_control',
+  'flop_shot',
+  'survival_20',
+  'iron_face_control',
+  'iron_skills',
+];
+
+function isChippingCombineLogRow(row) {
+  return (
+    String(row?.log_type || '') === 'chipping' &&
+    ['standard', 'low_chip'].includes(String(row?.sub_type || ''))
+  );
+}
+
+/**
+ * XP for one practice row when it represents a finished combine (matches runtime awardCombineCompletionXp).
+ */
+function combineXpForPracticeRow(p) {
+  const tt = String(p.test_type || '');
+  if (COMBINE_TEST_TYPES.has(tt)) return XP_PER_COMBINE_SESSION;
+  const typ = String(p.type || '');
+  if (COMBINE_TEST_TYPES.has(typ)) return XP_PER_COMBINE_SESSION;
+
+  const notes = p.notes;
+  if (typeof notes !== 'string' || !notes.startsWith('{')) return 0;
+  try {
+    const parsed = JSON.parse(notes);
+    const hi = parsed?.holeIndex;
+    if (typeof hi !== 'number') return 0;
+    const kind = parsed?.kind;
+    if (kind === 'PuttingTest9Holes' && hi === 8) return XP_PER_COMBINE_SESSION;
+    if (kind === 'PuttingTest3To6ft' && hi === 9) return XP_PER_COMBINE_SESSION;
+    if (kind === 'PuttingTest8to20' && hi === 9) return XP_PER_COMBINE_SESSION;
+    if (kind === 'PuttingTest20to40' && hi === 9) return XP_PER_COMBINE_SESSION;
+    if (kind === 'putting_test_hole' && hi === 17) return XP_PER_COMBINE_SESSION;
+  } catch {
+    return 0;
+  }
+  return 0;
+}
+
 const FACILITIES = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy', 'On-Course', 'range-mat', 'putting-green', 'chipping-green', 'home', 'mental'];
 
 async function recalculateXP(username) {
@@ -57,7 +117,7 @@ async function recalculateXP(username) {
   // 2. Fetch practice rows
   const { data: practiceRows, error: practiceErr } = await supabase
     .from('practice')
-    .select('id, type, duration_minutes')
+    .select('id, type, test_type, duration_minutes, notes')
     .eq('user_id', userId);
 
   if (practiceErr) {
@@ -77,6 +137,12 @@ async function recalculateXP(username) {
   // 4. Calculate XP from practice
   let practiceXP = 0;
   (practiceRows || []).forEach(p => {
+    const combineXp = combineXpForPracticeRow(p);
+    if (combineXp > 0) {
+      practiceXP += combineXp;
+      return;
+    }
+
     const duration = Number(p.duration_minutes) || 0;
     const type = String(p.type || '');
 
@@ -86,6 +152,20 @@ async function recalculateXP(username) {
       practiceXP += drillXpMap.get(type) ?? 30;
     }
   });
+
+  const { data: practiceLogRows } = await supabase
+    .from('practice_logs')
+    .select('log_type, sub_type')
+    .eq('user_id', userId);
+
+  let combineLogSessions = 0;
+  (practiceLogRows || []).forEach((row) => {
+    const lt = String(row.log_type || '');
+    if (COMBINE_PRACTICE_LOG_TYPES.includes(lt)) combineLogSessions++;
+    else if (isChippingCombineLogRow(row)) combineLogSessions++;
+  });
+  const combineLogsXp = combineLogSessions * XP_PER_COMBINE_SESSION;
+  practiceXP += combineLogsXp;
 
   // 5. Fetch rounds
   const { count: roundsCount, error: roundsErr } = await supabase
@@ -99,7 +179,9 @@ async function recalculateXP(username) {
   const roundsXP = (roundsCount || 0) * XP_PER_ROUND;
 
   const newTotalXP = practiceXP + roundsXP;
-  console.log(`Practice XP: ${practiceXP} (${practiceRows?.length || 0} rows)`);
+  console.log(
+    `Practice XP: ${practiceXP} (${practiceRows?.length || 0} practice rows + ${combineLogSessions} combine practice_logs × ${XP_PER_COMBINE_SESSION})`,
+  );
   console.log(`Rounds XP: ${roundsXP} (${roundsCount || 0} rounds × ${XP_PER_ROUND})`);
   console.log(`Recalculated total: ${newTotalXP}`);
 

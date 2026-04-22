@@ -8,6 +8,7 @@ import {
   type WedgeLateral9ShotLog,
 } from "@/lib/wedgeLateral9Analytics";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import {
   normalizeLegacyVerticalStrike,
@@ -36,29 +37,31 @@ async function persistSession(userId: string, targetsM: number[], shots: WedgeLa
     const aggregates = buildWedgeLateral9Aggregates(shotsNormalized);
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
+    const payload = {
+      version: 1,
+      targets_m: targetsM,
+      shots: shotsNormalized,
+      aggregates,
+    };
     const { error } = await supabase.from("practice").insert({
       user_id: userId,
       type: wedgeLateral9Config.testType,
       test_type: wedgeLateral9Config.testType,
       duration_minutes: 0,
-      metadata: {
-        version: 1,
-        targets_m: targetsM,
-        shots: shotsNormalized,
-        aggregates,
-      },
       notes: JSON.stringify({
         kind: wedgeLateral9Config.noteKind,
         total_points: aggregates.total_points,
         solid_middle_bonus_pct: aggregates.solid_middle_bonus_pct,
         solid_middle_bonus_count: aggregates.solid_middle_bonus_count,
         wedge_bias_summary: aggregates.wedge_bias_summary,
+        payload,
       }),
     });
     if (error) {
       console.warn("[WedgeLateral9] practice insert:", error.message);
       return false;
     }
+    await awardCombineCompletionXp(userId);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));
     }

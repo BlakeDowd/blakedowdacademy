@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { survival20Config } from "@/lib/survival20Config";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 
 function randomTargetDistanceM(): number {
   const { targetMinM, targetMaxM } = survival20Config;
@@ -45,7 +46,7 @@ async function persistSurvivalSession(userId: string, streakShots: number): Prom
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
     const score = streakShots;
-    const metadata: Survival20Metadata = {
+    const payload: Survival20Metadata = {
       version: 1,
       streak_shots: streakShots,
     };
@@ -55,13 +56,14 @@ async function persistSurvivalSession(userId: string, streakShots: number): Prom
       log_type: survival20Config.practiceLogType,
       score,
       total_points: score,
-      metadata,
+      notes: JSON.stringify(payload),
     });
 
     if (error) {
       console.warn("[Survival20] practice_logs insert:", formatSupabaseWriteError(error));
       return formatSupabaseWriteError(error);
     }
+    await awardCombineCompletionXp(userId);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));
     }

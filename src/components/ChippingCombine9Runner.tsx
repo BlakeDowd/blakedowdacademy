@@ -31,6 +31,7 @@ import {
 } from "@/lib/puttingTestMissScoring";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 
 function parseProximityCm(raw: string): number | null {
   const t = raw.trim();
@@ -74,27 +75,28 @@ async function persistSession(
       aggregates.total_points as number,
       MAX_SESSION_POINTS,
     );
+    const payload = {
+      version: 1,
+      distances_m: distancesM,
+      proximity_scores: proximityScores,
+      miss_categories: missCategories,
+      holes,
+      aggregates,
+      performance_grade: grade.label,
+    };
 
     const { error } = await supabase.from("practice").insert({
       user_id: userId,
       type: chippingCombine9Config.testType,
       test_type: chippingCombine9Config.testType,
       duration_minutes: 0,
-      metadata: {
-        version: 1,
-        distances_m: distancesM,
-        proximity_scores: proximityScores,
-        miss_categories: missCategories,
-        holes,
-        aggregates,
-        performance_grade: grade.label,
-      },
       notes: JSON.stringify({
         kind: chippingCombine9Config.noteKind,
         scramble_rate: aggregates.scramble_rate,
         proximity_rating: aggregates.proximity_rating,
         diagnosis: aggregates.diagnosis,
         total_points: aggregates.total_points,
+        payload,
       }),
     });
     if (error) {
@@ -102,6 +104,7 @@ async function persistSession(
       console.warn("[ChippingCombine9] practice insert:", msg);
       return msg;
     }
+    await awardCombineCompletionXp(userId);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));
     }

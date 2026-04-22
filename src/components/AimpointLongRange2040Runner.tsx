@@ -15,6 +15,7 @@ import {
 import { readerLabelFromBias } from "@/lib/aimpoint6ftCombineScoring";
 import { parsePercentOneDecimal } from "@/lib/slopeReadingParse";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 
 function shuffle<T>(items: T[]): T[] {
   const a = [...items];
@@ -36,29 +37,31 @@ async function persistSession(
     const supabase = createClient();
     const totalPoints = totalPointsSession(putts);
     const calPct = calibrationAccuracyPercent(totalPoints);
+    const payload = {
+      version: 1,
+      band_ft: "20-40",
+      putts,
+      data_points_30: dataPoints30,
+      aggregates,
+    };
 
     const { error } = await supabase.from("practice").insert({
       user_id: userId,
       type: aimpointLongRange2040Config.testType,
       test_type: aimpointLongRange2040Config.testType,
       duration_minutes: 0,
-      metadata: {
-        version: 1,
-        band_ft: "20-40",
-        putts,
-        data_points_30: dataPoints30,
-        aggregates,
-      },
       notes: JSON.stringify({
         kind: aimpointLongRange2040Config.noteKind,
         total_points: totalPoints,
         calibration_accuracy_pct: calPct,
+        payload,
       }),
     });
     if (error) {
       console.warn("[AimpointLongRange2040] practice insert:", error.message);
       return false;
     }
+    await awardCombineCompletionXp(userId);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));
     }

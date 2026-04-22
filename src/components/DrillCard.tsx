@@ -357,8 +357,7 @@ export default function DrillCard({
                   Personal best
                 </div>
                 <p className={`text-gray-600 ${compact ? "text-[11px] leading-snug" : "text-xs"}`}>
-                  Type a new result below when you beat your record; it replaces your bar to beat. It syncs to your
-                  account.
+                  Type a new result below when you beat your record; it replaces your bar to beat.
                 </p>
                 {pbSavedAchievement.trim() && (
                   <p

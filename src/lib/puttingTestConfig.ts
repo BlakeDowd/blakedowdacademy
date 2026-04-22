@@ -5,6 +5,7 @@ export const puttingTestConfig = {
   shapes: ["Straight", "Left-to-Right", "Right-to-Left"],
   points: {
     make: 10,
+    lipOut: 9,
     highLong: 5,
     highShort: 2,
     lowLong: -2,

@@ -22,6 +22,7 @@ import {
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { refreshAuthSessionIfPossible } from "@/lib/supabasePersistSession";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 
 const FINGER_OPTIONS: IronFingerMiss[] = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
 
@@ -92,8 +93,28 @@ async function persistSession(
     if (logError) {
       const msg = formatSupabaseWriteError(logError);
       console.warn("[IronPrecision] practice_logs insert:", msg, logError);
-      return msg;
+      // Compatibility fallback for environments with restrictive practice_logs CHECK constraints.
+      const { error: practiceError } = await supabase.from("practice").insert({
+        user_id: userId,
+        type: ironPrecisionProtocolConfig.practiceLogType,
+        test_type: ironPrecisionProtocolConfig.practiceLogType,
+        duration_minutes: 0,
+        notes: JSON.stringify({
+          kind: "iron_precision_protocol_fallback",
+          total_points: totalPts,
+          matrix_score_average: avg,
+          wall_pct: safeWall,
+          zero_point_pct: safeZero,
+        }),
+      });
+      if (practiceError) {
+        const practiceMsg = formatSupabaseWriteError(practiceError);
+        console.warn("[IronPrecision] practice fallback insert:", practiceMsg, practiceError);
+        return msg;
+      }
     }
+
+    await awardCombineCompletionXp(userId);
 
     const { data: profileRow, error: profileFetchError } = await supabase
       .from("profiles")

@@ -161,6 +161,12 @@ export const COMBINE_TEST_CARDS: CombineTestCard[] = [
     label: ironFaceControlConfig.testName,
   },
   {
+    id: "iron-skills-challenge",
+    category: "Irons",
+    href: "/combines/iron-skills",
+    label: "Iron Skills Challenge",
+  },
+  {
     id: "tee-shot-dispersion-combine",
     category: "Tee Shot",
     href: "/practice/tee-shot-dispersion-combine",

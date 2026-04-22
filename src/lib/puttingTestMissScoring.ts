@@ -7,13 +7,15 @@ export type PuttingTestMissCategory =
   | "highLong"
   | "highShort"
   | "lowLong"
-  | "lowShort";
+  | "lowShort"
+  | "lipOut";
 
 export const PUTTING_TEST_MISS_CATEGORY_LABELS: Record<PuttingTestMissCategory, string> = {
   highLong: "High / Long",
   highShort: "High / Short",
   lowLong: "Low / Long",
   lowShort: "Low / Short",
+  lipOut: "Lip Out",
 };
 
 /** Exact three-putt hole score (replaces category + distance logic). */
@@ -48,6 +50,9 @@ export function scorePuttingTestMissHole(input: {
     case "highShort":
     case "lowShort":
       points = -5;
+      break;
+    case "lipOut":
+      points = 9;
       break;
     default:
       points = 0;

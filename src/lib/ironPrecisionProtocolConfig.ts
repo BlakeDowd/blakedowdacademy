@@ -4,7 +4,8 @@
  */
 export const ironPrecisionProtocolConfig = {
   testName: "The Iron Precision Protocol",
-  practiceLogType: "iron_precision_protocol_session",
+  // Use legacy identifier for compatibility with older DB CHECK constraints.
+  practiceLogType: "iron_precision_protocol",
   /** One shot per club, short → long (adjust to your bag). */
   clubSequence: ["PW", "9i", "8i", "7i", "6i", "5i", "4i", "3i", "2i"] as const,
   /** Finger miss width is recorded in half-finger steps from 0 through 4, or "outside". */

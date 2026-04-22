@@ -5,6 +5,7 @@ import { flushSync } from "react-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { puttingTestConfig } from "@/lib/puttingTestConfig";
 import { puttingTest9Config } from "@/lib/puttingTest9Config";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 import type { PrimaryMissReason } from "@/lib/puttingTestMissDiagnostics";
 import {
   PUTTING_TEST_MISS_CATEGORY_LABELS,
@@ -15,7 +16,7 @@ import { PuttingTestResultsSummaryCard } from "@/components/PuttingTestResultsSu
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 
 type ShapeKey = (typeof puttingTestConfig.shapes)[number];
-type MissCategory = "highLong" | "highShort" | "lowLong" | "lowShort";
+type MissCategory = "highLong" | "highShort" | "lowLong" | "lowShort" | "lipOut";
 
 export type Putting9HoleRecord = {
   holeIndex: number;
@@ -91,8 +92,13 @@ async function persistHoleToSupabase(userId: string, record: Putting9HoleRecord)
     });
     if (error) {
       console.warn("[PuttingTest9] Supabase save:", error.message);
-    } else if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("practiceSessionsUpdated"));
+    } else {
+      if (record.holeIndex === puttingTest9Config.holeCount - 1) {
+        void awardCombineCompletionXp(userId);
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("practiceSessionsUpdated"));
+      }
     }
   } catch (e) {
     console.warn("[PuttingTest9] Supabase save failed", e);
@@ -355,6 +361,7 @@ export function PuttingTest9Runner() {
                 ["highShort", "High / Short"],
                 ["lowLong", "Low / Long"],
                 ["lowShort", "Low / Short"],
+                ["lipOut", "Lip Out"],
               ] as const
             ).map(([key, label]) => (
               <button

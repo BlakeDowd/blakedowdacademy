@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { puttingTestConfig } from "@/lib/puttingTestConfig";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 import type { PrimaryMissReason } from "@/lib/puttingTestMissDiagnostics";
 import {
   PUTTING_TEST_MISS_CATEGORY_LABELS,
@@ -14,7 +15,7 @@ import { PuttingTestResultsSummaryCard } from "@/components/PuttingTestResultsSu
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 
 type ShapeKey = (typeof puttingTestConfig.shapes)[number];
-type MissCategory = "highLong" | "highShort" | "lowLong" | "lowShort";
+type MissCategory = "highLong" | "highShort" | "lowLong" | "lowShort" | "lipOut";
 
 export type PuttingHoleRecord = {
   holeIndex: number;
@@ -90,6 +91,8 @@ async function persistHoleToSupabase(userId: string, record: PuttingHoleRecord) 
     });
     if (error) {
       console.warn("[PuttingTest] Supabase save:", error.message);
+    } else if (record.holeIndex === puttingTestConfig.distances.length - 1) {
+      void awardCombineCompletionXp(userId);
     }
   } catch (e) {
     console.warn("[PuttingTest] Supabase save failed", e);
@@ -357,6 +360,7 @@ export function PuttingTestRunner() {
                 ["highShort", "High / Short"],
                 ["lowLong", "Low / Long"],
                 ["lowShort", "Low / Short"],
+                ["lipOut", "Lip Out"],
               ] as const
             ).map(([key, label]) => (
               <button

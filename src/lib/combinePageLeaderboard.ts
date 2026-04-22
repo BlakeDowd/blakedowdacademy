@@ -45,11 +45,22 @@ function num(v: unknown): number | null {
 }
 
 function aggregatesFromPractice(row: { metadata?: unknown }): Record<string, unknown> | null {
-  const m = row?.metadata;
+  const m = metadataFromPractice(row);
   if (!m || typeof m !== "object") return null;
   const ag = (m as { aggregates?: unknown }).aggregates;
   if (!ag || typeof ag !== "object") return null;
   return ag as Record<string, unknown>;
+}
+
+function metadataFromPractice(row: { metadata?: unknown; notes?: unknown }): Record<string, unknown> | null {
+  const m = row?.metadata;
+  if (m && typeof m === "object" && !Array.isArray(m)) return m as Record<string, unknown>;
+  const n = parseNotes(row);
+  const payload = n?.payload;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    return payload as Record<string, unknown>;
+  }
+  return null;
 }
 
 function parseNotes(row: { notes?: unknown }): Record<string, unknown> | null {
@@ -83,7 +94,7 @@ export function extractPracticeScoreForHighlight(
   if (!rowMatchesPracticeTestType(row, testType)) return null;
   const ag = aggregatesFromPractice(row);
   const notes = parseNotes(row);
-  const meta = row.metadata as Record<string, unknown> | undefined;
+  const meta = metadataFromPractice(row) ?? undefined;
 
   if (testType === "aimpoint_6ft_combine") {
     const pct = num(ag?.calibration_score_pct);
@@ -198,13 +209,21 @@ export function extractPracticeLogsScore(
   row: {
     log_type?: unknown;
     matrix_score_average?: unknown;
+    score?: unknown;
     total_points?: unknown;
     strike_data?: unknown;
   },
   logType: string,
   scoreMode: "matrix_average" | "total_points",
 ): { sortValue: number; display: string } | null {
-  if (String(row?.log_type ?? "") !== logType) return null;
+  const rowLogType = String(row?.log_type ?? "").trim().toLowerCase();
+  const wantLogType = String(logType ?? "").trim().toLowerCase();
+  const isIronWanted =
+    wantLogType === "iron_precision_protocol" || wantLogType === "iron_precision_protocol_session";
+  const logTypeMatches = isIronWanted
+    ? rowLogType.includes("iron_precision_protocol") || rowLogType.includes("ironprecisionprotocol")
+    : rowLogType === wantLogType;
+  if (!logTypeMatches) return null;
   if (scoreMode === "matrix_average") {
     const m = num(row.matrix_score_average);
     if (m == null) return null;
@@ -212,7 +231,7 @@ export function extractPracticeLogsScore(
   }
   const recomputed = totalIronPointsFromStrikeData(row.strike_data);
   const stored = num(row.total_points);
-  const tp = recomputed ?? stored;
+  const tp = recomputed ?? stored ?? num(row.score);
   if (tp == null) return null;
   return { sortValue: tp, display: `${Math.round(tp)} pts` };
 }

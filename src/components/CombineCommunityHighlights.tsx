@@ -83,7 +83,7 @@ export function CombineCommunityHighlights({
         const tt = definition.testType;
         const { data, error: qErr } = await supabase
           .from("practice")
-          .select("id,user_id,test_type,type,metadata,notes,created_at")
+          .select("id,user_id,test_type,type,notes,created_at")
           .or(`test_type.eq.${tt},type.eq.${tt}`)
           .order("created_at", { ascending: false })
           .limit(3000);
@@ -130,8 +130,7 @@ export function CombineCommunityHighlights({
       } else {
         const { data, error: qErr } = await supabase
           .from("practice_logs")
-          .select("user_id,log_type,matrix_score_average,total_points,strike_data,created_at")
-          .eq("log_type", definition.logType)
+          .select("user_id,log_type,matrix_score_average,score,total_points,strike_data,created_at")
           .order("created_at", { ascending: false })
           .limit(3000);
         if (qErr) {
@@ -147,6 +146,50 @@ export function CombineCommunityHighlights({
               sortValue: ex.sortValue,
               display: ex.display,
             });
+          }
+        }
+        // Iron protocol fallback for environments that could not write/read practice_logs.
+        if (definition.logType.includes("iron_precision_protocol")) {
+          const { data: practiceData, error: practiceErr } = await supabase
+            .from("practice")
+            .select("user_id,type,test_type,notes,created_at")
+            .order("created_at", { ascending: false })
+            .limit(3000);
+          if (practiceErr) {
+            console.warn("[CombineCommunityHighlights] iron practice fallback query:", practiceErr.message);
+          } else {
+            queryOk = true;
+            for (const row of practiceData ?? []) {
+              const tt = String(row?.test_type ?? row?.type ?? "").trim().toLowerCase();
+              if (!tt.includes("iron_precision_protocol") && !tt.includes("ironprecisionprotocol")) {
+                continue;
+              }
+              const ex = extractPracticeScoreForHighlight("iron_precision_protocol", row);
+              const fallbackScore =
+                ex?.sortValue ??
+                (() => {
+                  try {
+                    const notes =
+                      typeof row.notes === "string"
+                        ? JSON.parse(row.notes)
+                        : (row.notes as Record<string, unknown> | null);
+                    const n = Number(
+                      (notes as Record<string, unknown> | null)?.total_points ??
+                        (notes as Record<string, unknown> | null)?.matrix_score_average,
+                    );
+                    return Number.isFinite(n) ? n : null;
+                  } catch {
+                    return null;
+                  }
+                })();
+              if (fallbackScore == null || !row.user_id) continue;
+              sessionRows.push({
+                userId: String(row.user_id),
+                created_at: String(row.created_at ?? ""),
+                sortValue: fallbackScore,
+                display: `${Math.round(fallbackScore)} pts`,
+              });
+            }
           }
         }
       }

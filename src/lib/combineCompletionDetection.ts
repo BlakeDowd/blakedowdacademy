@@ -18,12 +18,16 @@ import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
 export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
   gauntletPrecisionProtocolConfig.practiceLogType,
   ironPrecisionProtocolConfig.practiceLogType,
+  // Legacy iron protocol identifiers kept for backward compatibility.
+  "iron_precision_protocol",
+  "ironPrecisionProtocol",
   startLineAndSpeedControlTestConfig.practiceLogType,
   strikeAndSpeedControlTestConfig.practiceLogType,
   flopShotCombineConfig.practiceLogType,
   standardChippingCombineConfig.practiceLogType,
   survival20Config.practiceLogType,
   ironFaceControlConfig.practiceLogType,
+  "iron_skills",
 ];
 
 /** practice_logs rows written when a protocol-style combine is finished */
@@ -44,12 +48,15 @@ const COMBINE_PRACTICE_TEST_TYPES = new Set<string>([
 const COMBINE_LOG_TYPE_LABELS: Record<string, string> = {
   [gauntletPrecisionProtocolConfig.practiceLogType]: gauntletPrecisionProtocolConfig.testName,
   [ironPrecisionProtocolConfig.practiceLogType]: ironPrecisionProtocolConfig.testName,
+  iron_precision_protocol: ironPrecisionProtocolConfig.testName,
+  ironPrecisionProtocol: ironPrecisionProtocolConfig.testName,
   [startLineAndSpeedControlTestConfig.practiceLogType]: startLineAndSpeedControlTestConfig.testName,
   [strikeAndSpeedControlTestConfig.practiceLogType]: strikeAndSpeedControlTestConfig.testName,
   [flopShotCombineConfig.practiceLogType]: flopShotCombineConfig.testName,
   [standardChippingCombineConfig.practiceLogType]: standardChippingCombineConfig.testName,
   [survival20Config.practiceLogType]: survival20Config.testName,
   [ironFaceControlConfig.practiceLogType]: ironFaceControlConfig.testName,
+  iron_skills: "Iron Skills Challenge",
 };
 
 const COMBINE_TEST_TYPE_LABELS: Record<string, string> = {

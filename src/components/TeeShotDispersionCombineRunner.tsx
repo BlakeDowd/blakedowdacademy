@@ -23,6 +23,7 @@ import {
 } from "@/lib/teeShotDispersionCombineAnalytics";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 
 const FACE_ROWS: FaceRow[] = ["high", "middle", "low"];
 const FACE_COLS: FaceCol[] = ["heel", "middle", "toe"];
@@ -45,22 +46,23 @@ async function persistSession(
   try {
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
+    const payload = {
+      version: 3,
+      total_score: aggregates.total_score,
+      shots,
+      aggregates,
+    };
     const { error } = await supabase.from("practice").insert({
       user_id: userId,
       type: teeShotDispersionCombineConfig.testType,
       test_type: teeShotDispersionCombineConfig.testType,
       duration_minutes: 0,
-      metadata: {
-        version: 3,
-        total_score: aggregates.total_score,
-        shots,
-        aggregates,
-      },
       notes: JSON.stringify({
         kind: teeShotDispersionCombineConfig.noteKind,
         total_points: aggregates.total_points,
         total_score: aggregates.total_score,
         strike_cluster: aggregates.strike_cluster,
+        payload,
       }),
     });
     if (error) {
@@ -68,6 +70,7 @@ async function persistSession(
       console.warn("[TeeShotDispersionCombine] practice insert:", msg);
       return msg;
     }
+    await awardCombineCompletionXp(userId);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));
     }

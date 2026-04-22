@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 
 export type IronFaceShot = {
   gate: boolean;
@@ -45,24 +46,18 @@ async function persistIronFaceSession(
   try {
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
-    const metadata: IronFaceControlMetadata = {
-      version: 1,
-      shots,
-      total_out_of_100: total,
-    };
-
     const { error } = await supabase.from("practice_logs").insert({
       user_id: userId,
       log_type: ironFaceControlConfig.practiceLogType,
       score: total,
       total_points: total,
-      metadata,
     });
 
     if (error) {
       console.warn("[IronFaceControl] practice_logs insert:", formatSupabaseWriteError(error));
       return formatSupabaseWriteError(error);
     }
+    await awardCombineCompletionXp(userId);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));
     }

@@ -16,6 +16,7 @@ import {
 import { parsePercentOneDecimal } from "@/lib/slopeReadingParse";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 
 /** @returns null on success, or a user-visible error string */
 async function persistSession(
@@ -28,22 +29,23 @@ async function persistSession(
     const supabase = createClient();
     const totalPoints = totalPointsSession(putts);
     const calPct = calibrationScorePercent(totalPoints);
+    const payload = {
+      version: 1,
+      distance_ft: aimpoint6ftCombineConfig.distanceFt,
+      putts,
+      aggregates,
+    };
 
     const { error } = await supabase.from("practice").insert({
       user_id: userId,
       type: aimpoint6ftCombineConfig.testType,
       test_type: aimpoint6ftCombineConfig.testType,
       duration_minutes: 0,
-      metadata: {
-        version: 1,
-        distance_ft: aimpoint6ftCombineConfig.distanceFt,
-        putts,
-        aggregates,
-      },
       notes: JSON.stringify({
         kind: aimpoint6ftCombineConfig.noteKind,
         total_points: totalPoints,
         calibration_score_pct: calPct,
+        payload,
       }),
     });
     if (error) {
@@ -51,6 +53,7 @@ async function persistSession(
       console.warn("[Aimpoint6ftCombine] practice insert:", msg);
       return msg;
     }
+    await awardCombineCompletionXp(userId);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));
     }

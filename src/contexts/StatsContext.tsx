@@ -71,7 +71,9 @@ interface PracticeLogRow {
   matrix_score_average?: number | null;
   perfect_putt_count?: number | null;
   triple_failure_rate?: number | null;
+  score?: number | null;
   total_points?: number | null;
+  sub_type?: string | null;
   /** Used to recompute iron protocol session totals when `total_points` is missing. */
   strike_data?: unknown;
 }
@@ -502,25 +504,59 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const practiceLogsSelect =
-        "id,user_id,log_type,created_at,matrix_score_average,perfect_putt_count,triple_failure_rate,total_points,strike_data";
+      const selectVariants = [
+        // Full payload (preferred when schema is up-to-date).
+        "id,user_id,log_type,created_at,matrix_score_average,perfect_putt_count,triple_failure_rate,score,total_points,sub_type,strike_data",
+        // Fallback for deployments missing newer columns.
+        "id,user_id,log_type,created_at,matrix_score_average,score,total_points,sub_type,strike_data",
+        // Fallback when `score` is absent on practice_logs.
+        "id,user_id,log_type,created_at,matrix_score_average,total_points,sub_type,strike_data",
+        // Minimal fallback to keep core combine leaderboards available.
+        "id,user_id,log_type,created_at,matrix_score_average,score,total_points,strike_data",
+        // Minimal fallback when `score` is absent.
+        "id,user_id,log_type,created_at,matrix_score_average,total_points,strike_data",
+        // Minimal fallback when JSON payload columns are absent.
+        "id,user_id,log_type,created_at,matrix_score_average,score,total_points",
+        // Minimal fallback when `score` is absent.
+        "id,user_id,log_type,created_at,matrix_score_average,total_points",
+        // Last-resort fallback for very old schemas.
+        "id,user_id,log_type,created_at,score,total_points",
+        // Last-resort fallback when `score` is absent.
+        "id,user_id,log_type,created_at,total_points",
+      ] as const;
 
-      const [mainRes, ironRes] = await Promise.all([
-        supabase
-          .from("practice_logs")
-          .select(practiceLogsSelect)
-          .in("log_type", [...COMBINE_PRACTICE_LOG_TYPE_VALUES])
-          .order("created_at", { ascending: false })
-          .limit(5000),
-        supabase
-          .from("practice_logs")
-          .select(practiceLogsSelect)
-          .eq("log_type", ironPrecisionProtocolConfig.practiceLogType)
-          .order("created_at", { ascending: false })
-          .limit(4000),
-      ]);
+      let data: PracticeLogRow[] | null = null;
+      let error: any = null;
+      let ironRows: PracticeLogRow[] = [];
 
-      const { data, error } = mainRes;
+      for (const select of selectVariants) {
+        const [mainRes, ironRes] = await Promise.all([
+          supabase
+            .from("practice_logs")
+            .select(select)
+            .order("created_at", { ascending: false })
+            .limit(10000),
+          supabase
+            .from("practice_logs")
+            .select(select)
+            .eq("log_type", ironPrecisionProtocolConfig.practiceLogType)
+            .order("created_at", { ascending: false })
+            .limit(4000),
+        ]);
+
+        error = mainRes.error;
+        if (!error) {
+          data = (mainRes.data || []) as PracticeLogRow[];
+          ironRows = (ironRes.data || []) as PracticeLogRow[];
+          if (ironRes.error) {
+            console.warn(
+              "StatsContext: iron-only practice_logs fetch failed (leaderboard may miss older iron rows):",
+              ironRes.error.message ?? JSON.stringify(ironRes.error),
+            );
+          }
+          break;
+        }
+      }
 
       if (error) {
         const err = error as {
@@ -581,13 +617,6 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       }
 
       const mainRows = (data || []) as PracticeLogRow[];
-      const ironRows = (ironRes.data || []) as PracticeLogRow[];
-      if (ironRes.error) {
-        console.warn(
-          "StatsContext: iron-only practice_logs fetch failed (leaderboard may miss older iron rows):",
-          ironRes.error.message ?? JSON.stringify(ironRes.error),
-        );
-      }
       const byId = new Map<string, PracticeLogRow>();
       for (const row of ironRows) {
         if (row?.id) byId.set(row.id, row);

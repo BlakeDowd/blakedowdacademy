@@ -9,6 +9,7 @@ import {
   roundFlopPointsOneDecimal,
 } from "@/lib/flopShotCombineScoring";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
 import { performanceGradeFromOutOf150 } from "@/lib/combinePerformanceGrade";
 import { CombinePerformanceGradeBadge } from "@/components/CombinePerformanceGradeBadge";
 
@@ -53,22 +54,11 @@ async function persistFlopSession(
       typeof totalScore === "number" && Number.isFinite(totalScore) ? totalScore : 0;
     const { label: performanceGrade } = performanceGradeFromOutOf150(sessionScore);
 
-    const metadata: FlopShotCombineMetadata = {
-      version: 2,
-      scoring: "pro_linear",
-      cm_5m: cm5,
-      cm_10m: cm10,
-      cm_20m: cm20,
-      total_score: sessionScore,
-      performance_grade: performanceGrade,
-    };
-
     const { error } = await supabase.from("practice_logs").insert({
       user_id: userId,
       log_type: flopShotCombineConfig.practiceLogType,
       score: sessionScore,
       total_points: sessionScore,
-      metadata,
     });
 
     if (error) {
@@ -76,6 +66,8 @@ async function persistFlopSession(
       console.warn("[FlopShotCombine] practice_logs insert:", msg);
       return msg;
     }
+
+    await awardCombineCompletionXp(userId);
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));
