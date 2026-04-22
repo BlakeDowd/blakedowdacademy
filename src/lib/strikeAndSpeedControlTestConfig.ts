@@ -10,4 +10,4 @@ export const strikeAndSpeedControlTestConfig = {
   puttCount: 12,
 } as const;
 
-export type StrikeQuality = "clean" | "hit_gate";
+export type StrikeQuality = "clean" | "hit_gate_left" | "hit_gate_right" | "hit_gate";

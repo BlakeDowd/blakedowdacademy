@@ -7,6 +7,8 @@ import {
   performanceDiagnosis,
   cleanStrikeRate,
   meanAbsDistanceCm,
+  gateSideCounts,
+  gateSideImprovementMessage,
 } from "@/lib/strikeAndSpeedControlScoring";
 import {
   strikeAndSpeedControlTestConfig,
@@ -214,6 +216,8 @@ export function StrikeAndSpeedControlTestRunner() {
       ),
       cleanPct: cleanStrikeRate(completedPutts.map((p) => ({ strike: p.strike }))) * 100,
       meanCm: meanAbsDistanceCm(completedPutts.map((p) => ({ cm: p.distance_cm }))),
+      gateSides: gateSideCounts(completedPutts.map((p) => ({ strike: p.strike }))),
+      gateSideMessage: gateSideImprovementMessage(completedPutts.map((p) => ({ strike: p.strike }))),
     };
   }, [completedPutts, total]);
 
@@ -266,12 +270,19 @@ export function StrikeAndSpeedControlTestRunner() {
               Avg |distance|:{" "}
               <span className="font-semibold text-gray-900">{summary.meanCm.toFixed(1)} cm</span>
             </span>
+            <span>
+              Gate L/R:{" "}
+              <span className="font-semibold text-gray-900">
+                {summary.gateSides.left}/{summary.gateSides.right}
+              </span>
+            </span>
           </div>
           <div className="border-t border-gray-100 pt-4">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-2">
               Performance Diagnosis
             </p>
             <p className="text-sm font-medium text-gray-800 leading-relaxed">{summary.diagnosis}</p>
+            <p className="mt-2 text-sm text-gray-700 leading-relaxed">{summary.gateSideMessage}</p>
           </div>
         </div>
 
@@ -327,7 +338,7 @@ export function StrikeAndSpeedControlTestRunner() {
 
       <div className="space-y-2">
         <p className="text-sm font-medium text-gray-800">Strike</p>
-        <div className="grid grid-cols-2 rounded-xl border-2 border-gray-200 overflow-hidden p-0.5 bg-gray-100">
+        <div className="grid grid-cols-3 rounded-xl border-2 border-gray-200 overflow-hidden p-0.5 bg-gray-100">
           <button
             type="button"
             onClick={() => setStrike("clean")}
@@ -341,14 +352,25 @@ export function StrikeAndSpeedControlTestRunner() {
           </button>
           <button
             type="button"
-            onClick={() => setStrike("hit_gate")}
+            onClick={() => setStrike("hit_gate_left")}
             className={`py-3 text-sm font-semibold rounded-lg transition-colors ${
-              strike === "hit_gate"
+              strike === "hit_gate_left"
                 ? "bg-white text-[#014421] shadow-sm"
                 : "text-gray-600 hover:text-gray-900"
             }`}
           >
-            Hit Gate
+            Hit Gate (Left)
+          </button>
+          <button
+            type="button"
+            onClick={() => setStrike("hit_gate_right")}
+            className={`py-3 text-sm font-semibold rounded-lg transition-colors ${
+              strike === "hit_gate_right"
+                ? "bg-white text-[#014421] shadow-sm"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Hit Gate (Right)
           </button>
         </div>
       </div>

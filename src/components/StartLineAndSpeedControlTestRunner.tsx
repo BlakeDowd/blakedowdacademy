@@ -108,8 +108,12 @@ export function StartLineAndSpeedControlTestRunner() {
   const puttNumber = currentPuttIndex + 1;
 
   const distanceCm = parseFloat(distanceInput);
+  const gateHitSelected =
+    gate === "hit_gate_left" || gate === "hit_gate_right" || gate === "hit_gate";
+  const requiresDistanceInput = gate === "through_gate";
   const distanceValid =
     distanceInput.trim() !== "" && !Number.isNaN(distanceCm) && Number.isFinite(distanceCm);
+  const canRecord = gateHitSelected || distanceValid;
 
   const startTest = useCallback(() => {
     setStatus("active");
@@ -123,12 +127,13 @@ export function StartLineAndSpeedControlTestRunner() {
   }, []);
 
   const recordPutt = useCallback(async () => {
-    if (status !== "active" || !distanceValid) return;
+    if (status !== "active" || !canRecord) return;
     const record: PuttRecord = {
       putt: puttNumber,
       targetFt: currentTargetFt,
       gate,
-      distance_cm: distanceCm,
+      // Gate contact is treated as a no-distance score (0) and advances immediately.
+      distance_cm: gateHitSelected ? 0 : distanceCm,
     };
     const nextLog = [...completedPutts, record];
     setGate("through_gate");
@@ -164,10 +169,11 @@ export function StartLineAndSpeedControlTestRunner() {
     }
   }, [
     status,
-    distanceValid,
+    canRecord,
     puttNumber,
     currentTargetFt,
     gate,
+    gateHitSelected,
     distanceCm,
     completedPutts,
     total,
@@ -272,7 +278,7 @@ export function StartLineAndSpeedControlTestRunner() {
               {summary.scoreAverage.toFixed(2)}
             </p>
             <p className="text-xs text-gray-500 mt-1">
-              Lower is better. Hit Gate putts score 100 each (precision premium).
+              Lower is better. Any gate contact (left/right) scores 0 for that putt.
             </p>
           </div>
           <div className="flex flex-wrap gap-4 text-sm text-gray-600">
@@ -356,7 +362,7 @@ export function StartLineAndSpeedControlTestRunner() {
 
       <div className="space-y-2">
         <p className="text-sm font-medium text-gray-800">Start Line</p>
-        <div className="grid grid-cols-2 rounded-xl border-2 border-gray-200 overflow-hidden p-0.5 bg-gray-100">
+        <div className="grid grid-cols-3 rounded-xl border-2 border-gray-200 overflow-hidden p-0.5 bg-gray-100">
           <button
             type="button"
             onClick={() => setGate("through_gate")}
@@ -370,40 +376,57 @@ export function StartLineAndSpeedControlTestRunner() {
           </button>
           <button
             type="button"
-            onClick={() => setGate("hit_gate")}
+            onClick={() => setGate("hit_gate_left")}
             className={`py-3 text-sm font-semibold rounded-lg transition-colors ${
-              gate === "hit_gate"
+              gate === "hit_gate_left"
                 ? "bg-white text-[#014421] shadow-sm"
                 : "text-gray-600 hover:text-gray-900"
             }`}
           >
-            Hit Gate
+            Hit Left Gate
+          </button>
+          <button
+            type="button"
+            onClick={() => setGate("hit_gate_right")}
+            className={`py-3 text-sm font-semibold rounded-lg transition-colors ${
+              gate === "hit_gate_right"
+                ? "bg-white text-[#014421] shadow-sm"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Hit Right Gate
           </button>
         </div>
       </div>
 
-      <div>
-        <label
-          htmlFor="start-line-speed-dist-cm"
-          className="block text-sm font-medium text-gray-800 mb-1"
-        >
-          Distance From Target (cm)
-        </label>
-        <input
-          id="start-line-speed-dist-cm"
-          type="text"
-          inputMode="decimal"
-          placeholder="e.g. 12"
-          value={distanceInput}
-          onChange={(e) => setDistanceInput(e.target.value)}
-          className="w-full max-w-[160px] rounded-lg border-2 border-gray-200 px-3 py-2 text-sm focus:border-[#014421] focus:outline-none focus:ring-2 focus:ring-[#014421]/30"
-        />
-        <p className="text-xs text-gray-500 mt-1.5">Center of the ball to the target.</p>
-      </div>
+      {requiresDistanceInput ? (
+        <div>
+          <label
+            htmlFor="start-line-speed-dist-cm"
+            className="block text-sm font-medium text-gray-800 mb-1"
+          >
+            Distance From Target (cm)
+          </label>
+          <input
+            id="start-line-speed-dist-cm"
+            type="text"
+            inputMode="decimal"
+            placeholder="e.g. 12"
+            value={distanceInput}
+            onChange={(e) => setDistanceInput(e.target.value)}
+            className="w-full max-w-[160px] rounded-lg border-2 border-gray-200 px-3 py-2 text-sm focus:border-[#014421] focus:outline-none focus:ring-2 focus:ring-[#014421]/30"
+          />
+          <p className="text-xs text-gray-500 mt-1.5">Center of the ball to the target.</p>
+        </div>
+      ) : (
+        <p className="text-xs text-gray-600 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+          Gate contact selected: distance is marked as no score and this putt records immediately.
+        </p>
+      )}
 
       <button
         type="button"
-        disabled={!distanceValid}
+        disabled={!canRecord}
         onClick={() => void recordPutt()}
         className="w-full py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
       >

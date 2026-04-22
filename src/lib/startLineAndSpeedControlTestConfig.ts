@@ -9,4 +9,4 @@ export const startLineAndSpeedControlTestConfig = {
   puttCount: 12,
 } as const;
 
-export type StartLineGate = "through_gate" | "hit_gate";
+export type StartLineGate = "through_gate" | "hit_gate_left" | "hit_gate_right" | "hit_gate";

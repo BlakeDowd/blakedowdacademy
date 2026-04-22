@@ -2,7 +2,11 @@ import { distanceWeightForTargetFt } from "@/lib/strikeAndSpeedControlScoring";
 import type { StartLineGate } from "@/lib/startLineAndSpeedControlTestConfig";
 
 /** Fixed putt score when the ball hits the gate (fail grade). */
-export const HIT_GATE_PRECISION_SCORE = 100;
+export const HIT_GATE_PRECISION_SCORE = 0;
+
+function isGateHit(gate: StartLineGate): boolean {
+  return gate === "hit_gate" || gate === "hit_gate_left" || gate === "hit_gate_right";
+}
 
 /**
  * Precision score per putt: |cm| × distance weight, unless Hit Gate → 100.
@@ -12,7 +16,7 @@ export function precisionScoreForPutt(
   targetFt: number,
   gate: StartLineGate,
 ): number {
-  if (gate === "hit_gate") return HIT_GATE_PRECISION_SCORE;
+  if (isGateHit(gate)) return HIT_GATE_PRECISION_SCORE;
   return Math.abs(distanceFromTargetCm) * distanceWeightForTargetFt(targetFt);
 }
 
@@ -37,7 +41,7 @@ export function gateSuccessRatePct(putts: { gate: StartLineGate }[]): number {
 /** Share of putts that hit the gate, 0–1. */
 export function hitGateRate(putts: { gate: StartLineGate }[]): number {
   if (putts.length === 0) return 0;
-  return putts.filter((p) => p.gate === "hit_gate").length / putts.length;
+  return putts.filter((p) => isGateHit(p.gate)).length / putts.length;
 }
 
 const HIGH_START_LINE_VARIANCE_HIT_RATE = 0.3;

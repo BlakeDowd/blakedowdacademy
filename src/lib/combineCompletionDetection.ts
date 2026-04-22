@@ -18,8 +18,7 @@ import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
 export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
   gauntletPrecisionProtocolConfig.practiceLogType,
   ironPrecisionProtocolConfig.practiceLogType,
-  // Legacy iron protocol identifiers kept for backward compatibility.
-  "iron_precision_protocol",
+  // Legacy iron protocol identifier kept for backward compatibility.
   "ironPrecisionProtocol",
   startLineAndSpeedControlTestConfig.practiceLogType,
   strikeAndSpeedControlTestConfig.practiceLogType,
@@ -48,7 +47,6 @@ const COMBINE_PRACTICE_TEST_TYPES = new Set<string>([
 const COMBINE_LOG_TYPE_LABELS: Record<string, string> = {
   [gauntletPrecisionProtocolConfig.practiceLogType]: gauntletPrecisionProtocolConfig.testName,
   [ironPrecisionProtocolConfig.practiceLogType]: ironPrecisionProtocolConfig.testName,
-  iron_precision_protocol: ironPrecisionProtocolConfig.testName,
   ironPrecisionProtocol: ironPrecisionProtocolConfig.testName,
   [startLineAndSpeedControlTestConfig.practiceLogType]: startLineAndSpeedControlTestConfig.testName,
   [strikeAndSpeedControlTestConfig.practiceLogType]: strikeAndSpeedControlTestConfig.testName,

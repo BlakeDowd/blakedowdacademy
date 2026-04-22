@@ -504,7 +504,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const selectVariants = [
+      const selectVariants: string[] = [
         // Full payload (preferred when schema is up-to-date).
         "id,user_id,log_type,created_at,matrix_score_average,perfect_putt_count,triple_failure_rate,score,total_points,sub_type,strike_data",
         // Fallback for deployments missing newer columns.
@@ -523,7 +523,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         "id,user_id,log_type,created_at,score,total_points",
         // Last-resort fallback when `score` is absent.
         "id,user_id,log_type,created_at,total_points",
-      ] as const;
+      ];
 
       let data: PracticeLogRow[] | null = null;
       let error: any = null;
@@ -533,12 +533,12 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         const [mainRes, ironRes] = await Promise.all([
           supabase
             .from("practice_logs")
-            .select(select)
+            .select(select as string)
             .order("created_at", { ascending: false })
             .limit(10000),
           supabase
             .from("practice_logs")
-            .select(select)
+            .select(select as string)
             .eq("log_type", ironPrecisionProtocolConfig.practiceLogType)
             .order("created_at", { ascending: false })
             .limit(4000),
@@ -546,8 +546,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
 
         error = mainRes.error;
         if (!error) {
-          data = (mainRes.data || []) as PracticeLogRow[];
-          ironRows = (ironRes.data || []) as PracticeLogRow[];
+          data = (mainRes.data || []) as unknown as PracticeLogRow[];
+          ironRows = (ironRes.data || []) as unknown as PracticeLogRow[];
           if (ironRes.error) {
             console.warn(
               "StatsContext: iron-only practice_logs fetch failed (leaderboard may miss older iron rows):",
