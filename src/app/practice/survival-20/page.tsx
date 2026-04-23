@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronLeft, Mountain } from "lucide-react";
 import { Survival20Runner } from "@/components/Survival20Runner";
+import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { combineHighlightSurvival20 } from "@/lib/combineHighlightDefinitions";
 import { survival20Config } from "@/lib/survival20Config";
 
 export default function Survival20Page() {
@@ -33,6 +35,7 @@ export default function Survival20Page() {
           </p>
 
           <Survival20Runner />
+          <CombineCommunityHighlights definition={combineHighlightSurvival20} />
         </div>
       </div>
     </div>

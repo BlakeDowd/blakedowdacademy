@@ -82,6 +82,36 @@ interface Drill {
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const DAY_ABBREVIATIONS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
+/** Catalog rows often omit duration; scheduling still needs a block length to fill slider time. */
+const DEFAULT_DRILL_DURATION_MINUTES = 30;
+const MIN_DRILL_SCHEDULE_BLOCK_MINUTES = 15;
+const MAX_DRILLS_PER_FACILITY_SLOT = 48;
+
+function durationMinutesForScheduling(drill: Drill): number {
+  const n = Number((drill as { estimatedMinutes?: unknown }).estimatedMinutes);
+  if (Number.isFinite(n) && n > 0) return Math.min(Math.round(n), 240);
+  return DEFAULT_DRILL_DURATION_MINUTES;
+}
+
+/** Prefer drills not yet scheduled in this block; randomize among ties so we don't repeat one drill. */
+function pickDrillForRemainingTime(
+  pool: Drill[],
+  usedIds: Set<string>,
+  minutesLeft: number,
+): { drill: Drill; est: number } | null {
+  const fitting: { drill: Drill; est: number }[] = [];
+  for (const drill of pool) {
+    const est = durationMinutesForScheduling(drill);
+    if (est > 0 && est <= minutesLeft) {
+      fitting.push({ drill, est });
+    }
+  }
+  if (fitting.length === 0) return null;
+  const unused = fitting.filter((x) => !usedIds.has(x.drill.id));
+  const pickFrom = unused.length > 0 ? unused : fitting;
+  return pickFrom[Math.floor(Math.random() * pickFrom.length)] ?? null;
+}
+
 /** Calendar date in the user's local timezone (matches `selected_date` / planner `date`). */
 function toLocalDateString(d: Date): string {
   const y = d.getFullYear();
@@ -337,19 +367,12 @@ export default function PracticePage() {
     setEditedName('');
   };
   
-  // Base XP per facility type (for freestyle practice)
-  const facilityBaseXP: Record<FacilityType, number> = {
-    'Driving': 10,
-    'Irons': 10,
-    'Wedges': 10,
-    'Chipping': 10,
-    'Bunkers': 10,
-    'Putting': 5,
-    'Mental/Strategy': 5,
-    'On-Course': 50,
-  };
+  /** Freestyle practice: max logged minutes per calendar day (XP matches academy: 10 XP per 10 min). */
+  const FREESTYLE_DAILY_CAP_MINUTES = 10 * 60;
 
   const freestyleDurationOptions: number[] = [15, 30, 45, 60, 90, 120];
+
+  const freestyleXpForMinutes = (minutes: number) => Math.floor(minutes / 10) * 10;
 
   // Initialize weekly plan and load from database (DATA JOIN: practice table + drills table)
   useEffect(() => {
@@ -993,25 +1016,27 @@ export default function PracticePage() {
       return;
     }
 
-    // Get today's date for daily XP cap tracking
+    // Daily cap: 10 hours of freestyle practice per calendar day (same XP as leaderboard: 10 XP / 10 min)
     const today = new Date().toISOString().split('T')[0];
-    const dailyXPKey = `freestyleXP_${today}`;
-    const currentDailyXP = parseInt(localStorage.getItem(dailyXPKey) || '0');
+    const dailyMinutesKey = `freestyleMinutes_${today}`;
+    const currentDailyMinutes = parseInt(localStorage.getItem(dailyMinutesKey) || '0', 10) || 0;
+    const remainingDailyMinutes = Math.max(0, FREESTYLE_DAILY_CAP_MINUTES - currentDailyMinutes);
 
-    // Calculate XP: base XP * number of 15-minute blocks
-    const blocks = Math.floor(duration / 15);
-    const baseXP = facilityBaseXP[facility];
-    const calculatedXP = baseXP * blocks;
-
-    // Apply daily cap (30 XP max per day for freestyle)
-    const remainingDailyXP = Math.max(0, 30 - currentDailyXP);
-    const xpEarned = Math.min(calculatedXP, remainingDailyXP);
-
-    if (xpEarned <= 0) {
-      alert('Daily freestyle practice XP limit reached (30 XP/day). Complete your Roadmap drills for more XP!');
+    if (duration > remainingDailyMinutes) {
+      if (remainingDailyMinutes <= 0) {
+        alert(
+          'Daily freestyle practice limit reached (10 hours/day). Complete your Roadmap drills for more XP!',
+        );
+      } else {
+        alert(
+          `You can log up to ${remainingDailyMinutes} more minutes of freestyle practice today (10 hours/day limit).`,
+        );
+      }
       setDurationModal({ open: false, facility: null });
       return;
     }
+
+    const xpEarned = freestyleXpForMinutes(duration);
 
     // Update the Target Table: Ensure the handleSubmit function is pointing to the practice table
     // Check the Fields: Make sure the data being sent matches the table we just made: user_id, type, duration_minutes, and notes
@@ -1050,16 +1075,12 @@ export default function PracticePage() {
       const hours = (duration / 60).toFixed(1).replace('.0', '');
       await logActivity(user.id, 'practice', `Practiced for ${hours} hours`);
 
-      // Trigger on Practice: In the savePractice function, add 10 XP for every 10 minutes of practice logged
-      // Calculate XP: 10 XP per 10 minutes (e.g., 30 minutes = 30 XP)
-      const practiceXP = Math.floor(duration / 10) * 10;
-      if (practiceXP > 0) {
-        await updateUserXP(user.id, practiceXP);
-        console.log(`Practice: Added ${practiceXP} XP for ${duration} minutes of practice`);
+      if (xpEarned > 0) {
+        await updateUserXP(user.id, xpEarned);
+        console.log(`Practice: Added ${xpEarned} XP for ${duration} minutes of practice`);
       }
 
-      // Update daily XP cap
-      localStorage.setItem(dailyXPKey, (currentDailyXP + xpEarned).toString());
+      localStorage.setItem(dailyMinutesKey, String(currentDailyMinutes + duration));
 
       // Update total practice minutes
       const newTotalMinutes = totalPracticeMinutes + duration;
@@ -1298,11 +1319,15 @@ export default function PracticePage() {
       const availableTime = day.availableTime || 0;
       const selectedFacilities = day?.selectedFacilities ?? [];
       const roundType = day.roundType;
+      /** Extra block (mental) after the round — subtract from facility budgets so totals match the slider. */
+      let mentalMinutesAllocated = 0;
       const allSelectedDrills: Array<Drill & { isSet?: boolean; setCount?: number; facility?: FacilityType; isRound?: boolean }> = [];
+
+      const roundMinutes = roundType === "9-hole" ? 120 : roundType === "18-hole" ? 240 : 0;
 
       // If round is selected, add On-Course Challenge FIRST (regardless of availableTime)
       if (roundType) {
-        const roundTime = roundType === '9-hole' ? 120 : 240;
+        const roundTime = roundMinutes;
         
         // Prefer "Alternate Club Round" for 18-hole
         let selectedChallenge;
@@ -1347,29 +1372,43 @@ export default function PracticePage() {
         );
         
         if (mentalGameDrills.length > 0 && availableTime > roundTime) {
-          const remainingTime = availableTime - roundTime;
-          const mentalGameTime = Math.min(remainingTime, 30); // Add up to 30 min of mental game
+          const remainingAfterRound = availableTime - roundTime;
+          const mentalGameTime = Math.min(remainingAfterRound, 30); // Add up to 30 min of mental game
           if (mentalGameTime >= 15) {
             const selectedMentalDrill = mentalGameDrills[Math.floor(Math.random() * mentalGameDrills.length)];
             if (selectedMentalDrill) {
+              const drillCap =
+                typeof selectedMentalDrill.estimatedMinutes === "number" &&
+                Number.isFinite(selectedMentalDrill.estimatedMinutes)
+                  ? selectedMentalDrill.estimatedMinutes
+                  : mentalGameTime;
+              const allocated = Math.min(mentalGameTime, drillCap);
+              mentalMinutesAllocated = allocated;
               allSelectedDrills.push({
                 ...selectedMentalDrill,
                 id: `mental-${day.dayIndex}-${selectedMentalDrill.id}-${Date.now()}`,
                 xpValue: pillarXPTiering['Mental Game'] || selectedMentalDrill.xpValue,
-                estimatedMinutes: Math.min(mentalGameTime, selectedMentalDrill.estimatedMinutes),
+                estimatedMinutes: allocated,
               });
             }
           }
         }
       }
 
+      // Minutes left for facility buckets after round + mental (matches slider total)
+      const remainingForFacilities = Math.max(
+        0,
+        availableTime - roundMinutes - mentalMinutesAllocated,
+      );
+
       // If facilities are selected, divide time equally among them (only if time > 0)
       if (selectedFacilities.length > 0 && availableTime > 0) {
-        // Subtract round time if a round is selected
-        const remainingTime = roundType ? availableTime - (roundType === '9-hole' ? 120 : 240) : availableTime;
-        const timePerFacility = remainingTime > 0 ? Math.floor(remainingTime / selectedFacilities.length) : 0;
-        
-        selectedFacilities.forEach((facility: FacilityType) => {
+        const nFac = selectedFacilities.length;
+        const base = remainingForFacilities > 0 ? Math.floor(remainingForFacilities / nFac) : 0;
+        const remainder = remainingForFacilities > 0 ? remainingForFacilities % nFac : 0;
+
+        selectedFacilities.forEach((facility: FacilityType, fi: number) => {
+          const timePerFacility = base + (fi < remainder ? 1 : 0);
           const compatibleCategories = facilityDrillMapping[facility] || [];
           
           // Smart Allocation: If Range (Grass) is selected, prioritize Skills and Wedge Play
@@ -1428,15 +1467,26 @@ export default function PracticePage() {
             // Random sort for the rest
             return Math.random() - 0.5;
           });
+          const usedDrillIds = new Set<string>();
           let facilityTime = timePerFacility;
           const facilitySelectedDrills: Drill[] = [];
 
-          for (const drill of shuffled) {
-            if (drill.estimatedMinutes <= facilityTime && facilitySelectedDrills.length < 3) {
-              facilitySelectedDrills.push(drill);
-              facilityTime -= drill.estimatedMinutes;
-            }
-            if (facilitySelectedDrills.length >= 2 && facilityTime < 15) {
+          while (
+            facilityTime >= MIN_DRILL_SCHEDULE_BLOCK_MINUTES &&
+            facilitySelectedDrills.length < MAX_DRILLS_PER_FACILITY_SLOT
+          ) {
+            const next = pickDrillForRemainingTime(shuffled, usedDrillIds, facilityTime);
+            if (!next) break;
+            usedDrillIds.add(next.drill.id);
+            facilitySelectedDrills.push({
+              ...next.drill,
+              estimatedMinutes: next.est,
+            });
+            facilityTime -= next.est;
+            if (
+              facilitySelectedDrills.length >= 2 &&
+              facilityTime < MIN_DRILL_SCHEDULE_BLOCK_MINUTES
+            ) {
               break;
             }
           }
@@ -1450,16 +1500,24 @@ export default function PracticePage() {
           });
         });
       } else if (!roundType && availableTime > 0) {
-        // No facilities selected and no round - use general drills (only if time > 0)
+        // No facilities selected and no round - use pillar-relevant drills; fill budget like facility path
         const shuffled = [...relevantDrills].sort(() => Math.random() - 0.5);
+        const usedDrillIds = new Set<string>();
         let remainingTime = availableTime;
-        
-        for (const drill of shuffled) {
-          if (drill.estimatedMinutes <= remainingTime && allSelectedDrills.length < 5) {
-            allSelectedDrills.push(drill);
-            remainingTime -= drill.estimatedMinutes;
-          }
-          if (allSelectedDrills.length >= 3 && remainingTime < 15) {
+
+        while (
+          remainingTime >= MIN_DRILL_SCHEDULE_BLOCK_MINUTES &&
+          allSelectedDrills.length < MAX_DRILLS_PER_FACILITY_SLOT
+        ) {
+          const next = pickDrillForRemainingTime(shuffled, usedDrillIds, remainingTime);
+          if (!next) break;
+          usedDrillIds.add(next.drill.id);
+          allSelectedDrills.push({
+            ...next.drill,
+            estimatedMinutes: next.est,
+          });
+          remainingTime -= next.est;
+          if (allSelectedDrills.length >= 2 && remainingTime < MIN_DRILL_SCHEDULE_BLOCK_MINUTES) {
             break;
           }
         }
@@ -2493,7 +2551,14 @@ export default function PracticePage() {
                       )}
                     </div>
                     <p className="text-gray-700 text-sm mb-3">
-                      {summary.totalTime} mins total. Focus: {summary.categories}
+                      {summary.totalTime} mins of drills scheduled
+                      {(day.availableTime ?? 0) > 0 ? (
+                        <span className="text-gray-600">
+                          {" "}
+                          · {formatTime(day.availableTime ?? 0)} on slider
+                        </span>
+                      ) : null}
+                      . Focus: {summary.categories}
                       {completedCount > 0 && (
                         <span className="ml-2 font-semibold" style={{ color: '#FFA500' }}>
                           ({completedCount}/{totalDrills} complete)
@@ -2698,9 +2763,7 @@ export default function PracticePage() {
               
               <div className="grid grid-cols-2 gap-3 mb-4">
                 {freestyleDurationOptions.map((minutes) => {
-                  const blocks = Math.floor(minutes / 15);
-                  const baseXP = facilityBaseXP[durationModal.facility!];
-                  const xp = baseXP * blocks;
+                  const xp = freestyleXpForMinutes(minutes);
                   
                   return (
                     <button

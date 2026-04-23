@@ -14,6 +14,7 @@ import { strikeAndSpeedControlTestConfig } from "@/lib/strikeAndSpeedControlTest
 import { teeShotDispersionCombineConfig } from "@/lib/teeShotDispersionCombineConfig";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
 import { bunker9HoleChallengeConfig } from "@/lib/bunker9HoleChallengeConfig";
+import { survival20Config } from "@/lib/survival20Config";
 
 export const combineHighlightAimpoint6ft: CombineHighlightDefinition = {
   kind: "practice_by_test_type",
@@ -111,6 +112,14 @@ export const combineHighlightIronPrecision: CombineHighlightDefinition = {
   higherIsBetter: true,
   scoreMode: "total_points",
   improvementUnit: "points",
+};
+
+export const combineHighlightSurvival20: CombineHighlightDefinition = {
+  kind: "practice_logs",
+  logType: survival20Config.practiceLogType,
+  higherIsBetter: true,
+  scoreMode: "shots_survived",
+  improvementUnit: "shots",
 };
 
 export const combineHighlightStrikeSpeed: CombineHighlightDefinition = {

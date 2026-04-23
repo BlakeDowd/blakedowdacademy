@@ -20,8 +20,8 @@ export type CombineHighlightDefinition =
       kind: "practice_logs";
       logType: string;
       higherIsBetter: boolean;
-      scoreMode: "matrix_average" | "total_points";
-      improvementUnit: "points" | "index";
+      scoreMode: "matrix_average" | "total_points" | "shots_survived";
+      improvementUnit: "points" | "index" | "shots";
     };
 
 export function stonecuttersDisplayName(fullName: string | null | undefined): string {
@@ -214,7 +214,7 @@ export function extractPracticeLogsScore(
     strike_data?: unknown;
   },
   logType: string,
-  scoreMode: "matrix_average" | "total_points",
+  scoreMode: "matrix_average" | "total_points" | "shots_survived",
 ): { sortValue: number; display: string } | null {
   const rowLogType = String(row?.log_type ?? "").trim().toLowerCase();
   const wantLogType = String(logType ?? "").trim().toLowerCase();
@@ -228,6 +228,11 @@ export function extractPracticeLogsScore(
     const m = num(row.matrix_score_average);
     if (m == null) return null;
     return { sortValue: m, display: `${m.toFixed(1)}` };
+  }
+  if (scoreMode === "shots_survived") {
+    const tp = num(row.score) ?? num(row.total_points);
+    if (tp == null || tp < 0) return null;
+    return { sortValue: tp, display: `${Math.round(tp)} shots` };
   }
   const recomputed = totalIronPointsFromStrikeData(row.strike_data);
   const stored = num(row.total_points);
@@ -315,6 +320,9 @@ export function formatImprovementLine(
   }
   if (unit === "index") {
     return `🔥 ${name} improved by ${delta.toFixed(1)} index pts this week!`;
+  }
+  if (unit === "shots") {
+    return `🔥 ${name} improved by ${Math.round(delta)} shots survived this week!`;
   }
   return `🔥 ${name} improved by ${Math.round(delta)} points this week!`;
 }
