@@ -88,6 +88,8 @@ function drillBelongsInLibraryCategory(d: DrillRecord, category: string): boolea
 function roundDrillDedupeKey(d: DrillRecord): string {
   const code = String(d.drill_id ?? "").trim();
   if (code && !UUID_LIKE.test(code)) return code.toLowerCase();
+  const name = (d.drill_name ?? d.title ?? "").trim().toLowerCase();
+  if (name) return `name:${name}`;
   return `id:${d.id}`;
 }
 
@@ -371,8 +373,15 @@ export function DrillLibrary({ onAssignToDay, showHeader = true }: DrillLibraryP
       return matched;
     }
 
-    const seen = new Set(matched.map(roundDrillDedupeKey));
-    const out: DrillRecord[] = matched.map((d) => ({ ...d, category }));
+    const seen = new Set<string>();
+    const out: DrillRecord[] = [];
+
+    for (const d of matched) {
+      const k = roundDrillDedupeKey(d);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({ ...d, category });
+    }
 
     for (const o of OFFICIAL_DRILLS) {
       if (o.category !== category) continue;

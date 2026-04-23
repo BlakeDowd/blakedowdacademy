@@ -13,6 +13,7 @@ import {
 } from "@/lib/puttingTestMissScoring";
 import { PuttingMissDiagnosticsSection } from "@/components/PuttingMissDiagnostics";
 import { PuttingTestResultsSummaryCard } from "@/components/PuttingTestResultsSummaryCard";
+import { PuttingStationsSetupRoster } from "@/components/PuttingStationsSetupRoster";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 
 type ShapeKey = (typeof puttingTestConfig.shapes)[number];
@@ -117,6 +118,7 @@ export function PuttingTest9Runner() {
   const [missCategory, setMissCategory] = useState<MissCategory | null>(null);
   const [primaryMissReason, setPrimaryMissReason] = useState<PrimaryMissReason | null>(null);
   const [secondPuttDistanceInput, setSecondPuttDistanceInput] = useState("");
+  const [showStationSetupList, setShowStationSetupList] = useState(true);
 
   const currentHole = holes[currentHoleIndex];
   const secondPuttDistanceNum = parseFloat(secondPuttDistanceInput);
@@ -135,6 +137,7 @@ export function PuttingTest9Runner() {
     setMissCategory(null);
     setPrimaryMissReason(null);
     setSecondPuttDistanceInput("");
+    setShowStationSetupList(true);
     setStatus("active");
   }, []);
 
@@ -306,6 +309,8 @@ export function PuttingTest9Runner() {
   }
 
   const holeDisplay = currentHoleIndex + 1;
+  const onHoleOneFirstPutt = currentHoleIndex === 0 && phase === "first-putt";
+  const showSetupRosterScreen = onHoleOneFirstPutt && showStationSetupList;
 
   return (
     <div className="mt-6 space-y-6">
@@ -324,10 +329,35 @@ export function PuttingTest9Runner() {
         </div>
       </div>
 
+      {showSetupRosterScreen ? (
+        <div className="space-y-4">
+          <PuttingStationsSetupRoster
+            holes={holes}
+            shapeLabel={(s: string) => shapeLabel(s as ShapeKey)}
+          />
+          <button
+            type="button"
+            onClick={() => setShowStationSetupList(false)}
+            className="w-full py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity"
+          >
+            Ready — log hole 1
+          </button>
+        </div>
+      ) : (
+        <>
       <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
         <p className="text-base font-medium text-gray-900">
           Hole {holeDisplay}/{HOLES}: {currentHole.distance}ft - {shapeLabel(currentHole.shape)}
         </p>
+        {onHoleOneFirstPutt && (
+          <button
+            type="button"
+            onClick={() => setShowStationSetupList(true)}
+            className="mt-3 text-sm font-medium text-[#014421] underline underline-offset-2 hover:opacity-80"
+          >
+            Show full station list again
+          </button>
+        )}
       </div>
 
       {phase !== "first-putt" && <CombineFlowBackControl onBack={goBackPhase} />}
@@ -437,6 +467,8 @@ export function PuttingTest9Runner() {
             </button>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );
