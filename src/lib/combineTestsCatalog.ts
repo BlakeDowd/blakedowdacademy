@@ -19,6 +19,8 @@ import { standardChippingCombineConfig } from "@/lib/standardChippingCombineConf
 import { lowChipCombineConfig } from "@/lib/lowChipCombineConfig";
 import { survival20Config } from "@/lib/survival20Config";
 import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
+import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
+import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
 
 export const COMBINE_CATEGORY_IDS = [
   "Putting",
@@ -149,6 +151,12 @@ export const COMBINE_TEST_CARDS: CombineTestCard[] = [
     label: survival20Config.testName,
   },
   {
+    id: "three-strikes-wedge-challenge",
+    category: "Wedges",
+    href: "/practice/3-strikes-wedge-challenge",
+    label: threeStrikesWedgeConfig.testName,
+  },
+  {
     id: "iron-precision-protocol",
     category: "Irons",
     href: "/practice/iron-precision-protocol",
@@ -177,5 +185,11 @@ export const COMBINE_TEST_CARDS: CombineTestCard[] = [
     category: "Bunkers",
     href: "/practice/bunker-9-hole-challenge",
     label: bunker9HoleChallengeConfig.testName,
+  },
+  {
+    id: "bunker-proximity-protocol",
+    category: "Bunkers",
+    href: "/practice/bunker-proximity-protocol",
+    label: bunkerProximityProtocolConfig.testName,
   },
 ];

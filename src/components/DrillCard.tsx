@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { Award, CheckCircle2, Check, PlayCircle, File, RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
+import { Award, CheckCircle2, Check, PlayCircle, File, RefreshCw, ChevronUp, ChevronDown, Trophy } from "lucide-react";
 import {
   fetchDrillPersonalBest,
   stableDrillKey,
@@ -35,6 +35,8 @@ interface DrillCardProps {
     levels?: DrillLevel[];
     facility?: FacilityType;
     goal?: string;
+    isCombine?: boolean;
+    combineHref?: string;
   };
   dayIndex: number;
   drillIndex: number;
@@ -52,6 +54,8 @@ interface DrillCardProps {
   compact?: boolean; // Smaller layout for Weekly view
   /** When set, card loads/saves a personal best for this drill in Supabase (visible collapsed + expanded). */
   userId?: string | null;
+  /** Read-only PB text for combine tasks sourced from saved combine results. */
+  combineBestText?: string | null;
 }
 
 export default function DrillCard({
@@ -71,6 +75,7 @@ export default function DrillCard({
   defaultExpanded = false, // FORCE VISIBILITY: Default to false
   compact = false,
   userId = null,
+  combineBestText = null,
 }: DrillCardProps) {
   // FIX THE TOGGLE: Default to collapsed
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
@@ -90,6 +95,13 @@ export default function DrillCard({
   // Load whenever the signed-in user opens this drill identity (not only when expanded) so
   // returning to the drill still shows what they saved to beat.
   useEffect(() => {
+    if (drill.isCombine) {
+      setPbLoading(false);
+      setPbMsg(null);
+      setPbDraft("");
+      setPbSavedAchievement((combineBestText ?? "").trim());
+      return;
+    }
     if (!userId) {
       setPbSavedAchievement("");
       setPbDraft("");
@@ -116,7 +128,7 @@ export default function DrillCard({
     return () => {
       cancelled = true;
     };
-  }, [userId, drillKey]);
+  }, [userId, drillKey, drill.isCombine, combineBestText]);
 
   // Fresh input each time they expand the card (record to beat stays in pbSavedAchievement / “To beat”).
   useEffect(() => {
@@ -175,47 +187,59 @@ export default function DrillCard({
     <div className="relative w-full">
       <div
         onClick={handleExpandToggle}
-        className={`w-full rounded-lg border-2 transition-all cursor-pointer ${
-          compact ? "p-2" : "p-3"
+        className={`w-full rounded-2xl border-2 shadow-xl transition-all cursor-pointer ${
+          compact ? "p-2.5" : "p-3"
         } ${
           isCompleted
             ? 'bg-green-50 border-green-300'
-            : 'bg-white border-gray-200 hover:border-[#FFA500]'
+            : 'bg-white border-gray-200 hover:border-[#014421]/40'
         } ${justSwapped ? 'ring-2 ring-green-400' : ''} ${isExpanded ? 'border-[#014421]' : ''}`}
       >
         <div className={`flex items-start justify-between ${compact ? "gap-2" : "gap-3"}`}>
           <div className="flex-1 min-w-0">
             <div className={`flex items-center gap-2 flex-wrap ${compact ? "mb-0" : "mb-1"}`}>
-              <h4 className={`${compact ? "text-sm" : "text-lg"} font-semibold flex-1 ${
-                isCompleted ? 'text-green-700 line-through' : 'text-gray-900'
+              {drill.isCombine && (
+                <span className="inline-flex items-center rounded-full bg-[#014421] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm">
+                  <Trophy className="mr-1 h-3 w-3 text-white" />
+                  Combine
+                </span>
+              )}
+              <h4 className={`${compact ? "text-sm" : "text-base"} font-bold flex-1 ${
+                isCompleted ? 'text-green-700 line-through' : 'text-slate-800'
               }`}>
                 {isCompleted && (
                   <span className="inline-flex items-center mr-2">
                     <CheckCircle2 className="w-5 h-5 text-green-600" />
                   </span>
                 )}
-                {drill.title}
+                {drill.combineHref ? (
+                  <a
+                    href={drill.combineHref}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-[#014421] underline underline-offset-2 hover:text-[#0b5e34]"
+                  >
+                    {drill.title}
+                  </a>
+                ) : (
+                  drill.title
+                )}
               </h4>
             </div>
 
             {userId && pbSavedAchievement.trim() && !isExpanded && (
               <div
-                className={`mt-1 flex items-start gap-1.5 rounded-md bg-amber-50/90 px-2 py-1.5 text-amber-950 ring-1 ring-amber-200/80 ${
-                  compact ? "text-[11px] leading-snug" : "text-xs leading-snug"
+                className={`mt-1.5 inline-flex max-w-[72%] items-center gap-1.5 rounded-md border border-amber-200/70 border-l-4 border-l-amber-500 bg-amber-50/90 px-2 py-1 text-amber-950 ring-1 ring-amber-200/80 shadow-inner ${
+                  compact ? "text-[10px]" : "text-[11px]"
                 }`}
               >
-                <Award className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" aria-hidden />
-                <div className="min-w-0 flex-1">
-                  <span className="font-semibold text-amber-900">To beat: </span>
-                  <span className="whitespace-pre-wrap break-words text-amber-950 line-clamp-2">
-                    {pbSavedAchievement}
-                  </span>
-                </div>
+                <Award className="h-3.5 w-3.5 shrink-0 text-amber-700" aria-hidden />
+                <span className="shrink-0 font-semibold text-amber-900">To beat:</span>
+                <span className="min-w-0 flex-1 truncate text-amber-950">{pbSavedAchievement}</span>
               </div>
             )}
             
-            <div className={`flex items-center gap-3 ${compact ? "text-xs" : "text-sm"} text-gray-600`}>
-              <span className="flex items-center gap-1">
+            <div className={`mt-1.5 flex items-center gap-2.5 ${compact ? "text-xs" : "text-sm"} text-gray-600`}>
+              <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 font-semibold text-gray-700 ring-1 ring-gray-200">
                 <span>{drill.estimatedMinutes} min</span>
               </span>
               {drill.xpEarned && drill.xpEarned > 0 && (
@@ -226,13 +250,16 @@ export default function DrillCard({
           
           {/* Expand/Collapse Button */}
           <button
-            className="flex-shrink-0 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="flex-shrink-0 rounded-full p-2 hover:bg-gray-100 transition-colors"
             onClick={(e) => {
               e.stopPropagation();
               handleExpandToggle();
             }}
+            aria-label={isCompleted ? "Completed task" : "Start task"}
           >
-            {isExpanded ? (
+            {isCompleted ? (
+              <CheckCircle2 className="h-8 w-8 text-green-600" />
+            ) : isExpanded ? (
               <ChevronUp className="w-5 h-5 text-gray-600" />
             ) : (
               <ChevronDown className="w-5 h-5 text-gray-600" />
@@ -242,7 +269,7 @@ export default function DrillCard({
         
         {/* CORE UPGRADES: Show content only when expanded */}
         {shouldShowContent && (
-          <div className={`border-t border-gray-200 ${compact ? "mt-2 pt-2 space-y-2" : "mt-3 pt-3 space-y-3"}`}>
+          <div className={`border-t border-gray-200 ${compact ? "mt-2 pt-2 space-y-2" : "mt-2.5 pt-2.5 space-y-2.5"}`}>
             
             {/* Target/Category Details Moved Inside Expanded */}
             <div className="space-y-1 mb-2">
@@ -250,7 +277,9 @@ export default function DrillCard({
                 <p className="text-sm font-medium text-[#014421]">Goal/Reps: {drill.goal}</p>
               )}
               {drill.facility && facilityInfo && (
-                <p className="text-sm text-gray-600">@ {facilityInfo[drill.facility].label}</p>
+                <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 ring-1 ring-gray-200">
+                  {facilityInfo[drill.facility].label}
+                </span>
               )}
             </div>
 
@@ -347,7 +376,7 @@ export default function DrillCard({
               )}
             </div>
 
-            {userId && (
+            {userId && !drill.isCombine && (
               <div
                 className={`rounded-lg border border-amber-200/90 bg-amber-50/60 ${compact ? "p-2 space-y-1.5" : "p-3 space-y-2"}`}
                 onClick={(e) => e.stopPropagation()}

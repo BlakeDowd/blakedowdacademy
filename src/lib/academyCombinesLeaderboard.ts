@@ -15,6 +15,8 @@ import {
 } from "@/lib/leaderboardTimeWindow";
 import { survival20Config } from "@/lib/survival20Config";
 import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
+import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
+import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
 
 export type CombineLeaderboardTestId =
   | "gauntlet"
@@ -33,7 +35,9 @@ export type CombineLeaderboardTestId =
   | "flop_shot"
   | "chipping"
   | "survival_20"
-  | "iron_face_control";
+  | "iron_face_control"
+  | "three_strikes"
+  | "bunker_protocol";
 
 /** Resolved in Academy via getLeaderboardData — practice table builder skips these. */
 const LEADERBOARD_DRIVEN_COMBINE_IDS: CombineLeaderboardTestId[] = [
@@ -179,6 +183,20 @@ export const COMBINE_LEADERBOARD_OPTIONS: CombineLeaderboardTestOption[] = [
     source: "practice_logs",
     higherIsBetter: true,
     scoreHeader: "Score (/100)",
+  },
+  {
+    id: "three_strikes",
+    label: threeStrikesWedgeConfig.testName,
+    source: "practice_logs",
+    higherIsBetter: true,
+    scoreHeader: "Hits",
+  },
+  {
+    id: "bunker_protocol",
+    label: bunkerProximityProtocolConfig.testName,
+    source: "practice_logs",
+    higherIsBetter: true,
+    scoreHeader: "Score",
   },
 ];
 
@@ -357,6 +375,8 @@ export function buildAcademyCombinesLeaderboard(
     const rows = (practiceLogs || []).filter(
       (r) => {
         const lt = String(r?.log_type ?? "").trim().toLowerCase();
+        // Different product: "Iron Skills" combine logs `iron_skills`, not The Iron Precision Protocol.
+        if (lt === "iron_skills") return false;
         if (accepted.has(lt)) return true;
         // Backward/forward compatible matcher for suffixed variants.
         return lt.includes("iron_precision_protocol") || lt.includes("ironprecisionprotocol");
@@ -369,7 +389,12 @@ export function buildAcademyCombinesLeaderboard(
       const recomputed = totalIronPointsFromStrikeData(row.strike_data);
       const stored = num(row.total_points);
       const scoreOnly = num(row.score);
-      let tp = recomputed ?? stored ?? scoreOnly;
+      const meta =
+        row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+          ? (row.metadata as Record<string, unknown>)
+          : null;
+      const metaPts = meta ? num(meta.total_points) : null;
+      let tp = recomputed ?? stored ?? scoreOnly ?? metaPts;
       if (tp == null) {
         const avg = num(row.matrix_score_average);
         if (avg != null) tp = avg * ironPrecisionProtocolConfig.clubSequence.length;
@@ -384,7 +409,7 @@ export function buildAcademyCombinesLeaderboard(
       if (better) {
         bestByUser.set(uid, {
           sortValue: tp,
-          display: `${Math.round(tp)} Pts`,
+          display: `${tp.toFixed(1)} Pts`,
           dateMs,
         });
       }
@@ -400,10 +425,17 @@ export function buildAcademyCombinesLeaderboard(
       if (!uid) continue;
       const ag = aggregatesFromPractice(row);
       const notes = parseNotesObject(row);
-      const tp =
+      let tp =
         num(ag?.total_points) ??
         num((row as { total_points?: unknown }).total_points) ??
         num(notes?.total_points);
+      if (tp == null) {
+        const avg =
+          num(ag?.matrix_score_average) ??
+          num(notes?.matrix_score_average) ??
+          num((row as { matrix_score_average?: unknown }).matrix_score_average);
+        if (avg != null) tp = avg * ironPrecisionProtocolConfig.clubSequence.length;
+      }
       if (tp == null) continue;
       const dateMs =
         parseLeaderboardEventMs((row as { completed_at?: string }).completed_at) ??
@@ -414,7 +446,7 @@ export function buildAcademyCombinesLeaderboard(
       if (better) {
         bestByUser.set(uid, {
           sortValue: tp,
-          display: `${Math.round(tp)} Pts`,
+          display: `${tp.toFixed(1)} Pts`,
           dateMs,
         });
       }
@@ -518,6 +550,53 @@ export function buildAcademyCombinesLeaderboard(
         bestByUser.set(uid, {
           sortValue: tp,
           display: `${Math.round(tp)} / 100`,
+          dateMs,
+        });
+      }
+    }
+  } else if (testId === "three_strikes") {
+    const want = threeStrikesWedgeConfig.practiceLogType.toLowerCase();
+    const rows = (practiceLogs || []).filter(
+      (r) => String(r?.log_type ?? "").trim().toLowerCase() === want,
+    );
+    for (const row of rows) {
+      if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
+      const uid = row.user_id;
+      if (!uid) continue;
+      const tp = num(row.score) ?? num(row.total_points);
+      if (tp == null || tp < 0) continue;
+      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
+      const prev = bestByUser.get(uid);
+      const better =
+        !prev ||
+        tp > prev.sortValue ||
+        (tp === prev.sortValue && dateMs > prev.dateMs);
+      if (better) {
+        bestByUser.set(uid, {
+          sortValue: tp,
+          display: `${Math.round(tp)} Hits`,
+          dateMs,
+        });
+      }
+    }
+  } else if (testId === "bunker_protocol") {
+    const want = bunkerProximityProtocolConfig.practiceLogType.toLowerCase();
+    const rows = (practiceLogs || []).filter(
+      (r) => String(r?.log_type ?? "").trim().toLowerCase() === want,
+    );
+    for (const row of rows) {
+      if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
+      const uid = row.user_id;
+      if (!uid) continue;
+      const tp = num(row.score) ?? num(row.total_points);
+      if (tp == null) continue;
+      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
+      const prev = bestByUser.get(uid);
+      const better = !prev || tp > prev.sortValue || (tp === prev.sortValue && dateMs > prev.dateMs);
+      if (better) {
+        bestByUser.set(uid, {
+          sortValue: tp,
+          display: `${Math.round(tp)} Pts`,
           dateMs,
         });
       }

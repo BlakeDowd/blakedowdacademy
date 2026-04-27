@@ -19,6 +19,10 @@ import {
   COMBINE_TEST_CARDS,
   type CombineCategoryId,
 } from "@/lib/combineTestsCatalog";
+import {
+  buildAcademyCombinesLeaderboard,
+  type CombineLeaderboardTestId,
+} from "@/lib/academyCombinesLeaderboard";
 
 type RoundType = '9-hole' | '18-hole' | null;
 
@@ -51,6 +55,9 @@ interface DayPlan {
     goal?: string; // Goal/Reps for this drill
     /** Set when this row was loaded from a `practice` table completion (one row per log). */
     practiceLogId?: string;
+    isCombine?: boolean;
+    combineHref?: string;
+    combineLogType?: string;
   }>;
   date?: string; // Date this plan was generated
 }
@@ -61,6 +68,7 @@ interface WeeklyPlan {
 
 interface Drill {
   id: string;
+  drill_id?: string;
   title: string;
   drill_name?: string; // Matches Supabase column drill_name
   category: string;
@@ -77,6 +85,9 @@ interface Drill {
   drill_levels?: any;
   levels?: Array<{ id: string; name: string; completed?: boolean }>;
   goal?: string;
+  isCombine?: boolean;
+  combineHref?: string;
+  combineLogType?: string;
 }
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -217,6 +228,115 @@ const facilityInfo: Record<FacilityType, { label: string; icon: any }> = {
 // All facility types (excluding On-Course, handled separately in UI)
 const ALL_FACILITIES: FacilityType[] = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy'];
 
+type PlannerCombineTask = {
+  id: string;
+  title: string;
+  category: string;
+  estimatedMinutes: number;
+  href: string;
+  logType?: string;
+};
+
+const COMBINE_CATEGORY_TO_PLANNER_CATEGORY: Record<CombineCategoryId, string> = {
+  Putting: "Putting",
+  Chipping: "Chipping",
+  Wedges: "Wedges",
+  Irons: "Irons",
+  "Tee Shot": "Driving",
+  Bunkers: "Bunkers",
+};
+
+const COMBINE_HREF_TO_LOG_TYPE: Record<string, string> = {
+  "/practice/gauntlet-precision-protocol": "gauntlet_protocol_session",
+  "/practice/strike-and-speed-control-test": "strike_speed_control",
+  "/practice/start-line-and-speed-control-test": "start_line_speed_test",
+  "/practice/flop-shot-combine": "flop_shot",
+  "/practice/standard-chipping-combine": "chipping",
+  "/practice/survival-20": "survival_20",
+  "/practice/3-strikes-wedge-challenge": "three_strikes",
+  "/practice/iron-precision-protocol": "iron_precision_protocol",
+  "/practice/iron-face-control-protocol": "iron_face_control",
+  "/practice/bunker-proximity-protocol": "bunker_protocol",
+  "/combines/iron-skills": "iron_skills",
+};
+
+const COMBINE_HREF_TO_LEADERBOARD_TEST: Partial<Record<string, CombineLeaderboardTestId>> = {
+  "/practice/gauntlet-precision-protocol": "gauntlet",
+  "/practice/iron-precision-protocol": "ironPrecisionProtocol",
+  "/practice/6ft-aimpoint-combine": "aimpoint_6ft_combine",
+  "/practice/8-20ft-aimpoint-combine": "slope_mid_20ft",
+  "/practice/aimpoint-long-range-2040": "aimpoint_long_40ft",
+  "/practice/chipping-combine-9": "chipping_combine_9",
+  "/practice/wedge-lateral-9": "wedge_lateral_9",
+  "/practice/putting-test": "puttingCombine",
+  "/practice/putting-test-9": "puttingTest9Holes",
+  "/practice/putting-test-3-6ft": "puttingTest3To6ft",
+  "/practice/putting-test-8-20ft": "puttingTest8To20",
+  "/practice/putting-test-20-40ft": "puttingTest20To40",
+  "/practice/flop-shot-combine": "flop_shot",
+  "/practice/standard-chipping-combine": "chipping",
+  "/practice/survival-20": "survival_20",
+  "/practice/iron-face-control-protocol": "iron_face_control",
+  "/practice/3-strikes-wedge-challenge": "three_strikes",
+  "/practice/bunker-proximity-protocol": "bunker_protocol",
+};
+
+const COMBINE_HREF_TO_EST_MINUTES: Record<string, number> = {
+  "/practice/gauntlet-precision-protocol": 20,
+  "/practice/putting-test": 30,
+  "/practice/putting-test-9": 20,
+  "/practice/putting-test-3-6ft": 20,
+  "/practice/putting-test-8-20ft": 20,
+  "/practice/putting-test-20-40ft": 20,
+  "/practice/6ft-aimpoint-combine": 15,
+  "/practice/8-20ft-aimpoint-combine": 20,
+  "/practice/aimpoint-long-range-2040": 20,
+  "/practice/strike-and-speed-control-test": 15,
+  "/practice/start-line-and-speed-control-test": 15,
+  "/practice/chipping-combine-9": 20,
+  "/practice/flop-shot-combine": 15,
+  "/practice/standard-chipping-combine": 15,
+  "/practice/low-chip-combine": 15,
+  "/practice/wedge-lateral-9": 20,
+  "/practice/survival-20": 20,
+  "/practice/3-strikes-wedge-challenge": 15,
+  "/practice/iron-precision-protocol": 20,
+  "/practice/iron-face-control-protocol": 20,
+  "/practice/bunker-proximity-protocol": 15,
+  "/combines/iron-skills": 20,
+  "/practice/tee-shot-dispersion-combine": 20,
+  "/practice/bunker-9-hole-challenge": 20,
+};
+
+const PLANNER_COMBINE_TASKS: PlannerCombineTask[] = COMBINE_TEST_CARDS.map((card) => ({
+  id: `combine:${card.id}`,
+  title: card.label,
+  category: COMBINE_CATEGORY_TO_PLANNER_CATEGORY[card.category],
+  estimatedMinutes: COMBINE_HREF_TO_EST_MINUTES[card.href] ?? 20,
+  href: card.href,
+  logType: COMBINE_HREF_TO_LOG_TYPE[card.href],
+}));
+
+function toPlannerCombineDrill(task: PlannerCombineTask): Drill {
+  return {
+    id: task.id,
+    drill_id: task.id,
+    title: task.title,
+    category: task.category,
+    estimatedMinutes: task.estimatedMinutes,
+    xpValue: task.estimatedMinutes * 10,
+    isCombine: true,
+    combineHref: task.href,
+    combineLogType: task.logType,
+    description: "Complete and submit this combine to auto-complete the planner task.",
+  };
+}
+
+function plannerCombineFromDrillId(drillId: string | null | undefined): PlannerCombineTask | null {
+  if (!drillId) return null;
+  return PLANNER_COMBINE_TASKS.find((c) => c.id === drillId) ?? null;
+}
+
 import { logActivity } from "@/lib/activity";
 import { addProfileXp } from "@/lib/addProfileXp";
 
@@ -226,7 +346,7 @@ async function updateUserXP(userId: string, points: number): Promise<void> {
 
 export default function PracticePage() {
   const router = useRouter();
-  const { rounds, refreshPracticeSessions, refreshDrills } = useStats();
+  const { rounds, refreshPracticeSessions, refreshDrills, practiceLogs, practiceSessions } = useStats();
   const { user, refreshUser } = useAuth();
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({});
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
@@ -276,6 +396,46 @@ export default function PracticePage() {
     () => COMBINE_TEST_CARDS.filter((c) => c.category === combineCategoryTab),
     [combineCategoryTab]
   );
+
+  const combineBestByPlannerDrillId = useMemo(() => {
+    const out = new Map<string, string>();
+    if (!user?.id) return out;
+
+    const profileMap = new Map<string, { full_name?: string; preferred_icon_id?: string; xp?: number }>();
+    profileMap.set(user.id, { full_name: "You" });
+
+    for (const task of PLANNER_COMBINE_TASKS) {
+      const leaderboardTest = COMBINE_HREF_TO_LEADERBOARD_TEST[task.href];
+      if (leaderboardTest) {
+        const rows = buildAcademyCombinesLeaderboard(
+          leaderboardTest,
+          practiceSessions,
+          practiceLogs,
+          profileMap,
+          "allTime",
+          user.id,
+        );
+        const mine = rows.find((r) => r.userId === user.id);
+        if (mine?.scoreDisplay) out.set(task.id, mine.scoreDisplay);
+        continue;
+      }
+
+      if (task.logType) {
+        const best = (practiceLogs || [])
+          .filter(
+            (r: any) =>
+              r?.user_id === user.id &&
+              String(r?.log_type ?? "").trim().toLowerCase() === task.logType?.toLowerCase(),
+          )
+          .map((r: any) => Number(r?.score ?? r?.total_points))
+          .filter((n: number) => Number.isFinite(n))
+          .sort((a: number, b: number) => b - a)[0];
+        if (Number.isFinite(best)) out.set(task.id, `${Math.round(best)} pts`);
+      }
+    }
+
+    return out;
+  }, [practiceLogs, practiceSessions, user?.id]);
 
   // Name editing state
   const [isEditingName, setIsEditingName] = useState(false);
@@ -498,6 +658,21 @@ export default function PracticePage() {
               const dayPlan = loadedPlan[dayIndex];
               if (plannedDrill.selected_date) {
                 dayPlan.date = plannedDrill.selected_date;
+              }
+
+              const combineTask = plannerCombineFromDrillId(plannedDrill.drill_id);
+              if (combineTask) {
+                const dayDrills = dayPlan.drills ?? [];
+                const existingIndex = dayDrills.findIndex((d: any) => d?.id === combineTask.id);
+                if (existingIndex === -1) {
+                  dayPlan.selected = true;
+                  dayPlan.drills = dayDrills;
+                  dayPlan.drills.push({
+                    ...toPlannerCombineDrill(combineTask),
+                    completed: false,
+                  });
+                }
+                return;
               }
 
               const drillDetails = drillDetailsMap[plannedDrill.drill_id];
@@ -1237,11 +1412,16 @@ export default function PracticePage() {
     // Only generate plans for valid days (with time > 0 or round selected)
     const daysToGenerate = validDays;
 
+    const availablePlannerDrills: Drill[] = [
+      ...drills,
+      ...PLANNER_COMBINE_TASKS.map(toPlannerCombineDrill),
+    ];
+
     // Get relevant drill categories
     const relevantCategories = categoryMapping[mostNeededCategory] || ['Putting'];
     
     // Filter drills by category
-    let relevantDrills = drills.filter(drill => 
+    let relevantDrills = availablePlannerDrills.filter(drill => 
       relevantCategories.some(cat => 
         (drill.category && drill.category.toLowerCase().includes(cat.toLowerCase())) ||
         (drill.category && cat.toLowerCase().includes(drill.category.toLowerCase()))
@@ -1366,7 +1546,7 @@ export default function PracticePage() {
         }
 
         // Smart Allocation: Also prioritize Mental Game drills when round is selected
-        const mentalGameDrills = drills.filter(drill => 
+        const mentalGameDrills = availablePlannerDrills.filter(drill => 
           (drill.category && drill.category.toLowerCase().includes('mental game')) ||
           (drill.category && drill.category.toLowerCase().includes('mental'))
         );
@@ -1413,7 +1593,7 @@ export default function PracticePage() {
           
           // Smart Allocation: If Range (Grass) is selected, prioritize Skills and Wedge Play
           let facilityDrills;
-          facilityDrills = drills.filter(drill => 
+          facilityDrills = availablePlannerDrills.filter(drill => 
             compatibleCategories.some(filter => {
               if (!drill.category || !filter.category) return false;
               const matchesCategory = drill.category.toLowerCase() === filter.category.toLowerCase();
@@ -1440,7 +1620,7 @@ export default function PracticePage() {
 
           // If no compatible drills, use any drills that could work at this facility
           if (facilityDrills.length === 0) {
-            facilityDrills = drills.filter(drill => {
+            facilityDrills = availablePlannerDrills.filter(drill => {
               return compatibleCategories.some(filter => {
                 const categoryMatch = drill.category && filter.category && drill.category.toLowerCase() === filter.category.toLowerCase();
                 const titleMatch = drill.title && filter.category && drill.title.toLowerCase().includes(filter.category.toLowerCase());
@@ -1559,10 +1739,54 @@ export default function PracticePage() {
             video_url: d.video_url,
             levels: d.levels,
             goal: d.goal,
+            isCombine: d.isCombine,
+            combineHref: d.combineHref,
+            combineLogType: d.combineLogType,
           })),
         };
       }
     });
+
+    // Full-week planner nudge: guarantee at least two combine challenge tasks.
+    const isFullWeekPlan = daysToGenerate.length === 7;
+    if (isFullWeekPlan) {
+      let combineCount = 0;
+      Object.values(newPlan).forEach((day) => {
+        (day?.drills ?? []).forEach((d: DayPlan["drills"][0]) => {
+          if (d?.isCombine) combineCount += 1;
+        });
+      });
+
+      const needed = Math.max(0, 2 - combineCount);
+      if (needed > 0) {
+        const randomCombinePool = [...PLANNER_COMBINE_TASKS];
+        for (let i = randomCombinePool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [randomCombinePool[i], randomCombinePool[j]] = [randomCombinePool[j], randomCombinePool[i]];
+        }
+
+        const candidateDays = daysToGenerate
+          .map((d) => d.dayIndex)
+          .filter((dayIndex) => {
+            const rows = newPlan[dayIndex]?.drills ?? [];
+            return rows.some((r) => !r.isRound);
+          });
+
+        for (let i = 0; i < needed; i++) {
+          const dayIndex = candidateDays[i % candidateDays.length];
+          if (dayIndex == null) break;
+          const task = randomCombinePool[i % randomCombinePool.length];
+          const dayRows = newPlan[dayIndex]?.drills ?? [];
+          const replaceIdx = dayRows.findIndex((r) => !r.isRound && !r.isCombine);
+          if (replaceIdx === -1) continue;
+          dayRows[replaceIdx] = {
+            ...toPlannerCombineDrill(task),
+            completed: false,
+            xpEarned: 0,
+          };
+        }
+      }
+    }
 
     // Save to user_drills table in database (non-blocking - show plan even if DB fails)
     if (user?.id) {
@@ -1619,6 +1843,8 @@ export default function PracticePage() {
 
   // Calculate XP for a drill (10 XP per minute + bonuses)
   const calculateDrillXP = (drill: DayPlan['drills'][0], day: DayPlan): number => {
+    // Combine tasks are completed by submitting the actual combine page, which already awards XP.
+    if (drill.isCombine) return 0;
     // On-course challenges (rounds) always give 500 XP
     if (drill.isRound || drill.category === 'On-Course Challenge') {
       return 500;
@@ -1627,6 +1853,45 @@ export default function PracticePage() {
     // Regular drills: 10 XP per minute
     return drill.estimatedMinutes * 10;
   };
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (!practiceLogs || practiceLogs.length === 0) return;
+
+    const todayStr = toLocalDateString(new Date());
+    const myTodayLogTypes = new Set(
+      practiceLogs
+        .filter((row: any) => {
+          if (!row?.created_at || row?.user_id !== user.id) return false;
+          return toLocalDateString(new Date(row.created_at)) === todayStr;
+        })
+        .map((row: any) => String(row?.log_type ?? "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    if (myTodayLogTypes.size === 0) return;
+
+    let changed = false;
+    const updatedPlan: WeeklyPlan = { ...weeklyPlan };
+    Object.entries(updatedPlan).forEach(([k, day]) => {
+      const dayIndex = Number(k);
+      if (!day || day.date !== todayStr) return;
+      const nextDrills = (day.drills ?? []).map((drill: DayPlan["drills"][0]) => {
+        if (!drill?.isCombine || drill.completed) return drill;
+        const want = String(drill.combineLogType ?? "").trim().toLowerCase();
+        if (!want || !myTodayLogTypes.has(want)) return drill;
+        changed = true;
+        return { ...drill, completed: true };
+      });
+      updatedPlan[dayIndex] = { ...day, drills: nextDrills };
+    });
+
+    if (!changed) return;
+    setWeeklyPlan(updatedPlan);
+    setGeneratedPlan(updatedPlan);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("weeklyPracticePlans", JSON.stringify(updatedPlan));
+    }
+  }, [practiceLogs, user?.id, weeklyPlan]);
 
   // Mark drill as complete (session-based, repeatable)
   // Check the Submit Function: Ensure that when a drill is logged, it uses supabase.from('drill_scores').insert(...) instead of just marking it as a practice session
@@ -1643,7 +1908,10 @@ export default function PracticePage() {
       return;
     }
 
-    // Calculate XP (always award XP when marking complete, regardless of previous state)
+    // Planner combine cards are tracking-only; XP comes from the combine submission flow itself.
+    const isCombineTrackingOnly = !!drill.isCombine;
+
+    // Calculate XP (regular drills only)
     const xpEarned = calculateDrillXP(drill, day);
 
     // Update plan - PERSISTENT PLANNING: Keep drills visible, just mark as completed
@@ -1673,7 +1941,7 @@ export default function PracticePage() {
 
     // Check the Submit Function: Save drill completion to database
     // Match the Fields: Ensure it sends drill_name, score, and user_id
-    if (!isCurrentlyCompleted) {
+    if (!isCurrentlyCompleted && !isCombineTrackingOnly) {
       try {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
@@ -1727,7 +1995,7 @@ export default function PracticePage() {
     }
 
     // Update activity history (but DO NOT locally add XP to prevent ghosting)
-    if (typeof window !== 'undefined' && !isCurrentlyCompleted) {
+    if (typeof window !== 'undefined' && !isCurrentlyCompleted && !isCombineTrackingOnly) {
       const savedProgress = localStorage.getItem('userProgress');
       const userProgress = savedProgress ? JSON.parse(savedProgress) : { 
         completedDrills: [], 
@@ -2599,6 +2867,7 @@ export default function PracticePage() {
                             }}
                             defaultExpanded={isExpanded}
                             userId={user?.id ?? null}
+                            combineBestText={drill.isCombine ? (combineBestByPlannerDrillId.get(drill.id) ?? null) : null}
                           />
                         );
                       })}
@@ -3028,6 +3297,7 @@ export default function PracticePage() {
                             }}
                             defaultExpanded={isExpanded}
                             userId={user?.id ?? null}
+                            combineBestText={drill.isCombine ? (combineBestByPlannerDrillId.get(drill.id) ?? null) : null}
                           />
                         );
                       })}
@@ -3093,6 +3363,7 @@ export default function PracticePage() {
                                   }}
                                   defaultExpanded={isExpanded}
                                   userId={user?.id ?? null}
+                                  combineBestText={drill.isCombine ? (combineBestByPlannerDrillId.get(drill.id) ?? null) : null}
                                   compact
                                 />
                               );

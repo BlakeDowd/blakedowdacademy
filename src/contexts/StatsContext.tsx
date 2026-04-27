@@ -76,6 +76,7 @@ interface PracticeLogRow {
   sub_type?: string | null;
   /** Used to recompute iron protocol session totals when `total_points` is missing. */
   strike_data?: unknown;
+  metadata?: unknown;
 }
 
 interface StatsContextType {
@@ -103,6 +104,47 @@ const StatsContext = createContext<StatsContextType | undefined>(undefined);
 export function calculatePuttingAccuracy(made6ftAndIn: number, puttsUnder6ftAttempts: number): number {
   if (!puttsUnder6ftAttempts || puttsUnder6ftAttempts === 0) return 0;
   return Math.round((made6ftAndIn / puttsUnder6ftAttempts) * 100);
+}
+
+/** Maps raw `practice` rows for leaderboards — updates legacy `type` labels for charts without stripping combine fields. */
+function mapPracticeRowsForLeaderboard(data: unknown): PracticeSessionData[] {
+  return ((data || []) as any[]).map((session: any) => {
+    let mappedType = session.type;
+    if (!mappedType) return session;
+
+    const lowerType = mappedType.toLowerCase();
+
+    if (
+      lowerType === "short game" ||
+      lowerType === "chipping-green" ||
+      lowerType === "chipping" ||
+      lowerType === "chipping_combine_9"
+    )
+      mappedType = "Chipping";
+    else if (lowerType === "approach" || lowerType === "range-grass" || lowerType === "irons") mappedType = "Irons";
+    else if (lowerType === "mental game" || lowerType === "mental" || lowerType === "home" || lowerType === "mental/strategy")
+      mappedType = "Mental/Strategy";
+    else if (
+      lowerType === "range-mat" ||
+      lowerType === "driving" ||
+      lowerType === "tee_shot_dispersion_combine"
+    )
+      mappedType = "Driving";
+    else if (lowerType === "bunker_9_hole_challenge") mappedType = "Bunkers";
+    else if (lowerType === "bunker" || lowerType === "bunkers") mappedType = "Bunkers";
+    else if (lowerType === "putting-green" || lowerType === "putting") mappedType = "Putting";
+    else if (
+      lowerType === "wedges" ||
+      lowerType === "wedge play" ||
+      lowerType === "wedge_lateral_9"
+    )
+      mappedType = "Wedges";
+
+    return {
+      ...session,
+      type: mappedType,
+    };
+  }) as PracticeSessionData[];
 }
 
 export function StatsProvider({ children }: { children: ReactNode }) {
@@ -386,85 +428,77 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   };
 
   const loadPracticeSessions = async () => {
-    // Update Table Name: Ensure the loadStats function fetches from the practice table (not practice_sessions)
-    // The practice table is now created in Supabase
     if (practiceSessionsFetched.current) return;
-    
+
     try {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
-      // Fetch Everything: In the loadStats function, change the fetch for practice so it selects ALL rows from the table, not just rows where user_id === user.id
-      // Stop filtering the practice data!
-      console.log('StatsContext: Fetching ALL practice sessions for leaderboard (not filtering by user_id)');
-      
-      // Update Table Name: Ensure the loadStats function fetches from the practice table (not practice_sessions)
-      // All rows (leaderboards). Trophy / personal totals must filter by `user_id` in the consumer (see `practiceSessionsForUser`).
+      await refreshAuthSessionIfPossible(supabase);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      // SECURITY DEFINER RPC — same pattern as academy_combine_leaderboard_logs (see migrations).
+      if (session?.user?.id) {
+        const rpcRes = await supabase.rpc("academy_combine_leaderboard_practice", {
+          p_limit: 100000,
+        });
+        if (!rpcRes.error && rpcRes.data != null) {
+          const mappedData = mapPracticeRowsForLeaderboard(rpcRes.data);
+          console.log(
+            "StatsContext: Loaded practice sessions via academy_combine_leaderboard_practice RPC:",
+            mappedData?.length ?? 0,
+          );
+          setPracticeSessions(mappedData);
+          practiceSessionsFetched.current = true;
+          return;
+        }
+        if (rpcRes.error) {
+          console.warn(
+            "StatsContext: academy_combine_leaderboard_practice RPC unavailable — falling back to practice table:",
+            rpcRes.error.message ?? JSON.stringify(rpcRes.error),
+          );
+        }
+      }
+
+      console.log("StatsContext: Fetching ALL practice sessions for leaderboard (not filtering by user_id)");
+
       const { data, error } = await supabase
-        .from('practice')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .from("practice")
+        .select("*")
+        .order("created_at", { ascending: false });
 
       if (error) {
-        // Verify Row-Level Security: Log RLS errors specifically
-        if (error.code === 'PGRST116' || error.message?.includes('permission denied') || error.message?.includes('RLS')) {
-          console.warn('StatsContext: RLS may be blocking practice access. You may need to run SQL to enable RLS for the practice table.');
-          console.warn('StatsContext: Error details:', { code: error.code, message: error.message });
+        if (error.code === "PGRST116" || error.message?.includes("permission denied") || error.message?.includes("RLS")) {
+          console.warn(
+            "StatsContext: RLS may be blocking practice access. You may need to run SQL to enable RLS for the practice table.",
+          );
+          console.warn("StatsContext: Error details:", { code: error.code, message: error.message });
         } else {
-          console.error('StatsContext: Error loading practice from database:', error);
+          console.error("StatsContext: Error loading practice from database:", error);
         }
         setPracticeSessions([]);
         practiceSessionsFetched.current = true;
         return;
       }
 
-      console.log('StatsContext: Loaded practice sessions from database:', data?.length || 0);
+      console.log("StatsContext: Loaded practice sessions from database:", data?.length || 0);
       if (data && data.length > 0) {
-        console.log('StatsContext: Sample practice sessions:', data.slice(0, 3).map((p: any) => ({ id: p.id, user_id: p.user_id, duration_minutes: p.duration_minutes })));
+        console.log(
+          "StatsContext: Sample practice sessions:",
+          data.slice(0, 3).map((p: any) => ({
+            id: p.id,
+            user_id: p.user_id,
+            duration_minutes: p.duration_minutes,
+          })),
+        );
       }
-      
-      // Data Mapping: Map old categories to new ones so old data doesn't disappear from charts
-      const mappedData = (data || []).map((session: any) => {
-        let mappedType = session.type;
-        if (!mappedType) return session;
-        
-        const lowerType = mappedType.toLowerCase();
-        
-        if (
-          lowerType === 'short game' ||
-          lowerType === 'chipping-green' ||
-          lowerType === 'chipping' ||
-          lowerType === 'chipping_combine_9'
-        )
-          mappedType = 'Chipping';
-        else if (lowerType === 'approach' || lowerType === 'range-grass' || lowerType === 'irons') mappedType = 'Irons';
-        else if (lowerType === 'mental game' || lowerType === 'mental' || lowerType === 'home' || lowerType === 'mental/strategy') mappedType = 'Mental/Strategy';
-        else if (
-          lowerType === 'range-mat' ||
-          lowerType === 'driving' ||
-          lowerType === 'tee_shot_dispersion_combine'
-        )
-          mappedType = 'Driving';
-        else if (lowerType === 'bunker_9_hole_challenge') mappedType = 'Bunkers';
-        else if (lowerType === 'bunker' || lowerType === 'bunkers') mappedType = 'Bunkers';
-        else if (lowerType === 'putting-green' || lowerType === 'putting') mappedType = 'Putting';
-        else if (
-          lowerType === 'wedges' ||
-          lowerType === 'wedge play' ||
-          lowerType === 'wedge_lateral_9'
-        )
-          mappedType = 'Wedges';
-        
-        return {
-          ...session,
-          type: mappedType
-        };
-      });
-      
-      setPracticeSessions(mappedData as PracticeSessionData[]);
+
+      setPracticeSessions(mapPracticeRowsForLeaderboard(data));
       practiceSessionsFetched.current = true;
     } catch (error) {
-      console.error('StatsContext: Error loading practice sessions:', error);
+      console.error("StatsContext: Error loading practice sessions:", error);
       setPracticeSessions([]);
       practiceSessionsFetched.current = true;
     }
@@ -504,9 +538,32 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      // Prefer SECURITY DEFINER RPC so combine leaderboards see all users' rows even when RLS still
+      // restricts practice_logs to "select own" (see supabase/migrations/20260506120000_*).
+      const rpcRes = await supabase.rpc("academy_combine_leaderboard_logs", {
+        // Must stay in sync with supabase/migrations/*combine_leaderboard*.sql
+        p_limit: 60000,
+      });
+      if (!rpcRes.error && rpcRes.data != null) {
+        const rows = rpcRes.data as PracticeLogRow[];
+        setPracticeLogs(rows);
+        practiceLogsFetched.current = true;
+        return;
+      }
+      if (rpcRes.error) {
+        const msg =
+          rpcRes.error.message ??
+          (rpcRes.error as { details?: string }).details ??
+          JSON.stringify(rpcRes.error);
+        console.warn(
+          "StatsContext: academy_combine_leaderboard_logs RPC unavailable — falling back to practice_logs table queries:",
+          msg,
+        );
+      }
+
       const selectVariants: string[] = [
         // Full payload (preferred when schema is up-to-date).
-        "id,user_id,log_type,created_at,matrix_score_average,perfect_putt_count,triple_failure_rate,score,total_points,sub_type,strike_data",
+        "id,user_id,log_type,created_at,matrix_score_average,perfect_putt_count,triple_failure_rate,score,total_points,sub_type,strike_data,metadata",
         // Fallback for deployments missing newer columns.
         "id,user_id,log_type,created_at,matrix_score_average,score,total_points,sub_type,strike_data",
         // Fallback when `score` is absent on practice_logs.
@@ -530,18 +587,21 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       let ironRows: PracticeLogRow[] = [];
 
       for (const select of selectVariants) {
+        // Iron rows: match the same log_type variants as buildAcademyCombinesLeaderboard (substring
+        // includes iron_precision_protocol_session and legacy camelCase). A strict .eq(iron_precision_protocol)
+        // misses those rows unless they also appear in the recent global window below.
         const [mainRes, ironRes] = await Promise.all([
           supabase
             .from("practice_logs")
             .select(select as string)
             .order("created_at", { ascending: false })
-            .limit(10000),
+            .limit(15000),
           supabase
             .from("practice_logs")
             .select(select as string)
-            .eq("log_type", ironPrecisionProtocolConfig.practiceLogType)
+            .ilike("log_type", "%iron_precision_protocol%")
             .order("created_at", { ascending: false })
-            .limit(4000),
+            .limit(8000),
         ]);
 
         error = mainRes.error;
@@ -703,14 +763,23 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       loadPracticeLogs();
     };
 
+    const handleAcademyLeaderboardRefresh = () => {
+      practiceSessionsFetched.current = false;
+      loadPracticeSessions();
+      practiceLogsFetched.current = false;
+      loadPracticeLogs();
+    };
+
     window.addEventListener('roundsUpdated', handleRoundsUpdate);
     window.addEventListener('drillsUpdated', handleDrillsUpdate);
     window.addEventListener('practiceSessionsUpdated', handlePracticeSessionsUpdate);
+    window.addEventListener('academyLeaderboardRefresh', handleAcademyLeaderboardRefresh);
 
     return () => {
       window.removeEventListener('roundsUpdated', handleRoundsUpdate);
       window.removeEventListener('drillsUpdated', handleDrillsUpdate);
       window.removeEventListener('practiceSessionsUpdated', handlePracticeSessionsUpdate);
+      window.removeEventListener('academyLeaderboardRefresh', handleAcademyLeaderboardRefresh);
     };
   }, []); // Empty dependency array - fetch once on mount, then listen for updates
 

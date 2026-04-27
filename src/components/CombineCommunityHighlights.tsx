@@ -128,16 +128,54 @@ export function CombineCommunityHighlights({
           }));
         }
       } else {
-        const { data, error: qErr } = await supabase
-          .from("practice_logs")
-          .select("user_id,log_type,matrix_score_average,score,total_points,strike_data,created_at")
-          .order("created_at", { ascending: false })
-          .limit(3000);
-        if (qErr) {
-          console.warn("[CombineCommunityHighlights] practice_logs query:", qErr.message);
-        } else {
+        // Mirror StatsContext: direct `practice_logs` SELECT is usually RLS-scoped to the viewer,
+        // so community highlights would only ever show that user. SECURITY DEFINER RPCs return
+        // cross-user rows for leaderboard aggregation (see supabase/migrations/*combine_leaderboard*.sql).
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        type LogRow = Parameters<typeof extractPracticeLogsScore>[0] & {
+          user_id?: unknown;
+          created_at?: unknown;
+        };
+        let logsRows: LogRow[] = [];
+        let logsOk = false;
+
+        if (session?.user?.id) {
+          const { refreshAuthSessionIfPossible } = await import("@/lib/supabasePersistSession");
+          await refreshAuthSessionIfPossible(supabase);
+          const rpcLogs = await supabase.rpc("academy_combine_leaderboard_logs", {
+            p_limit: 60000,
+          });
+          if (!rpcLogs.error && rpcLogs.data != null) {
+            logsRows = rpcLogs.data as LogRow[];
+            logsOk = true;
+          } else if (rpcLogs.error) {
+            console.warn(
+              "[CombineCommunityHighlights] academy_combine_leaderboard_logs RPC:",
+              rpcLogs.error.message ?? JSON.stringify(rpcLogs.error),
+            );
+          }
+        }
+
+        if (!logsOk) {
+          const { data, error: qErr } = await supabase
+            .from("practice_logs")
+            .select("user_id,log_type,matrix_score_average,score,total_points,strike_data,created_at")
+            .order("created_at", { ascending: false })
+            .limit(3000);
+          if (qErr) {
+            console.warn("[CombineCommunityHighlights] practice_logs query:", qErr.message);
+          } else {
+            logsRows = (data ?? []) as LogRow[];
+            logsOk = true;
+          }
+        }
+
+        if (logsOk) {
           queryOk = true;
-          for (const row of data ?? []) {
+          for (const row of logsRows) {
             const ex = extractPracticeLogsScore(row, definition.logType, definition.scoreMode);
             if (!ex || !row.user_id) continue;
             sessionRows.push({
@@ -148,18 +186,50 @@ export function CombineCommunityHighlights({
             });
           }
         }
+
         // Iron protocol fallback for environments that could not write/read practice_logs.
         if (definition.logType.includes("iron_precision_protocol")) {
-          const { data: practiceData, error: practiceErr } = await supabase
-            .from("practice")
-            .select("user_id,type,test_type,notes,created_at")
-            .order("created_at", { ascending: false })
-            .limit(3000);
-          if (practiceErr) {
-            console.warn("[CombineCommunityHighlights] iron practice fallback query:", practiceErr.message);
-          } else {
+          let practiceRows: {
+            user_id?: unknown;
+            type?: unknown;
+            test_type?: unknown;
+            notes?: unknown;
+            created_at?: unknown;
+          }[] = [];
+          let practiceFetchOk = false;
+
+          if (session?.user?.id) {
+            const rpcPractice = await supabase.rpc("academy_combine_leaderboard_practice", {
+              p_limit: 100000,
+            });
+            if (!rpcPractice.error && rpcPractice.data != null) {
+              practiceRows = rpcPractice.data as typeof practiceRows;
+              practiceFetchOk = true;
+            } else if (rpcPractice.error) {
+              console.warn(
+                "[CombineCommunityHighlights] academy_combine_leaderboard_practice RPC:",
+                rpcPractice.error.message ?? JSON.stringify(rpcPractice.error),
+              );
+            }
+          }
+
+          if (!practiceFetchOk) {
+            const { data: practiceData, error: practiceErr } = await supabase
+              .from("practice")
+              .select("user_id,type,test_type,notes,created_at")
+              .order("created_at", { ascending: false })
+              .limit(3000);
+            if (practiceErr) {
+              console.warn("[CombineCommunityHighlights] iron practice fallback query:", practiceErr.message);
+            } else {
+              practiceRows = practiceData ?? [];
+              practiceFetchOk = true;
+            }
+          }
+
+          if (practiceFetchOk) {
             queryOk = true;
-            for (const row of practiceData ?? []) {
+            for (const row of practiceRows) {
               const tt = String(row?.test_type ?? row?.type ?? "").trim().toLowerCase();
               if (!tt.includes("iron_precision_protocol") && !tt.includes("ironprecisionprotocol")) {
                 continue;

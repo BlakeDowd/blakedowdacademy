@@ -155,7 +155,16 @@ export function totalIronPointsFromStrikeData(strikeData: unknown): number | nul
   for (const raw of strikeArray) {
     if (!raw || typeof raw !== "object") continue;
     const o = raw as Record<string, unknown>;
-    const contact = normalizeIronContact(o.contact);
+    let contact = normalizeIronContact(o.contact);
+    const hasExplicitPoints =
+      typeof o.points === "number" ||
+      (typeof o.points === "string" &&
+        String(o.points).trim() !== "" &&
+        Number.isFinite(Number(o.points)));
+    // Legacy rows: infer middle contact only when recomputing from fingers/strike (no per-shot points).
+    if (!contact && !hasExplicitPoints && (o.fingers !== undefined || o.strike !== undefined)) {
+      contact = "middle";
+    }
     if (!contact) continue;
     const fingersRaw = o.fingers;
     let fingers: IronFingerMiss;

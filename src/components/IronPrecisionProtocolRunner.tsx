@@ -87,6 +87,7 @@ async function persistSession(
       distance_data: distance_payload,
       matrix_score_average: avg,
       total_points: totalPts,
+      score: totalPts,
       duration_minutes: 0,
     });
 
@@ -144,6 +145,7 @@ async function persistSession(
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));
+      window.dispatchEvent(new Event("academyLeaderboardRefresh"));
     }
     return null;
   } catch (e) {

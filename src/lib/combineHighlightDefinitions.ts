@@ -15,6 +15,8 @@ import { teeShotDispersionCombineConfig } from "@/lib/teeShotDispersionCombineCo
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
 import { bunker9HoleChallengeConfig } from "@/lib/bunker9HoleChallengeConfig";
 import { survival20Config } from "@/lib/survival20Config";
+import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
+import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
 
 export const combineHighlightAimpoint6ft: CombineHighlightDefinition = {
   kind: "practice_by_test_type",
@@ -122,6 +124,14 @@ export const combineHighlightSurvival20: CombineHighlightDefinition = {
   improvementUnit: "shots",
 };
 
+export const combineHighlightThreeStrikes: CombineHighlightDefinition = {
+  kind: "practice_logs",
+  logType: threeStrikesWedgeConfig.practiceLogType,
+  higherIsBetter: true,
+  scoreMode: "total_points",
+  improvementUnit: "points",
+};
+
 export const combineHighlightStrikeSpeed: CombineHighlightDefinition = {
   kind: "practice_logs",
   logType: strikeAndSpeedControlTestConfig.practiceLogType,
@@ -142,5 +152,13 @@ export const combineHighlightBunker9: CombineHighlightDefinition = {
   kind: "practice_by_test_type",
   testType: bunker9HoleChallengeConfig.testType,
   higherIsBetter: true,
+  improvementUnit: "points",
+};
+
+export const combineHighlightBunkerProximity: CombineHighlightDefinition = {
+  kind: "practice_logs",
+  logType: bunkerProximityProtocolConfig.practiceLogType,
+  higherIsBetter: true,
+  scoreMode: "total_points",
   improvementUnit: "points",
 };
