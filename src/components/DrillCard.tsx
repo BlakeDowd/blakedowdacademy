@@ -328,22 +328,9 @@ export default function DrillCard({
               const lv = drill.levels && drill.levels.length > 0
                 ? drill.levels.map((l) => l.name).join(" · ")
                 : "";
+              /* Collapsed: no tier pills — full Beginner/Intermediate/Advanced stack only when expanded */
               if (tiered && tiered.length > 0) {
-                return (
-                  <div className="mt-2 flex flex-wrap items-center gap-2" aria-label="Goal tiers">
-                    {tiered.slice(0, 6).map((item, i) => (
-                      <span
-                        key={i}
-                        className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wide ring-1 ${tierBadgeClasses(item.tier)}`}
-                      >
-                        {tierBadgeLabel(item.tier)}
-                      </span>
-                    ))}
-                    {tiered.length > 6 ? (
-                      <span className="text-[10px] text-slate-500">+{tiered.length - 6}</span>
-                    ) : null}
-                  </div>
-                );
+                return null;
               }
               const line = g || lv;
               if (!line) return null;
