@@ -24,9 +24,17 @@ export async function GET(request: Request) {
   const id = searchParams.get("id");
 
   if (id) {
-    const { data, error } = await admin.from("drills").select("*").eq("id", id).maybeSingle();
-    if (error) {
-      return NextResponse.json({ drill: null, error: error.message }, { status: 500 });
+    const byPk = await admin.from("drills").select("*").eq("id", id).maybeSingle();
+    if (byPk.error) {
+      return NextResponse.json({ drill: null, error: byPk.error.message }, { status: 500 });
+    }
+    let data = byPk.data;
+    if (!data) {
+      const byCode = await admin.from("drills").select("*").eq("drill_id", id).maybeSingle();
+      if (byCode.error) {
+        return NextResponse.json({ drill: null, error: byCode.error.message }, { status: 500 });
+      }
+      data = byCode.data;
     }
     return NextResponse.json({ drill: data, drills: null });
   }

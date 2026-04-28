@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -52,7 +52,11 @@ interface DayPlan {
     youtube_url?: string; // YouTube video URL
     video_url?: string; // Video URL (alias)
     levels?: Array<{ id: string; name: string; completed?: boolean }>; // Drill levels/checklist
-    goal?: string; // Goal/Reps for this drill
+    goal?: string; // Goal/Reps for this drill (merged / legacy)
+    /** Tiered copy from `drills.goal_reps` when present — preferred for Daily Plan UI */
+    goal_reps?: string;
+    /** Catalog `xp_value` from `drills` — shown next to Goal/Reps */
+    xp_value?: number;
     /** Set when this row was loaded from a `practice` table completion (one row per log). */
     practiceLogId?: string;
     isCombine?: boolean;
@@ -76,6 +80,8 @@ interface Drill {
   focus?: string;
   estimatedMinutes: number;
   xpValue: number;
+  /** Supabase `goal_reps` (tiered text) when present */
+  goal_reps?: string;
   contentType?: 'video' | 'pdf' | 'text';
   source?: string;
   description?: string; // Matches Supabase column description
@@ -129,6 +135,214 @@ function toLocalDateString(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+function parseDrillLevelsForPlan(
+  raw: unknown
+): Array<{ id: string; name: string; completed?: boolean }> | undefined {
+  if (raw == null) return undefined;
+  try {
+    let parsed: unknown = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (typeof parsed === "string") parsed = JSON.parse(parsed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const o = parsed as Record<string, unknown>;
+      const vals = Object.values(o);
+      if (vals.length > 0 && typeof vals[0] === "object" && vals[0] != null) {
+        parsed = vals;
+      } else if (vals.some((v) => typeof v === "string" && String(v).trim())) {
+        // e.g. { "Beginner": "…", "Intermediate": "…", "Advanced": "…" } from manual DB/JSON edits
+        parsed = Object.entries(o)
+          .filter(([, v]) => typeof v === "string" && String(v).trim())
+          .map(([k, v], idx) => ({
+            id: `level-${idx}`,
+            name: `${k}: ${String(v).trim()}`,
+          }));
+      }
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0) return undefined;
+    return parsed.map((level: { id?: string; name?: string } | string, idx: number) => ({
+      id: (typeof level === "object" && level?.id) || `level-${idx}`,
+      name:
+        (typeof level === "object" && (level as { name?: string }).name) || String(level),
+      completed: typeof level === "object" && (level as { completed?: boolean }).completed === true,
+    }));
+  } catch {
+    if (typeof raw === "string" && raw.trim().length > 0) {
+      return [{ id: "level-0", name: raw.trim() }];
+    }
+    return undefined;
+  }
+}
+
+/** When `goal` is empty in DB, join level names (Beginner/Intermediate/Advanced) for display. */
+function goalTextFromDrillLevelsRaw(raw: unknown): string {
+  const parsed = parseDrillLevelsForPlan(raw);
+  if (!parsed?.length) return "";
+  return parsed
+    .map((l) => l.name)
+    .join("\n")
+    .trim();
+}
+
+function resolvedGoalForPlanFromCatalog(
+  full: Record<string, unknown> | undefined,
+  cat: Drill | undefined
+): string {
+  if (full) {
+    const gr = full.goal_reps;
+    if (gr != null && String(gr).trim()) return String(gr).trim();
+    const fg = full.goal;
+    if (fg != null && String(fg).trim()) return String(fg).trim();
+    const fromLv = goalTextFromDrillLevelsRaw(full.drill_levels);
+    if (fromLv) return fromLv;
+  }
+  const catGr = cat && (cat as { goal_reps?: string }).goal_reps;
+  if (catGr != null && String(catGr).trim()) return String(catGr).trim();
+  if (cat?.goal != null && String(cat.goal).trim()) return String(cat.goal).trim();
+  if (cat && (cat as { drill_levels?: unknown }).drill_levels != null) {
+    const fromCatLv = goalTextFromDrillLevelsRaw(
+      (cat as { drill_levels?: unknown }).drill_levels
+    );
+    if (fromCatLv) return fromCatLv;
+  }
+  return "";
+}
+
+/** user_drills + swap/replace can leave ids that are not the Supabase row id; try all for catalog match. */
+function catalogLookupKeysForPlanRow(row: { id: string; drill_id?: string }): string[] {
+  const keys: string[] = [];
+  if (row.drill_id != null && String(row.drill_id).trim()) {
+    keys.push(String(row.drill_id).trim());
+  }
+  const id = String(row.id);
+  const swapped = id.match(/^swapped-\d+-\d+-\d+-(.+)$/i);
+  if (swapped?.[1]) keys.push(String(swapped[1]).trim());
+  if (id && !id.startsWith("swapped-") && !id.startsWith("p-") && !id.startsWith("freestyle-") && !id.startsWith("round-") && !id.startsWith("mental-")) {
+    keys.push(id);
+  }
+  return [...new Set(keys.filter(Boolean))];
+}
+
+function parseCatalogXp(v: unknown): number | undefined {
+  if (v == null || v === "") return undefined;
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n) || n < 0) return undefined;
+  return Math.round(n);
+}
+
+function mergeDrillMapEntry(
+  existing: unknown,
+  incoming: Record<string, unknown>
+): Record<string, unknown> {
+  return existing && typeof existing === "object"
+    ? { ...(existing as Record<string, unknown>), ...incoming }
+    : { ...incoming };
+}
+
+/** `user_drills.drill_id` and planner rows are often the human code (e.g. PUTT-GATE-001), not the UUID. */
+function buildDrillDetailsMap(
+  allDrillsData: unknown[] | null | undefined
+): Record<string, unknown> {
+  const drillDetailsMap: Record<string, unknown> = {};
+  if (typeof OFFICIAL_DRILLS !== "undefined") {
+    OFFICIAL_DRILLS.forEach((drill: { id?: string; drill_id?: string; drill_name?: string; title?: string }) => {
+      if (drill.id) drillDetailsMap[drill.id] = mergeDrillMapEntry(drillDetailsMap[drill.id], drill as unknown as Record<string, unknown>);
+      if (drill.drill_id != null && String(drill.drill_id).trim()) {
+        const c = String(drill.drill_id).trim();
+        drillDetailsMap[c] = mergeDrillMapEntry(drillDetailsMap[c], drill as unknown as Record<string, unknown>);
+      }
+      const name = drill.drill_name ?? drill.title;
+      if (name) {
+        const key = String(name).toLowerCase().trim();
+        drillDetailsMap[key] = mergeDrillMapEntry(drillDetailsMap[key], drill as unknown as Record<string, unknown>);
+      }
+    });
+  }
+  (allDrillsData as unknown[] | undefined)?.forEach((d) => {
+    const drill = d as Record<string, unknown>;
+    if (drill.id) drillDetailsMap[String(drill.id)] = mergeDrillMapEntry(drillDetailsMap[String(drill.id)], drill);
+    if (drill.drill_id != null && String(drill.drill_id).trim()) {
+      const c = String(drill.drill_id).trim();
+      drillDetailsMap[c] = mergeDrillMapEntry(drillDetailsMap[c], drill);
+    }
+    const name = drill.drill_name ?? drill.title;
+    if (name) {
+      const key = String(name).toLowerCase().trim();
+      drillDetailsMap[key] = mergeDrillMapEntry(drillDetailsMap[key], drill);
+    }
+  });
+  return drillDetailsMap;
+}
+
+function findDrillInDetailsMap(
+  map: Record<string, unknown>,
+  row: { id: string; drill_id?: string; isCombine?: boolean }
+): Record<string, unknown> | undefined {
+  if (row.isCombine) return undefined;
+  for (const k of catalogLookupKeysForPlanRow(row)) {
+    if (k && map[k]) return map[k] as Record<string, unknown>;
+  }
+  for (const k of catalogLookupKeysForPlanRow(row)) {
+    if (!k) continue;
+    const lo = k.toLowerCase();
+    for (const mk of Object.keys(map)) {
+      if (mk.toLowerCase() === lo) return map[mk] as Record<string, unknown>;
+    }
+  }
+  return undefined;
+}
+
+/** Fills goal/levels for localStorage-only or stale rows. Never replaces a non-empty goal with an empty string. */
+function enrichWeeklyPlanFromDrillMap(plan: WeeklyPlan, map: Record<string, unknown>): void {
+  for (let di = 0; di <= 6; di++) {
+    const day = plan[di];
+    if (!day?.drills?.length) continue;
+    for (let ri = 0; ri < day.drills.length; ri++) {
+      const row = day.drills[ri];
+      if (row.isCombine) continue;
+      const hit = findDrillInDetailsMap(map, row);
+      if (!hit) continue;
+      const gResolved = resolvedGoalForPlanFromCatalog(hit, undefined);
+      const currentG = row.goal != null && String(row.goal).trim() ? String(row.goal).trim() : "";
+      const g =
+        gResolved != null && String(gResolved).trim()
+          ? String(gResolved).trim()
+          : currentG;
+
+      let nextLevels = row.levels;
+      if (hit.drill_levels != null) {
+        const parsed = parseDrillLevelsForPlan(hit.drill_levels);
+        if (parsed && parsed.length > 0) {
+          const done = new Map(
+            (row.levels || []).filter((l) => l.completed).map((l) => [l.id, true] as const)
+          );
+          nextLevels = parsed.map((l) => ({
+            ...l,
+            completed: done.get(l.id) ? true : l.completed,
+          }));
+        }
+      }
+      const sameLevels =
+        JSON.stringify(nextLevels ?? null) === JSON.stringify(row.levels ?? null);
+      const gr =
+        hit.goal_reps != null && String(hit.goal_reps).trim()
+          ? String(hit.goal_reps).trim()
+          : undefined;
+      const xpV = parseCatalogXp(hit.xp_value);
+      const goalRepsMatch =
+        (row.goal_reps ?? "") === (gr ?? "");
+      const xpMatch = row.xp_value === xpV || (xpV === undefined && row.xp_value === undefined);
+
+      if (g === currentG && sameLevels && goalRepsMatch && xpMatch) continue;
+      day.drills[ri] = {
+        ...row,
+        goal: g,
+        levels: nextLevels,
+        ...(gr !== undefined ? { goal_reps: gr } : {}),
+        ...(xpV !== undefined ? { xp_value: xpV } : {}),
+      };
+    }
+  }
 }
 
 /**
@@ -351,6 +565,8 @@ export default function PracticePage() {
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({});
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [drills, setDrills] = useState<Drill[]>([]);
+  /** Raw Supabase rows (keyed by id + drill_id) so weekly plan can resync goal/levels after CSV edits. */
+  const drillCatalogRowsByKeyRef = useRef<Map<string, Record<string, unknown>>>(new Map());
   const [mostNeededCategory, setMostNeededCategory] = useState<string>('Putting');
   const [generatedPlan, setGeneratedPlan] = useState<WeeklyPlan | null>(null);
   const [xpNotification, setXpNotification] = useState<{ show: boolean; amount: number }>({ show: false, amount: 0 });
@@ -604,37 +820,15 @@ export default function PracticePage() {
 
         // Do NOT pre-populate all days - only load what's in the database or stay empty
 
-        // CROSS-REFERENCE: Fetch drill details from drills table and match by title
+        // Always load catalog: localStorage plans need goal/reps even with no practice/user_drills rows
+        // this week; map must key by `drill_id` (e.g. PUTT-GATE-001), not just UUID, or lookups fail.
+        const allDrillsData = await fetchDrillsCatalogRows();
+        const drillDetailsMap: Record<string, any> = buildDrillDetailsMap(
+          (allDrillsData as unknown[] | null | undefined) ?? []
+        );
+
+        // Add planned drills from user_drills to loadedPlan; merge practice completions
         if ((practiceData && practiceData.length > 0) || (userDrillsData && userDrillsData.length > 0)) {
-          const allDrillsData = await fetchDrillsCatalogRows();
-
-          const drillDetailsMap: Record<string, any> = {};
-          
-          if (typeof OFFICIAL_DRILLS !== 'undefined') {
-            OFFICIAL_DRILLS.forEach((drill: any) => {
-              if (drill.id) drillDetailsMap[drill.id] = drill;
-              const name = drill.drill_name ?? drill.title;
-              if (name) drillDetailsMap[name.toLowerCase().trim()] = drill;
-            });
-          }
-
-          if (allDrillsData && allDrillsData.length > 0) {
-            (allDrillsData as any[]).forEach((drill: any) => {
-              if (drill.id) {
-                drillDetailsMap[drill.id] = drillDetailsMap[drill.id] 
-                  ? { ...drillDetailsMap[drill.id], ...drill } 
-                  : drill;
-              }
-              const name = drill.drill_name ?? drill.title;
-              if (name) {
-                const key = String(name).toLowerCase().trim();
-                drillDetailsMap[key] = drillDetailsMap[key]
-                  ? { ...drillDetailsMap[key], ...drill }
-                  : drill;
-              }
-            });
-          }
-
           // Add planned drills from user_drills to loadedPlan
           if (userDrillsData && userDrillsData.length > 0) {
             userDrillsData.forEach((plannedDrill: any) => {
@@ -675,8 +869,13 @@ export default function PracticePage() {
                 return;
               }
 
-              const drillDetails = drillDetailsMap[plannedDrill.drill_id];
-              
+              const drillDetails =
+                drillDetailsMap[plannedDrill.drill_id] ??
+                findDrillInDetailsMap(drillDetailsMap, {
+                  id: String(plannedDrill.drill_id ?? ""),
+                  drill_id: plannedDrill.drill_id,
+                });
+
               if (drillDetails) {
                 let levels = null;
                 if (drillDetails.drill_levels) {
@@ -702,17 +901,26 @@ export default function PracticePage() {
                   dayPlan.selected = true;
                   dayPlan.drills = dayDrills;
                   const desc = (drillDetails.description && String(drillDetails.description).trim()) || DESCRIPTION_BY_DRILL_ID[plannedDrill.drill_id] || undefined;
+                  const goalResolved = resolvedGoalForPlanFromCatalog(
+                    drillDetails as Record<string, unknown>,
+                    undefined
+                  );
+                  const goalStr = goalResolved ? goalResolved : undefined;
                   dayPlan.drills.push({
                     id: plannedDrill.drill_id,
                     drill_id: plannedDrill.drill_id,
                     title: drillDetails.drill_name ?? drillDetails.title ?? "Untitled",
                     category: drillDetails.category,
-                    estimatedMinutes: drillDetails.estimatedMinutes || 30,
+                    estimatedMinutes:
+                      (drillDetails as any).estimated_minutes ??
+                      drillDetails.estimatedMinutes ??
+                      30,
                     completed: false,
                     pdf_url: drillDetails.pdf_url,
                     youtube_url: drillDetails.video_url ?? drillDetails.youtube_url,
                     video_url: drillDetails.video_url ?? drillDetails.youtube_url,
                     description: desc,
+                    goal: goalStr,
                     levels: levels || undefined,
                   });
                 }
@@ -797,6 +1005,17 @@ export default function PracticePage() {
               if (logId) row.practiceLogId = logId;
               row.drill_id = generatedDrillId;
               if (levels) row.levels = levels;
+              const g = drillDetails
+                ? (() => {
+                    const gResolved = resolvedGoalForPlanFromCatalog(
+                      drillDetails as Record<string, unknown>,
+                      undefined
+                    );
+                    const current = row.goal != null && String(row.goal).trim() ? String(row.goal).trim() : "";
+                    return gResolved && String(gResolved).trim() ? String(gResolved).trim() : current;
+                  })()
+                : undefined;
+              if (g) row.goal = g;
               if (drillDetails?.pdf_url || practice.pdf_url) {
                 row.pdf_url = drillDetails?.pdf_url || practice.pdf_url;
               }
@@ -819,6 +1038,15 @@ export default function PracticePage() {
               if (existingDrillIndex >= 0) {
                 applyRowFields(existingDrillIndex);
               } else {
+                const pushGoal = drillDetails
+                  ? (() => {
+                      const gResolved = resolvedGoalForPlanFromCatalog(
+                        drillDetails as Record<string, unknown>,
+                        undefined
+                      );
+                      return gResolved && String(gResolved).trim() ? String(gResolved).trim() : undefined;
+                    })()
+                  : undefined;
                 dayPlanRef.drills.push({
                   id: logId ? `p-${logId}` : generatedDrillId,
                   drill_id: generatedDrillId,
@@ -826,12 +1054,16 @@ export default function PracticePage() {
                   title: drillTitle,
                   category: drillDetails?.category || practice.category || 'Practice',
                   estimatedMinutes:
-                    drillDetails?.estimatedMinutes || practice.estimatedMinutes || 30,
+                    (drillDetails as any)?.estimated_minutes ??
+                    drillDetails?.estimatedMinutes ??
+                    practice.estimatedMinutes ??
+                    30,
                   completed: isCompleted,
                   pdf_url: drillDetails?.pdf_url || practice.pdf_url || undefined,
                   youtube_url:
                     drillDetails?.video_url || practice.youtube_url || practice.video_url || undefined,
                   description: drillDetails?.description || practice.description || undefined,
+                  goal: pushGoal,
                   levels: levels || undefined,
                 });
               }
@@ -839,6 +1071,8 @@ export default function PracticePage() {
           });
         }
         }
+
+        enrichWeeklyPlanFromDrillMap(loadedPlan, drillDetailsMap);
 
         if (typeof window !== 'undefined') {
           localStorage.setItem('weeklyPracticePlans', JSON.stringify(loadedPlan));
@@ -893,25 +1127,43 @@ export default function PracticePage() {
           });
         }
 
+        const catalogKeyMap = new Map<string, Record<string, unknown>>();
+        (dbDrills || []).forEach((row: Record<string, unknown>) => {
+          if (row.id != null) catalogKeyMap.set(String(row.id), row);
+          const code = row.drill_id;
+          if (code != null && String(code).trim()) catalogKeyMap.set(String(code).trim(), row);
+        });
+        drillCatalogRowsByKeyRef.current = catalogKeyMap;
+
         const merged: Drill[] = OFFICIAL_DRILLS.map((d: any) => {
           const db = dbById.get(d.id) ?? dbById.get(d.drill_id) ?? ((d.title || d.drill_name) ? dbByName.get((d.drill_name ?? d.title ?? '').trim().toLowerCase()) : undefined);
           const desc = (db?.description && String(db.description).trim()) || (d.description && String(d.description).trim()) || '';
           const displayName = db?.drill_name ?? db?.title ?? d.drill_name ?? d.title;
+          const dbXp =
+            db != null
+              ? parseCatalogXp((db as { xp_value?: unknown }).xp_value ?? (db as { xpValue?: unknown }).xpValue)
+              : undefined;
           return {
             id: d.id,
+            drill_id: (d as { drill_id?: string }).drill_id ?? (db as { drill_id?: string } | undefined)?.drill_id,
             title: displayName,
             drill_name: displayName,
             category: d.category,
             sub_category: '',
             focus: d.focus,
             estimatedMinutes: db?.estimated_minutes ?? db?.estimatedMinutes ?? d.estimatedMinutes,
-            xpValue: d.xpValue,
+            xpValue: dbXp ?? d.xpValue,
             contentType: d.contentType,
             source: db?.video_url || db?.pdf_url || d.video_url || d.youtube_url || d.pdf_url || desc || '',
             description: desc,
             pdf_url: db?.pdf_url ?? d.pdf_url,
             youtube_url: db?.video_url ?? d.youtube_url ?? d.video_url,
-            goal: db?.goal ?? d.goal,
+            goal: (db as { goal_reps?: string } | undefined)?.goal_reps ?? db?.goal ?? d.goal,
+            goal_reps:
+              (db as { goal_reps?: string } | undefined)?.goal_reps != null &&
+              String((db as { goal_reps?: string }).goal_reps).trim()
+                ? String((db as { goal_reps?: string }).goal_reps).trim()
+                : undefined,
           };
         });
 
@@ -924,19 +1176,22 @@ export default function PracticePage() {
         ) ?? [];
         const dbOnlyMapped: Drill[] = dbOnly.map((d: any) => ({
           id: d.id,
+          drill_id: d.drill_id != null && String(d.drill_id).trim() ? String(d.drill_id).trim() : undefined,
           title: d.drill_name ?? d.title,
           drill_name: d.drill_name ?? d.title,
           category: d.category,
           sub_category: '',
           focus: d.focus || '',
           estimatedMinutes: d.estimated_minutes ?? d.estimatedMinutes ?? 10,
-          xpValue: 10,
+          xpValue: parseCatalogXp(d.xp_value ?? d.xpValue) ?? 10,
           contentType: 'text' as const,
           source: d.video_url || d.pdf_url || (d.description || ''),
           description: (d.description && String(d.description).trim()) || '',
           pdf_url: d.pdf_url,
           youtube_url: d.video_url,
-          goal: d.goal || '',
+          goal: (d.goal_reps && String(d.goal_reps).trim()) || d.goal || '',
+          goal_reps:
+            d.goal_reps != null && String(d.goal_reps).trim() ? String(d.goal_reps).trim() : undefined,
         }));
 
         const fetchedDrills = [...merged, ...dbOnlyMapped];
@@ -961,6 +1216,7 @@ export default function PracticePage() {
           goal: d.goal,
         }));
         setDrills(fallback);
+        drillCatalogRowsByKeyRef.current = new Map();
       }
     };
 
@@ -972,6 +1228,121 @@ export default function PracticePage() {
       window.removeEventListener('drillLibraryRefresh', onLibraryRefresh);
     };
   }, []);
+
+  // Keep weekly plan goal/reps in sync with the live Supabase catalog (overrides stale localStorage after CSV upserts).
+  useEffect(() => {
+    if (!drills.length) return;
+    const byKey = new Map<string, Drill>();
+    for (const d of drills) {
+      byKey.set(d.id, d);
+      if (d.drill_id) byKey.set(String(d.drill_id).trim(), d);
+    }
+    const fullMap = drillCatalogRowsByKeyRef.current;
+
+    setWeeklyPlan((prev) => {
+      if (!prev) return prev;
+      let any = false;
+      const out: WeeklyPlan = { ...prev };
+      for (let di = 0; di <= 6; di++) {
+        const day = out[di];
+        if (!day?.drills?.length) continue;
+        let dayChanged = false;
+        const newRows = day.drills.map((row) => {
+          if (row.isCombine) return row;
+          const keys = catalogLookupKeysForPlanRow(row);
+          let full: Record<string, unknown> | undefined;
+          let cat: Drill | undefined;
+          for (const k of keys) {
+            const hit = fullMap.get(k);
+            if (hit) {
+              full = hit;
+              break;
+            }
+          }
+          for (const k of keys) {
+            const hit = byKey.get(k);
+            if (hit) {
+              cat = hit;
+              break;
+            }
+          }
+          if (!full && !cat) return row;
+
+          // Prefer non-empty `goal` from Supabase, then `drill_levels` text, then merged catalog row
+          // (a DB row with empty `goal` used to overwrite a good in-memory `cat.goal` here).
+          const gResolved = resolvedGoalForPlanFromCatalog(
+            full as Record<string, unknown> | undefined,
+            cat
+          );
+          const currentG = row.goal != null && String(row.goal).trim() ? String(row.goal).trim() : "";
+          const g =
+            gResolved != null && String(gResolved).trim()
+              ? String(gResolved).trim()
+              : currentG;
+          const goalChanged = g !== currentG;
+
+          let nextLevels = row.levels;
+          if (full != null && full.drill_levels != null) {
+            const parsed = parseDrillLevelsForPlan(full.drill_levels);
+            if (parsed && parsed.length > 0) {
+              const done = new Map(
+                (row.levels || []).filter((l) => l.completed).map((l) => [l.id, true] as const)
+              );
+              nextLevels = parsed.map((l) => ({
+                ...l,
+                completed: done.get(l.id) ? true : l.completed,
+              }));
+            }
+          }
+          const levelsChanged =
+            JSON.stringify(nextLevels ?? null) !== JSON.stringify(row.levels ?? null);
+
+          const grDb =
+            full != null && full.goal_reps != null && String(full.goal_reps).trim()
+              ? String(full.goal_reps).trim()
+              : undefined;
+          const catGoalRepsRaw = (cat as { goal_reps?: string } | undefined)?.goal_reps;
+          const catGr =
+            catGoalRepsRaw != null && String(catGoalRepsRaw).trim()
+              ? String(catGoalRepsRaw).trim()
+              : undefined;
+          const nextGoalReps =
+            grDb !== undefined ? grDb : catGr !== undefined ? catGr : row.goal_reps;
+          const goalRepsChanged = (row.goal_reps ?? "") !== (nextGoalReps ?? "");
+
+          let nextXpVal = row.xp_value;
+          if (full != null && full.xp_value != null) nextXpVal = parseCatalogXp(full.xp_value);
+          else if (cat != null)
+            nextXpVal =
+              parseCatalogXp((cat as { xp_value?: unknown }).xp_value ?? cat.xpValue) ?? nextXpVal;
+          const xpChanged = row.xp_value !== nextXpVal;
+
+          if (!goalChanged && !levelsChanged && !goalRepsChanged && !xpChanged) return row;
+          dayChanged = true;
+          return {
+            ...row,
+            goal: g,
+            levels: nextLevels,
+            ...(nextGoalReps !== undefined ? { goal_reps: nextGoalReps } : {}),
+            ...(nextXpVal !== undefined ? { xp_value: nextXpVal } : {}),
+          };
+        });
+        if (dayChanged) {
+          any = true;
+          out[di] = { ...day, drills: newRows };
+        }
+      }
+      if (!any) return prev;
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("weeklyPracticePlans", JSON.stringify(out));
+        } catch {
+          /* ignore */
+        }
+      }
+      return out;
+    });
+  }, [drills]);
 
   // Calculate most needed improvement (similar to Stats page)
   useEffect(() => {
@@ -1115,6 +1486,56 @@ export default function PracticePage() {
     const facility = categoryToFacility(drill.category);
 
     const desc = (drill.description && String(drill.description).trim()) || DESCRIPTION_BY_DRILL_ID[(drill as any).drill_id ?? drill.id] || undefined;
+
+    let goalStr =
+      drill.goal != null && String(drill.goal).trim() ? String(drill.goal).trim() : undefined;
+    let goalRepsFromDb: string | undefined = undefined;
+    let xpValueFromDb: number | undefined = undefined;
+    let levelsFromDb:
+      | Array<{ id: string; name: string; completed?: boolean }>
+      | undefined = undefined;
+    try {
+      let full = await fetchDrillRowById(String(drill.id));
+      const code = (drill as { drill_id?: string }).drill_id;
+      if (
+        !full &&
+        code != null &&
+        String(code).trim() &&
+        String(code).trim() !== String(drill.id).trim()
+      ) {
+        full = await fetchDrillRowById(String(code).trim());
+      }
+      if (full) {
+        const fr = (full as Record<string, unknown>).goal_reps;
+        if (fr != null && String(fr).trim()) goalRepsFromDb = String(fr).trim();
+        xpValueFromDb = parseCatalogXp((full as Record<string, unknown>).xp_value);
+        const fromResolved = resolvedGoalForPlanFromCatalog(
+          full as Record<string, unknown>,
+          drill as unknown as Drill
+        );
+        if (fromResolved) goalStr = fromResolved;
+        const raw = (full as Record<string, unknown>).drill_levels;
+        if (raw) {
+          try {
+            const parsed = typeof raw === "string" ? JSON.parse(raw as string) : raw;
+            if (Array.isArray(parsed)) {
+              levelsFromDb = parsed.map((level: { id?: string; name?: string } | string, idx: number) => ({
+                id: (typeof level === "object" && level?.id) || `level-${idx}`,
+                name:
+                  (typeof level === "object" && (level as { name?: string }).name) ||
+                  String(level),
+                completed: false,
+              }));
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    } catch {
+      /* use catalog row only */
+    }
+
     const drillToAdd = {
       id: drill.id,
       drill_id: (drill as any).drill_id ?? drill.id,
@@ -1129,8 +1550,11 @@ export default function PracticePage() {
       pdf_url: drill.pdf_url,
       youtube_url: drill.youtube_url || drill.video_url,
       video_url: drill.video_url || drill.youtube_url,
-      goal: drill.goal,
+      goal: goalStr,
+      levels: levelsFromDb,
       facility,
+      ...(goalRepsFromDb !== undefined ? { goal_reps: goalRepsFromDb } : {}),
+      ...(xpValueFromDb !== undefined ? { xp_value: xpValueFromDb } : {}),
     };
 
     setWeeklyPlan(prev => {
@@ -2273,9 +2697,11 @@ export default function PracticePage() {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
         const { data } = await supabase
-          .from('drills')
-          .select('drill_name, description, video_url, pdf_url, drill_levels, title, category, estimatedMinutes')
-          .eq('id', newDrill.id)
+          .from("drills")
+          .select(
+            "drill_id, drill_name, description, video_url, pdf_url, drill_levels, goal, title, category, estimated_minutes"
+          )
+          .eq("id", newDrill.id)
           .single();
         dbDrill = data ?? null;
       }
@@ -2301,13 +2727,25 @@ export default function PracticePage() {
         }
 
         const desc = (d.description && String(d.description).trim()) || DESCRIPTION_BY_DRILL_ID[newDrill.id] || newDrill.description;
+        const mergedGoal =
+          d.goal != null && String(d.goal).trim()
+            ? String(d.goal).trim()
+            : newDrill.goal != null && String(newDrill.goal).trim()
+              ? String(newDrill.goal).trim()
+              : undefined;
         drillData = {
           ...newDrill,
+          drill_id:
+            (d as { drill_id?: string }).drill_id != null &&
+            String((d as { drill_id?: string }).drill_id).trim()
+              ? String((d as { drill_id?: string }).drill_id).trim()
+              : (newDrill as { drill_id?: string }).drill_id,
           title: String(d.drill_name ?? d.title ?? newDrill.title),
           pdf_url: d.pdf_url || newDrill.pdf_url,
           youtube_url: d.video_url || newDrill.youtube_url || newDrill.video_url,
           video_url: d.video_url || newDrill.video_url || newDrill.youtube_url,
           description: desc,
+          goal: mergedGoal,
           levels: levels || newDrill.levels,
         };
       }
@@ -2331,6 +2769,12 @@ export default function PracticePage() {
           ? {
               ...drillData,
               id: `swapped-${dayIndex}-${drillIndex}-${Date.now()}-${drillData.id}`,
+              drill_id:
+                (drillData as { drill_id?: string }).drill_id ??
+                (newDrill as { drill_id?: string }).drill_id ??
+                (typeof newDrill.id === "string" && !String(newDrill.id).startsWith("swapped-")
+                  ? newDrill.id
+                  : undefined),
               category: drillData.category,
               estimatedMinutes: drillData.estimatedMinutes,
               xpValue: xpValue,
@@ -2480,7 +2924,7 @@ export default function PracticePage() {
   }, [myRounds, user?.initialHandicap]);
 
   return (
-    <div className="flex-1 w-full flex flex-col bg-gray-50">
+    <div className="flex-1 w-full flex flex-col bg-background">
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
         <div className="max-w-md mx-auto">
         {/* Header with Name Editing */}
@@ -2493,7 +2937,7 @@ export default function PracticePage() {
                   type="text"
                   value={editedName}
                   onChange={(e) => setEditedName(e.target.value)}
-                  className="text-sm border-2 border-[#014421] rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#014421] w-32"
+                  className="text-sm border-2 border-primary rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary w-32"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -2510,9 +2954,9 @@ export default function PracticePage() {
                   className="p-1 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
                 >
                   {isSavingName ? (
-                    <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                   ) : (
-                    <Check className="w-4 h-4 text-green-600" />
+                    <Check className="w-4 h-4 text-primary" />
                   )}
                 </button>
                 <button
@@ -2538,7 +2982,7 @@ export default function PracticePage() {
           </div>
           <p className="text-gray-600 text-sm mt-1">Plan your practice for the week</p>
           {totalPracticeMinutes > 0 && (
-            <div className="mt-2 text-sm font-medium" style={{ color: '#014421' }}>
+            <div className="mt-2 text-sm font-medium text-primary">
               Total Time This Week: {Math.floor(totalPracticeMinutes / 60)}h {totalPracticeMinutes % 60}m
             </div>
           )}
@@ -2546,7 +2990,7 @@ export default function PracticePage() {
 
         {/* Weekly Calendar - Fully Responsive Grid */}
         <div className="mb-6">
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
             {/* Responsive Grid: 2 cols on mobile, 4 cols on tablet, 7 cols on desktop */}
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
               {DAY_ABBREVIATIONS.map((abbr, idx) => {
@@ -2559,7 +3003,7 @@ export default function PracticePage() {
                     onClick={() => toggleDay(index)}
                     className={`flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl transition-all min-h-[70px] ${
                       isSelected
-                        ? 'bg-[#F57C00] border-2 border-[#E65100]' // Signature orange when selected
+                        ? "bg-secondary border-2 border-secondary shadow-sm"
                         : 'bg-gray-50 border border-gray-200 hover:border-gray-300' // Light gray when not selected
                     }`}
                   >
@@ -2591,9 +3035,9 @@ export default function PracticePage() {
         {/* Time Assignment for Selected Day */}
         {selectedDay !== null && (
           <div className="mb-6">
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+            <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
               <div className="flex items-center gap-2 mb-4">
-                <Clock className="w-5 h-5" style={{ color: '#014421' }} />
+                <Clock className="w-5 h-5 text-primary" />
                 <h3 className="font-semibold text-gray-900">
                   {DAY_NAMES[selectedDay]} - Available Practice Time
                 </h3>
@@ -2602,15 +3046,8 @@ export default function PracticePage() {
               {/* Time Slider - Academy Hub Style with Thin Track (8 hours max) */}
               <div className="space-y-4">
                 <div className="relative py-3">
-                  {/* Thin Track Line (Background) - Forest Green */}
-                  <div 
-                    className="absolute top-1/2 left-0 right-0 rounded-full transform -translate-y-1/2"
-                    style={{
-                      height: '2px',
-                      backgroundColor: '#014421',
-                      opacity: 0.2,
-                    }}
-                  />
+                  {/* Thin Track Line (Background) — primary tint */}
+                  <div className="absolute top-1/2 left-0 right-0 h-0.5 rounded-full bg-primary/20 transform -translate-y-1/2" />
                   
                   {/* Snap Point Indicators (every 15 minutes) - Key time markers */}
                   <div className="absolute top-1/2 left-0 right-0 transform -translate-y-1/2 pointer-events-none">
@@ -2625,13 +3062,11 @@ export default function PracticePage() {
                     ))}
                   </div>
                   
-                  {/* Fill Line (Gold) */}
+                  {/* Fill Line — secondary */}
                   <div
-                    className="absolute top-1/2 left-0 rounded-full transform -translate-y-1/2 transition-all"
+                    className="absolute top-1/2 left-0 h-1 rounded-full transform -translate-y-1/2 bg-secondary transition-all"
                     style={{
-                      height: '4px',
                       width: `${((weeklyPlan[selectedDay]?.availableTime || 0) / 480) * 100}%`,
-                      backgroundColor: '#FFA500',
                     }}
                   />
                   
@@ -2652,7 +3087,7 @@ export default function PracticePage() {
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-600">0m</span>
-                  <span className="font-bold text-lg" style={{ color: '#FFA500' }}>
+                  <span className="font-bold text-lg text-secondary">
                     {formatTime(weeklyPlan[selectedDay]?.availableTime || 0)}
                   </span>
                   <span className="text-gray-600">8h</span>
@@ -2665,7 +3100,7 @@ export default function PracticePage() {
         {/* Multi-Select Facility Selector - Above Generate Button */}
         {selectedDay !== null && (
           <div className="mb-6">
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+            <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
               <h3 className="font-semibold text-gray-900 mb-4">Where are you practicing?</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {ALL_FACILITIES.map((facilityType) => {
@@ -2680,14 +3115,14 @@ export default function PracticePage() {
                       onClick={() => toggleFacility(selectedDay, facilityType)}
                       className={`flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 ${
                         isSelected
-                          ? 'bg-[#014421] border-[#FFA500]'
+                          ? "bg-primary border-secondary"
                           : 'bg-gray-50 border-gray-200 hover:border-gray-300'
                       }`}
                     >
                       <Icon 
                         className={`w-5 h-5 ${
                           isSelected
-                            ? 'text-[#FFA500]'
+                            ? "text-secondary"
                             : 'text-gray-600'
                         }`}
                       />
@@ -2707,14 +3142,14 @@ export default function PracticePage() {
                   onClick={() => setRoundType(selectedDay, '9-hole')}
                   className={`flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 ${
                     weeklyPlan[selectedDay]?.roundType === '9-hole'
-                      ? 'bg-[#014421] border-[#FFA500]'
+                      ? "bg-primary border-secondary"
                       : 'bg-gray-50 border-gray-200 hover:border-gray-300'
                   }`}
                 >
                   <FlagTriangleRight 
                     className={`w-5 h-5 ${
                       weeklyPlan[selectedDay]?.roundType === '9-hole'
-                        ? 'text-[#FFA500]'
+                        ? "text-secondary"
                         : 'text-gray-600'
                     }`}
                   />
@@ -2731,14 +3166,14 @@ export default function PracticePage() {
                   onClick={() => setRoundType(selectedDay, '18-hole')}
                   className={`flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 ${
                     weeklyPlan[selectedDay]?.roundType === '18-hole'
-                      ? 'bg-[#014421] border-[#FFA500]'
+                      ? "bg-primary border-secondary"
                       : 'bg-gray-50 border-gray-200 hover:border-gray-300'
                   }`}
                 >
                   <FlagTriangleRight 
                     className={`w-5 h-5 ${
                       weeklyPlan[selectedDay]?.roundType === '18-hole'
-                        ? 'text-[#FFA500]'
+                        ? "text-secondary"
                         : 'text-gray-600'
                     }`}
                   />
@@ -2760,10 +3195,9 @@ export default function PracticePage() {
           <button
             onClick={generatePlan}
             disabled={!canGeneratePlan}
-            className={`w-full py-4 rounded-xl font-semibold text-white shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 ${
+            className={`w-full py-4 rounded-xl bg-primary font-semibold text-white shadow-lg hover:shadow-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2 ${
               !canGeneratePlan ? 'opacity-50 cursor-not-allowed' : ''
             }`}
-            style={{ backgroundColor: '#014421' }}
           >
             <Sparkles className="w-5 h-5" />
             Practice Roadmap
@@ -2787,22 +3221,19 @@ export default function PracticePage() {
                   <div
                     key={day.dayIndex}
                     className={`rounded-2xl p-4 shadow-sm border-2 ${
-                      dayComplete 
-                        ? 'border-[#FFA500]' 
-                        : 'border-gray-200 bg-white'
+                      dayComplete
+                        ? "border-secondary bg-gradient-to-br from-surface to-secondary/[0.07]"
+                        : "border-gray-200 bg-surface"
                     }`}
-                    style={dayComplete ? { 
-                      background: 'linear-gradient(to bottom right, #ffffff, rgba(255, 165, 0, 0.05))' 
-                    } : {}}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <Calendar className="w-5 h-5" style={{ color: '#014421' }} />
+                        <Calendar className="w-5 h-5 text-primary" />
                         <h3 className="font-semibold text-gray-900">
                           {dayComplete ? (
                             <span className="flex items-center gap-2">
-                              <CheckCircle2 className="w-5 h-5" style={{ color: '#FFA500' }} />
-                              <span style={{ color: '#FFA500' }}>Session Complete</span>
+                              <CheckCircle2 className="w-5 h-5 text-secondary" />
+                              <span className="text-secondary">Session Complete</span>
                             </span>
                           ) : (
                             `${summary.dayName} Plan`
@@ -2810,10 +3241,7 @@ export default function PracticePage() {
                         </h3>
                       </div>
                       {dayComplete && (
-                        <span className="text-xs font-bold px-2 py-1 rounded-full" style={{ 
-                          backgroundColor: '#FFA500', 
-                          color: '#014421' 
-                        }}>
+                        <span className="text-xs font-bold px-2 py-1 rounded-full bg-secondary text-primary">
                           ✓
                         </span>
                       )}
@@ -2828,7 +3256,7 @@ export default function PracticePage() {
                       ) : null}
                       . Focus: {summary.categories}
                       {completedCount > 0 && (
-                        <span className="ml-2 font-semibold" style={{ color: '#FFA500' }}>
+                        <span className="ml-2 font-semibold text-secondary">
                           ({completedCount}/{totalDrills} complete)
                         </span>
                       )}
@@ -2881,7 +3309,7 @@ export default function PracticePage() {
         {/* XP Notification Toast */}
         {xpNotification.show && (
           <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-50 animate-bounce">
-            <div className="bg-[#FFA500] text-[#014421] px-6 py-3 rounded-full shadow-lg font-bold flex items-center gap-2">
+            <div className="bg-secondary text-primary px-6 py-3 rounded-full shadow-lg font-bold flex items-center gap-2">
               <Sparkles className="w-5 h-5" />
               <span>+{xpNotification.amount} XP Earned!</span>
             </div>
@@ -2890,11 +3318,11 @@ export default function PracticePage() {
 
         {/* AI Player Insights */}
         <div className="mb-6">
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5" style={{ color: '#014421' }} />
+                  <Sparkles className="w-5 h-5 text-primary" />
                   <h3 className="text-lg font-semibold text-gray-900">Coach&apos;s Insights</h3>
                 </div>
                 <p className="text-xs text-gray-600 mt-1">Full-game performance analysis</p>
@@ -2931,11 +3359,11 @@ export default function PracticePage() {
 
         {/* Log Freestyle Practice Section */}
         <div className="mb-6">
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <BookOpen className="w-5 h-5" style={{ color: '#014421' }} />
+                  <BookOpen className="w-5 h-5 text-primary" />
                   <h3 className="text-lg font-semibold text-gray-900">Log Freestyle Practice</h3>
                 </div>
                 <p className="text-xs text-gray-600 mt-1">Tap a category to log freestyle practice</p>
@@ -2968,7 +3396,7 @@ export default function PracticePage() {
                       key={`freestyle-${facilityType}`}
                       type="button"
                       onClick={() => setDurationModal({ open: true, facility: facilityType })}
-                      className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                      className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
                     >
                       <Icon className="w-5 h-5 text-gray-600" />
                       <span className="text-xs font-medium text-center text-gray-700">{info.label}</span>
@@ -2984,7 +3412,7 @@ export default function PracticePage() {
                       key={`freestyle-${facilityType}`}
                       type="button"
                       onClick={() => setDurationModal({ open: true, facility: facilityType })}
-                      className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                      className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
                     >
                       <Icon className="w-5 h-5 text-gray-600" />
                       <span className="text-xs font-medium text-center text-gray-700">{info.label}</span>
@@ -2995,7 +3423,7 @@ export default function PracticePage() {
                 <button
                   type="button"
                   onClick={() => setDurationModal({ open: true, facility: 'Mental/Strategy' })}
-                  className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                  className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
                 >
                   <BookOpen className="w-5 h-5 text-gray-600" />
                   <span className="text-xs font-medium text-center text-gray-700">Mental/Strategy</span>
@@ -3003,7 +3431,7 @@ export default function PracticePage() {
                 <button
                   type="button"
                   onClick={() => setOnCourseConfirm({ open: true, duration: 135, label: '9-Hole Round' })}
-                  className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                  className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
                 >
                   <FlagTriangleRight className="w-5 h-5 text-gray-600" />
                   <span className="text-xs font-medium text-center text-gray-700">9-Hole Round</span>
@@ -3011,7 +3439,7 @@ export default function PracticePage() {
                 <button
                   type="button"
                   onClick={() => setOnCourseConfirm({ open: true, duration: 270, label: '18-Hole Round' })}
-                  className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                  className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
                 >
                   <FlagTriangleRight className="w-5 h-5 text-gray-600" />
                   <span className="text-xs font-medium text-center text-gray-700">18-Hole Round</span>
@@ -3024,7 +3452,7 @@ export default function PracticePage() {
         {/* Duration Selection Modal */}
         {durationModal.open && durationModal.facility && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
+            <div className="bg-surface rounded-2xl p-6 max-w-sm w-full">
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
                 {facilityInfo[durationModal.facility].label}
               </h3>
@@ -3038,7 +3466,7 @@ export default function PracticePage() {
                     <button
                       key={minutes}
                       onClick={() => logFreestylePractice(durationModal.facility!, minutes)}
-                      className="p-4 rounded-xl border-2 border-gray-200 hover:border-[#FFA500] hover:bg-gray-50 transition-all"
+                      className="p-4 rounded-xl border-2 border-gray-200 hover:border-secondary hover:bg-gray-50 transition-all"
                     >
                       <div className="text-lg font-bold text-gray-900">{minutes}m</div>
                       <div className="text-xs text-gray-600">+{xp} XP</div>
@@ -3060,7 +3488,7 @@ export default function PracticePage() {
         {/* On-Course Round Confirmation Modal */}
         {onCourseConfirm.open && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
+            <div className="bg-surface rounded-2xl p-6 max-w-sm w-full">
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
                 Confirm Round Log
               </h3>
@@ -3082,7 +3510,7 @@ export default function PracticePage() {
                     setOnCourseConfirm({ open: false, duration: 0, label: '' });
                     logFreestylePractice('On-Course', duration);
                   }}
-                  className="py-2 px-4 rounded-lg bg-[#014421] text-white font-medium hover:opacity-90 transition-opacity"
+                  className="py-2 px-4 rounded-lg bg-primary text-white font-medium hover:opacity-90 transition-opacity"
                 >
                   Confirm
                 </button>
@@ -3094,7 +3522,7 @@ export default function PracticePage() {
         {/* Clear Drill Confirmation Modal */}
         {clearDrillConfirm.open && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
+            <div className="bg-surface rounded-2xl p-6 max-w-sm w-full">
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
                 Remove Drill
               </h3>
@@ -3118,7 +3546,7 @@ export default function PracticePage() {
                       clearDrillFromDay(dayIndex, drillIndex);
                     }
                   }}
-                  className="py-2 px-4 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition-colors"
+                  className="py-2 px-4 rounded-lg bg-danger text-white font-medium hover:bg-danger/90 transition-colors"
                 >
                   Remove
                 </button>
@@ -3130,7 +3558,7 @@ export default function PracticePage() {
         {/* XP Notification Animation */}
         {xpNotification.show && (
           <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 animate-bounce">
-            <div className="bg-[#FFA500] text-white px-6 py-3 rounded-full shadow-lg font-bold text-lg">
+            <div className="bg-secondary text-white px-6 py-3 rounded-full shadow-lg font-bold text-lg">
               +{xpNotification.amount} XP
             </div>
           </div>
@@ -3138,14 +3566,14 @@ export default function PracticePage() {
 
         {/* Weekly Training Schedule - Horizontal 7-Day Row (Moved to Bottom) */}
         <div className="mb-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="bg-surface rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
             {/* Header with Collapse Toggle */}
             <div 
               className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition-colors"
               onClick={() => setScheduleExpanded(!scheduleExpanded)}
             >
               <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5" style={{ color: '#014421' }} />
+                <Calendar className="w-5 h-5 text-primary" />
                 <h2 className="text-lg font-semibold text-gray-900">Weekly Training Schedule</h2>
               </div>
               {scheduleExpanded ? (
@@ -3167,7 +3595,7 @@ export default function PracticePage() {
                     }}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                       viewMode === 'day'
-                        ? 'bg-[#014421] text-white'
+                        ? "bg-primary text-white"
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
@@ -3180,7 +3608,7 @@ export default function PracticePage() {
                     }}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                       viewMode === 'weekly'
-                        ? 'bg-[#014421] text-white'
+                        ? "bg-primary text-white"
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
@@ -3255,7 +3683,7 @@ export default function PracticePage() {
                       {totalCount > 0 && (
                         <div className="text-center mb-4">
                           <span className={`text-base font-semibold ${
-                            completedCount === totalCount ? 'text-green-600' : 'text-gray-600'
+                            completedCount === totalCount ? "text-primary" : "text-gray-600"
                           }`}>
                             {completedCount}/{totalCount} drills completed
                           </span>
@@ -3324,7 +3752,7 @@ export default function PracticePage() {
                             <h3 className="text-base font-semibold text-gray-900">{dayName}</h3>
                             {totalCount > 0 && (
                               <span className={`text-sm font-medium ${
-                                completedCount === totalCount ? 'text-green-600' : 'text-gray-600'
+                                completedCount === totalCount ? "text-primary" : "text-gray-600"
                               }`}>
                                 {completedCount}/{totalCount}
                               </span>
@@ -3381,10 +3809,10 @@ export default function PracticePage() {
 
         {/* Drill Library */}
         <div className="mb-6">
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5" style={{ color: '#014421' }} />
+                <FileText className="w-5 h-5 text-primary" />
                 <h3 className="text-lg font-semibold text-gray-900">Drill Library</h3>
               </div>
               <button
@@ -3413,11 +3841,11 @@ export default function PracticePage() {
 
         {/* Combine Tests */}
         <div className="mb-6">
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <Target className="w-5 h-5" style={{ color: '#014421' }} />
+                  <Target className="w-5 h-5 text-primary" />
                   <h3 className="text-lg font-semibold text-gray-900">Combine Tests</h3>
                 </div>
                 <p className="text-xs text-gray-600 mt-1">Tap a test to start a session</p>
@@ -3482,8 +3910,8 @@ export default function PracticePage() {
                           onClick={() => router.push(card.href)}
                           className={`flex min-h-[5.25rem] flex-col items-center justify-center gap-1 px-2 py-3 rounded-xl transition-all border-2 ${
                             isGauntlet
-                              ? "border-gray-900 bg-gray-900 text-white ring-2 ring-gray-900/20 ring-offset-2 ring-offset-white hover:border-[#FFA500] hover:bg-gray-800"
-                              : "bg-gray-50 border-gray-200 hover:border-[#FFA500] hover:bg-gray-100"
+                              ? "border-gray-900 bg-gray-900 text-white ring-2 ring-gray-900/20 ring-offset-2 ring-offset-surface hover:border-secondary hover:bg-gray-800"
+                              : "bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
                           }`}
                         >
                           <Target
@@ -3513,7 +3941,7 @@ export default function PracticePage() {
             onClick={() => setYoutubeModal({ open: false, url: '' })}
           >
             <div 
-              className="bg-white rounded-2xl p-4 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+              className="bg-surface rounded-2xl p-4 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">

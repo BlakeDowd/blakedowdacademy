@@ -18,7 +18,10 @@ export async function fetchDrillsCatalogRows(): Promise<Record<string, unknown>[
   }
 
   try {
-    const res = await fetch("/api/drills/catalog", { credentials: "same-origin" });
+    const res = await fetch("/api/drills/catalog", {
+      credentials: "same-origin",
+      cache: "no-store",
+    });
     if (!res.ok) return [];
     const json = (await res.json()) as { drills?: unknown; degraded?: boolean };
     if (json.degraded || !Array.isArray(json.drills)) return [];
@@ -40,6 +43,10 @@ export async function fetchDrillRowById(
     if (!error && data && typeof data === "object") {
       return data as Record<string, unknown>;
     }
+    const byCode = await sb.from("drills").select("*").eq("drill_id", id).maybeSingle();
+    if (!byCode.error && byCode.data && typeof byCode.data === "object") {
+      return byCode.data as Record<string, unknown>;
+    }
   } catch {
     /* ignore */
   }
@@ -47,7 +54,7 @@ export async function fetchDrillRowById(
   try {
     const res = await fetch(
       `/api/drills/catalog?id=${encodeURIComponent(id)}`,
-      { credentials: "same-origin" }
+      { credentials: "same-origin", cache: "no-store" }
     );
     if (!res.ok) return null;
     const json = (await res.json()) as {

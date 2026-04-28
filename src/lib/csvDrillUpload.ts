@@ -38,6 +38,7 @@ export interface DrillUpsertPayload {
   pdf_url: string | null;
   video_url: string | null;
   goal: string | null;
+  goal_reps: string | null;
   estimated_minutes: number;
   xp_value: number;
   drill_levels: string | null;
@@ -223,6 +224,7 @@ function toSupabasePayload(
     pdf_url: row.pdfUrl,
     video_url: row.youtubeUrl,
     goal: row.goal || null,
+    goal_reps: row.goal?.trim() ? row.goal.trim() : null,
     estimated_minutes: row.durationMinutes,
     xp_value: row.xp,
     drill_levels: drillLevels,
@@ -257,6 +259,7 @@ const DRILL_COLUMNS_WHEN_EMPTY = new Set([
   "pdf_url",
   "video_url",
   "goal",
+  "goal_reps",
   "estimated_minutes",
   "estimatedMinutes",
   "xp_value",
@@ -290,6 +293,7 @@ function filterDrillPayloadForSchema(
   if (colSet.has("pdf_url")) out.pdf_url = p.pdf_url;
   if (colSet.has("video_url")) out.video_url = p.video_url;
   if (colSet.has("goal")) out.goal = p.goal;
+  if (colSet.has("goal_reps")) out.goal_reps = p.goal_reps;
   if (colSet.has("estimated_minutes")) {
     out.estimated_minutes = p.estimated_minutes;
   } else if (colSet.has("estimatedMinutes")) {
@@ -327,9 +331,11 @@ export async function upsertDrillsFromCSV({
     throw new Error(`Failed to read drills schema: ${sampleError.message}`);
   }
 
+  // Union with known columns: if the table was created before `goal` / `drill_levels` existed, the
+  // sample row may omit them and we would otherwise strip those fields from every upsert (silent data loss).
   const colSet: Set<string> =
     sampleRows && sampleRows.length > 0
-      ? new Set(Object.keys(sampleRows[0] as object))
+      ? new Set([...Object.keys(sampleRows[0] as object), ...Array.from(DRILL_COLUMNS_WHEN_EMPTY)])
       : DRILL_COLUMNS_WHEN_EMPTY;
 
   const nameSelectFields = ["drill_name", "title"].filter((f) => colSet.has(f));

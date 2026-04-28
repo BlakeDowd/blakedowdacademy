@@ -9,6 +9,12 @@ import {
   userFacingDrillPersonalBestsError,
 } from "@/lib/drillPersonalBests";
 import { DESCRIPTION_BY_DRILL_ID, DESCRIPTION_BY_ID } from "@/data/official_drills";
+import {
+  effectiveGoalRepsString,
+  getTieredGoalItems,
+  tierLineDisplayBody,
+  type TierLabel,
+} from "@/lib/parseTieredGoal";
 
 export type FacilityType = 'Driving' | 'Irons' | 'Wedges' | 'Chipping' | 'Bunkers' | 'Putting' | 'Mental/Strategy' | 'On-Course';
 
@@ -16,6 +22,32 @@ interface DrillLevel {
   id: string;
   name: string;
   completed?: boolean;
+}
+
+function tierBadgeClasses(tier: TierLabel): string {
+  switch (tier) {
+    case "beginner":
+      return "bg-gray-100 text-gray-800 ring-gray-300";
+    case "intermediate":
+      return "bg-emerald-100 text-emerald-900 ring-emerald-200/80";
+    case "advanced":
+      return "bg-amber-100 text-amber-950 ring-amber-400/90";
+    default:
+      return "bg-slate-100 text-slate-800 ring-slate-200/80";
+  }
+}
+
+function tierBadgeLabel(tier: TierLabel): string {
+  switch (tier) {
+    case "beginner":
+      return "Beginner";
+    case "intermediate":
+      return "Intermediate";
+    case "advanced":
+      return "Advanced";
+    default:
+      return "Goal";
+  }
 }
 
 interface DrillCardProps {
@@ -35,6 +67,10 @@ interface DrillCardProps {
     levels?: DrillLevel[];
     facility?: FacilityType;
     goal?: string;
+    /** Preferred tiered Goal/Reps text from DB when set */
+    goal_reps?: string;
+    /** Catalog XP reward (`drills.xp_value`) — distinct from xpEarned */
+    xp_value?: number;
     isCombine?: boolean;
     combineHref?: string;
   };
@@ -81,6 +117,12 @@ export default function DrillCard({
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const isCompleted = drill.completed || false;
   const drillKey = useMemo(() => stableDrillKey(drill), [drill]);
+  const goalRepsForUi = useMemo(
+    () => effectiveGoalRepsString(drill.goal, drill.goal_reps),
+    [drill.goal, drill.goal_reps]
+  );
+  const catalogXp =
+    typeof drill.xp_value === "number" && Number.isFinite(drill.xp_value) ? drill.xp_value : undefined;
   /** Last value persisted in Supabase (drives “to beat” on collapsed card). */
   const [pbSavedAchievement, setPbSavedAchievement] = useState("");
   /** New entry only — not a copy of the saved record (cleared when you open this section). */
@@ -91,6 +133,35 @@ export default function DrillCard({
   const prevExpandedRef = useRef<boolean | null>(null);
 
   const shouldShowContent = isExpanded || justSwapped;
+
+  /** Always warn when empty so you can see missing DB/plan data in the console. */
+  useEffect(() => {
+    const hasGoal = goalRepsForUi !== "";
+    const hasLevels = Array.isArray(drill.levels) && drill.levels.length > 0;
+    if (!hasGoal && !hasLevels) {
+      console.warn("[DrillCard] Goal/Reps empty — nothing from DB/plan row:", {
+        id: drill.id,
+        drill_id: drill.drill_id ?? null,
+        title: drill.title,
+        goal: drill.goal ?? null,
+        goal_reps: drill.goal_reps ?? null,
+        levels: drill.levels ?? null,
+      });
+    }
+  }, [drill.id, drill.drill_id, drill.goal, drill.goal_reps, drill.levels, drill.title, goalRepsForUi]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development" || !shouldShowContent) return;
+    console.log("[DrillCard] Goal/Reps raw payload (expanded Daily Plan):", {
+      id: drill.id,
+      drill_id: drill.drill_id ?? null,
+      title: drill.title,
+      goal: drill.goal ?? null,
+      goal_reps: drill.goal_reps ?? null,
+      goalRepsForUi: goalRepsForUi || null,
+      levels: drill.levels ?? null,
+    });
+  }, [shouldShowContent, drill.id, drill.drill_id, drill.title, drill.goal, drill.goal_reps, drill.levels, goalRepsForUi]);
 
   // Load whenever the signed-in user opens this drill identity (not only when expanded) so
   // returning to the drill still shows what they saved to beat.
@@ -238,14 +309,54 @@ export default function DrillCard({
               </div>
             )}
             
-            <div className={`mt-1.5 flex items-center gap-2.5 ${compact ? "text-xs" : "text-sm"} text-gray-600`}>
+            <div className={`mt-1.5 flex flex-wrap items-center gap-2.5 ${compact ? "text-xs" : "text-sm"} text-gray-600`}>
               <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 font-semibold text-gray-700 ring-1 ring-gray-200">
                 <span>{drill.estimatedMinutes} min</span>
               </span>
+              {catalogXp !== undefined && (
+                <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 font-semibold tabular-nums text-amber-900 ring-1 ring-amber-200/80">
+                  {catalogXp} XP
+                </span>
+              )}
               {drill.xpEarned && drill.xpEarned > 0 && (
-                <span className="text-[#FFA500] font-semibold">+{drill.xpEarned} XP</span>
+                <span className="text-[#FFA500] font-semibold">+{drill.xpEarned} XP earned</span>
               )}
             </div>
+            {!compact && !isExpanded && (() => {
+              const g = goalRepsForUi;
+              const tiered = g ? getTieredGoalItems(g) : null;
+              const lv = drill.levels && drill.levels.length > 0
+                ? drill.levels.map((l) => l.name).join(" · ")
+                : "";
+              if (tiered && tiered.length > 0) {
+                return (
+                  <div className="mt-2 flex flex-wrap items-center gap-2" aria-label="Goal tiers">
+                    {tiered.slice(0, 6).map((item, i) => (
+                      <span
+                        key={i}
+                        className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wide ring-1 ${tierBadgeClasses(item.tier)}`}
+                      >
+                        {tierBadgeLabel(item.tier)}
+                      </span>
+                    ))}
+                    {tiered.length > 6 ? (
+                      <span className="text-[10px] text-slate-500">+{tiered.length - 6}</span>
+                    ) : null}
+                  </div>
+                );
+              }
+              const line = g || lv;
+              if (!line) return null;
+              return (
+                <p
+                  className="mt-2 line-clamp-2 text-left text-xs leading-normal text-slate-600 capitalize [text-wrap:balance]"
+                  title={g || lv}
+                >
+                  <span className="font-semibold text-slate-700 normal-case">Goal: </span>
+                  <span className="whitespace-pre-wrap">{line}</span>
+                </p>
+              );
+            })()}
           </div>
           
           {/* Expand/Collapse Button */}
@@ -272,16 +383,13 @@ export default function DrillCard({
           <div className={`border-t border-gray-200 ${compact ? "mt-2 pt-2 space-y-2" : "mt-2.5 pt-2.5 space-y-2.5"}`}>
             
             {/* Target/Category Details Moved Inside Expanded */}
-            <div className="space-y-1 mb-2">
-              {drill.goal && (
-                <p className="text-sm font-medium text-[#014421]">Goal/Reps: {drill.goal}</p>
-              )}
-              {drill.facility && facilityInfo && (
+            {drill.facility && facilityInfo && (
+              <div className="mb-2">
                 <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 ring-1 ring-gray-200">
                   {facilityInfo[drill.facility].label}
                 </span>
-              )}
-            </div>
+              </div>
+            )}
 
             <div className={`${compact ? "text-xs" : "text-sm"} text-gray-700 leading-relaxed whitespace-pre-wrap`}>
               <span className="font-semibold text-gray-900 block mb-1">Instructions:</span>
@@ -337,44 +445,95 @@ export default function DrillCard({
               )}
             </div>
             
-            {/* CORE UPGRADE: Goal/Reps heading and checklist */}
-            <div className="space-y-2">
-              <h5 className="text-sm font-semibold text-gray-900">Goal/Reps:</h5>
-              {drill.levels && drill.levels.length > 0 ? (
-                <div className="space-y-1.5">
-                  {drill.levels.map((level) => (
-                    <button
-                      key={level.id}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (actualDrillIndex !== -1) {
-                          onLevelToggle(dayIndex, actualDrillIndex, level.id, !level.completed);
-                        }
-                      }}
-                      className="flex items-center gap-2 w-full text-left hover:bg-gray-50 p-2 rounded transition-colors"
-                    >
-                      <div className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-                        level.completed
-                          ? 'bg-green-500 border-green-600'
-                          : 'bg-white border-gray-300 hover:border-green-500'
-                      }`}>
-                        {level.completed && (
-                          <Check className="w-3 h-3 text-white" />
-                        )}
-                      </div>
-                      <span className={`text-sm ${
-                        level.completed ? 'text-gray-500 line-through' : 'text-gray-700'
-                      }`}>
-                        {level.name}
+            {/* Goal/Reps: tier badges when Beginner/Intermediate/Advanced + split; else plain text or checklist */}
+            {(() => {
+              const goalText = goalRepsForUi;
+              const tieredItems = goalText ? getTieredGoalItems(goalText) : null;
+              const levels = drill.levels ?? [];
+              const showTierBadges = !!(tieredItems && tieredItems.length > 0);
+              const showChecklist =
+                !showTierBadges &&
+                (levels.length > 1 || (levels.length === 1 && !goalText));
+              const showEmpty = !goalText && !showTierBadges && !showChecklist;
+
+              return (
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h5 className="text-sm font-semibold tracking-tight text-gray-900">
+                      Goal / Reps
+                    </h5>
+                    {catalogXp !== undefined && (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold tabular-nums text-amber-950 ring-1 ring-amber-300/80">
+                        {catalogXp} XP
                       </span>
-                    </button>
-                  ))}
+                    )}
+                  </div>
+                  {showTierBadges && tieredItems ? (
+                    <div className="flex flex-col gap-3">
+                      {tieredItems.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className="flex w-full min-w-0 flex-col gap-2 rounded-xl border border-slate-200/90 bg-slate-50/80 px-3.5 py-3 sm:flex-row sm:items-start sm:gap-3"
+                        >
+                          <span
+                            className={`inline-flex w-fit shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-semibold leading-none tracking-wide ring-1 ${tierBadgeClasses(
+                              item.tier
+                            )} normal-case`}
+                          >
+                            {tierBadgeLabel(item.tier)}
+                          </span>
+                          <p className="min-w-0 flex-1 text-sm leading-relaxed text-slate-800 whitespace-pre-wrap [text-wrap:pretty] sm:text-right">
+                            {tierLineDisplayBody(item.line)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : goalText ? (
+                    <p className="text-sm leading-relaxed text-gray-800 whitespace-pre-wrap [text-wrap:pretty]">
+                      {goalText}
+                    </p>
+                  ) : null}
+                  {showChecklist ? (
+                    <div className="flex flex-col gap-2">
+                      {levels.map((level) => (
+                        <button
+                          key={level.id}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (actualDrillIndex !== -1) {
+                              onLevelToggle(dayIndex, actualDrillIndex, level.id, !level.completed);
+                            }
+                          }}
+                          className="flex items-start gap-2.5 w-full text-left hover:bg-gray-50 px-2.5 py-2 rounded-lg transition-colors"
+                        >
+                          <div
+                            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors ${
+                              level.completed
+                                ? "border-green-600 bg-green-500"
+                                : "border-gray-300 bg-white hover:border-green-500"
+                            }`}
+                          >
+                            {level.completed && <Check className="h-3 w-3 text-white" />}
+                          </div>
+                          <span
+                            className={`min-w-0 flex-1 text-sm capitalize leading-relaxed ${
+                              level.completed ? "text-gray-500 line-through" : "text-gray-700"
+                            }`}
+                          >
+                            {level.name}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : showEmpty ? (
+                    <p className="text-sm text-gray-500 italic">
+                      No goals or reps set for this drill
+                    </p>
+                  ) : null}
                 </div>
-              ) : (
-                <p className="text-sm text-gray-500 italic">No goals/reps set for this drill</p>
-              )}
-            </div>
+              );
+            })()}
 
             {userId && !drill.isCombine && (
               <div
