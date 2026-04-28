@@ -349,10 +349,10 @@ export default function DrillCard({
               if (!line) return null;
               return (
                 <p
-                  className="mt-2 line-clamp-2 text-left text-xs leading-normal text-slate-600 capitalize [text-wrap:balance]"
+                  className="mt-2 line-clamp-2 text-left text-xs leading-normal text-slate-600 [text-wrap:balance]"
                   title={g || lv}
                 >
-                  <span className="font-semibold text-slate-700 normal-case">Goal: </span>
+                  <span className="font-semibold text-slate-700">Goal: </span>
                   <span className="whitespace-pre-wrap">{line}</span>
                 </p>
               );
