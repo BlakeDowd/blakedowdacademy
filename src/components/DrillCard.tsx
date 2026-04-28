@@ -313,7 +313,7 @@ export default function DrillCard({
               <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 font-semibold text-gray-700 ring-1 ring-gray-200">
                 <span>{drill.estimatedMinutes} min</span>
               </span>
-              {catalogXp !== undefined && (
+              {catalogXp !== undefined && !shouldShowContent && (
                 <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 font-semibold tabular-nums text-amber-900 ring-1 ring-amber-200/80">
                   {catalogXp} XP
                 </span>
