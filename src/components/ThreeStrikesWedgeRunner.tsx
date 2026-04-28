@@ -130,7 +130,7 @@ export function ThreeStrikesWedgeRunner() {
   }, [hits, persisting, saved, user?.id]);
 
   const inputCls =
-    "w-full rounded-lg border-2 border-gray-200 bg-white px-3 py-3 text-lg text-gray-900 outline-none transition-[border-color,box-shadow] focus:border-[#014421] focus:ring-2 focus:ring-[#014421]/30";
+    "w-full rounded-lg border-2 border-gray-200 bg-surface px-3 py-3 text-lg text-gray-900 outline-none transition-[border-color,box-shadow] focus:border-primary focus:ring-2 focus:ring-primary/30";
 
   if (phase === "intro") {
     return (
@@ -149,7 +149,7 @@ export function ThreeStrikesWedgeRunner() {
         <button
           type="button"
           onClick={startGame}
-          className="w-full rounded-xl bg-[#014421] py-3 text-base font-semibold text-white transition-opacity hover:opacity-90"
+          className="w-full rounded-xl bg-primary py-3 text-base font-semibold text-white transition-opacity hover:opacity-90"
         >
           Start challenge
         </button>
@@ -160,8 +160,8 @@ export function ThreeStrikesWedgeRunner() {
   if (phase === "ended") {
     return (
       <div className="mt-6 space-y-6">
-        <div className="rounded-2xl border-2 border-red-200 bg-white p-6 shadow-sm">
-          <p className="text-center text-xs font-semibold uppercase tracking-wide text-red-600">Game Over</p>
+        <div className="rounded-2xl border-2 border-danger/35 bg-surface p-6 shadow-sm">
+          <p className="text-center text-xs font-semibold uppercase tracking-wide text-danger">Game Over</p>
           <p className="mt-3 text-center text-4xl font-bold tabular-nums text-gray-900">{hits}</p>
           <p className="mt-1 text-center text-sm text-gray-600">Total Hits</p>
 
@@ -170,9 +170,9 @@ export function ThreeStrikesWedgeRunner() {
               Sign in to submit your score to the leaderboard.
             </p>
           )}
-          {saveError && <p className="mt-4 text-center text-sm text-red-600">{saveError}</p>}
+          {saveError && <p className="mt-4 text-center text-sm text-danger">{saveError}</p>}
           {saved && (
-            <p className="mt-4 text-center text-sm font-medium text-green-700">
+            <p className="mt-4 text-center text-sm font-medium text-primary">
               Submitted to leaderboard.
             </p>
           )}
@@ -181,7 +181,7 @@ export function ThreeStrikesWedgeRunner() {
             type="button"
             onClick={() => void submitToLeaderboard()}
             disabled={!user?.id || persisting || saved}
-            className="mt-5 w-full rounded-xl bg-[#014421] py-3 text-base font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-5 w-full rounded-xl bg-primary py-3 text-base font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {persisting ? "Submitting..." : saved ? "Submitted" : "Submit to Leaderboard"}
           </button>
@@ -189,7 +189,7 @@ export function ThreeStrikesWedgeRunner() {
           <button
             type="button"
             onClick={startGame}
-            className="mt-3 w-full rounded-xl border-2 border-[#014421] bg-white py-3 text-base font-semibold text-[#014421] transition-colors hover:bg-[#014421]/5"
+            className="mt-3 w-full rounded-xl border-2 border-primary bg-surface py-3 text-base font-semibold text-primary transition-colors hover:bg-primary/5"
           >
             Play again
           </button>
@@ -200,12 +200,12 @@ export function ThreeStrikesWedgeRunner() {
 
   return (
     <div className="mt-6 space-y-6">
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="rounded-2xl border border-gray-200 bg-surface p-5 shadow-sm">
         <p className="text-center text-xs font-semibold uppercase tracking-wide text-gray-500">Current hits</p>
-        <p className="mt-2 text-center text-5xl font-bold tabular-nums text-[#014421]">{hits}</p>
+        <p className="mt-2 text-center text-5xl font-bold tabular-nums text-primary">{hits}</p>
       </div>
 
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="rounded-2xl border border-gray-200 bg-surface p-5 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Strikes</p>
         <div className="mt-3 flex items-center gap-3">
           {strikeSlots.map((filled, idx) => (
@@ -213,8 +213,8 @@ export function ThreeStrikesWedgeRunner() {
               key={`strike-${idx}`}
               className={`flex h-10 w-10 items-center justify-center rounded-full border-2 text-base font-bold ${
                 filled
-                  ? "border-red-500 bg-red-50 text-red-600"
-                  : "border-gray-300 bg-white text-gray-300"
+                  ? "border-danger bg-danger/10 text-danger"
+                  : "border-gray-300 bg-surface text-gray-300"
               }`}
               aria-label={filled ? `Strike ${idx + 1}` : `Strike slot ${idx + 1}`}
             >
@@ -226,7 +226,7 @@ export function ThreeStrikesWedgeRunner() {
 
       <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Current target</p>
-        <p className="mt-2 text-5xl font-bold tabular-nums text-[#014421]">{targetM.toFixed(1)} m</p>
+        <p className="mt-2 text-5xl font-bold tabular-nums text-primary">{targetM.toFixed(1)} m</p>
 
         <div className="mt-6 space-y-2">
           <label htmlFor="three-strikes-actual-m" className="text-sm font-medium text-gray-800">
@@ -248,7 +248,7 @@ export function ThreeStrikesWedgeRunner() {
           type="button"
           onClick={submitShot}
           disabled={!canSubmitShot}
-          className="mt-5 w-full rounded-xl bg-[#014421] py-3 text-base font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          className="mt-5 w-full rounded-xl bg-primary py-3 text-base font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Submit shot
         </button>

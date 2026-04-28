@@ -23,6 +23,7 @@ import {
   mergeIronSkillsIntoCombineProfile,
   parseIronSkillsFromCombineProfile,
 } from "@/lib/ironSkillsProfile";
+import { theme } from "@/lib/theme";
 
 type ShotRecord = {
   shotIndex: number;
@@ -66,7 +67,7 @@ function IronSkillsConfetti({ show }: { show: boolean }) {
         delay: Math.random() * 0.35,
         duration: 1.8 + Math.random() * 1.2,
         size: 6 + Math.random() * 8,
-        hue: ["#10b981", "#34d399", "#6ee7b7", "#059669", "#047857"][i % 5],
+        hue: [theme.primary, "#047857", "#059669", "#0f766e", "#065f46"][i % 5],
       })),
     [show],
   );
@@ -344,27 +345,27 @@ export default function IronSkillsChallengePage() {
   const levelTitle = ironSkillsLevelTitle(progressionLevel);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-lg px-4 py-6 pb-24">
         <Link
           href="/practice"
-          className="mb-6 inline-flex items-center gap-1 text-sm font-medium text-emerald-800/80 transition-colors hover:text-emerald-700"
+          className="mb-6 inline-flex items-center gap-1 text-sm font-medium text-primary/85 transition-colors hover:text-primary"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden />
           Back to Practice
         </Link>
 
         <header className="mb-6">
-          <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white px-4 py-4 shadow-sm ring-1 ring-emerald-100">
+          <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/[0.06] to-surface px-4 py-4 shadow-sm ring-1 ring-primary/15">
             <div className="flex items-start gap-3">
               <div
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-emerald-200 bg-white"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/25 bg-surface"
                 aria-hidden
               >
-                <Crosshair className="h-5 w-5 text-emerald-700" />
+                <Crosshair className="h-5 w-5 text-primary" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-emerald-700">
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
                   Level {progressionLevel}: {levelTitle}
                 </p>
                 <h1 className="mt-1 text-2xl font-bold tracking-tight text-gray-900">
@@ -385,28 +386,28 @@ export default function IronSkillsChallengePage() {
           <p className="mb-4 text-center text-sm text-gray-500">Loading your progression…</p>
         )}
 
-        <div className="mb-6 rounded-2xl border border-emerald-100 bg-emerald-50/40 px-4 py-3 ring-1 ring-emerald-100/80">
-          <div className="flex items-center justify-between text-sm font-medium text-emerald-950">
+        <div className="mb-6 rounded-2xl border border-primary/15 bg-primary/[0.04] px-4 py-3 ring-1 ring-primary/15">
+          <div className="flex items-center justify-between text-sm font-medium text-primary">
             <span>
               Shot {currentShotNumber} of {IRON_SKILLS_SESSION_SHOTS}
             </span>
             <span className="tabular-nums">
-              Live score: <span className="text-emerald-800">{liveScore}</span> / 100
+              Live score: <span className="text-primary">{liveScore}</span> / 100
             </span>
           </div>
           {onTrackForLevelUp && (
-            <p className="mt-2 text-xs font-medium text-emerald-800/85">
+            <p className="mt-2 text-xs font-medium text-primary/90">
               On track for Level Up — {IRON_SKILLS_LEVEL_THRESHOLD}+ pts can unlock your next progression
               step.
             </p>
           )}
           {levelThresholdSecured && (
-            <p className="mt-2 text-xs font-semibold text-emerald-900">
+            <p className="mt-2 text-xs font-semibold text-primary">
               Threshold secured — promotion eligible on submit (if not already max level).
             </p>
           )}
           <div
-            className="mt-2 h-2.5 overflow-hidden rounded-full bg-white ring-1 ring-emerald-100"
+            className="mt-2 h-2.5 overflow-hidden rounded-full bg-surface ring-1 ring-primary/15"
             role="progressbar"
             aria-valuenow={sessionRows.length}
             aria-valuemin={0}
@@ -414,7 +415,7 @@ export default function IronSkillsChallengePage() {
             aria-label="Session progress"
           >
             <div
-              className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600 transition-[width] duration-300 ease-out"
+              className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
               style={{
                 width: `${(sessionRows.length / IRON_SKILLS_SESSION_SHOTS) * 100}%`,
               }}
@@ -426,30 +427,30 @@ export default function IronSkillsChallengePage() {
           type="button"
           onClick={runShuffle}
           disabled={!canGenerate}
-          className="mb-6 w-full rounded-2xl border-2 border-emerald-600 bg-emerald-600 px-5 py-4 text-base font-semibold text-white shadow-md shadow-emerald-900/10 transition hover:bg-emerald-700 hover:border-emerald-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:shadow-none"
+          className="mb-6 w-full rounded-2xl border-2 border-primary bg-primary px-5 py-4 text-base font-semibold text-white shadow-md shadow-primary/15 transition hover:bg-primary/90 hover:border-primary/90 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:shadow-none"
         >
           {shuffling ? "Shuffling…" : "Generate Challenge"}
         </button>
 
         <section
-          className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm ring-1 ring-gray-100"
+          className="rounded-2xl border border-gray-200 bg-surface p-6 shadow-sm ring-1 ring-gray-100"
           aria-live="polite"
         >
           {!activeCard && !sessionComplete && profileLoaded && (
             <p className="text-center text-sm text-gray-500">
-              Tap <span className="font-semibold text-emerald-800">Generate Challenge</span> to draw your
+              Tap <span className="font-semibold text-primary">Generate Challenge</span> to draw your
               next prescription.
             </p>
           )}
 
           {sessionComplete && !saved && (
-            <p className="text-center text-sm font-medium text-emerald-800">
+            <p className="text-center text-sm font-medium text-primary">
               Session complete — submit your score below.
             </p>
           )}
 
           {saved && !celebratePromotion && (
-            <p className="text-center text-sm font-medium text-emerald-800">
+            <p className="text-center text-sm font-medium text-primary">
               Saved to your practice log. Head back anytime for another round.
             </p>
           )}
@@ -458,7 +459,7 @@ export default function IronSkillsChallengePage() {
             <div className="space-y-6">
               {activeCard.entries.map((entry) => (
                 <div key={entry.categoryKey}>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700/90">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-primary/90">
                     {entry.categoryLabel}
                   </p>
                   <p
@@ -478,7 +479,7 @@ export default function IronSkillsChallengePage() {
               type="button"
               onClick={() => recordShot(IRON_SKILLS_POINTS_PER_MAKE)}
               disabled={!displayChallenge || shuffling}
-              className="rounded-2xl border-2 border-emerald-500 bg-emerald-50 px-4 py-4 text-center text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-400"
+              className="rounded-2xl border-2 border-primary bg-primary/10 px-4 py-4 text-center text-sm font-semibold text-primary transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-400"
             >
               Execution Complete ✅
               <span className="mt-1 block text-xs font-normal opacity-90">
@@ -489,36 +490,34 @@ export default function IronSkillsChallengePage() {
               type="button"
               onClick={() => recordShot(0)}
               disabled={!displayChallenge || shuffling}
-              className="rounded-2xl border-2 border-gray-200 bg-gray-50 px-4 py-4 text-center text-sm font-semibold text-gray-800 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-400"
+              className="rounded-2xl border-2 border-danger bg-danger/5 px-4 py-4 text-center text-sm font-semibold text-danger transition hover:bg-danger/10 disabled:cursor-not-allowed disabled:border-gray-100 disabled:bg-gray-50 disabled:text-gray-400"
             >
               Failed ❌
-              <span className="mt-1 block text-xs font-normal text-gray-600">0 pts</span>
+              <span className="mt-1 block text-xs font-normal text-danger/80">0 pts</span>
             </button>
           </div>
         )}
 
         {sessionComplete && !saved && (
           <div
-            className={`mt-8 space-y-3 rounded-2xl p-1 transition-colors duration-300 ${
-              qualifiesForPromotion
-                ? "bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-600 p-[3px] shadow-lg shadow-emerald-600/25"
-                : ""
+            className={`mt-8 space-y-3 rounded-2xl transition-colors duration-300 ${
+              qualifiesForPromotion ? "ring-2 ring-primary shadow-lg shadow-primary/20 p-4" : ""
             }`}
           >
-            <div className={qualifiesForPromotion ? "rounded-[13px] bg-white p-4" : ""}>
+            <div>
               {submitError && (
-                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                <p className="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger">
                   {submitError}
                 </p>
               )}
               {qualifiesForPromotion && progressionLevel < IRON_SKILLS_MAX_PROGRESSION_LEVEL && (
-                <p className="mb-3 text-center text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                <p className="mb-3 text-center text-xs font-semibold uppercase tracking-wide text-primary">
                   Ready to promote — meet {IRON_SKILLS_LEVEL_THRESHOLD}+ to unlock Level{" "}
                   {progressionLevel + 1}
                 </p>
               )}
               {qualifiesForPromotion && progressionLevel >= IRON_SKILLS_MAX_PROGRESSION_LEVEL && (
-                <p className="mb-3 text-center text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                <p className="mb-3 text-center text-xs font-semibold uppercase tracking-wide text-primary">
                   Master tier session — score still saves for your log
                 </p>
               )}
@@ -528,8 +527,8 @@ export default function IronSkillsChallengePage() {
                 disabled={submitting || !user?.id}
                 className={`w-full rounded-2xl border-2 px-5 py-4 text-base font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400 ${
                   qualifiesForPromotion
-                    ? "border-emerald-600 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-emerald-900/20 hover:from-emerald-600 hover:to-emerald-700"
-                    : "border-emerald-600 bg-white text-emerald-800 hover:bg-emerald-50"
+                    ? "border-primary bg-primary text-white shadow-primary/20 hover:bg-primary/90"
+                    : "border-primary bg-surface text-primary hover:bg-primary/5"
                 }`}
               >
                 {submitting
@@ -560,12 +559,12 @@ export default function IronSkillsChallengePage() {
             >
               <IronSkillsConfetti show={celebratePromotion} />
               <motion.div
-                className="relative z-[72] max-w-md rounded-3xl border-2 border-emerald-300 bg-white px-8 py-10 text-center shadow-2xl shadow-emerald-900/20"
+                className="relative z-[72] max-w-md rounded-3xl border-2 border-primary/35 bg-surface px-8 py-10 text-center shadow-2xl shadow-primary/20"
                 initial={{ scale: 0.92, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ type: "spring", damping: 22, stiffness: 280 }}
               >
-                <div className="mb-4 inline-flex rounded-full border-2 border-emerald-500 bg-emerald-600 px-5 py-2 text-[11px] font-black uppercase tracking-[0.28em] text-white shadow-md">
+                <div className="mb-4 inline-flex rounded-full border-2 border-primary bg-primary px-5 py-2 text-[11px] font-black uppercase tracking-[0.28em] text-white shadow-md">
                   {celebrationPayload?.unlockedNextTier ? "LEVEL UP" : "THRESHOLD MET"}
                 </div>
                 <h2
@@ -583,7 +582,7 @@ export default function IronSkillsChallengePage() {
                   .
                 </p>
                 {celebrationPayload?.unlockedNextTier ? (
-                  <p className="mt-3 text-base font-semibold text-emerald-800">
+                  <p className="mt-3 text-base font-semibold text-primary">
                     Unlocked Level {clampProgressionLevel(celebrationPayload.scoredAtLevel + 1)}:{" "}
                     {ironSkillsLevelTitle(celebrationPayload.scoredAtLevel + 1)}
                   </p>
@@ -606,7 +605,7 @@ export default function IronSkillsChallengePage() {
                   <button
                     type="button"
                     onClick={resetSession}
-                    className="rounded-xl border-2 border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                    className="rounded-xl border-2 border-primary bg-primary px-5 py-3 text-sm font-semibold text-white transition hover:bg-primary/90"
                   >
                     Play another round
                   </button>

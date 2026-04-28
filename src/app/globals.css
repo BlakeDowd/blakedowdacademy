@@ -1,17 +1,27 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
+  /* App theme — keep in sync with src/lib/theme.ts */
+  --background: #f9fafb;
   --foreground: #171717;
-  --forest-green: #014421;
-  --gold: #FFA500;
-  --brand-green: #014421;
-  --brand-gold: #FFA500;
+  --surface: #ffffff;
+  --primary: #065f46;
+  --secondary: #f59e0b;
+  --danger: #dc2626;
+  /* Legacy aliases */
+  --forest-green: var(--primary);
+  --gold: var(--secondary);
+  --brand-green: var(--primary);
+  --brand-gold: var(--secondary);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -155,8 +165,8 @@ input[type="range"]::-webkit-slider-thumb {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #FFA500;
-  border: 2px solid #014421;
+  background: var(--secondary);
+  border: 2px solid var(--primary);
   cursor: pointer;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   position: relative;
@@ -167,8 +177,8 @@ input[type="range"]::-moz-range-thumb {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #FFA500;
-  border: 2px solid #014421;
+  background: var(--secondary);
+  border: 2px solid var(--primary);
   cursor: pointer;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   position: relative;
