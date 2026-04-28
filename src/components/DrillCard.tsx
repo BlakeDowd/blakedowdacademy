@@ -313,7 +313,8 @@ export default function DrillCard({
               <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 font-semibold text-gray-700 ring-1 ring-gray-200">
                 <span>{drill.estimatedMinutes} min</span>
               </span>
-              {catalogXp !== undefined && !shouldShowContent && (
+              {/* Always next to duration so XP stays visible when expanded (Goal/Reps is below the fold on desktop) */}
+              {catalogXp !== undefined && (
                 <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 font-semibold tabular-nums text-amber-900 ring-1 ring-amber-200/80">
                   {catalogXp} XP
                 </span>
@@ -445,16 +446,9 @@ export default function DrillCard({
 
               return (
                 <div className="flex flex-col gap-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h5 className="text-sm font-semibold tracking-tight text-gray-900">
-                      Goal / Reps
-                    </h5>
-                    {catalogXp !== undefined && (
-                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold tabular-nums text-amber-950 ring-1 ring-amber-300/80">
-                        {catalogXp} XP
-                      </span>
-                    )}
-                  </div>
+                  <h5 className="text-sm font-semibold tracking-tight text-gray-900">
+                    Goal / Reps
+                  </h5>
                   {showTierBadges && tieredItems ? (
                     <div className="flex flex-col gap-3">
                       {tieredItems.map((item, idx) => (
