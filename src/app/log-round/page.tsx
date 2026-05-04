@@ -153,10 +153,19 @@ interface RoundData {
   doubleChips: number;
   
   // Putting Card
+  /** Stored as a number (may be fractional); entry uses text state so decimals type cleanly. */
   totalPutts: number;
   threePutts: number;
   made6ftAndIn: number;
   puttsUnder6ftAttempts: number; // Total attempts from < 6ft
+}
+
+/** Parse a text field to a finite number, or null when empty / incomplete / invalid. */
+function optionalNumberFromInput(value: string): number | null {
+  const t = value.trim();
+  if (t === "" || t === "." || t === "-") return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
 }
 
 export default function LogRoundPage() {
@@ -198,6 +207,11 @@ export default function LogRoundPage() {
     made6ftAndIn: 0,
     puttsUnder6ftAttempts: 0,
   });
+
+  /** Controlled strings so values like `83.` stay editable while still syncing numeric `roundData`. */
+  const [scoreText, setScoreText] = useState("");
+  const [handicapText, setHandicapText] = useState("");
+  const [totalPuttsText, setTotalPuttsText] = useState("");
 
   const [showAdvancedApproachMatrix, setShowAdvancedApproachMatrix] = useState(false);
   const [selectedApproachHole, setSelectedApproachHole] = useState(1);
@@ -324,6 +338,7 @@ export default function LogRoundPage() {
   };
 
   const clearPutting = () => {
+    setTotalPuttsText("");
     setRoundData(prev => ({
       ...prev,
       totalPutts: 0,
@@ -333,7 +348,7 @@ export default function LogRoundPage() {
     }));
   };
 
-  const handleSaveRound = async () => {
+  const saveRound = async () => {
     // Validate required fields
     if (!roundData.course || roundData.score === null || roundData.totalPutts === 0) {
       alert('Please fill in all required fields (Course, Score, Total Putts)');
@@ -580,10 +595,14 @@ export default function LogRoundPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Handicap</label>
                   <input
-                    type="number"
-                    step="0.1"
-                    value={roundData.handicap !== null ? roundData.handicap : ''}
-                    onChange={(e) => updateField('handicap', e.target.value ? parseFloat(e.target.value) : null)}
+                    type="text"
+                    inputMode="decimal"
+                    value={handicapText}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setHandicapText(raw);
+                      updateField("handicap", optionalNumberFromInput(raw));
+                    }}
                     placeholder="0.0"
                     className="w-full px-4 py-3 rounded-xl border-2 focus:outline-none transition-colors"
                     style={{ 
@@ -615,10 +634,14 @@ export default function LogRoundPage() {
                     <InfoBubble content="Total gross score for the round." />
                   </div>
                   <input
-                    type="number"
-                    step="0.1"
-                    value={roundData.score !== null ? roundData.score : ''}
-                    onChange={(e) => updateField('score', e.target.value ? parseFloat(e.target.value) : null)}
+                    type="text"
+                    inputMode="decimal"
+                    value={scoreText}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setScoreText(raw);
+                      updateField("score", optionalNumberFromInput(raw));
+                    }}
                     placeholder="0"
                     className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#FFA500] focus:outline-none text-gray-900"
                   />
@@ -1801,34 +1824,29 @@ export default function LogRoundPage() {
                   />
                 </div>
                 <div className={ROUND_STEP_ROW}>
-                  <button
-                    type="button"
-                    onClick={() => updateField("totalPutts", Math.max(0, roundData.totalPutts - 1))}
-                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    aria-label="Total putts"
+                    value={totalPuttsText}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setTotalPuttsText(raw);
+                      const t = raw.trim();
+                      if (t === "") {
+                        updateField("totalPutts", 0);
+                        return;
+                      }
+                      const n = Number(t);
+                      updateField("totalPutts", Number.isFinite(n) ? Math.max(0, n) : 0);
+                    }}
+                    placeholder="0"
+                    className="min-w-0 max-w-[5.5rem] rounded-lg border-2 border-gray-200 bg-white px-1 py-1.5 text-center text-[1.4rem] font-bold tabular-nums text-gray-900 sm:text-2xl"
                     style={{
                       borderColor: roundData.totalPutts > 0 ? "#014421" : "#D1D5DB",
                       color: roundData.totalPutts > 0 ? "#014421" : "#6B7280",
                     }}
-                  >
-                    <Minus className="h-5 w-5" />
-                  </button>
-                  <span
-                    className={ROUND_COUNTER_VALUE}
-                    style={{ color: roundData.totalPutts > 0 ? "#014421" : "#111827" }}
-                  >
-                    {roundData.totalPutts}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => updateField("totalPutts", roundData.totalPutts + 1)}
-                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                    style={{
-                      borderColor: roundData.totalPutts > 0 ? "#014421" : "#D1D5DB",
-                      color: roundData.totalPutts > 0 ? "#014421" : "#6B7280",
-                    }}
-                  >
-                    <Plus className="h-5 w-5" />
-                  </button>
+                  />
                 </div>
               </div>
 
@@ -1993,7 +2011,7 @@ export default function LogRoundPage() {
 
           {/* Save Button */}
           <button
-            onClick={handleSaveRound}
+            onClick={saveRound}
             disabled={!isRequiredFilled || isSaving}
             className="w-full py-4 rounded-xl text-lg font-semibold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg mb-6"
             style={{ backgroundColor: '#FFA500' }}
