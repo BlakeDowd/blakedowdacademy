@@ -53,34 +53,67 @@ interface Module {
 }
 
 const FALLBACK_LESSONS: Lesson[] = [
-  { id: "1", title: "Mastering Your Short Game", type: "video", description: "Learn chipping and putting.", source: "https://www.youtube.com/embed/dQw4w9WgXcQ", chapter_name: "Putting Foundations", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 1, duration: "8:42", xpValue: 50 },
-  { id: "2", title: "The Pendulum Stroke", type: "video", description: "The pendulum stroke technique.", source: "https://www.youtube.com/embed/dQw4w9WgXcQ", chapter_name: "Putting Foundations", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 2, duration: "5:20", xpValue: 30 },
+  { id: "1", title: "Mastering Your Short Game", type: "video", description: "Learn chipping and putting.", source: "", chapter_name: "Putting Foundations", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 1, duration: "8:42", xpValue: 50 },
+  { id: "2", title: "The Pendulum Stroke", type: "video", description: "The pendulum stroke technique.", source: "", chapter_name: "Putting Foundations", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 2, duration: "5:20", xpValue: 30 },
   { id: "3", title: "Putting Practice Routine", type: "drill", description: "A 30-day putting routine.", source: `Focus on stance and grip.`, chapter_name: "Chipping Basics", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 3, xpValue: 75 },
   { id: "4", title: "Short Game Quiz", type: "quiz", description: "Test your knowledge.", source: "", chapter_name: "Chipping Basics", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 4, xpValue: 100 },
 ];
+
+/** Placeholder YouTube IDs (e.g. joke embeds) — show “coming soon” instead. */
+const PLACEHOLDER_YOUTUBE_VIDEO_IDS = new Set(["dQw4w9WgXcQ"]);
+
+function extractYoutubeVideoId(source: string): string | null {
+  if (!source) return null;
+  if (source.includes("youtube.com/embed/")) {
+    return source.split("youtube.com/embed/")[1]?.split("?")[0] || null;
+  }
+  if (source.includes("youtu.be/")) {
+    return source.split("youtu.be/")[1]?.split("?")[0] || null;
+  }
+  if (source.includes("youtube.com/watch")) {
+    const m = source.match(/[?&]v=([^&]+)/);
+    return m?.[1] ?? null;
+  }
+  return null;
+}
+
+function isPlayableVideoSource(source: string | undefined | null): boolean {
+  const id = source ? extractYoutubeVideoId(source) : null;
+  if (!id) return false;
+  return !PLACEHOLDER_YOUTUBE_VIDEO_IDS.has(id);
+}
+
+function resolveYoutubeEmbedUrl(source: string): string | null {
+  if (!isPlayableVideoSource(source)) return null;
+  const id = extractYoutubeVideoId(source);
+  return id ? `https://www.youtube.com/embed/${id}` : null;
+}
+
+function getThumbnailUrl(source: string) {
+  if (!isPlayableVideoSource(source)) return null;
+  const id = extractYoutubeVideoId(source);
+  return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
+}
+
+function VideoComingSoon() {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-gradient-to-b from-gray-900 to-black px-6 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10">
+        <Video className="h-7 w-7 text-gray-400" aria-hidden />
+      </div>
+      <p className="text-lg font-semibold text-white">Video Coming Soon</p>
+      <p className="max-w-xs text-sm text-gray-400">
+        This lesson video is being prepared. You can still read the notes below.
+      </p>
+    </div>
+  );
+}
 
 /** Shown in the header on the main library screen and in lesson breadcrumbs. */
 const ONLINE_LEARNING_LIBRARY = "Online Learning Library";
 const COURSE_TITLE = "Golf Fundamentals Course";
 const CATEGORIES = ["All", "Driving", "Short Game", "Putting", "Irons", "Mental"];
 const HERO_IMAGE = "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?q=80&w=1200&auto=format&fit=crop";
-
-function getThumbnailUrl(source: string) {
-  if (!source) return null;
-  if (source.includes("youtube.com/embed/")) {
-    const id = source.split("youtube.com/embed/")[1]?.split("?")[0];
-    return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
-  }
-  if (source.includes("youtu.be/")) {
-    const id = source.split("youtu.be/")[1]?.split("?")[0];
-    return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
-  }
-  if (source.includes("youtube.com/watch")) {
-    const m = source.match(/[?&]v=([^&]+)/);
-    return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
-  }
-  return null;
-}
 
 function getLessonTypeTag(type: LessonType) {
   if (type === "video") return { label: "Video", icon: Video };
@@ -339,20 +372,10 @@ function LibraryPageContent() {
     return <Circle className="w-4 h-4 text-gray-300" aria-hidden="true" />;
   };
 
-  const videoUrl = (() => {
-    if (!activeLesson || activeLesson.type !== "video") return null;
-    let u = activeLesson.source || "";
-    if (u.includes("youtu.be/")) {
-      const id = u.split("youtu.be/")[1]?.split("?")[0];
-      return id ? `https://www.youtube.com/embed/${id}` : null;
-    }
-    if (u.includes("youtube.com/watch")) {
-      const m = u.match(/[?&]v=([^&]+)/);
-      return m ? `https://www.youtube.com/embed/${m[1]}` : null;
-    }
-    if (u.includes("youtube.com/embed/")) return u;
-    return u || null;
-  })();
+  const videoUrl =
+    activeLesson && activeLesson.type === "video"
+      ? resolveYoutubeEmbedUrl(activeLesson.source || "")
+      : null;
 
   const totalXP = useMemo(() => {
     return flatLessons
@@ -690,9 +713,12 @@ function LibraryPageContent() {
               <div className="flex flex-col gap-3">
                 {modules.map(mod => {
                   const firstLesson = mod.lessons.find(l => l.type === "video") || mod.lessons[0];
-                  const thumbUrl = firstLesson && firstLesson.type === "video"
-                    ? getThumbnailUrl(firstLesson.source)
-                    : HERO_IMAGE;
+                  const thumbUrl =
+                    firstLesson &&
+                    firstLesson.type === "video" &&
+                    isPlayableVideoSource(firstLesson.source)
+                      ? getThumbnailUrl(firstLesson.source)
+                      : HERO_IMAGE;
                   const chapterCount = mod.chapters.length;
                   return (
                     <button
@@ -844,6 +870,8 @@ function LibraryPageContent() {
                     [Video: {activeLesson.title}]
                   </div>
                 </>
+              ) : activeLesson.type === "video" ? (
+                <VideoComingSoon />
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-gray-900">
                   {activeLesson.type === "quiz" ? (

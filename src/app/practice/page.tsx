@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File } from "lucide-react";
+import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus } from "lucide-react";
 import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
 import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
@@ -98,6 +98,11 @@ interface Drill {
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const DAY_ABBREVIATIONS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+/** Shared expand/collapse control for the five practice page sections. */
+const PRACTICE_SECTION_TOGGLE_BTN =
+  "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-white/90 shadow-sm transition hover:bg-stone-50/90";
+const PRACTICE_SECTION_TOGGLE_ICON = "h-3.5 w-3.5 text-stone-500";
 
 /** Catalog rows often omit duration; scheduling still needs a block length to fill slider time. */
 const DEFAULT_DRILL_DURATION_MINUTES = 30;
@@ -576,10 +581,14 @@ export default function PracticePage() {
   const [freestyleExpanded, setFreestyleExpanded] = useState<boolean>(false);
   const [drillLibraryExpanded, setDrillLibraryExpanded] = useState<boolean>(false);
   const [combineTestsExpanded, setCombineTestsExpanded] = useState<boolean>(false);
-  const [onCourseConfirm, setOnCourseConfirm] = useState<{ open: boolean; duration: number; label: string }>({
+  const [onCourseConfirm, setOnCourseConfirm] = useState<{
+    open: boolean;
+    holes: number;
+    label: string;
+  }>({
     open: false,
-    duration: 0,
-    label: '',
+    holes: 9,
+    label: "",
   });
   const [clearDrillConfirm, setClearDrillConfirm] = useState<{
     open: boolean;
@@ -594,6 +603,8 @@ export default function PracticePage() {
   });
   const [totalPracticeMinutes, setTotalPracticeMinutes] = useState<number>(0);
   const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(false); // Weekly schedule expanded state
+  const weeklyScheduleRef = useRef<HTMLDivElement>(null);
+  const combineTestsRef = useRef<HTMLDivElement>(null);
   // SINGLE DAY VIEW: Initialize to today's day index
   const getTodayDayIndex = () => {
     const today = new Date();
@@ -670,6 +681,35 @@ export default function PracticePage() {
       setUserName('');
     }
   }, [user?.fullName, user?.email]);
+
+  /** Home shortcuts: open weekly schedule or combine tests and scroll into view. */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const plan = params.get("plan");
+    if (plan !== "schedule" && plan !== "combine") return;
+
+    let scrollTimer: number | undefined;
+
+    if (plan === "schedule") {
+      setScheduleExpanded(true);
+      setCurrentDayView(getTodayDayIndex());
+      scrollTimer = window.setTimeout(() => {
+        weeklyScheduleRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 200);
+    }
+
+    if (plan === "combine") {
+      setCombineTestsExpanded(true);
+      scrollTimer = window.setTimeout(() => {
+        combineTestsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 200);
+    }
+
+    return () => {
+      if (scrollTimer != null) window.clearTimeout(scrollTimer);
+    };
+  }, []);
   
   // Handle name editing
   const handleEditName = () => {
@@ -749,6 +789,21 @@ export default function PracticePage() {
   const freestyleDurationOptions: number[] = [15, 30, 45, 60, 90, 120];
 
   const freestyleXpForMinutes = (minutes: number) => Math.floor(minutes / 10) * 10;
+
+  /** On-course freestyle rounds: 15 minutes and XP scaled per hole played. */
+  const ON_COURSE_MINUTES_PER_HOLE = 15;
+  const ON_COURSE_MIN_HOLES = 1;
+  const ON_COURSE_MAX_HOLES = 18;
+  const ON_COURSE_HOLE_PRESETS = [1, 3, 6, 9, 12, 15, 18] as const;
+
+  const onCourseMinutesForHoles = (holes: number) => holes * ON_COURSE_MINUTES_PER_HOLE;
+
+  const closeOnCourseConfirm = () => {
+    setOnCourseConfirm({ open: false, holes: 9, label: "" });
+  };
+
+  const clampOnCourseHoles = (holes: number) =>
+    Math.min(ON_COURSE_MAX_HOLES, Math.max(ON_COURSE_MIN_HOLES, Math.round(holes)));
 
   // Initialize weekly plan and load from database (DATA JOIN: practice table + drills table)
   useEffect(() => {
@@ -1605,13 +1660,18 @@ export default function PracticePage() {
   };
 
   // Log freestyle practice session
-  const logFreestylePractice = async (facility: FacilityType, duration: number) => {
+  const logFreestylePractice = async (
+    facility: FacilityType,
+    duration: number,
+    options?: { holes?: number },
+  ) => {
     if (typeof window === 'undefined') return;
 
     // Safety Check: Ensure user_id is being pulled from the auth user so it knows it's me logging the session
     if (!user?.id) {
       alert('Please log in to log practice sessions.');
       setDurationModal({ open: false, facility: null });
+      closeOnCourseConfirm();
       return;
     }
 
@@ -1632,6 +1692,7 @@ export default function PracticePage() {
         );
       }
       setDurationModal({ open: false, facility: null });
+      closeOnCourseConfirm();
       return;
     }
 
@@ -1646,6 +1707,15 @@ export default function PracticePage() {
       const facilityLabel = facilityInfo[facility].label;
       const timestamp = new Date().toISOString();
       const practiceDate = timestamp.split('T')[0];
+      const holesPlayed = options?.holes;
+      const notes =
+        facility === "On-Course" && holesPlayed != null
+          ? `${facilityLabel} — ${holesPlayed} hole${holesPlayed === 1 ? "" : "s"} (${duration} minutes)`
+          : `${facilityLabel} Practice - ${duration} minutes`;
+      const activityTitle =
+        facility === "On-Course" && holesPlayed != null
+          ? `${facilityLabel} — ${holesPlayed} hole${holesPlayed === 1 ? "" : "s"}`
+          : `${facilityLabel} Practice`;
 
       // Target Table: In the handleSubmit or savePractice function, change the table name to practice
       // Match Columns: Ensure it is sending exactly these fields: user_id, type, duration_minutes, and notes
@@ -1655,7 +1725,7 @@ export default function PracticePage() {
           user_id: user.id, // Safety Check: user_id from auth user
           type: facility, // Match Columns: type field (e.g., 'home', 'range-mat', 'putting-green')
           duration_minutes: duration, // Match Columns: duration_minutes field
-          notes: `${facilityLabel} Practice - ${duration} minutes`, // Match Columns: notes field
+          notes: notes, // Match Columns: notes field
         })
         .select();
 
@@ -1663,6 +1733,7 @@ export default function PracticePage() {
         console.error('Error saving practice session:', error);
         alert('Failed to save practice session. Please try again.');
         setDurationModal({ open: false, facility: null });
+        closeOnCourseConfirm();
         return;
       }
 
@@ -1705,7 +1776,7 @@ export default function PracticePage() {
       activityHistory.push({
         id: `freestyle-${facility}-${Date.now()}-${Math.random()}`,
         type: 'practice',
-        title: `${facilityLabel} Practice`,
+        title: activityTitle,
         date: practiceDate,
         timestamp: timestamp,
         xp: xpEarned,
@@ -1737,10 +1808,12 @@ export default function PracticePage() {
 
       // Close modal
       setDurationModal({ open: false, facility: null });
+      closeOnCourseConfirm();
     } catch (error) {
       console.error('Error in logFreestylePractice:', error);
       alert('Failed to save practice session. Please try again.');
       setDurationModal({ open: false, facility: null });
+      closeOnCourseConfirm();
     }
   };
 
@@ -3330,16 +3403,16 @@ export default function PracticePage() {
               <button
                 type="button"
                 onClick={() => setCoachInsightsExpanded((prev) => !prev)}
-                className="flex items-center justify-center rounded-lg border border-stone-200 bg-white/90 px-2.5 py-2 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50/90"
+                className={PRACTICE_SECTION_TOGGLE_BTN}
                 aria-expanded={coachInsightsExpanded}
                 aria-controls="coach-insights-content"
                 aria-label={coachInsightsExpanded ? "Collapse coach insights" : "Expand coach insights"}
                 title={coachInsightsExpanded ? "Collapse coach insights" : "Expand coach insights"}
               >
                 {coachInsightsExpanded ? (
-                  <ChevronUp className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                  <ChevronUp className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
                 ) : (
-                  <ChevronDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                  <ChevronDown className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
                 )}
               </button>
             </div>
@@ -3371,16 +3444,16 @@ export default function PracticePage() {
               <button
                 type="button"
                 onClick={() => setFreestyleExpanded((prev) => !prev)}
-                className="flex items-center justify-center rounded-lg border border-stone-200 bg-white/90 px-2.5 py-2 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50/90"
+                className={PRACTICE_SECTION_TOGGLE_BTN}
                 aria-expanded={freestyleExpanded}
                 aria-controls="freestyle-practice-content"
                 aria-label={freestyleExpanded ? "Collapse freestyle practice" : "Expand freestyle practice"}
                 title={freestyleExpanded ? "Collapse freestyle practice" : "Expand freestyle practice"}
               >
                 {freestyleExpanded ? (
-                  <ChevronUp className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                  <ChevronUp className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
                 ) : (
-                  <ChevronDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                  <ChevronDown className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
                 )}
               </button>
             </div>
@@ -3430,7 +3503,7 @@ export default function PracticePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setOnCourseConfirm({ open: true, duration: 135, label: '9-Hole Round' })}
+                  onClick={() => setOnCourseConfirm({ open: true, holes: 9, label: "9-Hole Round" })}
                   className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
                 >
                   <FlagTriangleRight className="w-5 h-5 text-gray-600" />
@@ -3438,7 +3511,7 @@ export default function PracticePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setOnCourseConfirm({ open: true, duration: 270, label: '18-Hole Round' })}
+                  onClick={() => setOnCourseConfirm({ open: true, holes: 18, label: "18-Hole Round" })}
                   className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
                 >
                   <FlagTriangleRight className="w-5 h-5 text-gray-600" />
@@ -3485,20 +3558,94 @@ export default function PracticePage() {
           </div>
         )}
 
-        {/* On-Course Round Confirmation Modal */}
-        {onCourseConfirm.open && (
+        {/* On-Course Round — adjust holes played (15 min + XP per hole) */}
+        {onCourseConfirm.open && (() => {
+          const holes = clampOnCourseHoles(onCourseConfirm.holes);
+          const minutes = onCourseMinutesForHoles(holes);
+          const xp = freestyleXpForMinutes(minutes);
+
+          return (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-surface rounded-2xl p-6 max-w-sm w-full">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Confirm Round Log
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                How many holes did you play?
               </h3>
-              <p className="text-sm text-gray-600 mb-5">
-                Log {onCourseConfirm.label} as {onCourseConfirm.duration} minutes of practice time?
+              <p className="text-sm text-gray-600 mb-4">
+                {onCourseConfirm.label || "On-Course Round"} · {ON_COURSE_MINUTES_PER_HOLE} min per hole
               </p>
+
+              <div className="mb-4 flex items-center justify-center gap-4">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOnCourseConfirm((prev) => ({
+                      ...prev,
+                      holes: clampOnCourseHoles(prev.holes - 1),
+                    }))
+                  }
+                  disabled={holes <= ON_COURSE_MIN_HOLES}
+                  className="flex h-11 w-11 items-center justify-center rounded-xl border-2 border-gray-200 text-gray-700 transition-colors hover:border-secondary hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="Fewer holes"
+                >
+                  <Minus className="h-5 w-5" aria-hidden />
+                </button>
+                <div className="min-w-[5rem] text-center">
+                  <p className="text-4xl font-bold tabular-nums text-gray-900">{holes}</p>
+                  <p className="text-xs font-medium text-gray-500">
+                    hole{holes === 1 ? "" : "s"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOnCourseConfirm((prev) => ({
+                      ...prev,
+                      holes: clampOnCourseHoles(prev.holes + 1),
+                    }))
+                  }
+                  disabled={holes >= ON_COURSE_MAX_HOLES}
+                  className="flex h-11 w-11 items-center justify-center rounded-xl border-2 border-gray-200 text-gray-700 transition-colors hover:border-secondary hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="More holes"
+                >
+                  <Plus className="h-5 w-5" aria-hidden />
+                </button>
+              </div>
+
+              <div className="mb-4 flex flex-wrap justify-center gap-2">
+                {ON_COURSE_HOLE_PRESETS.map((preset) => {
+                  const active = holes === preset;
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() =>
+                        setOnCourseConfirm((prev) => ({ ...prev, holes: preset }))
+                      }
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors border-2 ${
+                        active
+                          ? "border-[#014421] bg-[#014421] text-white"
+                          : "border-gray-200 bg-gray-50 text-gray-700 hover:border-secondary hover:bg-gray-100"
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mb-5 rounded-xl border-2 border-[#FFA500]/30 bg-[#FFF7ED] px-4 py-3 text-center">
+                <p className="text-sm font-semibold text-gray-900">
+                  {minutes} minutes · +{xp} XP
+                </p>
+                <p className="mt-0.5 text-xs text-gray-600">
+                  {ON_COURSE_MINUTES_PER_HOLE} min × {holes} hole{holes === 1 ? "" : "s"}
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={() => setOnCourseConfirm({ open: false, duration: 0, label: '' })}
+                  onClick={closeOnCourseConfirm}
                   className="py-2 px-4 rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition-colors"
                 >
                   Cancel
@@ -3506,18 +3653,17 @@ export default function PracticePage() {
                 <button
                   type="button"
                   onClick={() => {
-                    const { duration } = onCourseConfirm;
-                    setOnCourseConfirm({ open: false, duration: 0, label: '' });
-                    logFreestylePractice('On-Course', duration);
+                    void logFreestylePractice("On-Course", minutes, { holes });
                   }}
                   className="py-2 px-4 rounded-lg bg-primary text-white font-medium hover:opacity-90 transition-opacity"
                 >
-                  Confirm
+                  Log Round
                 </button>
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Clear Drill Confirmation Modal */}
         {clearDrillConfirm.open && (
@@ -3565,27 +3711,33 @@ export default function PracticePage() {
         )}
 
         {/* Weekly Training Schedule - Horizontal 7-Day Row (Moved to Bottom) */}
-        <div className="mb-6">
-          <div className="bg-surface rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-            {/* Header with Collapse Toggle */}
-            <div 
-              className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-              onClick={() => setScheduleExpanded(!scheduleExpanded)}
-            >
+        <div id="weekly-schedule-section" ref={weeklyScheduleRef} className="mb-6 scroll-mt-24">
+          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200 overflow-hidden">
+            <div className="mb-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-primary" />
                 <h2 className="text-lg font-semibold text-gray-900">Weekly Training Schedule</h2>
               </div>
-              {scheduleExpanded ? (
-                <ChevronUp className="w-5 h-5 text-gray-500" />
-              ) : (
-                <ChevronDown className="w-5 h-5 text-gray-500" />
-              )}
+              <button
+                type="button"
+                onClick={() => setScheduleExpanded((prev) => !prev)}
+                className={PRACTICE_SECTION_TOGGLE_BTN}
+                aria-expanded={scheduleExpanded}
+                aria-controls="weekly-schedule-content"
+                aria-label={scheduleExpanded ? "Collapse weekly training schedule" : "Expand weekly training schedule"}
+                title={scheduleExpanded ? "Collapse weekly training schedule" : "Expand weekly training schedule"}
+              >
+                {scheduleExpanded ? (
+                  <ChevronUp className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
+                ) : (
+                  <ChevronDown className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
+                )}
+              </button>
             </div>
 
             {/* Schedule Content - Collapsible - Single Day View */}
             {scheduleExpanded && (
-              <div className="px-4 pb-4 w-full overflow-hidden" style={{ maxWidth: '100%' }}>
+              <div id="weekly-schedule-content" className="w-full overflow-hidden" style={{ maxWidth: '100%' }}>
                 {/* View Mode Toggle */}
                 <div className="flex items-center justify-center gap-2 mb-4">
                   <button
@@ -3818,16 +3970,16 @@ export default function PracticePage() {
               <button
                 type="button"
                 onClick={() => setDrillLibraryExpanded((prev) => !prev)}
-                className="flex items-center justify-center rounded-lg border border-stone-200 bg-white/90 px-2.5 py-2 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50/90"
+                className={PRACTICE_SECTION_TOGGLE_BTN}
                 aria-expanded={drillLibraryExpanded}
                 aria-controls="drill-library-content"
                 aria-label={drillLibraryExpanded ? "Collapse drill library" : "Expand drill library"}
                 title={drillLibraryExpanded ? "Collapse drill library" : "Expand drill library"}
               >
                 {drillLibraryExpanded ? (
-                  <ChevronUp className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                  <ChevronUp className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
                 ) : (
-                  <ChevronDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                  <ChevronDown className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
                 )}
               </button>
             </div>
@@ -3840,7 +3992,7 @@ export default function PracticePage() {
         </div>
 
         {/* Combine Tests */}
-        <div className="mb-6">
+        <div id="combine-tests-section" ref={combineTestsRef} className="mb-6 scroll-mt-24">
           <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
@@ -3853,16 +4005,16 @@ export default function PracticePage() {
               <button
                 type="button"
                 onClick={() => setCombineTestsExpanded((prev) => !prev)}
-                className="flex items-center justify-center rounded-lg border border-stone-200 bg-white/90 px-2.5 py-2 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50/90"
+                className={PRACTICE_SECTION_TOGGLE_BTN}
                 aria-expanded={combineTestsExpanded}
                 aria-controls="combine-tests-content"
                 aria-label={combineTestsExpanded ? "Collapse combine tests" : "Expand combine tests"}
                 title={combineTestsExpanded ? "Collapse combine tests" : "Expand combine tests"}
               >
                 {combineTestsExpanded ? (
-                  <ChevronUp className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                  <ChevronUp className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
                 ) : (
-                  <ChevronDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                  <ChevronDown className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
                 )}
               </button>
             </div>

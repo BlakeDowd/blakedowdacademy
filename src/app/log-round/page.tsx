@@ -19,6 +19,7 @@ import {
   MoveUpRight,
   Plus,
   Minus,
+  Radio,
   RotateCcw,
   Save,
   Trash2,
@@ -26,6 +27,17 @@ import {
 } from "lucide-react";
 import { logActivity } from "@/lib/activity";
 import { InfoBubble } from "@/components/InfoBubble";
+import {
+  clearLiveRoundHandoff,
+  loadLiveRoundHandoff,
+  loadLiveRoundDraft,
+  type LiveRoundDraft,
+} from "@/lib/liveRoundDraft";
+import { LiveRoundInProgressBanner } from "@/components/LiveRoundInProgressBanner";
+import {
+  LIVE_ENTRY_ENABLED,
+  LiveEntryNotReadyModal,
+} from "@/components/LiveEntryNotReadyModal";
 
 /** Hole results + Tee & Approach: one visual system (2-col grid, centered orphan row). */
 const ROUND_COUNTER_GRID = "grid grid-cols-2 gap-3";
@@ -168,11 +180,45 @@ function optionalNumberFromInput(value: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** One decimal place for handicap / nett (matches numeric(5,1) columns). */
+function roundToOneDecimal(value: number | null): number | null {
+  if (value === null) return null;
+  return Math.round(value * 10) / 10;
+}
+
+/** Whole-number gross score for integer score columns. */
+function roundScoreForDb(value: number | null): number | null {
+  if (value === null) return null;
+  return Math.round(value);
+}
+
+function formatSupabaseError(error: unknown): string {
+  if (!error || typeof error !== "object") return String(error);
+  const e = error as { message?: string; details?: string; hint?: string; code?: string };
+  return e.message || e.details || e.hint || e.code || JSON.stringify(error);
+}
+
 export default function LogRoundPage() {
   const router = useRouter();
   const { user, refreshUser } = useAuth();
   const today = new Date().toISOString().split('T')[0];
   const [isSaving, setIsSaving] = useState(false);
+  const [liveHandoffApplied, setLiveHandoffApplied] = useState(false);
+  const [activeLiveDraft, setActiveLiveDraft] = useState<LiveRoundDraft | null>(null);
+  const [liveEntryGateOpen, setLiveEntryGateOpen] = useState(false);
+
+  const openLiveEntry = () => {
+    if (LIVE_ENTRY_ENABLED) {
+      router.push("/log-round/live");
+      return;
+    }
+    setLiveEntryGateOpen(true);
+  };
+
+  const openLiveEntryForTesting = () => {
+    setLiveEntryGateOpen(false);
+    router.push("/log-round/live");
+  };
   
   const [roundData, setRoundData] = useState<RoundData>({
     date: today,
@@ -228,6 +274,51 @@ export default function LogRoundPage() {
     );
     setSelectedApproachHole((h) => Math.min(Math.max(1, h), roundData.holes));
   }, [roundData.holes]);
+
+  useEffect(() => {
+    if (!user?.id || typeof window === "undefined") {
+      setActiveLiveDraft(null);
+      return;
+    }
+    setActiveLiveDraft(loadLiveRoundDraft(user.id));
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("from") !== "live") return;
+    const handoff = loadLiveRoundHandoff(user.id);
+    if (!handoff) return;
+
+    const handicap = handoff.handicap;
+    const score = handoff.score;
+    const nett =
+      score != null && handicap != null
+        ? Math.round((score - handicap) * 10) / 10
+        : null;
+
+    setRoundData((prev) => ({
+      ...prev,
+      date: handoff.date || prev.date,
+      course: handoff.course || prev.course,
+      handicap,
+      holes: handoff.holes || prev.holes,
+      score,
+      nett,
+      firLeft: handoff.firLeft,
+      firHit: handoff.firHit,
+      firRight: handoff.firRight,
+      totalGir: handoff.totalGir,
+      totalPenalties: handoff.totalPenalties,
+      totalPutts: handoff.totalPutts,
+      threePutts: handoff.threePutts,
+    }));
+    setScoreText(score != null ? String(score) : "");
+    setHandicapText(handicap != null ? String(handicap) : "");
+    setTotalPuttsText(handoff.totalPutts > 0 ? String(handoff.totalPutts) : "");
+    setLiveHandoffApplied(true);
+    clearLiveRoundHandoff(user.id);
+  }, [user?.id]);
 
   const appendDirectionalApproachShot = (result: AdvancedApproachResult) => {
     const holeForShot = selectedApproachHole;
@@ -380,14 +471,18 @@ export default function LogRoundPage() {
 
       // Prepare insert data with ALL fields - every UI input mapped to database
       // Complete mapping of all stats including Proximity, Short Game, and 3-Putt
+      const handicapDb = roundToOneDecimal(roundData.handicap);
+      const nettDb = roundToOneDecimal(roundData.nett);
+      const scoreDb = roundScoreForDb(roundData.score);
+
       const insertData: Record<string, any> = {
         user_id: currentUserId, // Explicitly set to logged-in user's ID
         date: roundData.date || today,
         course_name: roundData.course, // Database expects course_name, not course
-        handicap: roundData.handicap,
+        handicap: handicapDb,
         holes: roundData.holes,
-        score: roundData.score,
-        nett: roundData.nett,
+        score: scoreDb,
+        nett: nettDb,
         // Scoring stats
         eagles: roundData.eagles,
         birdies: roundData.birdies,
@@ -498,28 +593,41 @@ export default function LogRoundPage() {
       await logActivity(user.id, 'round', `Posted a round of ${roundData.score}`);
 
       // Update handicap history and profile if a handicap was provided
-      if (roundData.handicap !== null && roundData.handicap !== undefined) {
+      if (handicapDb !== null && handicapDb !== undefined) {
+        const roundDate = roundData.date || today;
+
         // 1. Insert into handicap_history
         const { error: historyError } = await supabase
           .from('handicap_history')
           .insert({
             user_id: currentUserId,
-            score: roundData.score,
-            new_handicap: roundData.handicap
+            score: scoreDb ?? 0,
+            new_handicap: handicapDb,
+            date: roundDate,
           });
           
         if (historyError) {
-          console.error('Error saving handicap history:', historyError);
+          console.error(
+            'Error saving handicap history:',
+            formatSupabaseError(historyError),
+            historyError,
+          );
         }
         
         // 2. Update profiles table with new handicap
         const { error: profileError } = await supabase
           .from('profiles')
-          .update({ handicap: roundData.handicap })
+          .update({ handicap: handicapDb })
           .eq('id', currentUserId);
           
         if (profileError) {
-          console.error('Error updating profile handicap:', profileError);
+          console.error(
+            'Error updating profile handicap:',
+            formatSupabaseError(profileError),
+            profileError,
+          );
+        } else {
+          await refreshUser();
         }
       }
 
@@ -546,21 +654,50 @@ export default function LogRoundPage() {
   return (
     <div className="flex-1 w-full flex flex-col bg-[#014421]">
       {/* Header */}
-      <div className="shrink-0 px-4 pt-6 pb-4 flex items-center gap-4 sticky top-0 z-10" style={{ backgroundColor: '#014421' }}>
-        <button
-          onClick={() => router.back()}
-          className="p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
-        >
-          <ArrowLeft className="w-6 h-6" />
-        </button>
-        <div>
-          <h1 className="text-2xl font-bold text-white">Round Performance Entry</h1>
-          <p className="text-white/80 text-sm">Enter your performance metrics</p>
+      <div className="shrink-0 px-4 pt-6 pb-4 flex items-center justify-between gap-3 sticky top-0 z-10" style={{ backgroundColor: '#014421' }}>
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            onClick={() => router.back()}
+            className="p-2 rounded-lg text-white hover:bg-white/10 transition-colors shrink-0"
+          >
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-white truncate">Round Performance Entry</h1>
+            <p className="text-white/80 text-sm">Enter your performance metrics</p>
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={openLiveEntry}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#FFA500]/60 bg-[#FFA500] px-3 py-2 text-xs font-bold text-black shadow-sm transition hover:bg-amber-400"
+        >
+          <Radio className="h-3.5 w-3.5" aria-hidden />
+          Live Entry
+        </button>
       </div>
+
+      <LiveEntryNotReadyModal
+        open={liveEntryGateOpen}
+        onClose={() => setLiveEntryGateOpen(false)}
+        onOpenForTesting={openLiveEntryForTesting}
+      />
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
         <div className="max-w-md mx-auto">
+          {LIVE_ENTRY_ENABLED && activeLiveDraft && !liveHandoffApplied && (
+            <LiveRoundInProgressBanner
+              draft={activeLiveDraft}
+              variant="post-round"
+              onContinueLive={openLiveEntry}
+            />
+          )}
+          {liveHandoffApplied && (
+            <div className="mb-4 rounded-xl border border-[#FFA500]/40 bg-[#FFF7ED] px-4 py-3 text-sm text-gray-800">
+              <span className="font-semibold text-[#014421]">Live entry loaded.</span> Review the
+              totals below, add anything else, then save your round.
+            </div>
+          )}
           <div className="space-y-4 pb-6">
           {/* Scoring Card */}
           <div className="bg-white rounded-2xl p-4 shadow-lg">

@@ -7,6 +7,7 @@ import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
 import { refreshAuthSessionIfPossible } from "@/lib/supabasePersistSession";
 
 interface RoundData {
+  id?: string;
   date: string;
   created_at?: string; // ISO timestamp from database
   course: string;
@@ -171,6 +172,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   const practiceLogsFetched = useRef(false);
 
   const mapRoundRow = (round: any): RoundData & { user_id?: string; full_name?: string; profile_icon?: string } => ({
+    id: round.id != null ? String(round.id) : undefined,
     date: round.date,
     created_at: round.created_at,
     course: round.course_name || round.course,

@@ -3,10 +3,13 @@
 import { useState, useEffect } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { ArrowLeft, Trophy, TrendingUp, Star, TrendingDown } from "lucide-react";
+import { ArrowLeft, Trophy, TrendingUp, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { DeleteRoundButton } from "@/components/DeleteRoundButton";
 
 interface RoundData {
+  id?: string;
+  created_at?: string;
   date: string;
   course: string;
   handicap: number | null;
@@ -41,7 +44,6 @@ interface RoundData {
 }
 
 interface RoundWithBadge extends RoundData {
-  id?: string | number; // FIX TYPE ERROR: Add id property to prevent build failure
   badge?: {
     text: string;
     type: 'best' | 'improved' | 'consistent';
@@ -246,14 +248,12 @@ export default function ScoresPage() {
           ) : (
             <div className="space-y-3">
               {sortedRounds.map((round, index) => {
-                // Update Key Logic: Change the key to use round.id if available, otherwise use date-index combination
-                const roundDate = round.date || new Date().toISOString().split('T')[0];
-                const uniqueKey = (round as any)?.id ? `round-${(round as any).id}` : `round-${roundDate}-${index}`;
-                
+                const uniqueKey = round.id ? `round-${round.id}` : `round-${round.date}-${index}`;
+
                 return (
                 <div
                   key={uniqueKey}
-                  className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md transition-all"
+                  className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between gap-2 hover:shadow-md transition-all"
                 >
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     {getIcon(round)}
@@ -291,9 +291,19 @@ export default function ScoresPage() {
                           • {getTimeAgo(round.date)}
                         </span>
                       </div>
+                      <div className="mt-2">
+                        <DeleteRoundButton
+                          round={{
+                            id: round.id,
+                            created_at: round.created_at,
+                            date: round.date,
+                            course: round.course,
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end ml-3">
+                  <div className="flex flex-col items-end ml-1 shrink-0">
                     {round.score !== null ? (
                       <>
                         <p

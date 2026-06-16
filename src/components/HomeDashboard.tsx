@@ -10,6 +10,8 @@ import {
   Play,
   Flame,
   Zap,
+  Radio,
+  Calendar,
   TrendingDown,
   TrendingUp,
   Star,
@@ -28,6 +30,13 @@ import {
   Flag,
   Layers,
 } from "lucide-react";
+import { DeleteRoundButton } from "@/components/DeleteRoundButton";
+import { LiveRoundInProgressBanner } from "@/components/LiveRoundInProgressBanner";
+import {
+  LIVE_ENTRY_ENABLED,
+  LiveEntryNotReadyModal,
+} from "@/components/LiveEntryNotReadyModal";
+import { loadLiveRoundDraft, type LiveRoundDraft } from "@/lib/liveRoundDraft";
 import IconPicker, { GOLF_ICONS } from "@/components/IconPicker";
 import Toast from "@/components/Toast";
 import { GoalAccountabilityModule } from "@/components/Dashboard";
@@ -641,6 +650,29 @@ export default function HomeDashboard() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [scoreTab, setScoreTab] = useState<'myRounds' | 'community'>('myRounds');
+  const [activeLiveDraft, setActiveLiveDraft] = useState<LiveRoundDraft | null>(null);
+  const [liveEntryGateOpen, setLiveEntryGateOpen] = useState(false);
+
+  const openLiveEntry = () => {
+    if (LIVE_ENTRY_ENABLED) {
+      router.push("/log-round/live");
+      return;
+    }
+    setLiveEntryGateOpen(true);
+  };
+
+  const openLiveEntryForTesting = () => {
+    setLiveEntryGateOpen(false);
+    router.push("/log-round/live");
+  };
+
+  useEffect(() => {
+    if (!user?.id || typeof window === "undefined") {
+      setActiveLiveDraft(null);
+      return;
+    }
+    setActiveLiveDraft(loadLiveRoundDraft(user.id));
+  }, [user?.id]);
   
   // Add a useMemo Hook: Wrap the rounds display logic in a useMemo that depends on the activeTab state
   // Strict Filtering: If activeTab === 'my-rounds', explicitly return rounds.filter(r => r.user_id === user?.id)
@@ -1345,31 +1377,80 @@ export default function HomeDashboard() {
           </div>
         )}
 
-        {/* Action Buttons - Side by Side */}
-        <div className="w-full px-4 mb-6 flex gap-3">
-          <button 
-            onClick={() => router.push('/log-round')}
-            className="flex-1 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]" 
-            style={{ backgroundColor: '#FFA500' }}
-          >
-            Log Round
-          </button>
-          <button 
-            onClick={() => {
-              router.push('/practice');
-              // Trigger video refresh after navigation
-              setTimeout(() => {
-                setRefreshKey(prev => prev + 1);
-                setDailyVideo(getDailyVideo(refreshKey + 1));
-              }, 100);
-            }}
-            className="flex-1 bg-white border-2 font-semibold py-3.5 rounded-xl transition-all hover:shadow-md"
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0fdf4'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffff'} 
-            style={{ borderColor: '#014421', color: '#014421' }}
-          >
-            Log Today's Practice
-          </button>
+        {/* Action Buttons */}
+        <div className="w-full px-4 mb-6 space-y-3">
+          {LIVE_ENTRY_ENABLED && activeLiveDraft && (
+            <LiveRoundInProgressBanner draft={activeLiveDraft} variant="home" />
+          )}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => router.push('/log-round')}
+              className="flex-1 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              Log Round
+            </button>
+            <button
+              type="button"
+              onClick={openLiveEntry}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Radio className="h-4 w-4 shrink-0" aria-hidden />
+              Live Entry
+            </button>
+          </div>
+          <LiveEntryNotReadyModal
+            open={liveEntryGateOpen}
+            onClose={() => setLiveEntryGateOpen(false)}
+            onOpenForTesting={openLiveEntryForTesting}
+          />
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                router.push('/practice');
+                setTimeout(() => {
+                  setRefreshKey(prev => prev + 1);
+                  setDailyVideo(getDailyVideo(refreshKey + 1));
+                }, 100);
+              }}
+              className="flex-1 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              Log Practice
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/practice?plan=schedule')}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Calendar className="h-4 w-4 shrink-0" aria-hidden />
+              Practice Plan
+            </button>
+          </div>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => router.push('/practice?plan=combine')}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Target className="h-4 w-4 shrink-0" aria-hidden />
+              Combine Tests
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/academy?view=leaderboard')}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Trophy className="h-4 w-4 shrink-0" aria-hidden />
+              Leaderboards
+            </button>
+          </div>
         </div>
 
         {/* Skills Snapshot - Equal Width Cards */}
@@ -1506,17 +1587,18 @@ export default function HomeDashboard() {
                   .map((round, index) => {
                     const isPB = isPersonalBest(round);
                     return (
-                      <div key={index} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
-                        <div className="flex items-center gap-3 flex-1">
+                      <div key={round?.id || `my-round-${round?.date}-${index}`} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                        <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
                           {isPB ? (
-                            <Trophy className="w-5 h-5" style={{ color: '#FFA500' }} />
+                            <Trophy className="w-5 h-5 shrink-0" style={{ color: '#FFA500' }} />
                           ) : (
-                            <Star className="w-5 h-5" style={{ color: '#014421' }} />
+                            <Star className="w-5 h-5 shrink-0" style={{ color: '#014421' }} />
                           )}
-                          <div className="flex-1">
+                          <div className="flex-1 min-w-0">
                             <p className="text-gray-800 font-medium">You</p>
-                            <p className="text-gray-400 text-sm">{round.course || 'Unknown Course'}</p>
-                            <div className="flex items-center gap-2 mt-1">
+                            <p className="text-gray-400 text-sm truncate">{round.course || 'Unknown Course'}</p>
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
                               {isPB && (
                                 <span className="text-xs px-2 py-0.5 rounded text-white font-medium" style={{ backgroundColor: '#FFA500' }}>
                                   Personal Best
@@ -1526,9 +1608,20 @@ export default function HomeDashboard() {
                             </div>
                           </div>
                         </div>
-                        <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>
+                        <p className="text-2xl font-bold shrink-0" style={{ color: '#FFA500' }}>
                           {round.score || round.nett?.toFixed(0) || 'N/A'}
                         </p>
+                        </div>
+                        <div className="mt-3 flex justify-end border-t border-gray-100 pt-3">
+                          <DeleteRoundButton
+                            round={{
+                              id: round.id,
+                              created_at: round.created_at,
+                              date: round.date,
+                              course: round.course,
+                            }}
+                          />
+                        </div>
                       </div>
                     );
                   })}

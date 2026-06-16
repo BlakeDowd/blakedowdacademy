@@ -3463,6 +3463,7 @@ export default function AcademyPage() {
   
   // Add Deep Equality Guard: useRef to store previous leaderboard data string to prevent unnecessary re-renders
   const prevLeaderboardStr = useRef<string>("");
+  const academyLeaderboardRef = useRef<HTMLDivElement>(null);
 
   const [userProgress, setUserProgress] = useState<{
     totalXP: number;
@@ -3533,6 +3534,19 @@ export default function AcademyPage() {
     if (typeof window === "undefined") return;
     window.dispatchEvent(new Event("practiceSessionsUpdated"));
   }, [hallLeaderTab, combineLeaderboardTest]);
+
+  /** Home shortcut: scroll to Academy Leaderboard section. */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") !== "leaderboard") return;
+
+    const scrollTimer = window.setTimeout(() => {
+      academyLeaderboardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 200);
+
+    return () => window.clearTimeout(scrollTimer);
+  }, []);
 
   // Stable Identity: Wrap functions and objects in useMemo/useCallback to prevent recreation on every render
   // Calculate total XP (rounds + drills) - filtered by timeframe
@@ -4525,7 +4539,7 @@ export default function AcademyPage() {
         />
 
         {/* Hall Of Fame Leaderboard */}
-        <div className="mb-6 w-full">
+        <div ref={academyLeaderboardRef} id="academy-leaderboard" className="mb-6 w-full scroll-mt-4">
           <div className="rounded-2xl overflow-hidden border-2 border-amber-200/60 bg-gradient-to-b from-stone-50 via-white to-amber-50/30 shadow-md w-full flex flex-col">
             <div className="px-5 pt-5 pb-3 text-center border-b border-amber-100/80 bg-stone-900/[0.03]">
               <div className="inline-flex items-center gap-2 text-amber-800/90 mb-1">
