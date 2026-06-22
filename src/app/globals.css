@@ -74,6 +74,36 @@ body, #__next {
   display: none;
 }
 
+.library-category-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: #9ca3af #f3f4f6;
+}
+
+.library-category-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.library-category-scroll::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 999px;
+}
+
+.library-category-scroll::-webkit-scrollbar-thumb {
+  background-color: #9ca3af;
+  border-radius: 999px;
+}
+
+.library-category-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: #6b7280;
+}
+
+.library-category-scroll button {
+  scroll-snap-align: start;
+}
+
 /* Custom scrollbar for horizontal table overflow */
 .custom-scrollbar {
   -webkit-overflow-scrolling: touch;

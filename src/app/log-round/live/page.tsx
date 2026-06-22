@@ -9,6 +9,7 @@ import {
   LIVE_APPROACH_MATRIX_ROWS,
   LIVE_NOT_POSSIBLE_REASONS,
   formatLiveApproachDirection,
+  formatLiveGreenHit,
   formatLiveNotPossibleReason,
   type LiveApproachShotDirection,
   type LiveNotPossibleReason,
@@ -21,11 +22,14 @@ import {
   type LivePuttMissLength,
 } from "@/lib/livePuttingConfig";
 import { useAuth } from "@/contexts/AuthContext";
+import { useStats } from "@/contexts/StatsContext";
 import {
   defaultCoursePars,
   findCourseProfileByName,
   loadCourseProfiles,
   loadRecentCourseNames,
+  mergePlayedCourseNames,
+  courseNamesMatch,
   normalizeCoursePars,
   saveCourseProfile,
   touchRecentCourse,
@@ -38,6 +42,7 @@ import {
   courseHoleNumberForPlayingHole,
   effectiveHoleStrokes,
   formatLiveScoreVsPar,
+  holeScoreNameVsPar,
   isHoleFinishedForRound,
   loadLiveRoundDraft,
   remapLiveDraftHoles,
@@ -46,9 +51,13 @@ import {
   roundTotalsThroughCurrent,
   isLiveTeeOtherClub,
   LIVE_TEE_OTHER_CLUBS,
+  LIVE_ROUND_TYPE_OPTIONS,
   LIVE_TEE_QUICK_CLUBS,
+  LIVE_TEE_BOX_OPTIONS,
   LIVE_TEE_FACE_COLS,
   LIVE_TEE_FACE_ROWS,
+  formatLiveRoundType,
+  formatLiveTeeBox,
   liveTeeFaceContactId,
   liveTeeFaceContactLabel,
   totalApproachPenalties,
@@ -60,13 +69,16 @@ import {
   type LiveHoleEntry,
   type LiveNineSide,
   type LiveRoundDraft,
+  type LiveRoundType,
   type LiveRoundSetup,
+  type LiveTeeBox,
   type LiveTeeDirection,
   type LiveTeeFaceContact,
   type LiveTeeMissLie,
   type LivePuttEntry,
 } from "@/lib/liveRoundDraft";
 import { LiveRoundInProgressBanner } from "@/components/LiveRoundInProgressBanner";
+import { LiveRoundScorecard } from "@/components/LiveRoundScorecard";
 import {
   LIVE_ENTRY_ENABLED,
   LiveEntryTestingBanner,
@@ -121,12 +133,21 @@ function formatLoggedApproachShot(s: {
   if ((s.penalties ?? 0) > 0) {
     parts.push(`${s.penalties} pen.`);
   }
-  if (s.greenHit === "yes") parts.push("Green");
-  else if (s.greenHit === "not_possible") {
-    parts.push(formatLiveNotPossibleReason(s.notPossibleReason) || "Not possible");
-  } else parts.push("Missed");
+  parts.push(formatLiveGreenHit(s.greenHit, s.notPossibleReason));
   return parts.join(" · ");
 }
+
+const LIVE_NEW_COURSE_VALUE = "__new_course__";
+
+const LIVE_TEE_BOX_DOT: Record<LiveTeeBox, string> = {
+  black: "bg-gray-900",
+  blue: "bg-blue-600",
+  white: "bg-white ring-1 ring-inset ring-gray-300",
+  yellow: "bg-yellow-400",
+  red: "bg-red-600",
+  pink: "bg-pink-500",
+  green: "bg-green-600",
+};
 
 export default function LiveRoundEntryPage() {
   return <LiveRoundEntryContent />;
@@ -135,6 +156,7 @@ export default function LiveRoundEntryPage() {
 function LiveRoundEntryContent() {
   const router = useRouter();
   const { user } = useAuth();
+  const { rounds } = useStats();
   const today = new Date().toISOString().split("T")[0];
 
   const [phase, setPhase] = useState<"setup" | "holes">("setup");
@@ -144,6 +166,8 @@ function LiveRoundEntryContent() {
     course: "",
     handicap: null,
     holes: 18,
+    teeBox: "white",
+    roundType: "practice",
     nineSide: "front",
     coursePars: defaultCoursePars(),
   });
@@ -153,9 +177,10 @@ function LiveRoundEntryContent() {
   const [savedCourses, setSavedCourses] = useState<string[]>([]);
   const [showScorecardEditor, setShowScorecardEditor] = useState(false);
   const [shouldSaveCourseProfile, setShouldSaveCourseProfile] = useState(true);
+  const [customCourseMode, setCustomCourseMode] = useState(false);
   const [otherClubOpen, setOtherClubOpen] = useState(false);
   const [approachDistanceText, setApproachDistanceText] = useState("");
-  const [firstPuttDistanceText, setFirstPuttDistanceText] = useState("");
+  const [puttDistanceText, setPuttDistanceText] = useState("");
   const [approachClub, setApproachClub] = useState<string>("7i");
   const [approachDirection, setApproachDirection] =
     useState<LiveApproachShotDirection | null>(null);
@@ -165,6 +190,32 @@ function LiveRoundEntryContent() {
   const [puttMissLine, setPuttMissLine] = useState<LivePuttMissLine | null>(null);
   const [puttMissLength, setPuttMissLength] = useState<LivePuttMissLength | null>(null);
 
+  const resetApproachFormDraft = () => {
+    setApproachDistanceText("");
+    setApproachClub("7i");
+    setApproachDirection(null);
+    setApproachPenalties(0);
+    setPendingNotPossible(false);
+  };
+
+  const syncPuttingFormForEntry = (entry: LiveHoleEntry) => {
+    setPendingPuttMiss(false);
+    setPuttMissLine(null);
+    setPuttMissLength(null);
+    const puttNumber = entry.currentPuttNumber ?? 1;
+    if (puttNumber === 1 && entry.firstPuttDistanceFeet != null) {
+      setPuttDistanceText(String(entry.firstPuttDistanceFeet));
+    } else {
+      setPuttDistanceText("");
+    }
+  };
+
+  const syncHoleFormForEntry = (entry: LiveHoleEntry) => {
+    setOtherClubOpen(isLiveTeeOtherClub(entry.teeClub));
+    resetApproachFormDraft();
+    syncPuttingFormForEntry(entry);
+  };
+
   useEffect(() => {
     if (!user?.id) return;
     setSavedCourses(loadRecentCourseNames(user.id));
@@ -173,6 +224,8 @@ function LiveRoundEntryContent() {
       setDraft(existing);
       setSetup({
         ...existing.setup,
+        teeBox: existing.setup.teeBox ?? "white",
+        roundType: existing.setup.roundType ?? "practice",
         coursePars: existing.setup.coursePars ?? defaultCoursePars(),
         nineSide: existing.setup.nineSide ?? "front",
       });
@@ -181,6 +234,7 @@ function LiveRoundEntryContent() {
       );
       setPhase("holes");
       const hole = existing.holes.find((h) => h.hole === existing.currentHole);
+      if (hole) syncHoleFormForEntry(hole);
       setStrokesText(hole?.strokes != null ? String(hole.strokes) : "");
     }
   }, [user?.id]);
@@ -190,34 +244,33 @@ function LiveRoundEntryContent() {
     [user?.id, setup.course],
   );
 
+  const playedCourseNames = useMemo(
+    () =>
+      mergePlayedCourseNames(
+        courseProfiles.map((p) => p.name),
+        savedCourses,
+        rounds.map((r) => r.course),
+      ),
+    [courseProfiles, savedCourses, rounds],
+  );
+
+  const setupCourseInList = useMemo(
+    () =>
+      setup.course.trim() !== "" &&
+      playedCourseNames.some((n) => courseNamesMatch(n, setup.course)),
+    [setup.course, playedCourseNames],
+  );
+
   const currentHoleEntry = useMemo(() => {
     if (!draft) return null;
     return draft.holes.find((h) => h.hole === draft.currentHole) ?? null;
   }, [draft]);
 
-  useEffect(() => {
-    if (!currentHoleEntry) return;
-    setOtherClubOpen(isLiveTeeOtherClub(currentHoleEntry.teeClub));
-    setApproachDistanceText("");
-    setApproachClub("7i");
-    setApproachDirection(null);
-    setApproachPenalties(0);
-    setPendingNotPossible(false);
-    setPendingPuttMiss(false);
-    setPuttMissLine(null);
-    setPuttMissLength(null);
-    setFirstPuttDistanceText(
-      currentHoleEntry.firstPuttDistanceFeet != null
-        ? String(currentHoleEntry.firstPuttDistanceFeet)
-        : "",
-    );
-  }, [draft?.currentHole, currentHoleEntry?.teeClub, currentHoleEntry?.firstPuttDistanceFeet]);
+  const autoStrokes = currentHoleEntry ? effectiveHoleStrokes(currentHoleEntry) : null;
 
   useEffect(() => {
-    if (!currentHoleEntry) return;
-    const strokes = effectiveHoleStrokes(currentHoleEntry);
-    setStrokesText(strokes != null ? String(strokes) : "");
-  }, [currentHoleEntry]);
+    setStrokesText(autoStrokes != null ? String(autoStrokes) : "");
+  }, [autoStrokes, draft?.currentHole]);
 
   const aggregated = useMemo(
     () => (draft ? aggregateLiveRound(draft) : null),
@@ -277,6 +330,9 @@ function LiveRoundEntryContent() {
     if (patch.teeSolidStrike === true) {
       merged = { ...merged, teeFaceContact: null };
     }
+    if (patch.teeCorrectFlight === true) {
+      merged = { ...merged, teeDoubleCross: null };
+    }
     if (patch.par != null) {
       const workflow = defaultLiveHoleWorkflow(patch.par);
       merged = {
@@ -299,6 +355,7 @@ function LiveRoundEntryContent() {
           teeSolidStrike: null,
           teeFaceContact: null,
           teeCorrectFlight: null,
+          teeDoubleCross: null,
           fir: "na",
         };
       } else if (currentHoleEntry?.par === 3) {
@@ -310,6 +367,12 @@ function LiveRoundEntryContent() {
       return applyDerivedHoleStrokes({ ...h, ...merged });
     });
     persistDraft({ ...draft, holes: nextHoles });
+  };
+
+  const selectTeeClub = (club: string | null, otherOpen: boolean) => {
+    setOtherClubOpen(otherOpen);
+    updateCurrentHole({ teeClub: club });
+    resetApproachFormDraft();
   };
 
   const finalizeCurrentHoleStrokes = (holes: LiveHoleEntry[]) => {
@@ -365,6 +428,7 @@ function LiveRoundEntryContent() {
     persistDraft(next);
     setPhase("holes");
     const hole = next.holes.find((h) => h.hole === next.currentHole);
+    if (hole) syncHoleFormForEntry(hole);
     setStrokesText(hole?.strokes != null ? String(hole.strokes) : "");
   };
 
@@ -374,6 +438,7 @@ function LiveRoundEntryContent() {
     const holes = finalizeCurrentHoleStrokes(draft.holes);
     persistDraft({ ...draft, holes, currentHole: clamped });
     const entry = holes.find((h) => h.hole === clamped);
+    if (entry) syncHoleFormForEntry(entry);
     const strokes = entry ? effectiveHoleStrokes(entry) : null;
     setStrokesText(strokes != null ? String(strokes) : "");
   };
@@ -451,7 +516,7 @@ function LiveRoundEntryContent() {
       setApproachDistanceText("");
       setApproachDirection(null);
       setApproachPenalties(0);
-      setFirstPuttDistanceText("");
+      setPuttDistanceText("");
       return;
     }
 
@@ -495,7 +560,7 @@ function LiveRoundEntryContent() {
     setApproachDirection(editing?.shotDirection ?? null);
     setApproachPenalties(editing?.penalties ?? 0);
     setPendingNotPossible(false);
-    setFirstPuttDistanceText("");
+    setPuttDistanceText("");
   };
 
   const commitPutt = (
@@ -505,11 +570,11 @@ function LiveRoundEntryContent() {
   ) => {
     if (!currentHoleEntry) return;
     const puttNumber = currentHoleEntry.currentPuttNumber ?? 1;
+    const distanceFeet = optionalNumberFromInput(puttDistanceText);
     const entry: LivePuttEntry = {
       puttNumber,
       made,
-      distanceFeet:
-        puttNumber === 1 ? optionalNumberFromInput(firstPuttDistanceText) : null,
+      distanceFeet,
       missLine: made ? null : (missLine ?? null),
       missLength: made ? null : (missLength ?? null),
     };
@@ -524,16 +589,18 @@ function LiveRoundEntryContent() {
         puttLogs,
         putts,
         firstPuttDistanceFeet:
-          puttNumber === 1 ? optionalNumberFromInput(firstPuttDistanceText) : currentHoleEntry.firstPuttDistanceFeet,
+          puttNumber === 1 ? distanceFeet : currentHoleEntry.firstPuttDistanceFeet,
       });
+      setPuttDistanceText("");
     } else {
       updateCurrentHole({
         puttLogs,
         putts,
         currentPuttNumber: puttNumber + 1,
         firstPuttDistanceFeet:
-          puttNumber === 1 ? optionalNumberFromInput(firstPuttDistanceText) : currentHoleEntry.firstPuttDistanceFeet,
+          puttNumber === 1 ? distanceFeet : currentHoleEntry.firstPuttDistanceFeet,
       });
+      setPuttDistanceText("");
     }
 
     setPendingPuttMiss(false);
@@ -561,7 +628,7 @@ function LiveRoundEntryContent() {
       firstPuttDistanceFeet:
         targetPutt === 1 ? (editing?.distanceFeet ?? null) : currentHoleEntry.firstPuttDistanceFeet,
     });
-    setFirstPuttDistanceText(
+    setPuttDistanceText(
       editing?.distanceFeet != null ? String(editing.distanceFeet) : "",
     );
     setPendingPuttMiss(false);
@@ -656,27 +723,6 @@ function LiveRoundEntryContent() {
     );
   };
 
-  const yesNoButton = (
-    field: "teeSolidStrike" | "teeCorrectFlight",
-    value: boolean,
-    label: string,
-  ) => {
-    const active = currentHoleEntry?.[field] === value;
-    return (
-      <button
-        type="button"
-        onClick={() => updateCurrentHole({ [field]: value })}
-        className={`rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors ${
-          active
-            ? "border-[#014421] bg-[#014421] text-white"
-            : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
-        }`}
-      >
-        {label}
-      </button>
-    );
-  };
-
   const displayCourseHole = draft
     ? (currentHoleEntry?.courseHoleNumber ??
       courseHoleNumberForPlayingHole(draft.currentHole, draft.setup))
@@ -697,10 +743,15 @@ function LiveRoundEntryContent() {
     (currentHoleEntry?.teeDirection === "left" ||
       currentHoleEntry?.teeDirection === "right");
   const showTeeFaceContact = showTeeShot && currentHoleEntry?.teeSolidStrike === false;
+  const showTeeDoubleCross = showTeeShot && currentHoleEntry?.teeCorrectFlight === false;
   const currentHoleStrokes = currentHoleEntry
     ? effectiveHoleStrokes(currentHoleEntry)
     : null;
   const strokesVsParDelta = scoreVsParDelta(currentHoleStrokes, holePar);
+  const holeScoreName =
+    currentHoleStrokes != null && holePar != null
+      ? holeScoreNameVsPar(currentHoleStrokes, holePar)
+      : null;
 
   return (
     <div className="flex min-h-full flex-col bg-[#014421]">
@@ -755,55 +806,145 @@ function LiveRoundEntryContent() {
               </p>
               <div className="space-y-3">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Course *</label>
-                  <input
-                    type="text"
-                    list="live-saved-courses"
-                    value={setup.course}
-                    onChange={(e) => {
-                      const name = e.target.value;
-                      applySetupPatch({ course: name });
-                      if (user?.id && findCourseProfileByName(user.id, name)) {
-                        loadCourseFromProfile(name);
-                      }
-                    }}
-                    onBlur={() => {
-                      if (setup.course.trim() && user?.id) {
-                        const profile = findCourseProfileByName(user.id, setup.course);
-                        if (profile) loadCourseFromProfile(profile.name);
-                      }
-                    }}
-                    placeholder="Course name"
-                    className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 focus:border-[#FFA500] focus:outline-none"
-                  />
-                  <datalist id="live-saved-courses">
-                    {savedCourses.map((name) => (
-                      <option key={name} value={name} />
-                    ))}
-                    {courseProfiles
-                      .filter((p) => !savedCourses.includes(p.name))
-                      .map((p) => (
-                        <option key={p.id} value={p.name} />
-                      ))}
-                  </datalist>
-                  {courseProfiles.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {courseProfiles.slice(0, 5).map((p) => (
+                  <label
+                    htmlFor="live-entry-course"
+                    className="mb-1 block text-sm font-medium text-gray-700"
+                  >
+                    Course *
+                  </label>
+                  {playedCourseNames.length > 0 && !customCourseMode ? (
+                    <div className="space-y-2">
+                      <select
+                        id="live-entry-course"
+                        value={
+                          setupCourseInList
+                            ? playedCourseNames.find((n) =>
+                                courseNamesMatch(n, setup.course),
+                              ) ?? ""
+                            : ""
+                        }
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === LIVE_NEW_COURSE_VALUE) {
+                            setCustomCourseMode(true);
+                            applySetupPatch({ course: "" });
+                            return;
+                          }
+                          if (value) loadCourseFromProfile(value);
+                        }}
+                        className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-gray-900 focus:border-[#FFA500] focus:outline-none"
+                      >
+                        <option value="">Select a course…</option>
+                        <option value={LIVE_NEW_COURSE_VALUE}>Add new course…</option>
+                        {playedCourseNames.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                      {setup.course.trim() && !setupCourseInList && (
+                        <p className="text-xs text-gray-500">
+                          Current: {setup.course} — not in your saved list.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <input
+                        id="live-entry-course"
+                        type="text"
+                        value={setup.course}
+                        onChange={(e) => {
+                          const name = e.target.value;
+                          applySetupPatch({ course: name });
+                          if (user?.id && findCourseProfileByName(user.id, name)) {
+                            loadCourseFromProfile(name);
+                          }
+                        }}
+                        onBlur={() => {
+                          if (setup.course.trim() && user?.id) {
+                            const profile = findCourseProfileByName(user.id, setup.course);
+                            if (profile) loadCourseFromProfile(profile.name);
+                          }
+                        }}
+                        placeholder="Enter course name"
+                        className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 focus:border-[#FFA500] focus:outline-none"
+                      />
+                      {playedCourseNames.length > 0 && (
                         <button
-                          key={p.id}
                           type="button"
-                          onClick={() => loadCourseFromProfile(p.name)}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-                            setup.course.trim().toLowerCase() === p.name.trim().toLowerCase()
-                              ? "bg-[#014421] text-white"
-                              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                          }`}
+                          onClick={() => {
+                            setCustomCourseMode(false);
+                            if (
+                              setup.course.trim() &&
+                              !playedCourseNames.some((n) =>
+                                courseNamesMatch(n, setup.course),
+                              )
+                            ) {
+                              applySetupPatch({ course: "" });
+                            }
+                          }}
+                          className="text-xs font-semibold text-[#014421] underline-offset-2 hover:underline"
                         >
-                          {p.name}
+                          Choose from courses you&apos;ve played
                         </button>
-                      ))}
+                      )}
                     </div>
                   )}
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">Tees</label>
+                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                    {LIVE_TEE_BOX_OPTIONS.map(({ id, label }) => {
+                      const active = setup.teeBox === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => applySetupPatch({ teeBox: id })}
+                          className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-1 py-2.5 transition-colors ${
+                            active
+                              ? "border-[#014421] bg-[#014421]/5"
+                              : "border-gray-200 bg-white hover:border-[#FFA500]"
+                          }`}
+                        >
+                          <span
+                            className={`h-5 w-5 shrink-0 rounded-full ${LIVE_TEE_BOX_DOT[id]}`}
+                            aria-hidden
+                          />
+                          <span
+                            className={`text-[11px] font-semibold leading-tight ${
+                              active ? "text-[#014421]" : "text-gray-700"
+                            }`}
+                          >
+                            {label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">Round type</label>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {LIVE_ROUND_TYPE_OPTIONS.map(({ id, label }) => {
+                      const active = setup.roundType === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => applySetupPatch({ roundType: id })}
+                          className={`rounded-xl border-2 px-3 py-2.5 text-sm font-semibold transition-colors ${
+                            active
+                              ? "border-[#014421] bg-[#014421] text-white"
+                              : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">Date</label>
@@ -940,6 +1081,18 @@ function LiveRoundEntryContent() {
                   <p className="truncate text-sm font-semibold">{draft.setup.course}</p>
                   <p className="text-xs text-white/75">
                     {holesCompleted} of {draft.setup.holes} holes logged
+                    {draft.setup.teeBox && (
+                      <>
+                        {" "}
+                        · {formatLiveTeeBox(draft.setup.teeBox)} tees
+                      </>
+                    )}
+                    {draft.setup.roundType && (
+                      <>
+                        {" "}
+                        · {formatLiveRoundType(draft.setup.roundType)}
+                      </>
+                    )}
                     {draft.setup.holes === 9 &&
                       ` · ${draft.setup.nineSide === "back" ? "Back" : "Front"} nine`}
                   </p>
@@ -1019,25 +1172,7 @@ function LiveRoundEntryContent() {
                     <label className="mb-1 block text-sm font-medium text-gray-700">
                       Strokes this hole *
                     </label>
-                    {roundTotals?.gross != null && (
-                      <p className="mb-2 text-center text-xs text-gray-500">
-                        Round running total{" "}
-                        <span className="font-bold tabular-nums text-gray-800">
-                          {roundTotals.gross}
-                        </span>
-                        {roundTotals.vsPar != null && (
-                          <>
-                            {" "}
-                            (
-                            <span className="font-semibold text-[#014421]">
-                              {formatLiveScoreVsPar(roundTotals.vsPar)} to par
-                            </span>
-                            )
-                          </>
-                        )}
-                      </p>
-                    )}
-                    <div className="flex items-stretch gap-2">
+                    <div className="flex items-stretch overflow-hidden rounded-xl border-2 border-gray-200">
                       <input
                         type="text"
                         inputMode="numeric"
@@ -1050,14 +1185,37 @@ function LiveRoundEntryContent() {
                         }}
                         placeholder={holePar != null ? "e.g. 5" : "Set par first"}
                         disabled={holePar == null}
-                        className="min-w-0 flex-1 rounded-xl border-2 border-gray-200 px-4 py-3 text-center text-2xl font-bold tabular-nums text-gray-900 focus:border-[#FFA500] focus:outline-none disabled:bg-gray-50 disabled:text-gray-400"
+                        className="min-w-0 flex-1 border-0 px-4 py-3 text-center text-2xl font-bold tabular-nums text-gray-900 focus:border-[#FFA500] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#FFA500] disabled:bg-gray-50 disabled:text-gray-400"
                       />
-                      {holePar != null && strokesVsParDelta != null && (
+                      {holePar != null && holeScoreName != null && (
                         <div
-                          className="flex min-w-[4rem] shrink-0 items-center justify-center rounded-xl border-2 border-[#FFA500]/60 bg-[#FFA500]/15 px-3 text-2xl font-bold tabular-nums text-[#014421]"
-                          aria-label={`${strokesVsParDelta} vs par`}
+                          className="flex min-w-[5.5rem] shrink-0 flex-col items-center justify-center border-l-2 border-gray-200 bg-[#FFA500]/15 px-3 py-2"
+                          aria-label={`${holeScoreName} this hole${strokesVsParDelta != null ? ` (${strokesVsParDelta})` : ""}`}
                         >
-                          {strokesVsParDelta}
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                            Hole
+                          </span>
+                          <span className="text-center text-base font-bold leading-tight text-[#014421]">
+                            {holeScoreName}
+                          </span>
+                        </div>
+                      )}
+                      {draft.currentHole >= 2 && roundTotals?.gross != null && (
+                        <div
+                          className="flex min-w-[5.5rem] shrink-0 flex-col items-center justify-center border-l-2 border-gray-200 bg-[#014421]/5 px-3 py-2"
+                          aria-label={`Round total ${roundTotals.gross}${roundTotals.vsPar != null ? `, ${formatLiveScoreVsPar(roundTotals.vsPar)} to par` : ""}`}
+                        >
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                            Round
+                          </span>
+                          <span className="text-xl font-bold tabular-nums leading-tight text-gray-900">
+                            {roundTotals.gross}
+                          </span>
+                          {roundTotals.vsPar != null && (
+                            <span className="text-sm font-bold tabular-nums leading-tight text-[#014421]">
+                              {formatLiveScoreVsPar(roundTotals.vsPar)}
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1076,10 +1234,7 @@ function LiveRoundEntryContent() {
                               <button
                                 key={club}
                                 type="button"
-                                onClick={() => {
-                                  setOtherClubOpen(false);
-                                  updateCurrentHole({ teeClub: club });
-                                }}
+                                onClick={() => selectTeeClub(club, false)}
                                 className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
                                   active
                                     ? "border-[#014421] bg-[#014421] text-white"
@@ -1111,7 +1266,7 @@ function LiveRoundEntryContent() {
                             }
                             onChange={(e) => {
                               const club = e.target.value;
-                              updateCurrentHole({ teeClub: club || null });
+                              selectTeeClub(club || null, true);
                             }}
                             className="mt-2 w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-900 focus:border-[#FFA500] focus:outline-none"
                           >
@@ -1181,11 +1336,65 @@ function LiveRoundEntryContent() {
                             Correct flight?
                           </label>
                           <div className="grid grid-cols-2 gap-2">
-                            {yesNoButton("teeCorrectFlight", true, "Yes")}
-                            {yesNoButton("teeCorrectFlight", false, "No")}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateCurrentHole({
+                                  teeCorrectFlight: true,
+                                  teeDoubleCross: null,
+                                })
+                              }
+                              className={`rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors ${
+                                currentHoleEntry.teeCorrectFlight === true
+                                  ? "border-[#014421] bg-[#014421] text-white"
+                                  : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
+                              }`}
+                            >
+                              Yes
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateCurrentHole({ teeCorrectFlight: false })}
+                              className={`rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors ${
+                                currentHoleEntry.teeCorrectFlight === false
+                                  ? "border-[#014421] bg-[#014421] text-white"
+                                  : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
+                              }`}
+                            >
+                              No
+                            </button>
                           </div>
                         </div>
                       </div>
+                      {showTeeDoubleCross && (
+                        <div className="mt-3 space-y-2">
+                          <p className="text-xs font-medium text-gray-600">Double cross?</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => updateCurrentHole({ teeDoubleCross: true })}
+                              className={`rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors ${
+                                currentHoleEntry.teeDoubleCross === true
+                                  ? "border-[#014421] bg-[#014421] text-white"
+                                  : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
+                              }`}
+                            >
+                              Yes
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateCurrentHole({ teeDoubleCross: false })}
+                              className={`rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors ${
+                                currentHoleEntry.teeDoubleCross === false
+                                  ? "border-[#014421] bg-[#014421] text-white"
+                                  : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
+                              }`}
+                            >
+                              No
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       {showTeeFaceContact && (
                         <div className="mt-3 space-y-2">
                           <p className="text-xs font-medium text-gray-600">Face contact</p>
@@ -1344,9 +1553,10 @@ function LiveRoundEntryContent() {
                         <label className="mb-2 block text-xs font-medium text-gray-600">
                           Green hit?
                         </label>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                           {greenHitButton("yes", "Yes")}
                           {greenHitButton("no", "No")}
+                          {greenHitButton("short_sided", "Short Sided")}
                           {greenHitButton("not_possible", "Not Possible")}
                         </div>
                         {pendingNotPossible && (
@@ -1375,8 +1585,9 @@ function LiveRoundEntryContent() {
                         )}
                         <p className="mt-2 text-[11px] text-gray-500">
                           Use <span className="font-medium">No</span> when you had a look but missed.
-                          Use <span className="font-medium">Not Possible</span> when going for the
-                          green wasn&apos;t realistic.
+                          Use <span className="font-medium">Short Sided</span> when you missed and
+                          left a tough angle. Use <span className="font-medium">Not Possible</span>{" "}
+                          when going for the green wasn&apos;t realistic.
                         </p>
                       </div>
                       {loggedApproachShots.length > 0 && (
@@ -1429,27 +1640,27 @@ function LiveRoundEntryContent() {
                           <p className="mb-3 text-sm font-semibold text-gray-800">
                             Putt {currentPuttNumber}
                           </p>
-                          {currentPuttNumber === 1 && (
-                            <div className="mb-4">
-                              <label className="mb-1 block text-xs font-medium text-gray-600">
-                                First putt distance (feet)
-                              </label>
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                value={firstPuttDistanceText}
-                                onChange={(e) => {
-                                  const raw = e.target.value;
-                                  setFirstPuttDistanceText(raw);
+                          <div className="mb-4">
+                            <label className="mb-1 block text-xs font-medium text-gray-600">
+                              Putt distance (feet)
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={puttDistanceText}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                setPuttDistanceText(raw);
+                                if (currentPuttNumber === 1) {
                                   updateCurrentHole({
                                     firstPuttDistanceFeet: optionalNumberFromInput(raw),
                                   });
-                                }}
-                                placeholder="e.g. 25"
-                                className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-center text-lg font-semibold tabular-nums text-gray-900 focus:border-[#FFA500] focus:outline-none"
-                              />
-                            </div>
-                          )}
+                                }
+                              }}
+                              placeholder="e.g. 25"
+                              className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-center text-lg font-semibold tabular-nums text-gray-900 focus:border-[#FFA500] focus:outline-none"
+                            />
+                          </div>
                           {!pendingPuttMiss ? (
                             <div className="mb-3">
                               <label className="mb-2 block text-xs font-medium text-gray-600">
@@ -1582,6 +1793,8 @@ function LiveRoundEntryContent() {
                   )}
 
                 </div>
+
+                <LiveRoundScorecard draft={draft} onSelectHole={goToHole} />
 
                 <div className="grid grid-cols-2 gap-3">
                   <button

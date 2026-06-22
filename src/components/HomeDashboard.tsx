@@ -21,6 +21,7 @@ import {
   Clock,
   X,
   BookOpen,
+  Apple,
   Users,
   User,
   Pencil,
@@ -31,6 +32,7 @@ import {
   Layers,
 } from "lucide-react";
 import { DeleteRoundButton } from "@/components/DeleteRoundButton";
+import { AddToHomeScreenGuide } from "@/components/AddToHomeScreenGuide";
 import { LiveRoundInProgressBanner } from "@/components/LiveRoundInProgressBanner";
 import {
   LIVE_ENTRY_ENABLED,
@@ -1431,7 +1433,7 @@ export default function HomeDashboard() {
               Practice Plan
             </button>
           </div>
-          <div className="flex gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
               onClick={() => router.push('/practice?plan=combine')}
@@ -1449,6 +1451,24 @@ export default function HomeDashboard() {
             >
               <Trophy className="h-4 w-4 shrink-0" aria-hidden />
               Leaderboards
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/practice?plan=library')}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
+              Drill Library
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/practice?plan=fuel')}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Apple className="h-4 w-4 shrink-0" aria-hidden />
+              Fuel Planner
             </button>
           </div>
         </div>
@@ -1803,6 +1823,10 @@ export default function HomeDashboard() {
               <p className="text-sm text-gray-500">{dailyVideo.coach}</p>
             </div>
           </div>
+        </div>
+
+        <div className="w-full px-4 mb-4">
+          <AddToHomeScreenGuide />
         </div>
 
             </div>

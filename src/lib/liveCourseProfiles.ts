@@ -99,6 +99,26 @@ export function loadRecentCourseNames(userId: string): string[] {
   }
 }
 
+export function mergePlayedCourseNames(...lists: (string[] | undefined)[]): string[] {
+  const bySlug = new Map<string, string>();
+  for (const list of lists) {
+    if (!list) continue;
+    for (const raw of list) {
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      const slug = slugFromName(trimmed);
+      if (!bySlug.has(slug)) bySlug.set(slug, trimmed);
+    }
+  }
+  return Array.from(bySlug.values()).sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" }),
+  );
+}
+
+export function courseNamesMatch(a: string, b: string): boolean {
+  return slugFromName(a) === slugFromName(b);
+}
+
 export function touchRecentCourse(userId: string, name: string) {
   if (typeof window === "undefined" || !userId) return;
   const trimmed = name.trim();

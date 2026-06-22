@@ -81,3 +81,18 @@ export function formatLiveNotPossibleReason(
   if (!reason) return "";
   return LIVE_NOT_POSSIBLE_REASONS.find((r) => r.id === reason)?.label ?? reason;
 }
+
+export type LiveGreenHitResult = "yes" | "no" | "not_possible" | "short_sided";
+
+export function formatLiveGreenHit(
+  greenHit: LiveGreenHitResult | null | undefined,
+  notPossibleReason?: LiveNotPossibleReason | null,
+): string {
+  if (!greenHit) return "";
+  if (greenHit === "yes") return "Green";
+  if (greenHit === "not_possible") {
+    return formatLiveNotPossibleReason(notPossibleReason) || "Not possible";
+  }
+  if (greenHit === "short_sided") return "Short sided";
+  return "Missed";
+}

@@ -2,12 +2,13 @@
 
 import type {
   LiveApproachShotDirection,
+  LiveGreenHitResult,
   LiveNotPossibleReason,
 } from "@/lib/liveApproachShotConfig";
 import type { LivePuttEntry } from "@/lib/livePuttingConfig";
 import { normalizePuttLogs, puttingCompleteFromLogs } from "@/lib/livePuttingConfig";
 
-export type { LiveApproachShotDirection, LiveNotPossibleReason };
+export type { LiveApproachShotDirection, LiveGreenHitResult, LiveNotPossibleReason };
 export type { LivePuttEntry };
 
 export type LiveFirResult = "left" | "hit" | "right" | "na";
@@ -19,6 +20,43 @@ export type LiveTeeFaceContact =
   | `${LiveTeeFaceRow}_${LiveTeeFaceCol}`
   | "not_sure";
 export type LiveNineSide = "front" | "back";
+
+export type LiveTeeBox =
+  | "black"
+  | "blue"
+  | "white"
+  | "yellow"
+  | "red"
+  | "pink"
+  | "green";
+
+export const LIVE_TEE_BOX_OPTIONS: { id: LiveTeeBox; label: string }[] = [
+  { id: "black", label: "Black" },
+  { id: "blue", label: "Blue" },
+  { id: "white", label: "White" },
+  { id: "yellow", label: "Yellow" },
+  { id: "red", label: "Red" },
+  { id: "pink", label: "Pink" },
+  { id: "green", label: "Green" },
+];
+
+export function formatLiveTeeBox(tee: LiveTeeBox | null | undefined): string {
+  if (!tee) return "";
+  return LIVE_TEE_BOX_OPTIONS.find((o) => o.id === tee)?.label ?? tee;
+}
+
+export type LiveRoundType = "practice" | "competition" | "tournament";
+
+export const LIVE_ROUND_TYPE_OPTIONS: { id: LiveRoundType; label: string }[] = [
+  { id: "practice", label: "Practice round" },
+  { id: "competition", label: "Competition" },
+  { id: "tournament", label: "Tournament" },
+];
+
+export function formatLiveRoundType(type: LiveRoundType | null | undefined): string {
+  if (!type) return "";
+  return LIVE_ROUND_TYPE_OPTIONS.find((o) => o.id === type)?.label ?? type;
+}
 
 /** One-tap tee clubs on Live Entry. */
 export const LIVE_TEE_QUICK_CLUBS = [
@@ -104,7 +142,6 @@ export function liveTeeFaceContactLabel(contact: LiveTeeFaceContact): string {
   return `${LIVE_TEE_FACE_ROW_LABEL[row]} ${LIVE_TEE_FACE_COL_LABEL[col]}`;
 }
 
-export type LiveGreenHitResult = "yes" | "no" | "not_possible";
 export type LiveHolePhase = "tee" | "approach" | "putting";
 
 export type LiveApproachShot = {
@@ -152,6 +189,8 @@ export type LiveHoleEntry = {
   /** Driver face contact — only when teeSolidStrike is false. */
   teeFaceContact?: LiveTeeFaceContact | null;
   teeCorrectFlight?: boolean | null;
+  /** Only when teeCorrectFlight is false. */
+  teeDoubleCross?: boolean | null;
   fir: LiveFirResult | null;
   gir: boolean | null;
   penalties: number;
@@ -261,6 +300,19 @@ export function formatLiveScoreVsPar(delta: number): string {
   return String(delta);
 }
 
+/** Golf score name for a single hole (Birdie, Bogey, Par, etc.). */
+export function holeScoreNameVsPar(strokes: number, par: number): string {
+  const diff = strokes - par;
+  if (diff <= -3) return "Albatross";
+  if (diff === -2) return "Eagle";
+  if (diff === -1) return "Birdie";
+  if (diff === 0) return "Par";
+  if (diff === 1) return "Bogey";
+  if (diff === 2) return "Double";
+  if (diff === 3) return "Triple";
+  return `+${diff}`;
+}
+
 export function isHoleFinishedForRound(
   entry: LiveHoleEntry,
   currentPlayingHole: number,
@@ -312,6 +364,10 @@ export type LiveRoundSetup = {
   course: string;
   handicap: number | null;
   holes: 9 | 18;
+  /** Tees played (black, blue, white, etc.). */
+  teeBox?: LiveTeeBox | null;
+  /** Practice round, competition, or tournament. */
+  roundType?: LiveRoundType | null;
   /** Which nine when playing 9 holes (uses saved 18-hole scorecard). */
   nineSide?: LiveNineSide;
   /** Full 18-hole par list when known. */
@@ -395,6 +451,7 @@ export function buildLiveHoleEntry(
     teeSolidStrike: isPar3 ? null : (prev?.teeSolidStrike ?? null),
     teeFaceContact: isPar3 ? null : (prev?.teeFaceContact ?? null),
     teeCorrectFlight: isPar3 ? null : (prev?.teeCorrectFlight ?? null),
+    teeDoubleCross: isPar3 ? null : (prev?.teeDoubleCross ?? null),
     fir: prev?.fir ?? (isPar3 ? "na" : null),
     gir: prev?.gir ?? null,
     penalties: prev?.penalties ?? 0,

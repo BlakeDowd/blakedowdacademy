@@ -4,11 +4,12 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus } from "lucide-react";
+import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, Apple, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus } from "lucide-react";
 import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
 import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
 import { DrillLibrary } from "@/components/DrillLibrary";
+import { NutritionPlannerPanel } from "@/components/NutritionPlannerPanel";
 import { getBenchmarkGoals } from "@/app/stats/page";
 import {
   fetchDrillsCatalogRows,
@@ -581,6 +582,7 @@ export default function PracticePage() {
   const [freestyleExpanded, setFreestyleExpanded] = useState<boolean>(false);
   const [drillLibraryExpanded, setDrillLibraryExpanded] = useState<boolean>(false);
   const [combineTestsExpanded, setCombineTestsExpanded] = useState<boolean>(false);
+  const [nutritionPlannerExpanded, setNutritionPlannerExpanded] = useState<boolean>(false);
   const [onCourseConfirm, setOnCourseConfirm] = useState<{
     open: boolean;
     holes: number;
@@ -605,6 +607,8 @@ export default function PracticePage() {
   const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(false); // Weekly schedule expanded state
   const weeklyScheduleRef = useRef<HTMLDivElement>(null);
   const combineTestsRef = useRef<HTMLDivElement>(null);
+  const drillLibraryRef = useRef<HTMLDivElement>(null);
+  const nutritionPlannerRef = useRef<HTMLDivElement>(null);
   // SINGLE DAY VIEW: Initialize to today's day index
   const getTodayDayIndex = () => {
     const today = new Date();
@@ -687,7 +691,7 @@ export default function PracticePage() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const plan = params.get("plan");
-    if (plan !== "schedule" && plan !== "combine") return;
+    if (plan !== "schedule" && plan !== "combine" && plan !== "library" && plan !== "fuel") return;
 
     let scrollTimer: number | undefined;
 
@@ -703,6 +707,20 @@ export default function PracticePage() {
       setCombineTestsExpanded(true);
       scrollTimer = window.setTimeout(() => {
         combineTestsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 200);
+    }
+
+    if (plan === "library") {
+      setDrillLibraryExpanded(true);
+      scrollTimer = window.setTimeout(() => {
+        drillLibraryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 200);
+    }
+
+    if (plan === "fuel") {
+      setNutritionPlannerExpanded(true);
+      scrollTimer = window.setTimeout(() => {
+        nutritionPlannerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 200);
     }
 
@@ -3960,7 +3978,7 @@ export default function PracticePage() {
         </div>
 
         {/* Drill Library */}
-        <div className="mb-6">
+        <div id="drill-library-section" ref={drillLibraryRef} className="mb-6 scroll-mt-24">
           <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -4081,6 +4099,54 @@ export default function PracticePage() {
                     })
                   )}
                 </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Performance Fuel Planner */}
+        <div id="nutrition-planner-section" ref={nutritionPlannerRef} className="mb-6 scroll-mt-24">
+          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Apple className="w-5 h-5 text-primary" />
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Performance Fuel Planner
+                  </h3>
+                </div>
+                <p className="text-xs text-gray-600 mt-1">
+                  Tournament hydration &amp; fuel blueprint — targets update with your inputs
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNutritionPlannerExpanded((prev) => !prev)}
+                className={PRACTICE_SECTION_TOGGLE_BTN}
+                aria-expanded={nutritionPlannerExpanded}
+                aria-controls="nutrition-planner-content"
+                aria-label={
+                  nutritionPlannerExpanded
+                    ? "Collapse performance fuel planner"
+                    : "Expand performance fuel planner"
+                }
+                title={
+                  nutritionPlannerExpanded
+                    ? "Collapse performance fuel planner"
+                    : "Expand performance fuel planner"
+                }
+              >
+                {nutritionPlannerExpanded ? (
+                  <ChevronUp className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
+                ) : (
+                  <ChevronDown className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
+                )}
+              </button>
+            </div>
+
+            {nutritionPlannerExpanded && (
+              <div id="nutrition-planner-content">
+                <NutritionPlannerPanel userId={user?.id} />
               </div>
             )}
           </div>

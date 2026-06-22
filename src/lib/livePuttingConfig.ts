@@ -6,7 +6,7 @@ export type LivePuttMissLength = "long" | "short" | "good";
 export type LivePuttEntry = {
   puttNumber: number;
   made: boolean;
-  /** Distance in feet — typically recorded on the first putt. */
+  /** Distance in feet — recorded per putt. */
   distanceFeet?: number | null;
   missLine?: LivePuttMissLine | null;
   missLength?: LivePuttMissLength | null;
