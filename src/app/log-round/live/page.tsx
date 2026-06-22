@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronLeft, ChevronRight, Radio, Save, Check, MoveUpLeft, MoveUp, MoveUpRight, MoveLeft, MoveRight, MoveDownLeft, MoveDown, MoveDownRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/liveApproachShotConfig";
 import {
   formatLivePuttEntry,
+  LIVE_PUTT_BREAK_OPTIONS,
   normalizePuttLogs,
   puttingCompleteFromLogs,
   type LivePuttMissLine,
@@ -40,6 +41,7 @@ import {
   clearLiveRoundDraft,
   createLiveRoundDraft,
   courseHoleNumberForPlayingHole,
+  deriveLiveHoleStrokes,
   effectiveHoleStrokes,
   formatLiveScoreVsPar,
   holeScoreNameVsPar,
@@ -216,6 +218,23 @@ function LiveRoundEntryContent() {
     syncPuttingFormForEntry(entry);
   };
 
+  const syncStrokesTextForEntry = useCallback((entry: LiveHoleEntry | null | undefined) => {
+    if (!entry) {
+      setStrokesText("");
+      return;
+    }
+    if (entry.strokesManual && entry.strokes != null) {
+      setStrokesText(String(entry.strokes));
+      return;
+    }
+    const derived = deriveLiveHoleStrokes(entry);
+    if (derived != null) {
+      setStrokesText(String(derived));
+      return;
+    }
+    setStrokesText(entry.strokes != null ? String(entry.strokes) : "");
+  }, []);
+
   useEffect(() => {
     if (!user?.id) return;
     setSavedCourses(loadRecentCourseNames(user.id));
@@ -235,9 +254,9 @@ function LiveRoundEntryContent() {
       setPhase("holes");
       const hole = existing.holes.find((h) => h.hole === existing.currentHole);
       if (hole) syncHoleFormForEntry(hole);
-      setStrokesText(hole?.strokes != null ? String(hole.strokes) : "");
+      syncStrokesTextForEntry(hole);
     }
-  }, [user?.id]);
+  }, [user?.id, syncStrokesTextForEntry]);
 
   const courseProfiles = useMemo(
     () => (user?.id ? loadCourseProfiles(user.id) : []),
@@ -265,12 +284,6 @@ function LiveRoundEntryContent() {
     if (!draft) return null;
     return draft.holes.find((h) => h.hole === draft.currentHole) ?? null;
   }, [draft]);
-
-  const autoStrokes = currentHoleEntry ? effectiveHoleStrokes(currentHoleEntry) : null;
-
-  useEffect(() => {
-    setStrokesText(autoStrokes != null ? String(autoStrokes) : "");
-  }, [autoStrokes, draft?.currentHole]);
 
   const aggregated = useMemo(
     () => (draft ? aggregateLiveRound(draft) : null),
@@ -341,7 +354,9 @@ function LiveRoundEntryContent() {
         gir: null,
         putts: 0,
         strokes: null,
+        strokesManual: false,
         firstPuttDistanceFeet: null,
+        puttGreenBreak: null,
         puttLogs: [],
         currentPuttNumber: 1,
         penalties: 0,
@@ -366,7 +381,11 @@ function LiveRoundEntryContent() {
       if (h.hole !== draft.currentHole) return h;
       return applyDerivedHoleStrokes({ ...h, ...merged });
     });
+    const updatedEntry = nextHoles.find((h) => h.hole === draft.currentHole);
     persistDraft({ ...draft, holes: nextHoles });
+    if (updatedEntry && !updatedEntry.strokesManual && !("strokes" in patch) && !("strokesManual" in patch)) {
+      syncStrokesTextForEntry(updatedEntry);
+    }
   };
 
   const selectTeeClub = (club: string | null, otherOpen: boolean) => {
@@ -379,7 +398,8 @@ function LiveRoundEntryContent() {
     if (!draft) return holes;
     return holes.map((h) => {
       if (h.hole !== draft.currentHole) return h;
-      const derived = effectiveHoleStrokes(h);
+      if (h.strokesManual) return h;
+      const derived = deriveLiveHoleStrokes(h);
       if (derived != null && derived > 0) return { ...h, strokes: derived };
       return h;
     });
@@ -429,7 +449,7 @@ function LiveRoundEntryContent() {
     setPhase("holes");
     const hole = next.holes.find((h) => h.hole === next.currentHole);
     if (hole) syncHoleFormForEntry(hole);
-    setStrokesText(hole?.strokes != null ? String(hole.strokes) : "");
+    syncStrokesTextForEntry(hole);
   };
 
   const goToHole = (hole: number) => {
@@ -439,8 +459,7 @@ function LiveRoundEntryContent() {
     persistDraft({ ...draft, holes, currentHole: clamped });
     const entry = holes.find((h) => h.hole === clamped);
     if (entry) syncHoleFormForEntry(entry);
-    const strokes = entry ? effectiveHoleStrokes(entry) : null;
-    setStrokesText(strokes != null ? String(strokes) : "");
+    syncStrokesTextForEntry(entry);
   };
 
   const saveProgress = () => {
@@ -512,6 +531,7 @@ function LiveRoundEntryContent() {
         currentPuttNumber: 1,
         putts: 0,
         firstPuttDistanceFeet: null,
+        puttGreenBreak: null,
       });
       setApproachDistanceText("");
       setApproachDirection(null);
@@ -549,6 +569,7 @@ function LiveRoundEntryContent() {
       gir: null,
       putts: 0,
       firstPuttDistanceFeet: null,
+      puttGreenBreak: null,
       puttLogs: [],
       currentPuttNumber: 1,
       girNotPossibleAttempt: kept.some((s) => s.greenHit === "not_possible"),
@@ -575,6 +596,7 @@ function LiveRoundEntryContent() {
       puttNumber,
       made,
       distanceFeet,
+      break: currentHoleEntry.puttGreenBreak ?? null,
       missLine: made ? null : (missLine ?? null),
       missLength: made ? null : (missLength ?? null),
     };
@@ -627,6 +649,10 @@ function LiveRoundEntryContent() {
       putts: kept.length,
       firstPuttDistanceFeet:
         targetPutt === 1 ? (editing?.distanceFeet ?? null) : currentHoleEntry.firstPuttDistanceFeet,
+      puttGreenBreak:
+        targetPutt === 1
+          ? (editing?.break ?? currentHoleEntry.puttGreenBreak ?? null)
+          : currentHoleEntry.puttGreenBreak ?? null,
     });
     setPuttDistanceText(
       editing?.distanceFeet != null ? String(editing.distanceFeet) : "",
@@ -1181,7 +1207,11 @@ function LiveRoundEntryContent() {
                           const raw = e.target.value;
                           setStrokesText(raw);
                           const n = optionalNumberFromInput(raw);
-                          updateCurrentHole({ strokes: n });
+                          const isManual = raw.trim() !== "";
+                          updateCurrentHole({
+                            strokes: n,
+                            strokesManual: isManual,
+                          });
                         }}
                         placeholder={holePar != null ? "e.g. 5" : "Set par first"}
                         disabled={holePar == null}
@@ -1660,6 +1690,32 @@ function LiveRoundEntryContent() {
                               placeholder="e.g. 25"
                               className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-center text-lg font-semibold tabular-nums text-gray-900 focus:border-[#FFA500] focus:outline-none"
                             />
+                          </div>
+                          <div className="mb-4">
+                            <label className="mb-2 block text-xs font-medium text-gray-600">
+                              Green break
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {LIVE_PUTT_BREAK_OPTIONS.map((option) => {
+                                const active = currentHoleEntry.puttGreenBreak === option.id;
+                                return (
+                                  <button
+                                    key={option.id}
+                                    type="button"
+                                    onClick={() =>
+                                      updateCurrentHole({ puttGreenBreak: option.id })
+                                    }
+                                    className={`rounded-xl border-2 px-2 py-2.5 text-xs font-semibold transition-colors ${
+                                      active
+                                        ? "border-[#014421] bg-[#014421] text-white"
+                                        : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
+                                    }`}
+                                  >
+                                    {option.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                           {!pendingPuttMiss ? (
                             <div className="mb-3">

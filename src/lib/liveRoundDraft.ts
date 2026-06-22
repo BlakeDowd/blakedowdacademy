@@ -5,7 +5,7 @@ import type {
   LiveGreenHitResult,
   LiveNotPossibleReason,
 } from "@/lib/liveApproachShotConfig";
-import type { LivePuttEntry } from "@/lib/livePuttingConfig";
+import type { LivePuttBreak, LivePuttEntry } from "@/lib/livePuttingConfig";
 import { normalizePuttLogs, puttingCompleteFromLogs } from "@/lib/livePuttingConfig";
 
 export type { LiveApproachShotDirection, LiveGreenHitResult, LiveNotPossibleReason };
@@ -164,6 +164,8 @@ export type LiveHoleEntry = {
   courseHoleNumber?: number;
   par: number | null;
   strokes: number | null;
+  /** When true, strokes were entered manually and should not be overwritten by shot logging. */
+  strokesManual?: boolean;
   putts: number;
   /** Hole logging workflow phase. */
   holePhase?: LiveHolePhase;
@@ -174,6 +176,8 @@ export type LiveHoleEntry = {
   /** Active approach shot number while logging (2+). */
   currentApproachShot?: number;
   firstPuttDistanceFeet?: number | null;
+  /** Green break for the current putting sequence on this hole. */
+  puttGreenBreak?: LivePuttBreak | null;
   /** Logged putts until holing out. */
   puttLogs?: LivePuttEntry[];
   /** Active putt number while logging (1+). */
@@ -280,6 +284,9 @@ export function deriveLiveHoleStrokes(entry: LiveHoleEntry): number | null {
 }
 
 export function effectiveHoleStrokes(entry: LiveHoleEntry): number | null {
+  if (entry.strokesManual && entry.strokes != null && entry.strokes > 0) {
+    return entry.strokes;
+  }
   const derived = deriveLiveHoleStrokes(entry);
   if (derived != null) return derived;
   if (entry.strokes != null && entry.strokes > 0) return entry.strokes;
@@ -287,6 +294,7 @@ export function effectiveHoleStrokes(entry: LiveHoleEntry): number | null {
 }
 
 export function applyDerivedHoleStrokes(entry: LiveHoleEntry): LiveHoleEntry {
+  if (entry.strokesManual) return entry;
   const derived = deriveLiveHoleStrokes(entry);
   if (derived != null && derived > 0) {
     return { ...entry, strokes: derived };
@@ -435,12 +443,14 @@ export function buildLiveHoleEntry(
     courseHoleNumber,
     par,
     strokes: prev?.strokes ?? null,
+    strokesManual: prev?.strokesManual ?? false,
     putts: prev?.putts ?? 0,
     holePhase: prev?.holePhase ?? workflow.holePhase,
     teeRecorded: prev?.teeRecorded ?? workflow.teeRecorded,
     approachShots: normalizeApproachShots(prev?.approachShots ?? workflow.approachShots),
     currentApproachShot: prev?.currentApproachShot ?? workflow.currentApproachShot,
     firstPuttDistanceFeet: prev?.firstPuttDistanceFeet ?? workflow.firstPuttDistanceFeet,
+    puttGreenBreak: prev?.puttGreenBreak ?? null,
     puttLogs: normalizePuttLogs(prev?.puttLogs ?? workflow.puttLogs),
     currentPuttNumber: prev?.currentPuttNumber ?? workflow.currentPuttNumber,
     girNotPossibleAttempt:
