@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronLeft, ChevronRight, Radio, Save, Check, MoveUpLeft, MoveUp, MoveUpRight, MoveLeft, MoveRight, MoveDownLeft, MoveDown, MoveDownRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -81,6 +81,7 @@ import {
 } from "@/lib/liveRoundDraft";
 import { LiveRoundInProgressBanner } from "@/components/LiveRoundInProgressBanner";
 import { LiveRoundScorecard } from "@/components/LiveRoundScorecard";
+import { ShareRoundCommunityModal } from "@/components/ShareRoundCommunityModal";
 import {
   LIVE_ENTRY_ENABLED,
   LiveEntryTestingBanner,
@@ -191,6 +192,8 @@ function LiveRoundEntryContent() {
   const [pendingPuttMiss, setPendingPuttMiss] = useState(false);
   const [puttMissLine, setPuttMissLine] = useState<LivePuttMissLine | null>(null);
   const [puttMissLength, setPuttMissLength] = useState<LivePuttMissLength | null>(null);
+  const [sharePromptOpen, setSharePromptOpen] = useState(false);
+  const pendingFinishDraftRef = useRef<LiveRoundDraft | null>(null);
 
   const resetApproachFormDraft = () => {
     setApproachDistanceText("");
@@ -482,10 +485,24 @@ function LiveRoundEntryContent() {
       alert("Log at least one hole before finishing.");
       return;
     }
-    const totals = aggregateLiveRound(finalized);
+    pendingFinishDraftRef.current = finalized;
+    setSharePromptOpen(true);
+  };
+
+  const completeFinishRound = (shareOnCommunity: boolean) => {
+    setSharePromptOpen(false);
+    const finalized = pendingFinishDraftRef.current;
+    pendingFinishDraftRef.current = null;
+    if (!finalized || !user?.id) return;
+
+    const totals = {
+      ...aggregateLiveRound(finalized),
+      shareOnCommunity,
+      shareCommunityConfirmed: true,
+    };
     saveLiveRoundHandoff(user.id, totals);
-    if (draft.setup.coursePars) {
-      persistCourseProfileIfNeeded(draft.setup.course, draft.setup.coursePars);
+    if (finalized.setup.coursePars) {
+      persistCourseProfileIfNeeded(finalized.setup.course, finalized.setup.coursePars);
     }
     clearLiveRoundDraft(user.id);
     router.push("/log-round?from=live");
@@ -1905,6 +1922,16 @@ function LiveRoundEntryContent() {
           )}
         </div>
       </div>
+
+      <ShareRoundCommunityModal
+        open={sharePromptOpen}
+        onClose={() => {
+          setSharePromptOpen(false);
+          pendingFinishDraftRef.current = null;
+        }}
+        onConfirm={completeFinishRound}
+        context="live-finish"
+      />
     </div>
   );
 }

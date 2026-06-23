@@ -402,6 +402,9 @@ export type LiveRoundAggregated = {
   firRight: number;
   totalGir: number;
   totalPenalties: number;
+  /** Set when user confirms share prompt after live finish. */
+  shareOnCommunity?: boolean;
+  shareCommunityConfirmed?: boolean;
 };
 
 const STORAGE_PREFIX = "liveRoundDraft";

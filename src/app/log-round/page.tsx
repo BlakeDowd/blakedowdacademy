@@ -38,6 +38,7 @@ import {
   LIVE_ENTRY_ENABLED,
   LiveEntryNotReadyModal,
 } from "@/components/LiveEntryNotReadyModal";
+import { ShareRoundCommunityModal } from "@/components/ShareRoundCommunityModal";
 
 /** Hole results + Tee & Approach: one visual system (2-col grid, centered orphan row). */
 const ROUND_COUNTER_GRID = "grid grid-cols-2 gap-3";
@@ -192,6 +193,28 @@ function roundScoreForDb(value: number | null): number | null {
   return Math.round(value);
 }
 
+const ROUND_SHARE_PREF_KEY = "roundShareOnCommunityPref";
+
+function loadShareOnCommunityPref(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const raw = localStorage.getItem(ROUND_SHARE_PREF_KEY);
+    if (raw === null) return true;
+    return raw === "true";
+  } catch {
+    return true;
+  }
+}
+
+function saveShareOnCommunityPref(value: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(ROUND_SHARE_PREF_KEY, value ? "true" : "false");
+  } catch {
+    /* ignore */
+  }
+}
+
 function formatSupabaseError(error: unknown): string {
   if (!error || typeof error !== "object") return String(error);
   const e = error as { message?: string; details?: string; hint?: string; code?: string };
@@ -253,6 +276,15 @@ export default function LogRoundPage() {
     made6ftAndIn: 0,
     puttsUnder6ftAttempts: 0,
   });
+
+  const [shareOnCommunity, setShareOnCommunity] = useState(true);
+  const [shareCommunityConfirmedFromLive, setShareCommunityConfirmedFromLive] =
+    useState(false);
+  const [sharePromptOpen, setSharePromptOpen] = useState(false);
+
+  useEffect(() => {
+    setShareOnCommunity(loadShareOnCommunityPref());
+  }, []);
 
   /** Controlled strings so values like `83.` stay editable while still syncing numeric `roundData`. */
   const [scoreText, setScoreText] = useState("");
@@ -316,6 +348,10 @@ export default function LogRoundPage() {
     setScoreText(score != null ? String(score) : "");
     setHandicapText(handicap != null ? String(handicap) : "");
     setTotalPuttsText(handoff.totalPutts > 0 ? String(handoff.totalPutts) : "");
+    if (handoff.shareCommunityConfirmed) {
+      setShareOnCommunity(handoff.shareOnCommunity ?? true);
+      setShareCommunityConfirmedFromLive(true);
+    }
     setLiveHandoffApplied(true);
     clearLiveRoundHandoff(user.id);
   }, [user?.id]);
@@ -439,7 +475,8 @@ export default function LogRoundPage() {
     }));
   };
 
-  const saveRound = async () => {
+  const saveRound = async (shareChoice?: boolean) => {
+    const share = shareChoice ?? shareOnCommunity;
     // Validate required fields
     if (!roundData.course || roundData.score === null || roundData.totalPutts === 0) {
       alert('Please fill in all required fields (Course, Score, Total Putts)');
@@ -518,6 +555,7 @@ export default function LogRoundPage() {
         made_under_6ft: roundData.made6ftAndIn,
         putts_under_6ft_attempts: roundData.puttsUnder6ftAttempts,
         approach_directional_shots: directionalApproachShots,
+        share_on_community: share,
       };
 
       console.log('Attempting to save round with user_id:', currentUserId);
@@ -557,10 +595,24 @@ export default function LogRoundPage() {
         putts_under_6ft_attempts: insertData.putts_under_6ft_attempts,
       });
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('rounds')
         .insert(insertData)
         .select();
+
+      const isMissingShareColumn =
+        error &&
+        (error.code === '42703' ||
+          error.code === 'PGRST204' ||
+          error.message?.includes('share_on_community'));
+
+      if (isMissingShareColumn) {
+        console.warn(
+          'share_on_community column missing — retrying save without it. Run supabase/migrations/20260527120000_rounds_share_on_community.sql in Supabase.',
+        );
+        const { share_on_community: _share, ...insertWithoutShare } = insertData;
+        ({ data, error } = await supabase.from('rounds').insert(insertWithoutShare).select());
+      }
 
       if (error) {
         console.error('Database error saving round:', error);
@@ -585,6 +637,9 @@ export default function LogRoundPage() {
 
       console.log('Round saved successfully!', data);
       console.log('Round saved successfully');
+
+      saveShareOnCommunityPref(share);
+      setShareOnCommunity(share);
 
       await addProfileXp(currentUserId, XP_AWARD_PER_LOGGED_ROUND);
       await refreshUser();
@@ -651,6 +706,21 @@ export default function LogRoundPage() {
 
   const isRequiredFilled = roundData.course && roundData.score !== null && roundData.totalPutts > 0;
 
+  const handleSaveClick = () => {
+    if (!isRequiredFilled || isSaving) return;
+    if (shareCommunityConfirmedFromLive) {
+      void saveRound(shareOnCommunity);
+      return;
+    }
+    setSharePromptOpen(true);
+  };
+
+  const handleSharePromptConfirm = (share: boolean) => {
+    setSharePromptOpen(false);
+    setShareOnCommunity(share);
+    void saveRound(share);
+  };
+
   return (
     <div className="flex-1 w-full flex flex-col bg-[#014421]">
       {/* Header */}
@@ -683,6 +753,13 @@ export default function LogRoundPage() {
         onOpenForTesting={openLiveEntryForTesting}
       />
 
+      <ShareRoundCommunityModal
+        open={sharePromptOpen}
+        onClose={() => setSharePromptOpen(false)}
+        onConfirm={handleSharePromptConfirm}
+        context="save"
+      />
+
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
         <div className="max-w-md mx-auto">
           {LIVE_ENTRY_ENABLED && activeLiveDraft && !liveHandoffApplied && (
@@ -696,6 +773,13 @@ export default function LogRoundPage() {
             <div className="mb-4 rounded-xl border border-[#FFA500]/40 bg-[#FFF7ED] px-4 py-3 text-sm text-gray-800">
               <span className="font-semibold text-[#014421]">Live entry loaded.</span> Review the
               totals below, add anything else, then save your round.
+              {shareCommunityConfirmedFromLive && (
+                <span className="mt-1 block text-xs text-gray-600">
+                  Community sharing:{" "}
+                  {shareOnCommunity ? "will be shared" : "will stay private"} (you chose this after
+                  live entry).
+                </span>
+              )}
             </div>
           )}
           <div className="space-y-4 pb-6">
@@ -2148,7 +2232,7 @@ export default function LogRoundPage() {
 
           {/* Save Button */}
           <button
-            onClick={saveRound}
+            onClick={handleSaveClick}
             disabled={!isRequiredFilled || isSaving}
             className="w-full py-4 rounded-xl text-lg font-semibold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg mb-6"
             style={{ backgroundColor: '#FFA500' }}

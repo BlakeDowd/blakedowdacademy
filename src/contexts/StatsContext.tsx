@@ -42,6 +42,8 @@ interface RoundData {
   puttsUnder6ftAttempts: number;
   /** JSON array from `rounds.approach_directional_shots` (optional). */
   approachDirectionalShots?: unknown[];
+  /** When false, hidden from community tab / leaderboards (coach can still view). */
+  shareOnCommunity?: boolean;
 }
 
 interface DrillData {
@@ -208,6 +210,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     approachDirectionalShots: Array.isArray(round.approach_directional_shots)
       ? round.approach_directional_shots
       : [],
+    shareOnCommunity: round.share_on_community !== false,
     user_id: round.user_id,
     full_name: undefined,
     profile_icon: undefined,
@@ -240,7 +243,9 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const transformed = (data || []).map(mapRoundRow);
+      const transformed = (data || [])
+        .map(mapRoundRow)
+        .filter((round) => round.shareOnCommunity);
       setCommunityRounds(transformed);
       communityRoundsFetched.current = true;
       if (transformed.length > 0 && typeof window !== "undefined") {

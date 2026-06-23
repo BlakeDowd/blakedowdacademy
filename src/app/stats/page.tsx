@@ -39,6 +39,7 @@ import type { PlayerGoalRow } from "@/types/playerGoals";
 import { PracticeVsGoalsSection } from "@/components/stats/PracticeVsGoalsSection";
 import { countUserCombineCompletions } from "@/lib/combineCompletionDetection";
 import { practiceSessionMinutesFromRow, practiceSessionsForUser } from "@/lib/practiceSessionDuration";
+import { buildDummyRoundsForUser } from "@/lib/seedDummyRounds";
 
 function AnimatedNumber({ value, isPercentage = false }: { value: number; isPercentage?: boolean }) {
   const spring = useSpring(value >= 0 ? value : 0, { mass: 0.8, stiffness: 75, damping: 15 });
@@ -277,6 +278,8 @@ export default function StatsPage() {
   );
   const [isAdjustingGoal, setIsAdjustingGoal] = useState<boolean>(false);
   const adjustTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [seedingSampleRounds, setSeedingSampleRounds] = useState(false);
+  const [seedSampleError, setSeedSampleError] = useState("");
   
   const handleGoalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newGoal = clampTargetGoalHandicap(parseInt(e.target.value, 10));
@@ -323,6 +326,42 @@ export default function StatsPage() {
         }
       }
     }, 1000); // 1 second debounce for the DB update
+  };
+
+  const handleSeedSampleRounds = async () => {
+    setSeedingSampleRounds(true);
+    setSeedSampleError("");
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const uid = user?.id ?? (await resolveAuthUserId(supabase));
+      if (!uid) {
+        throw new Error("Sign in to load sample rounds.");
+      }
+
+      const rows = buildDummyRoundsForUser(uid);
+      const { data, error } = await supabase
+        .from("rounds")
+        .insert(rows)
+        .select("id, date, course_name, score, holes");
+
+      if (error) {
+        throw new Error(error.message || "Failed to load sample rounds.");
+      }
+
+      if (!data?.length) {
+        throw new Error("No sample rounds were inserted.");
+      }
+
+      refreshRounds?.();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("roundsUpdated"));
+      }
+    } catch (err) {
+      setSeedSampleError(err instanceof Error ? err.message : "Failed to load sample rounds.");
+    } finally {
+      setSeedingSampleRounds(false);
+    }
   };
   
   const [selectedMetric, setSelectedMetric] = useState<'nettScore' | 'gross' | 'birdies' | 'pars' | 'bogeys' | 'totalPutts' | 'doubleBogeys' | 'eagles' | 'threePutts' | 'fairwaysHit' | 'gir' | 'gir8ft' | 'gir20ft' | 'upAndDown' | 'bunkerSaves' | 'chipInside6ft' | 'doubleChips' | 'totalPenalties'>('nettScore');
@@ -1046,6 +1085,26 @@ export default function StatsPage() {
 
       {/* Single column scroll lives on AppFrame <main>; avoid nested overflow-y here or the bottom of the page never scrolls into view. */}
       <div className="overflow-x-hidden px-4 pb-32 pt-4 min-w-0">
+        {user?.id && safeRounds.length === 0 ? (
+          <section className="mb-4 rounded-2xl border border-dashed border-[#FF9800]/40 bg-orange-50/80 p-4">
+            <p className="text-sm font-medium text-stone-800">No logged rounds yet</p>
+            <p className="mt-1 text-xs text-stone-600">
+              Load three sample rounds (18-hole, 18-hole, and 9-hole) with full stats and approach shot data to preview this page.
+            </p>
+            <button
+              type="button"
+              onClick={handleSeedSampleRounds}
+              disabled={seedingSampleRounds}
+              className="mt-3 rounded-xl bg-[#FF9800] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#e68900] disabled:opacity-60"
+            >
+              {seedingSampleRounds ? "Loading sample rounds…" : "Load sample rounds"}
+            </button>
+            {seedSampleError ? (
+              <p className="mt-2 text-xs font-medium text-red-600">{seedSampleError}</p>
+            ) : null}
+          </section>
+        ) : null}
+
         <CoachDeepDiveProfileHero
           playerName={statsProfileDisplayName}
           playerHandicap={clampTargetGoalHandicap(selectedGoal)}

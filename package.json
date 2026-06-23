@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "drills:upsert": "tsx scripts/upsert-drills-from-csv.ts"
+    "drills:upsert": "tsx scripts/upsert-drills-from-csv.ts",
+    "rounds:seed": "tsx scripts/seed-dummy-rounds.ts"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.2",
