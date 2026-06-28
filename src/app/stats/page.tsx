@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import { AdvancedApproachStatsPanel } from "@/components/stats/AdvancedApproachStatsPanel";
+import { LivePuttingBreakdownPanel } from "@/components/stats/LivePuttingBreakdownPanel";
 import { CoachDeepDiveProfileHero } from "@/components/coach/CoachDeepDiveProfileHero";
 import type { AcademyTrophyDbRow } from "@/components/AcademyTrophyCasePanel";
 import { useStats } from "@/contexts/StatsContext";
@@ -2078,7 +2079,7 @@ export default function StatsPage() {
                 </div>
                 <div className="flex-1">
                   <h3 className="text-base font-semibold tracking-tight text-stone-900">Putting</h3>
-                  <p className="text-xs text-stone-500">Putts per round, short putt makes, and three-putts</p>
+                  <p className="text-xs text-stone-500">Putts per round, short putt makes, three-putts, and live-entry detail</p>
                 </div>
                 <button
                   type="button"
@@ -2116,6 +2117,12 @@ export default function StatsPage() {
                   inverse={true}
                   isAdjustingGoal={isAdjustingGoal}
                 />
+                <div className="border-t border-gray-200 pt-4 mt-2">
+                  <LivePuttingBreakdownPanel
+                    rounds={scopedPlayerStatsRounds}
+                    holeFilter={holeFilter}
+                  />
+                </div>
               </div>
               )}
             </section>

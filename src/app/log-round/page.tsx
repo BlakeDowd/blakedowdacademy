@@ -171,6 +171,8 @@ interface RoundData {
   threePutts: number;
   made6ftAndIn: number;
   puttsUnder6ftAttempts: number; // Total attempts from < 6ft
+  /** Per-putt detail from live entry (distance, break, miss line / speed). */
+  puttingLogs?: import("@/lib/roundPuttingLogs").RoundPuttingLogEntry[];
 }
 
 /** Parse a text field to a finite number, or null when empty / incomplete / invalid. */
@@ -344,6 +346,9 @@ export default function LogRoundPage() {
       totalPenalties: handoff.totalPenalties,
       totalPutts: handoff.totalPutts,
       threePutts: handoff.threePutts,
+      made6ftAndIn: handoff.made6ftAndIn ?? prev.made6ftAndIn,
+      puttsUnder6ftAttempts: handoff.puttsUnder6ftAttempts ?? prev.puttsUnder6ftAttempts,
+      puttingLogs: handoff.puttingLogs ?? [],
     }));
     setScoreText(score != null ? String(score) : "");
     setHandicapText(handicap != null ? String(handicap) : "");
@@ -555,6 +560,7 @@ export default function LogRoundPage() {
         made_under_6ft: roundData.made6ftAndIn,
         putts_under_6ft_attempts: roundData.puttsUnder6ftAttempts,
         approach_directional_shots: directionalApproachShots,
+        putting_logs: roundData.puttingLogs ?? [],
         share_on_community: share,
       };
 
@@ -595,23 +601,27 @@ export default function LogRoundPage() {
         putts_under_6ft_attempts: insertData.putts_under_6ft_attempts,
       });
 
-      let { data, error } = await supabase
-        .from('rounds')
-        .insert(insertData)
-        .select();
+      let insertPayload: Record<string, unknown> = { ...insertData };
+      let { data, error } = await supabase.from("rounds").insert(insertPayload).select();
 
-      const isMissingShareColumn =
-        error &&
-        (error.code === '42703' ||
-          error.code === 'PGRST204' ||
-          error.message?.includes('share_on_community'));
-
-      if (isMissingShareColumn) {
+      const optionalColumns = ["share_on_community", "putting_logs"] as const;
+      for (const column of optionalColumns) {
+        if (
+          !error ||
+          !(
+            error.code === "42703" ||
+            error.code === "PGRST204" ||
+            error.message?.includes(column)
+          )
+        ) {
+          break;
+        }
         console.warn(
-          'share_on_community column missing — retrying save without it. Run supabase/migrations/20260527120000_rounds_share_on_community.sql in Supabase.',
+          `${column} column missing — retrying save without it. Run the latest Supabase migrations.`,
         );
-        const { share_on_community: _share, ...insertWithoutShare } = insertData;
-        ({ data, error } = await supabase.from('rounds').insert(insertWithoutShare).select());
+        const { [column]: _removed, ...rest } = insertPayload;
+        insertPayload = rest;
+        ({ data, error } = await supabase.from("rounds").insert(insertPayload).select());
       }
 
       if (error) {

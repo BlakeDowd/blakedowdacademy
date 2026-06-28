@@ -42,6 +42,8 @@ interface RoundData {
   puttsUnder6ftAttempts: number;
   /** JSON array from `rounds.approach_directional_shots` (optional). */
   approachDirectionalShots?: unknown[];
+  /** Per-putt detail from live entry (`rounds.putting_logs`). */
+  puttingLogs?: import("@/lib/roundPuttingLogs").RoundPuttingLogEntry[];
   /** When false, hidden from community tab / leaderboards (coach can still view). */
   shareOnCommunity?: boolean;
 }
@@ -210,6 +212,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     approachDirectionalShots: Array.isArray(round.approach_directional_shots)
       ? round.approach_directional_shots
       : [],
+    puttingLogs: Array.isArray(round.putting_logs) ? round.putting_logs : [],
     shareOnCommunity: round.share_on_community !== false,
     user_id: round.user_id,
     full_name: undefined,

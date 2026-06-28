@@ -22,6 +22,7 @@ import {
   X,
   BookOpen,
   Apple,
+  Bot,
   Users,
   User,
   Pencil,
@@ -1469,6 +1470,15 @@ export default function HomeDashboard() {
             >
               <Apple className="h-4 w-4 shrink-0" aria-hidden />
               Fuel Planner
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/virtual-caddie')}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Bot className="h-4 w-4 shrink-0" aria-hidden />
+              Virtual Caddie
             </button>
           </div>
         </div>

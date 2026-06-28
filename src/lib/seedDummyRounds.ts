@@ -5,6 +5,16 @@ export type DirectionalApproachShot = {
   result: string;
 };
 
+type SeedPuttingLog = {
+  hole: number;
+  puttNumber: number;
+  made: boolean;
+  distanceFeet: number;
+  break: "left_to_right" | "straight" | "right_to_left" | "double_breaker";
+  missLine?: "high" | "low" | "good" | null;
+  missLength?: "long" | "short" | "good" | null;
+};
+
 export type DummyRoundInsert = {
   date: string;
   course_name: string;
@@ -41,6 +51,7 @@ export type DummyRoundInsert = {
   made_under_6ft: number;
   putts_under_6ft_attempts: number;
   approach_directional_shots: DirectionalApproachShot[];
+  putting_logs: SeedPuttingLog[];
   share_on_community: boolean;
 };
 
@@ -111,6 +122,24 @@ export const DUMMY_ROUND_TEMPLATES: DummyRoundInsert[] = [
       [17, "8i", "gir"],
       [18, "9i", "right"],
     ]),
+    putting_logs: [
+      { hole: 1, puttNumber: 1, made: false, distanceFeet: 22, break: "left_to_right", missLine: "low", missLength: "long" },
+      { hole: 1, puttNumber: 2, made: true, distanceFeet: 4, break: "left_to_right" },
+      { hole: 2, puttNumber: 1, made: true, distanceFeet: 8, break: "straight" },
+      { hole: 3, puttNumber: 1, made: false, distanceFeet: 15, break: "right_to_left", missLine: "high", missLength: "short" },
+      { hole: 3, puttNumber: 2, made: true, distanceFeet: 3, break: "right_to_left" },
+      { hole: 5, puttNumber: 1, made: true, distanceFeet: 12, break: "left_to_right" },
+      { hole: 7, puttNumber: 1, made: false, distanceFeet: 25, break: "double_breaker", missLine: "low", missLength: "long" },
+      { hole: 7, puttNumber: 2, made: false, distanceFeet: 6, break: "double_breaker", missLine: "high", missLength: "short" },
+      { hole: 7, puttNumber: 3, made: true, distanceFeet: 2, break: "double_breaker" },
+      { hole: 9, puttNumber: 1, made: true, distanceFeet: 5, break: "straight" },
+      { hole: 11, puttNumber: 1, made: false, distanceFeet: 18, break: "right_to_left", missLine: "high", missLength: "long" },
+      { hole: 11, puttNumber: 2, made: true, distanceFeet: 4, break: "right_to_left" },
+      { hole: 14, puttNumber: 1, made: true, distanceFeet: 10, break: "left_to_right" },
+      { hole: 16, puttNumber: 1, made: false, distanceFeet: 7, break: "straight", missLine: "low", missLength: "short" },
+      { hole: 16, puttNumber: 2, made: true, distanceFeet: 3, break: "straight" },
+      { hole: 18, puttNumber: 1, made: true, distanceFeet: 14, break: "left_to_right" },
+    ],
     share_on_community: true,
   },
   {
@@ -168,6 +197,14 @@ export const DUMMY_ROUND_TEMPLATES: DummyRoundInsert[] = [
       [17, "9i", "bottom-left"],
       [18, "7i", "right"],
     ]),
+    putting_logs: [
+      { hole: 2, puttNumber: 1, made: false, distanceFeet: 20, break: "right_to_left", missLine: "high", missLength: "long" },
+      { hole: 2, puttNumber: 2, made: true, distanceFeet: 5, break: "right_to_left" },
+      { hole: 6, puttNumber: 1, made: false, distanceFeet: 8, break: "straight", missLine: "low", missLength: "short" },
+      { hole: 6, puttNumber: 2, made: false, distanceFeet: 4, break: "straight", missLine: "high", missLength: "long" },
+      { hole: 6, puttNumber: 3, made: true, distanceFeet: 2, break: "straight" },
+      { hole: 12, puttNumber: 1, made: true, distanceFeet: 16, break: "left_to_right" },
+    ],
     share_on_community: false,
   },
   {
@@ -216,6 +253,12 @@ export const DUMMY_ROUND_TEMPLATES: DummyRoundInsert[] = [
       [8, "8i", "bottom-left"],
       [9, "9i", "gir"],
     ]),
+    putting_logs: [
+      { hole: 1, puttNumber: 1, made: true, distanceFeet: 6, break: "left_to_right" },
+      { hole: 3, puttNumber: 1, made: false, distanceFeet: 11, break: "straight", missLine: "low", missLength: "short" },
+      { hole: 3, puttNumber: 2, made: true, distanceFeet: 3, break: "straight" },
+      { hole: 7, puttNumber: 1, made: true, distanceFeet: 9, break: "right_to_left" },
+    ],
     share_on_community: true,
   },
 ];

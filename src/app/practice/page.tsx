@@ -4116,7 +4116,7 @@ export default function PracticePage() {
                   </h3>
                 </div>
                 <p className="text-xs text-gray-600 mt-1">
-                  Tournament hydration &amp; fuel blueprint — targets update with your inputs
+                  Australian climate fuel blueprint — sweat rate, sodium &amp; carbs update live
                 </p>
               </div>
               <button

@@ -7,6 +7,8 @@ import type {
 } from "@/lib/liveApproachShotConfig";
 import type { LivePuttBreak, LivePuttEntry } from "@/lib/livePuttingConfig";
 import { normalizePuttLogs, puttingCompleteFromLogs } from "@/lib/livePuttingConfig";
+import type { RoundPuttingLogEntry } from "@/lib/roundPuttingLogs";
+import { puttingMakeStatsFromLogs } from "@/lib/roundPuttingLogs";
 
 export type { LiveApproachShotDirection, LiveGreenHitResult, LiveNotPossibleReason };
 export type { LivePuttEntry };
@@ -402,6 +404,10 @@ export type LiveRoundAggregated = {
   firRight: number;
   totalGir: number;
   totalPenalties: number;
+  /** Per-putt detail from live putting phase. */
+  puttingLogs?: RoundPuttingLogEntry[];
+  made6ftAndIn?: number;
+  puttsUnder6ftAttempts?: number;
   /** Set when user confirms share prompt after live finish. */
   shareOnCommunity?: boolean;
   shareCommunityConfirmed?: boolean;
@@ -549,6 +555,27 @@ export function clearLiveRoundDraft(userId: string) {
   localStorage.removeItem(liveRoundDraftKey(userId));
 }
 
+export function collectPuttingLogsFromDraft(draft: LiveRoundDraft): RoundPuttingLogEntry[] {
+  const entries: RoundPuttingLogEntry[] = [];
+  for (const hole of draft.holes) {
+    const strokes = effectiveHoleStrokes(hole);
+    if (strokes == null || strokes <= 0) continue;
+    const logs = normalizePuttLogs(hole.puttLogs);
+    for (const putt of logs) {
+      entries.push({
+        hole: hole.hole,
+        puttNumber: putt.puttNumber,
+        made: putt.made,
+        distanceFeet: putt.distanceFeet ?? null,
+        break: putt.break ?? hole.puttGreenBreak ?? null,
+        missLine: putt.missLine ?? null,
+        missLength: putt.missLength ?? null,
+      });
+    }
+  }
+  return entries;
+}
+
 export function aggregateLiveRound(draft: LiveRoundDraft): LiveRoundAggregated {
   const played = draft.holes.filter((h) => {
     const strokes = effectiveHoleStrokes(h);
@@ -579,6 +606,9 @@ export function aggregateLiveRound(draft: LiveRoundDraft): LiveRoundAggregated {
     totalPenalties += h.penalties;
   }
 
+  const puttingLogs = collectPuttingLogsFromDraft(draft);
+  const under6 = puttingMakeStatsFromLogs(puttingLogs);
+
   return {
     date: draft.setup.date,
     course: draft.setup.course,
@@ -592,6 +622,9 @@ export function aggregateLiveRound(draft: LiveRoundDraft): LiveRoundAggregated {
     firRight,
     totalGir,
     totalPenalties,
+    puttingLogs,
+    made6ftAndIn: under6.madeUnder6,
+    puttsUnder6ftAttempts: under6.attemptsUnder6,
   };
 }
 
