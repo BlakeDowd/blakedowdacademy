@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
+  ArrowLeft,
+  ArrowUp,
+  ArrowDown,
   Crosshair,
   Loader2,
   Mountain,
@@ -13,13 +16,19 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { resolveAuthUserId } from "@/lib/resolveAuthUserId";
 import {
+  calculateDispersionWindow,
   calculatePlaysLikeTarget,
   clubsToCarryList,
   clubsToStrategicBag,
+  DISPERSION_SKILL_LEVEL_OPTIONS,
   generateStrategicMenu,
   PLAYER_SHAPE_OPTIONS,
+  SWING_LENGTH_LABELS,
+  WIND_DIRECTION_OPTIONS,
+  type DispersionSkillLevel,
   type PlayerShape,
   type StrategicMenu,
+  type SwingLength,
   type TacticalShot,
   type WindDirection,
 } from "@/lib/playsLikeCalculator";
@@ -62,6 +71,33 @@ function SegmentedToggle<T extends string>({
   );
 }
 
+function SkillAccuracyToggle({
+  value,
+  onChange,
+}: {
+  value: DispersionSkillLevel;
+  onChange: (level: DispersionSkillLevel) => void;
+}) {
+  return (
+    <div className="grid grid-cols-4 gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1">
+      {DISPERSION_SKILL_LEVEL_OPTIONS.map((opt) => (
+        <button
+          key={opt.id}
+          type="button"
+          onClick={() => onChange(opt.id)}
+          className={`rounded-lg px-1 py-2 text-[11px] font-bold uppercase tracking-wide transition sm:text-xs ${
+            value === opt.id
+              ? "bg-[#014421] text-white shadow-sm"
+              : "text-gray-500 hover:text-gray-800"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function WindDirectionControl({
   value,
   onChange,
@@ -69,12 +105,24 @@ function WindDirectionControl({
   value: WindDirection;
   onChange: (v: WindDirection) => void;
 }) {
-  const options: { id: WindDirection; label: string }[] = [
-    { id: "head", label: "Head" },
-    { id: "tail", label: "Tail" },
-    { id: "none", label: "None" },
-  ];
-  return <SegmentedToggle options={options} value={value} onChange={onChange} />;
+  return (
+    <div className="grid grid-cols-3 gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1 sm:grid-cols-5">
+      {WIND_DIRECTION_OPTIONS.map((opt) => (
+        <button
+          key={opt.id}
+          type="button"
+          onClick={() => onChange(opt.id)}
+          className={`rounded-lg px-2 py-2.5 text-xs font-bold uppercase tracking-wide transition ${
+            value === opt.id
+              ? "bg-[#014421] text-white shadow-sm"
+              : "text-gray-500 hover:text-gray-800"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function clampSlope(value: number): number {
@@ -84,26 +132,41 @@ function clampSlope(value: number): number {
 const INPUT_CLASS =
   "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold tabular-nums text-gray-900 outline-none focus:border-[#014421]/40 focus:ring-2 focus:ring-[#014421]/15";
 
-type OptionSetKind = "flight" | "shape" | "tempo";
+type OptionSetKind = "standard" | "flight" | "grip" | "shape" | "tempo" | "swingLength";
 
 const OPTION_SET_META: Record<
   OptionSetKind,
   { title: string; shortTitle: string; accent: string }
 > = {
+  standard: {
+    title: "Standard shot",
+    shortTitle: "Standard shot",
+    accent: "border-[#014421]/20 bg-[#014421]/[0.04]",
+  },
   flight: {
-    title: "Option Set 1: Flight & Grip Control",
-    shortTitle: "Flight & grip",
+    title: "Option Set 2: Flight Control",
+    shortTitle: "Flight",
     accent: "border-sky-100 bg-sky-50/30",
   },
+  grip: {
+    title: "Option Set 3: Grip Control",
+    shortTitle: "Grip",
+    accent: "border-cyan-100 bg-cyan-50/30",
+  },
   shape: {
-    title: "Option Set 2: Curvature & Shape Selection",
+    title: "Option Set 4: Curvature & Shape Selection",
     shortTitle: "Shape",
     accent: "border-violet-100 bg-violet-50/30",
   },
   tempo: {
-    title: "Option Set 3: Smooth Tempo Alternatives",
+    title: "Option Set 5: Smooth Tempo Alternatives",
     shortTitle: "Tempo",
     accent: "border-amber-100 bg-amber-50/30",
+  },
+  swingLength: {
+    title: "Option Set 6: Swing Length",
+    shortTitle: "Swing length",
+    accent: "border-emerald-100 bg-emerald-50/30",
   },
 };
 
@@ -111,9 +174,13 @@ function buildExecutionBadges(shot: TacticalShot, kind: OptionSetKind): string[]
   const badges: string[] = [];
 
   if (kind === "flight") {
-    if (shot.grip !== "Full Grip") badges.push(shot.grip);
     if (shot.flight !== "STANDARD") badges.push(`${shot.flight} flight`);
     if (shot.tempo !== "100%") badges.push(shot.tempo);
+  }
+
+  if (kind === "grip") {
+    if (shot.grip !== "Full Grip") badges.push(shot.grip);
+    if (shot.flight !== "STANDARD") badges.push(`${shot.flight} flight`);
   }
 
   if (kind === "shape") {
@@ -122,26 +189,48 @@ function buildExecutionBadges(shot: TacticalShot, kind: OptionSetKind): string[]
   }
 
   if (kind === "tempo") {
-    if (shot.tempo.includes("85%")) badges.push("85% tempo");
-    else if (shot.tempo.includes("75%")) badges.push("75% tempo");
-    else badges.push(shot.tempo);
-    badges.push("Controlled");
+    const pctMatch = shot.tempo.match(/^(\d+)%/);
+    if (pctMatch) {
+      if (pctMatch[1] !== "100") {
+        badges.push(`${pctMatch[1]}% tempo`);
+        badges.push("Controlled");
+      }
+    } else {
+      badges.push(shot.tempo);
+      badges.push("Controlled");
+    }
+  }
+
+  if (kind === "swingLength" && shot.swingLength) {
+    badges.push("Tighter dispersion");
   }
 
   return badges.slice(0, 3);
 }
 
 function getPrimaryShotKind(shot: TacticalShot, kind: OptionSetKind): string {
+  if (kind === "standard") {
+    return shot.split ? "Split yardage" : "Full swing";
+  }
   if (kind === "shape" && shot.shape !== "Straight") return shot.shape;
+  if (kind === "swingLength" && shot.swingLength) {
+    return SWING_LENGTH_LABELS[shot.swingLength];
+  }
   if (kind === "tempo") {
-    if (shot.tempo.includes("85%")) return "85% tempo";
-    if (shot.tempo.includes("75%")) return "75% tempo";
+    if (shot.split) return "Split yardage";
+    const pctMatch = shot.tempo.match(/^(\d+)%/);
+    if (pctMatch && pctMatch[1] === "100" && shot.flight === "STANDARD") return "Standard";
+    if (pctMatch) return `${pctMatch[1]}% tempo`;
     return shot.tempo;
   }
   if (kind === "flight") {
-    if (shot.grip !== "Full Grip") return shot.grip;
+    if (shot.split) return "Split yardage";
     if (shot.flight !== "STANDARD") return `${shot.flight} flight`;
-    if (shot.tempo !== "100%") return shot.tempo;
+    return "Standard flight";
+  }
+  if (kind === "grip") {
+    if (shot.grip !== "Full Grip") return shot.grip;
+    return "Full grip";
   }
   return buildExecutionBadges(shot, kind)[0] ?? "Standard";
 }
@@ -162,11 +251,17 @@ function ShotKindBadge({ children, primary }: { children: string; primary?: bool
 }
 
 function formatShotCoachingNote(shot: TacticalShot, kind: OptionSetKind): string {
+  if (shot.split) {
+    return `${shot.distance}m Plays Like sits in the gap — take more club with a smooth swing, or less club with a firm strike.`;
+  }
   const detail = shot.label.replace(/^[A-Z\s]+:\s*/i, "").trim();
   if (kind === "tempo" && detail.toLowerCase().includes("spin")) {
     return detail;
   }
   if (kind === "flight" && detail.toLowerCase().includes("stopping")) {
+    return detail;
+  }
+  if (kind === "grip" && detail.toLowerCase().includes("choke")) {
     return detail;
   }
   if (kind === "shape") {
@@ -190,7 +285,25 @@ function StrategicShotPick({ shot, kind }: { shot: TacticalShot; kind: OptionSet
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-base font-bold leading-tight text-gray-900">{shot.clubName}</p>
-          <p className="mt-0.5 text-sm font-bold tabular-nums text-[#014421]">{shot.distance}m carry</p>
+          {shot.split ? (
+            <div className="mt-2 space-y-1.5">
+              <p className="text-sm font-bold tabular-nums text-[#014421]">
+                {shot.distance}m Plays Like target
+              </p>
+              <div className="space-y-1 text-xs sm:text-sm">
+                <div className="flex items-baseline justify-between gap-3 rounded-md bg-gray-50 px-2.5 py-1.5">
+                  <span className="font-semibold text-gray-800">{shot.split.lowerClubName}</span>
+                  <span className="font-bold tabular-nums text-[#014421]">{shot.split.lowerDistance}m</span>
+                </div>
+                <div className="flex items-baseline justify-between gap-3 rounded-md bg-gray-50 px-2.5 py-1.5">
+                  <span className="font-semibold text-gray-800">{shot.split.upperClubName}</span>
+                  <span className="font-bold tabular-nums text-[#014421]">{shot.split.upperDistance}m</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-0.5 text-sm font-bold tabular-nums text-[#014421]">{shot.distance}m carry</p>
+          )}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <ShotKindBadge primary>{primaryKind}</ShotKindBadge>
@@ -240,13 +353,216 @@ function StrategicOptionSetColumn({
   );
 }
 
-function StrategicDecisionMatrix({ menu }: { menu: StrategicMenu }) {
+function StrategicDecisionMatrix({
+  menu,
+  playsLikeBase,
+  dispersionSwingLength,
+  windSpeed,
+  windDirection,
+  skillLevel,
+  onSkillLevelChange,
+}: {
+  menu: StrategicMenu;
+  playsLikeBase: number | null;
+  dispersionSwingLength: SwingLength;
+  windSpeed: number;
+  windDirection: WindDirection;
+  skillLevel: DispersionSkillLevel;
+  onSkillLevelChange: (level: DispersionSkillLevel) => void;
+}) {
   return (
     <div className="flex flex-col gap-3">
+      <StrategicOptionSetColumn kind="standard" shots={menu.standardOptions} />
       <StrategicOptionSetColumn kind="flight" shots={menu.flightOptions} />
+      <StrategicOptionSetColumn kind="grip" shots={menu.gripOptions} />
       <StrategicOptionSetColumn kind="shape" shots={menu.shapeOptions} />
       <StrategicOptionSetColumn kind="tempo" shots={menu.tempoOptions} />
+      <StrategicOptionSetColumn kind="swingLength" shots={menu.swingLengthOptions} />
+      <DispersionWindow
+        playsLikeBase={playsLikeBase}
+        swingLength={dispersionSwingLength}
+        windSpeed={windSpeed}
+        windDirection={windDirection}
+        skillLevel={skillLevel}
+        onSkillLevelChange={onSkillLevelChange}
+      />
     </div>
+  );
+}
+
+function DispersionAxisArrow({
+  direction,
+  label,
+  className,
+}: {
+  direction: "left" | "right" | "up" | "down";
+  label: string;
+  className?: string;
+}) {
+  const Icon =
+    direction === "left"
+      ? ArrowLeft
+      : direction === "right"
+        ? ArrowRight
+        : direction === "up"
+          ? ArrowUp
+          : ArrowDown;
+
+  return (
+    <div
+      className={`flex items-center gap-0.5 whitespace-nowrap rounded-md bg-white px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-600 shadow-sm ring-1 ring-slate-200 sm:text-[11px] ${className ?? ""}`}
+    >
+      {direction === "left" || direction === "up" ? (
+        <>
+          <Icon className="h-3 w-3 shrink-0" aria-hidden />
+          <span>{label}</span>
+        </>
+      ) : (
+        <>
+          <span>{label}</span>
+          <Icon className="h-3 w-3 shrink-0" aria-hidden />
+        </>
+      )}
+    </div>
+  );
+}
+
+function DispersionWindow({
+  playsLikeBase,
+  swingLength,
+  windSpeed,
+  windDirection,
+  skillLevel,
+  onSkillLevelChange,
+}: {
+  playsLikeBase: number | null;
+  swingLength: SwingLength;
+  windSpeed: number;
+  windDirection: WindDirection;
+  skillLevel: DispersionSkillLevel;
+  onSkillLevelChange: (level: DispersionSkillLevel) => void;
+}) {
+  const dispersion = useMemo(() => {
+    if (playsLikeBase == null || playsLikeBase <= 0) return null;
+    return calculateDispersionWindow({
+      playsLikeBase,
+      windSpeed,
+      windDirection,
+      skillLevel,
+      swingLength,
+    });
+  }, [playsLikeBase, windSpeed, windDirection, skillLevel, swingLength]);
+
+  if (dispersion == null) return null;
+
+  const {
+    optimalTargetDisplay,
+    longLeftDistance,
+    shortRightDistance,
+    avgSideMeters,
+    totalLateralDispersion,
+    totalVerticalDispersion,
+    longCarrySpread,
+    shortCarrySpread,
+    shortRightLateral,
+  } = dispersion;
+
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+      <h3 className="text-sm font-semibold text-gray-900">Dispersion window</h3>
+
+      <div className="mt-3">
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+          Skill accuracy
+        </p>
+        <SkillAccuracyToggle value={skillLevel} onChange={onSkillLevelChange} />
+      </div>
+
+      <div className="mt-4">
+        <div className="flex justify-start">
+          <div className="whitespace-nowrap rounded-lg border border-red-200 bg-red-100 px-3 py-2 text-red-700 shadow-md">
+            <p className="whitespace-nowrap text-xs font-bold uppercase tracking-wider">
+              Long-Left Miss
+            </p>
+            <p className="mt-0.5 whitespace-nowrap text-lg font-bold tabular-nums">
+              {longLeftDistance}m Carry
+            </p>
+            <p className="mt-0.5 whitespace-nowrap text-xs font-medium tabular-nums">
+              Avg Left: {avgSideMeters}m
+            </p>
+          </div>
+        </div>
+
+        <div className="relative mx-auto mt-3 h-48 w-full max-w-xl sm:mt-4 sm:h-52">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-1/2 h-28 w-[88%] -translate-x-1/2 -translate-y-1/2 rotate-[30deg] rounded-[50%] border-2 border-dashed border-slate-300 bg-gradient-to-b from-slate-50 to-slate-100/80 sm:h-32"
+          />
+
+          <div className="absolute left-0 top-1/2 flex -translate-y-1/2 flex-col items-center gap-1.5 sm:left-1">
+            <DispersionAxisArrow direction="up" label={`${longCarrySpread}m`} />
+            <div className="flex flex-col items-center gap-1">
+              <div className="h-6 w-px bg-slate-300" aria-hidden />
+              <span className="whitespace-nowrap rounded-md bg-white px-2.5 py-1 text-xs font-bold tabular-nums text-slate-800 shadow-sm ring-1 ring-slate-200 sm:text-sm">
+                {totalVerticalDispersion}m
+              </span>
+              <div className="h-6 w-px bg-slate-300" aria-hidden />
+            </div>
+            <DispersionAxisArrow direction="down" label={`${shortCarrySpread}m`} />
+          </div>
+
+          <div className="absolute bottom-0 left-1/2 flex -translate-x-1/2 items-center gap-2 pb-0.5 sm:gap-2.5">
+            <DispersionAxisArrow direction="left" label={`${avgSideMeters}m`} />
+            <div className="flex items-center gap-1.5">
+              <div className="h-px w-8 bg-slate-300 sm:w-12" aria-hidden />
+              <span className="whitespace-nowrap rounded-md bg-white px-2.5 py-1 text-xs font-bold tabular-nums text-slate-800 shadow-sm ring-1 ring-slate-200 sm:text-sm">
+                {totalLateralDispersion}m
+              </span>
+              <div className="h-px w-8 bg-slate-300 sm:w-12" aria-hidden />
+            </div>
+            <DispersionAxisArrow direction="right" label={`${avgSideMeters}m`} />
+          </div>
+
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <div className="flex flex-col items-center justify-center rounded-full bg-white/95 px-5 py-4 text-center shadow-sm ring-1 ring-[#014421]/15">
+              <p className="whitespace-nowrap text-xl font-bold tabular-nums tracking-tight text-[#014421] sm:text-2xl">
+                {optimalTargetDisplay}m
+              </p>
+              <p className="mt-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-[#014421]/70">
+                Plays Like
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 flex justify-end sm:mt-4">
+          <div className="whitespace-nowrap rounded-lg border border-orange-200 bg-orange-100 px-3 py-2 text-orange-800 shadow-md">
+            <p className="whitespace-nowrap text-xs font-bold uppercase tracking-wider">
+              Short-Right Miss
+            </p>
+            <p className="mt-0.5 whitespace-nowrap text-lg font-bold tabular-nums">
+              {shortRightDistance}m Carry
+            </p>
+            <p className="mt-0.5 whitespace-nowrap text-xs font-medium tabular-nums">
+              Avg Right: {avgSideMeters}m
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-2.5 rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-[11px] leading-relaxed text-gray-600 sm:px-4 sm:py-3.5 sm:text-xs">
+        <p>
+          <span className="font-semibold text-gray-800">💡 WHY THIS HAPPENS:</span>{" "}
+          Dynamic changes in spin loft shape this grid. A closed face lowers dynamic loft,
+          spiking distance long-left. An open face creates a high-spin wipe that stalls out
+          short-right.
+        </p>
+        <p>
+          <span className="font-semibold text-gray-800">🎯 AIMING RULE:</span> If the hazard
+          is right, shift your target center {shortRightLateral}m left to protect your score.
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -267,6 +583,7 @@ export function PlaysLikeCalculator({
   const [windSpeedText, setWindSpeedText] = useState("0");
   const [windDirection, setWindDirection] = useState<WindDirection>("none");
   const [playerShape, setPlayerShape] = useState<PlayerShape>("straight");
+  const [skillLevel, setSkillLevel] = useState<DispersionSkillLevel>("bGrade");
 
   useEffect(() => {
     if (useLiveBag) {
@@ -323,7 +640,14 @@ export function PlaysLikeCalculator({
 
   const strategicMenu = useMemo(() => {
     if (targetDistance <= 0) {
-      return { flightOptions: [], shapeOptions: [], tempoOptions: [] };
+      return {
+        standardOptions: [],
+        flightOptions: [],
+        gripOptions: [],
+        shapeOptions: [],
+        tempoOptions: [],
+        swingLengthOptions: [],
+      };
     }
     return generateStrategicMenu(
       targetDistance,
@@ -334,6 +658,9 @@ export function PlaysLikeCalculator({
       { playerShape },
     );
   }, [targetDistance, slopeMetres, windSpeed, windDirection, carryClubs, playerShape]);
+
+  const dispersionSwingLength =
+    strategicMenu.swingLengthOptions[0]?.swingLength ?? ("full" as SwingLength);
 
   const slopeClamped = slopeMetres;
 
@@ -527,7 +854,15 @@ export function PlaysLikeCalculator({
               </Link>
             </div>
           ) : (
-            <StrategicDecisionMatrix menu={strategicMenu} />
+            <StrategicDecisionMatrix
+              menu={strategicMenu}
+              playsLikeBase={playsLikeTarget}
+              dispersionSwingLength={dispersionSwingLength}
+              windSpeed={windSpeed}
+              windDirection={windDirection}
+              skillLevel={skillLevel}
+              onSkillLevelChange={setSkillLevel}
+            />
           )}
         </div>
       </section>
