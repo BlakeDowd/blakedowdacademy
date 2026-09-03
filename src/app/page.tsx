@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useStats } from "@/contexts/StatsContext";
 import HomeDashboard from "@/components/HomeDashboard";
+import { HALL_OF_FAME_LEADERBOARD_ID } from "@/components/academy/HallOfFameLeaderboard";
 
 export default function Home() {
   const router = useRouter();
@@ -47,6 +48,21 @@ export default function Home() {
       router.push("/login");
     }
   }, [isAuthenticated, authLoading, router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") !== "leaderboard") return;
+
+    const scrollTimer = window.setTimeout(() => {
+      document.getElementById(HALL_OF_FAME_LEADERBOARD_ID)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 200);
+
+    return () => window.clearTimeout(scrollTimer);
+  }, []);
 
   // Show loading if either auth or stats are loading (with emergency timeout bypass)
   // Disable Overlays: Add pointer-events-none so loading overlay doesn't block the Navbar

@@ -104,6 +104,67 @@ export const LIVE_TEE_OTHER_CLUBS = [
   "60°",
 ] as const;
 
+/** Full tee bag grouped for the questionnaire picker. */
+export const LIVE_TEE_CLUB_GROUPS: { id: string; label: string; clubs: string[] }[] = [
+  {
+    id: "woods",
+    label: "Woods",
+    clubs: ["Driver", "2W", "3W", "4W", "5W", "7W", "9W"],
+  },
+  {
+    id: "hybrids",
+    label: "Hybrids",
+    clubs: ["Hybrid", "2H", "3H", "4H", "5H", "6H", "7H", "8H", "Driving Iron"],
+  },
+  {
+    id: "irons",
+    label: "Irons",
+    clubs: ["2I", "3I", "4I", "5I", "6I", "7I", "8I", "9I"],
+  },
+  {
+    id: "wedges",
+    label: "Wedges",
+    clubs: ["PW", "GW", "AW", "SW", "LW", "48°", "50°", "52°", "54°", "56°", "58°", "60°"],
+  },
+];
+
+export const LIVE_TEE_ALL_CLUBS: string[] = LIVE_TEE_CLUB_GROUPS.flatMap((g) => g.clubs);
+
+const TEE_FAVOURITES_PREFIX = "liveTeeFavouriteClubs";
+const MAX_TEE_FAVOURITES = 6;
+
+function teeFavouritesKey(userId: string) {
+  return `${TEE_FAVOURITES_PREFIX}_${userId}`;
+}
+
+export function loadFavouriteTeeClubs(userId: string): string[] {
+  if (typeof window === "undefined" || !userId) return [];
+  try {
+    const raw = localStorage.getItem(teeFavouritesKey(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((c): c is string => typeof c === "string" && LIVE_TEE_ALL_CLUBS.includes(c))
+      .slice(0, MAX_TEE_FAVOURITES);
+  } catch {
+    return [];
+  }
+}
+
+/** Pin a club to the top favourites row (most recent first). */
+export function rememberFavouriteTeeClub(userId: string, club: string): string[] {
+  if (typeof window === "undefined" || !userId || !LIVE_TEE_ALL_CLUBS.includes(club)) {
+    return loadFavouriteTeeClubs(userId);
+  }
+  const next = [club, ...loadFavouriteTeeClubs(userId).filter((c) => c !== club)].slice(
+    0,
+    MAX_TEE_FAVOURITES,
+  );
+  localStorage.setItem(teeFavouritesKey(userId), JSON.stringify(next));
+  return next;
+}
+
 export function isLiveTeeOtherClub(club: string | null | undefined): boolean {
   if (!club) return false;
   return !(LIVE_TEE_QUICK_CLUBS as readonly string[]).includes(club);
@@ -213,16 +274,72 @@ export function defaultLiveHoleWorkflow(par: number | null): Pick<
   | "currentPuttNumber"
   | "girNotPossibleAttempt"
 > {
+  const isPar3 = par === 3;
   return {
-    holePhase: "approach",
-    teeRecorded: true,
+    /** Par 3 starts on approach (shot 1); par 4/5 start on tee questionnaire. */
+    holePhase: isPar3 ? "approach" : "tee",
+    teeRecorded: isPar3,
     approachShots: [],
-    currentApproachShot: 2,
+    currentApproachShot: isPar3 ? 1 : 2,
     firstPuttDistanceFeet: null,
     puttLogs: [],
     currentPuttNumber: 1,
     girNotPossibleAttempt: false,
   };
+}
+
+/** Whether tee answers are complete enough to advance to the next shot. */
+export function isLiveTeeShotReady(entry: Pick<
+  LiveHoleEntry,
+  | "teeClub"
+  | "teeDirection"
+  | "teeMissLie"
+  | "teeSolidStrike"
+  | "teeFaceContact"
+  | "teeCorrectFlight"
+  | "teeDoubleCross"
+>): boolean {
+  if (!entry.teeClub) return false;
+  if (entry.teeDirection == null) return false;
+  if (
+    (entry.teeDirection === "left" || entry.teeDirection === "right") &&
+    entry.teeMissLie == null
+  ) {
+    return false;
+  }
+  if (entry.teeSolidStrike == null) return false;
+  if (entry.teeSolidStrike === false && entry.teeFaceContact == null) return false;
+  if (entry.teeCorrectFlight == null) return false;
+  if (entry.teeCorrectFlight === false && entry.teeDoubleCross == null) return false;
+  return true;
+}
+
+/** One-at-a-time Shot 1 questionnaire step (par 4/5). */
+export type LiveTeeQuestionStep = "club" | "fairway" | "solid" | "flight" | "done";
+
+export function getLiveTeeQuestionStep(entry: Pick<
+  LiveHoleEntry,
+  | "teeClub"
+  | "teeDirection"
+  | "teeMissLie"
+  | "teeSolidStrike"
+  | "teeFaceContact"
+  | "teeCorrectFlight"
+  | "teeDoubleCross"
+>): LiveTeeQuestionStep {
+  if (!entry.teeClub) return "club";
+  if (entry.teeDirection == null) return "fairway";
+  if (
+    (entry.teeDirection === "left" || entry.teeDirection === "right") &&
+    entry.teeMissLie == null
+  ) {
+    return "fairway";
+  }
+  if (entry.teeSolidStrike == null) return "solid";
+  if (entry.teeSolidStrike === false && entry.teeFaceContact == null) return "solid";
+  if (entry.teeCorrectFlight == null) return "flight";
+  if (entry.teeCorrectFlight === false && entry.teeDoubleCross == null) return "flight";
+  return "done";
 }
 
 export function normalizeApproachShots(
@@ -447,6 +564,23 @@ export function buildLiveHoleEntry(
   const par = parForPlayingHole(playingHole, setup) ?? prev?.par ?? null;
   const isPar3 = par === 3;
   const workflow = defaultLiveHoleWorkflow(par);
+
+  /** Legacy drafts defaulted to approach/teeRecorded before the questionnaire flow. */
+  const legacySkippedTee =
+    !isPar3 &&
+    prev?.teeRecorded === true &&
+    (prev?.holePhase === "approach" || prev?.holePhase == null) &&
+    prev?.teeDirection == null &&
+    normalizeApproachShots(prev?.approachShots).length === 0 &&
+    normalizePuttLogs(prev?.puttLogs).length === 0;
+
+  const holePhase = legacySkippedTee
+    ? workflow.holePhase
+    : (prev?.holePhase ?? workflow.holePhase);
+  const teeRecorded = legacySkippedTee
+    ? workflow.teeRecorded
+    : (prev?.teeRecorded ?? workflow.teeRecorded);
+
   return {
     hole: playingHole,
     courseHoleNumber,
@@ -454,8 +588,8 @@ export function buildLiveHoleEntry(
     strokes: prev?.strokes ?? null,
     strokesManual: prev?.strokesManual ?? false,
     putts: prev?.putts ?? 0,
-    holePhase: prev?.holePhase ?? workflow.holePhase,
-    teeRecorded: prev?.teeRecorded ?? workflow.teeRecorded,
+    holePhase,
+    teeRecorded,
     approachShots: normalizeApproachShots(prev?.approachShots ?? workflow.approachShots),
     currentApproachShot: prev?.currentApproachShot ?? workflow.currentApproachShot,
     firstPuttDistanceFeet: prev?.firstPuttDistanceFeet ?? workflow.firstPuttDistanceFeet,

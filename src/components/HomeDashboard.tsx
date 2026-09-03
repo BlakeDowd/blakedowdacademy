@@ -12,7 +12,6 @@ import {
   Zap,
   Radio,
   Calendar,
-  TrendingDown,
   TrendingUp,
   Star,
   Trophy,
@@ -27,10 +26,7 @@ import {
   User,
   Pencil,
   Check,
-  Crown,
-  Award,
   Flag,
-  Layers,
 } from "lucide-react";
 import { DeleteRoundButton } from "@/components/DeleteRoundButton";
 import { AddToHomeScreenGuide } from "@/components/AddToHomeScreenGuide";
@@ -42,98 +38,12 @@ import {
 import { loadLiveRoundDraft, type LiveRoundDraft } from "@/lib/liveRoundDraft";
 import IconPicker, { GOLF_ICONS } from "@/components/IconPicker";
 import Toast from "@/components/Toast";
-import { GoalAccountabilityModule } from "@/components/Dashboard";
-import { logActivity } from "@/lib/activity";
-import { TROPHY_LIST, buildLibraryCategoryCountsFromStorage } from "@/lib/academyTrophies";
-import { getTrophyMultiplierContributions } from "@/lib/trophyMultiplierContributions";
-import {
-  achievementCountsFromRows,
-  ensureAchievementsForEarnedTrophies,
-  fetchUserAchievementRows,
-  insertUserAchievement,
-  type UserAchievementRow,
-} from "@/lib/userAchievements";
-import {
-  fetchUserTrophiesForUser,
-  formatInsertUserTrophyRowError,
-  insertUserTrophyRow,
-  type NormalizedUserTrophyRow,
-} from "@/lib/userTrophiesDb";
-import {
-  practiceSessionMinutesFromRow,
-  practiceSessionsForUser,
-} from "@/lib/practiceSessionDuration";
-import { countUserCombineCompletions } from "@/lib/combineCompletionDetection";
-import AcademyTrophyCasePanel, {
-  type AcademySelectedTrophy,
-} from "@/components/AcademyTrophyCasePanel";
-import { runBackfillMyAchievementsFromTrophies } from "@/lib/trophyCollectionLeaderboard";
+import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
+import { DEFAULT_BUNNY_VIDEO_ID, APP_VIDEO_COACH_NAME, formatBunnyDuration } from "@/lib/bunnyStream";
+import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
+import { HallOfFameLeaderboard } from "@/components/academy/HallOfFameLeaderboard";
 
-type UserTrophyDbRow = NormalizedUserTrophyRow;
-
-/** Dashboard + Trophy Case row: DB fields (`achievement_id`, `earned_at`) plus catalog display. */
-type DashboardTrophyRow = {
-  achievement_id: string;
-  earned_at?: string;
-  trophy_name: string;
-  trophy_icon?: string;
-  id: string;
-  description?: string;
-  isEarned?: boolean;
-  requirement?: string;
-};
-
-// Video drills for Daily Focus rotation
-const VIDEO_DRILLS = [
-  {
-    id: '1',
-    title: 'Mastering Your Short Game',
-    description: 'Learn the fundamentals of chipping and putting with Coach Sarah Thompson.',
-    source: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    duration: '8:42',
-    coach: 'Coach Sarah Thompson'
-  },
-  {
-    id: '2',
-    title: 'Driving Range Fundamentals',
-    description: 'Perfect your swing mechanics and increase your driving distance.',
-    source: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    duration: '12:15',
-    coach: 'Coach Mike Johnson'
-  },
-  {
-    id: '5',
-    title: 'Swing Analysis Techniques',
-    description: 'Learn how to analyze and improve your golf swing using video analysis.',
-    source: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    duration: '15:30',
-    coach: 'Coach David Lee'
-  },
-  {
-    id: '7',
-    title: 'Advanced Putting Techniques',
-    description: 'Master advanced putting strategies for competitive play.',
-    source: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    duration: '18:00',
-    coach: 'Coach Emma Wilson'
-  },
-  {
-    id: '9',
-    title: 'Power Driving Techniques',
-    description: 'Increase your driving distance with advanced techniques.',
-    source: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    duration: '20:00',
-    coach: 'Coach Tom Anderson'
-  }
-];
-
-// Function to select video based on date seed
-const getDailyVideo = (refreshKey: number = 0) => {
-  const today = new Date();
-  const dateSeed = today.getDate() + today.getMonth() * 31 + refreshKey;
-  const videoIndex = dateSeed % VIDEO_DRILLS.length;
-  return VIDEO_DRILLS[videoIndex];
-};
+const FEATURED_LIBRARY_DRILL_ID = "1";
 
 interface ActivityItem {
   id: string;
@@ -152,206 +62,6 @@ interface CommunityRound {
   timeAgo: string;
 }
 
-const SNAPSHOT_ACCENT = "#FFA500";
-
-/** Shared shell for snapshot metric cards (orange accent + white cards). */
-const snapshotCardClass =
-  "group flex min-h-[112px] flex-col rounded-2xl border border-stone-100/90 bg-white p-3.5 shadow-[0_4px_18px_-6px_rgba(15,23,42,0.12)] transition-all duration-200 hover:border-[#FFA500]/25 hover:shadow-[0_10px_28px_-8px_rgba(15,23,42,0.14)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#014421] sm:min-h-[118px] sm:p-4";
-
-function formatPracticeHoursDisplay(hours: number): string {
-  if (!Number.isFinite(hours) || hours <= 0) return "0";
-  if (hours < 10) return String(Math.round(hours * 10) / 10);
-  return String(Math.round(hours));
-}
-
-function SkillsSnapshot({
-  combinesCompleted,
-  practiceHoursTotal,
-  displayLevel,
-  totalXP,
-  xpRemainingToNextLevel,
-  currentHandicap,
-  startingHandicap,
-  lowestGrossScore,
-  roundsLogged,
-  isLoading,
-  preferredIconId: _preferredIconId,
-}: {
-  combinesCompleted: number;
-  practiceHoursTotal: number;
-  displayLevel: number;
-  totalXP: number;
-  xpRemainingToNextLevel: number;
-  currentHandicap: number | null;
-  startingHandicap: number | null;
-  lowestGrossScore: number | null;
-  roundsLogged: number;
-  isLoading: boolean;
-  preferredIconId: string | null;
-}) {
-  const roundsLabel = roundsLogged === 1 ? "round logged" : "rounds logged";
-  const combinesLabel =
-    combinesCompleted === 1 ? "combine completed" : "combines completed";
-  const hoursStr = formatPracticeHoursDisplay(practiceHoursTotal);
-
-  return (
-    <div className="mb-6 w-full px-4">
-      <h3 className="mb-3 text-lg font-semibold tracking-tight text-stone-800">Skills Snapshot</h3>
-      {isLoading ? (
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div
-              key={i}
-              className={`${snapshotCardClass} animate-pulse border-stone-50 bg-stone-50/80`}
-            >
-              <div className="h-8 w-8 rounded-lg bg-stone-200/90" />
-              <div className="mt-2.5 h-8 w-12 rounded-md bg-stone-200/90" />
-              <div className="mt-2 h-3 w-20 rounded bg-stone-200/80" />
-              {i === 2 ? <div className="mt-1.5 h-2 w-16 rounded bg-stone-200/70" /> : null}
-              {i === 2 ? <div className="mt-1 h-2 w-24 rounded bg-stone-200/60" /> : null}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
-          <Link
-            href="/skill-history/combines"
-            aria-label={`${combinesCompleted} ${combinesLabel}, view completion history`}
-            className={`${snapshotCardClass} min-w-0`}
-          >
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50"
-              style={{ color: SNAPSHOT_ACCENT }}
-            >
-              <Layers className="h-4 w-4" strokeWidth={2.25} aria-hidden />
-            </div>
-            <p
-              className="mt-2.5 text-2xl font-bold tabular-nums tracking-tight sm:text-[1.6rem]"
-              style={{ color: SNAPSHOT_ACCENT }}
-            >
-              {combinesCompleted}
-            </p>
-            <p className="mt-1 text-xs font-medium leading-snug text-stone-500">{combinesLabel}</p>
-          </Link>
-
-          <Link
-            href="/skill-history/practice-hours"
-            aria-label={`${hoursStr} practice hours, view practice time history`}
-            className={`${snapshotCardClass} min-w-0`}
-          >
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50"
-              style={{ color: SNAPSHOT_ACCENT }}
-            >
-              <Clock className="h-4 w-4" strokeWidth={2.25} aria-hidden />
-            </div>
-            <p
-              className="mt-2.5 text-2xl font-bold tabular-nums tracking-tight sm:text-[1.6rem]"
-              style={{ color: SNAPSHOT_ACCENT }}
-            >
-              {hoursStr}
-            </p>
-            <p className="mt-1 text-xs font-medium leading-snug text-stone-500">Practice hours (total)</p>
-          </Link>
-
-          <Link
-            href="/skill-history/xp"
-            aria-label={`Level ${displayLevel}, ${totalXP.toLocaleString()} XP. View XP and activity history.`}
-            className={`${snapshotCardClass} min-w-0 text-left`}
-          >
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50"
-              style={{ color: SNAPSHOT_ACCENT }}
-            >
-              <Crown className="h-4 w-4" strokeWidth={2.25} aria-hidden />
-            </div>
-            <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-stone-400">Level</p>
-            <p
-              className="text-2xl font-bold tabular-nums leading-none tracking-tight sm:text-[1.6rem]"
-              style={{ color: SNAPSHOT_ACCENT }}
-            >
-              {displayLevel}
-            </p>
-            <p className="mt-1.5 text-[10px] leading-snug text-stone-500">{totalXP.toLocaleString()} XP</p>
-            <p className="mt-0.5 text-[10px] leading-snug text-stone-400">
-              {xpRemainingToNextLevel.toLocaleString()} XP to L{displayLevel + 1}
-            </p>
-          </Link>
-
-          <Link
-            href="/handicap-history"
-            aria-label="Handicap, view handicap history"
-            className={`${snapshotCardClass} min-w-0`}
-          >
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50"
-              style={{ color: SNAPSHOT_ACCENT }}
-            >
-              <TrendingDown className="h-4 w-4" strokeWidth={2.25} aria-hidden />
-            </div>
-            <p
-              className="mt-2.5 text-2xl font-bold tabular-nums tracking-tight sm:text-[1.6rem]"
-              style={{ color: SNAPSHOT_ACCENT }}
-            >
-              {(() => {
-                const displayHandicap = currentHandicap ?? startingHandicap;
-                return displayHandicap !== null && displayHandicap !== undefined
-                  ? Number(displayHandicap).toFixed(1)
-                  : "--";
-              })()}
-            </p>
-            <p className="mt-1 text-xs font-medium text-stone-500">Handicap</p>
-          </Link>
-
-          <Link
-            href="/skill-history/lowest-score"
-            aria-label={
-              lowestGrossScore != null
-                ? `Lowest score ${lowestGrossScore}, view score history`
-                : "Lowest score, view score history"
-            }
-            className={`${snapshotCardClass} min-w-0`}
-          >
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50"
-              style={{ color: SNAPSHOT_ACCENT }}
-            >
-              <Target className="h-4 w-4" strokeWidth={2.25} aria-hidden />
-            </div>
-            <p
-              className="mt-2.5 text-2xl font-bold tabular-nums tracking-tight sm:text-[1.6rem]"
-              style={{ color: SNAPSHOT_ACCENT }}
-            >
-              {lowestGrossScore != null ? lowestGrossScore : "--"}
-            </p>
-            <p className="mt-1 text-xs font-medium leading-snug text-stone-500">Lowest score (gross)</p>
-          </Link>
-
-          <Link
-            href="/skill-history/rounds"
-            aria-label={`${roundsLogged} ${roundsLabel}, view rounds history`}
-            className={`${snapshotCardClass} min-w-0`}
-          >
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50"
-              style={{ color: SNAPSHOT_ACCENT }}
-            >
-              <Flag className="h-4 w-4" strokeWidth={2.25} aria-hidden />
-            </div>
-            <p
-              className="mt-2.5 text-2xl font-bold tabular-nums tracking-tight sm:text-[1.6rem]"
-              style={{ color: SNAPSHOT_ACCENT }}
-            >
-              {roundsLogged}
-            </p>
-            <p className="mt-1 text-xs font-medium leading-snug text-stone-500">{roundsLabel}</p>
-          </Link>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function HomeDashboard() {
   const router = useRouter();
   
@@ -364,8 +74,6 @@ export default function HomeDashboard() {
     rounds = [],
     communityRounds = [],
     communityRoundsHydrated = false,
-    practiceSessions = [],
-    practiceLogs = [],
   } = useStats();
   
   // Verify User Object: Log user object to verify it's correctly identifying the user
@@ -428,39 +136,6 @@ export default function HomeDashboard() {
     return allRounds.filter((round: any) => round?.user_id === user.id);
   }, [allRounds, user?.id]);
 
-  const combinesCompletedDashboard = useMemo(
-    () =>
-      countUserCombineCompletions({
-        userId: user?.id,
-        practiceSessions: practiceSessionsForUser(practiceSessions, user?.id),
-        practiceLogs: practiceLogs || [],
-      }),
-    [user?.id, practiceSessions, practiceLogs],
-  );
-
-  const practiceHoursTotalDashboard = useMemo(() => {
-    const mine = practiceSessionsForUser(practiceSessions, user?.id);
-    if (!mine.length) return 0;
-    const totalMinutes = mine.reduce(
-      (
-        sum: number,
-        session: { duration_minutes?: unknown; duration?: unknown; estimatedMinutes?: unknown },
-      ) => sum + practiceSessionMinutesFromRow(session),
-      0,
-    );
-    return totalMinutes / 60;
-  }, [practiceSessions, user?.id]);
-
-  const lowestGrossScoreDashboard = useMemo(() => {
-    if (!safeRounds.length) return null;
-    const scores = safeRounds
-      .map((r: { score?: unknown }) => r.score)
-      .filter((s): s is number => s !== null && s !== undefined && Number.isFinite(Number(s)))
-      .map((s) => Number(s));
-    if (!scores.length) return null;
-    return Math.min(...scores);
-  }, [safeRounds]);
-
   // Kill the Freeze: Completely removed the useEffect that triggers the 'No rounds found' Toast
   // This useEffect was causing an infinite loop that blocks the navigation bar
   // Removed entirely to prevent navigation freeze
@@ -483,9 +158,8 @@ export default function HomeDashboard() {
     starting_handicap: number | null;
     handicap: number | null;
   } | null>(null);
-  const [snapshotLoading, setSnapshotLoading] = useState(true);
 
-  // Fetch real snapshot data directly from profiles
+  // Fetch profile stats for XP, level, and icon
   useEffect(() => {
     let mounted = true;
     const fetchSnapshot = async () => {
@@ -509,8 +183,6 @@ export default function HomeDashboard() {
         }
       } catch (err) {
         console.error("Failed to fetch snapshot:", err);
-      } finally {
-        if (mounted) setSnapshotLoading(false);
       }
     };
     fetchSnapshot();
@@ -649,8 +321,11 @@ export default function HomeDashboard() {
   
   // Remove Hardcoding: Delete any const totalXP = 0 placeholders that might be overriding the real data
   // Data Source: Use profile?.totalXP from the profile object instead of hardcoded state
-  const [dailyVideo, setDailyVideo] = useState(() => getDailyVideo());
-  const [refreshKey, setRefreshKey] = useState(0);
+  const { metadata: bunnyVideoMetadata } = useBunnyVideoMetadata(DEFAULT_BUNNY_VIDEO_ID);
+  const dailyVideoTitle = bunnyVideoMetadata?.title ?? "";
+  const dailyVideoDuration = bunnyVideoMetadata?.lengthSeconds
+    ? formatBunnyDuration(bunnyVideoMetadata.lengthSeconds)
+    : "";
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [scoreTab, setScoreTab] = useState<'myRounds' | 'community'>('myRounds');
   const [activeLiveDraft, setActiveLiveDraft] = useState<LiveRoundDraft | null>(null);
@@ -908,8 +583,6 @@ export default function HomeDashboard() {
     
     // Listen for practice activity to refresh video
     const handlePracticeUpdate = () => {
-      setRefreshKey(prev => prev + 1);
-      setDailyVideo(getDailyVideo(refreshKey + 1));
       loadRecentActivities();
     };
     
@@ -926,305 +599,6 @@ export default function HomeDashboard() {
       window.removeEventListener('roundsUpdated', handleRoundsUpdate);
     };
   }, [user?.id, rounds?.length]);
-
-  const calculatePracticeHours = () => {
-    const mine = practiceSessionsForUser(practiceSessions, user?.id);
-    if (mine.length === 0) return 0;
-    const totalMinutes = mine.reduce(
-      (sum: number, session: { duration_minutes?: unknown; duration?: unknown; estimatedMinutes?: unknown }) =>
-        sum + practiceSessionMinutesFromRow(session),
-      0,
-    );
-    return totalMinutes / 60;
-  };
-
-  const calculateCompletedLessons = () => {
-    if (typeof window === "undefined") return 0;
-    try {
-      const savedProgress = localStorage.getItem("userProgress");
-      if (!savedProgress) return 0;
-      const progress = JSON.parse(savedProgress);
-      return (progress.completedDrills || []).length;
-    } catch {
-      return 0;
-    }
-  };
-
-  const [roundStatsPlayedAt, setRoundStatsPlayedAt] = useState<string[]>([]);
-
-  const currentHandicapForTrophies = useMemo(() => {
-    if (!safeRounds.length) return (user as { initialHandicap?: number })?.initialHandicap ?? 12;
-    const lastRound = safeRounds[safeRounds.length - 1];
-    return lastRound.handicap !== null && lastRound.handicap !== undefined ? lastRound.handicap : 12;
-  }, [safeRounds, user]);
-
-  const academyTrophyStats = useMemo(() => {
-    const myPracticeSessions = practiceSessionsForUser(practiceSessions, user?.id);
-    const practiceHours = myPracticeSessions.reduce(
-      (sum: number, s: { duration_minutes?: unknown; duration?: unknown; estimatedMinutes?: unknown }) =>
-        sum + practiceSessionMinutesFromRow(s) / 60,
-      0,
-    );
-    let completedLessons = 0;
-    let practiceHistory: any[] = [];
-    let libraryCategories: Record<string, number> = {};
-    if (typeof window !== "undefined") {
-      try {
-        const progress = JSON.parse(localStorage.getItem("userProgress") || "{}");
-        completedLessons = (progress.completedDrills || []).length;
-        practiceHistory = JSON.parse(localStorage.getItem("practiceActivityHistory") || "[]");
-        libraryCategories = buildLibraryCategoryCountsFromStorage();
-      } catch {
-        /* ignore */
-      }
-    }
-    return {
-      totalXP: user?.totalXP || 0,
-      completedLessons,
-      practiceHours,
-      rounds: safeRounds.length,
-      handicap: currentHandicapForTrophies,
-      roundsData: safeRounds || [],
-      practiceHistory,
-      libraryCategories,
-      userId: user?.id,
-      practiceSessions: myPracticeSessions,
-      practiceLogs: practiceLogs || [],
-    };
-  }, [user?.id, user?.totalXP, safeRounds, practiceSessions, practiceLogs, currentHandicapForTrophies]);
-
-  useEffect(() => {
-    if (!user?.id) {
-      setRoundStatsPlayedAt([]);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const { createClient } = await import("@/lib/supabase/client");
-        const supabase = createClient();
-        const { data, error } = await supabase
-          .from("round_stats")
-          .select("played_at")
-          .eq("user_id", user.id)
-          .order("played_at", { ascending: false })
-          .limit(200);
-        if (cancelled) return;
-        if (error) {
-          setRoundStatsPlayedAt([]);
-          return;
-        }
-        const rows = Array.isArray(data) ? data : [];
-        setRoundStatsPlayedAt(
-          rows.map((r: { played_at?: string | null }) => r.played_at).filter((x): x is string => !!x),
-        );
-      } catch {
-        if (!cancelled) {
-          setRoundStatsPlayedAt([]);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id]);
-
-  const trophyMultiplierById = useMemo(() => {
-    const m = new Map<string, ReturnType<typeof getTrophyMultiplierContributions>>();
-    for (const t of TROPHY_LIST) {
-      m.set(
-        t.id,
-        getTrophyMultiplierContributions(t.id, academyTrophyStats, practiceLogs || [], roundStatsPlayedAt),
-      );
-    }
-    return m;
-  }, [academyTrophyStats, practiceLogs, roundStatsPlayedAt]);
-
-  // Fetch Trophies: State for combined trophies (from user_trophies table + Academy unlocked checks)
-  const [trophies, setTrophies] = useState<DashboardTrophyRow[]>([]);
-
-  const [userAchievementRows, setUserAchievementRows] = useState<UserAchievementRow[]>([]);
-  const achievementCountByKey = useMemo(
-    () => achievementCountsFromRows(userAchievementRows),
-    [userAchievementRows],
-  );
-
-  // Add State: Add a selectedTrophy state to handle the 'clicked' trophy
-  const [selectedTrophy, setSelectedTrophy] = useState<AcademySelectedTrophy | null>(null);
-  
-  // Toggle State: Add a showLocked boolean state (defaulting to true)
-  const [showLocked, setShowLocked] = useState<boolean>(false);
-
-  const dbTrophiesForPanel = useMemo(
-    () =>
-      (trophies || [])
-        .filter((t) => t.isEarned)
-        .map((t) => ({
-          achievement_id: t.achievement_id,
-          earned_at: t.earned_at,
-          trophy_name: t.trophy_name,
-          description: t.description,
-          id: t.id,
-          trophy_icon: t.trophy_icon,
-        })),
-    [trophies],
-  );
-  
-  // Combine Data: Update the fetchTrophies function to pull from user_trophies AND run Academy 'unlocked' checks
-  useEffect(() => {
-    const fetchTrophies = async () => {
-      if (!user?.id) return;
-      
-      try {
-        const { createClient } = await import("@/lib/supabase/client");
-        const supabase = createClient();
-        
-        // Fetch Trophies: `user_trophies` uses `achievement_id` + `earned_at`.
-        const { rows: fetchedTrophyRows, error: trophyFetchError } = await fetchUserTrophiesForUser(
-          supabase,
-          user.id,
-        );
-        let dbRows: UserTrophyDbRow[] = fetchedTrophyRows;
-
-        if (trophyFetchError) {
-          console.error("Trophy Error:", JSON.stringify(trophyFetchError, null, 2));
-          // Continue even if DB fetch fails - we'll still check Academy unlocks
-        }
-        
-        // Combine Data: Calculate stats and run Academy unlocked checks (match Academy userStats structure)
-        const practiceHours = calculatePracticeHours();
-        const completedLessons = calculateCompletedLessons();
-        const userRounds = userRoundsCount;
-        
-        let practiceHistory: any[] = [];
-        let libraryCategories: Record<string, number> = {};
-        if (typeof window !== "undefined") {
-          try {
-            practiceHistory = JSON.parse(localStorage.getItem("practiceActivityHistory") || "[]");
-            libraryCategories = buildLibraryCategoryCountsFromStorage();
-          } catch {
-            libraryCategories = {};
-          }
-        }
-
-        const userStats = {
-          practiceHours,
-          completedLessons,
-          rounds: userRounds,
-          totalXP: profile?.totalXP || user?.totalXP || 0,
-          handicap: currentHandicapForTrophies,
-          roundsData: safeRounds || [],
-          practiceHistory,
-          libraryCategories,
-          userId: user.id,
-          practiceSessions: practiceSessionsForUser(practiceSessions, user.id),
-          practiceLogs: practiceLogs || [],
-        };
-        
-        // Check on Load: Every time the dashboard loads, compare current userStats against Academy milestone requirements
-        // Copy Academy Checks: Look at how the Academy page determines if trophies are unlocked
-        // Adopt Academy Logic: Run the same 'unlocked' checks used on the Academy page (like Target 🎯 or Lightning ⚡)
-        const unlockedAcademyTrophies = TROPHY_LIST.filter((trophy) => trophy.checkUnlocked(userStats)).map(
-          (trophy) => ({
-            trophy_name: trophy.name,
-            trophy_icon: undefined,
-            id: trophy.id,
-            description: trophy.requirement || "Achievement earned in the Academy!",
-          }),
-        );
-        
-        // Auto-Insert: If a milestone is met but that trophy doesn't exist in user_trophies table yet, automatically INSERT to award it
-        const dbAchievementIds = new Set(dbRows.map((t) => t.achievement_id));
-        const trophiesToInsert = unlockedAcademyTrophies.filter((trophy) => !dbAchievementIds.has(trophy.id));
-
-        if (trophiesToInsert.length > 0) {
-          for (const trophy of trophiesToInsert) {
-            const earnedAt = new Date().toISOString();
-            const { error: insertError } = await insertUserTrophyRow(supabase, {
-              userId: user.id,
-              achievementId: trophy.id,
-              description: trophy.description,
-              earnedAt,
-            });
-
-            if (insertError) {
-              console.error(
-                `[trophy-insert] ${trophy.trophy_name}: ${formatInsertUserTrophyRowError(insertError)}`,
-              );
-            } else {
-              console.log(`✅ Auto-awarded trophy: ${trophy.trophy_name}`);
-              await logActivity(user.id, 'achievement', `Unlocked the ${trophy.trophy_name} trophy`);
-              if (trophy.id) {
-                await insertUserAchievement(supabase, user.id, trophy.id, earnedAt);
-              }
-            }
-          }
-
-          const { rows: updatedRows } = await fetchUserTrophiesForUser(supabase, user.id);
-          if (updatedRows.length > 0) {
-            dbRows = updatedRows;
-          }
-        }
-
-        const earnedAchievementIds = new Set(dbRows.map((t) => t.achievement_id));
-
-        const allTrophies: DashboardTrophyRow[] = TROPHY_LIST.map((trophy) => {
-          const isEarned = earnedAchievementIds.has(trophy.id);
-          const dbTrophy = dbRows.find((t) => t.achievement_id === trophy.id);
-
-          return {
-            achievement_id: trophy.id,
-            trophy_name: trophy.name,
-            trophy_icon: undefined,
-            id: trophy.id,
-            description: trophy.requirement,
-            earned_at: dbTrophy?.earned_at ?? undefined,
-            isEarned,
-            requirement: trophy.requirement,
-          };
-        });
-        
-        console.log('Dashboard Trophy Check - Full Collection:', {
-          totalTrophies: allTrophies.length,
-          earned: allTrophies.filter(t => t.isEarned).length,
-          locked: allTrophies.filter(t => !t.isEarned).length,
-          userStats: {
-            practiceHours,
-            completedLessons,
-            rounds: userRounds,
-            totalXP: profile?.totalXP || user?.totalXP || 0,
-          }
-        });
-        
-        const earnedForEnsure = allTrophies
-          .filter((t) => t.isEarned)
-          .map((t) => ({
-            achievement_id: t.achievement_id,
-            earned_at: t.earned_at ?? null,
-          }));
-        await runBackfillMyAchievementsFromTrophies(supabase);
-        await ensureAchievementsForEarnedTrophies(supabase, user.id, earnedForEnsure);
-        const achRows = await fetchUserAchievementRows(supabase, user.id);
-        setUserAchievementRows(achRows);
-        setTrophies(allTrophies);
-      } catch (err) {
-        console.error('Error fetching trophies:', err);
-      }
-    };
-    
-    fetchTrophies();
-  }, [
-    user?.id,
-    userRoundsCount,
-    profile?.totalXP,
-    user?.totalXP,
-    safeRounds,
-    practiceSessions,
-    currentHandicapForTrophies,
-    practiceLogs,
-  ]);
-  
-  // Update HomeDashboard.tsx: Add rounds?.length to dependencies so streak recalculates when rounds change
 
   // Add Verification: Add a simple console.log to confirm it's no longer undefined
   // Switch to camelCase: Log profile.currentStreak (camelCase) to verify it matches the user object property
@@ -1412,13 +786,7 @@ export default function HomeDashboard() {
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={() => {
-                router.push('/practice');
-                setTimeout(() => {
-                  setRefreshKey(prev => prev + 1);
-                  setDailyVideo(getDailyVideo(refreshKey + 1));
-                }, 100);
-              }}
+              onClick={() => router.push('/practice')}
               className="flex-1 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
               style={{ backgroundColor: '#FFA500' }}
             >
@@ -1446,7 +814,7 @@ export default function HomeDashboard() {
             </button>
             <button
               type="button"
-              onClick={() => router.push('/academy?view=leaderboard')}
+              onClick={() => router.push('/?view=leaderboard')}
               className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
               style={{ backgroundColor: '#FFA500' }}
             >
@@ -1483,20 +851,45 @@ export default function HomeDashboard() {
           </div>
         </div>
 
-        {/* Skills Snapshot - Equal Width Cards */}
-        <SkillsSnapshot
-          combinesCompleted={combinesCompletedDashboard}
-          practiceHoursTotal={practiceHoursTotalDashboard}
-          displayLevel={currentLevel}
-          totalXP={totalXP}
-          xpRemainingToNextLevel={xpRemaining}
-          currentHandicap={snapshotData?.handicap ?? null}
-          startingHandicap={snapshotData?.starting_handicap ?? null}
-          lowestGrossScore={lowestGrossScoreDashboard}
-          roundsLogged={userRoundsCount}
-          isLoading={snapshotLoading}
-          preferredIconId={snapshotData?.preferred_icon_id ?? user?.preferredIconId ?? null}
-        />
+        <HallOfFameLeaderboard />
+
+        {/* Featured video */}
+        <div className="w-full px-4 mb-4">
+          <div
+            className="mx-auto w-full max-w-[380px] overflow-hidden bg-white"
+            style={{
+              borderRadius: "16px",
+              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.08)",
+            }}
+          >
+            <div className="relative aspect-[9/16] w-full overflow-hidden bg-black">
+              <BunnyVideoPlayer videoId={DEFAULT_BUNNY_VIDEO_ID} fill />
+              {dailyVideoDuration ? (
+                <div className="pointer-events-none absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-xs text-white backdrop-blur-sm">
+                  {dailyVideoDuration}
+                </div>
+              ) : null}
+            </div>
+            {dailyVideoTitle ? (
+              <div className="p-5">
+                <button
+                  type="button"
+                  onClick={() => router.push(`/library?drill=${FEATURED_LIBRARY_DRILL_ID}`)}
+                  className="mb-2 block w-full text-left text-xl font-bold tracking-tight transition-opacity hover:opacity-80"
+                  style={{
+                    color: "#014421",
+                    fontFamily: "system-ui, -apple-system, sans-serif",
+                    fontWeight: 700,
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  {dailyVideoTitle}
+                </button>
+                <p className="text-sm text-gray-500">{APP_VIDEO_COACH_NAME}</p>
+              </div>
+            ) : null}
+          </div>
+        </div>
 
         {/* Recent Activity */}
         <div className="px-4 mb-6 w-full">
@@ -1745,94 +1138,6 @@ export default function HomeDashboard() {
               </div>
             )
           )}
-        </div>
-
-        <div className="px-4 mb-6 w-full">
-          <AcademyTrophyCasePanel
-            dbTrophies={dbTrophiesForPanel}
-            showLocked={showLocked}
-            onShowLockedChange={setShowLocked}
-            selectedTrophy={selectedTrophy}
-            onSelectTrophy={setSelectedTrophy}
-            academyTrophyStats={academyTrophyStats}
-            trophyMultiplierById={trophyMultiplierById}
-            achievementRows={userAchievementRows}
-            achievementCountByKey={achievementCountByKey}
-          />
-        </div>
-
-        <GoalAccountabilityModule />
-
-        {/* Daily Focus video: at bottom for now — move this block up under the header after real videos are ready */}
-        <div className="w-full px-4 mb-4">
-          <div
-            className="w-full bg-white overflow-hidden"
-            style={{
-              borderRadius: "16px",
-              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.08)",
-            }}
-          >
-            <div
-              className="relative aspect-video flex items-center justify-center overflow-hidden"
-              style={{ background: "linear-gradient(to bottom right, #f0fdf4, #dcfce7, #bbf7d0)" }}
-            >
-              <div className="absolute inset-0 opacity-30">
-                <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2">
-                  <div className="flex flex-col items-center gap-1">
-                    <div className="h-8 w-8 rounded-full bg-white shadow-md" />
-                    <div className="flex gap-1">
-                      <div className="h-6 w-6 rounded-full bg-white shadow-md" />
-                      <div className="h-6 w-6 rounded-full bg-white shadow-md" />
-                    </div>
-                    <div className="flex gap-0.5">
-                      <div className="h-5 w-5 rounded-full bg-white shadow-md" />
-                      <div className="h-5 w-5 rounded-full bg-white shadow-md" />
-                      <div className="h-5 w-5 rounded-full bg-white shadow-md" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div
-                className="absolute inset-0"
-                style={{ background: "linear-gradient(to top, rgba(134, 239, 172, 0.4), transparent)" }}
-              />
-              <div
-                className="relative z-10 flex h-20 w-20 cursor-pointer items-center justify-center rounded-full backdrop-blur-md transition-transform hover:scale-110"
-                onClick={() => router.push(`/library?drill=${dailyVideo.id}`)}
-                style={{
-                  backgroundColor: "rgba(255, 255, 255, 0.25)",
-                  border: "2px solid rgba(255, 255, 255, 0.5)",
-                  boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
-                }}
-              >
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 shadow-lg">
-                  <Play className="ml-1 h-8 w-8" style={{ color: "#014421" }} fill="#014421" />
-                </div>
-              </div>
-              <div className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-xs text-white backdrop-blur-sm">
-                {dailyVideo.duration}
-              </div>
-            </div>
-            <div className="p-5">
-              <div className="mb-3 inline-block rounded-full border border-[#FFA500] bg-transparent px-3 py-1">
-                <span className="text-xs font-medium" style={{ color: "#FFA500" }}>
-                  Daily Focus
-                </span>
-              </div>
-              <h2
-                className="mb-2 text-xl font-bold tracking-tight"
-                style={{
-                  color: "#014421",
-                  fontFamily: "system-ui, -apple-system, sans-serif",
-                  fontWeight: 700,
-                  letterSpacing: "-0.02em",
-                }}
-              >
-                {dailyVideo.title}
-              </h2>
-              <p className="text-sm text-gray-500">{dailyVideo.coach}</p>
-            </div>
-          </div>
         </div>
 
         <div className="w-full px-4 mb-4">

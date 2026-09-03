@@ -21,6 +21,9 @@ import ReactMarkdown from "react-markdown";
 import { useAuth } from "@/contexts/AuthContext";
 import { logActivity } from "@/lib/activity";
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
+import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
+import { DEFAULT_BUNNY_VIDEO_ID, APP_VIDEO_COACH_NAME, formatBunnyDuration } from "@/lib/bunnyStream";
+import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 // Drills / video authoring field guide: `src/lib/academyContentSchema.ts`
 
 type LessonType = "video" | "text" | "pdf" | "quiz" | "drill";
@@ -53,7 +56,7 @@ interface Module {
 }
 
 const FALLBACK_LESSONS: Lesson[] = [
-  { id: "1", title: "Mastering Your Short Game", type: "video", description: "Learn chipping and putting.", source: "", chapter_name: "Putting Foundations", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 1, duration: "8:42", xpValue: 50 },
+  { id: "1", title: "Mastering Your Short Game", type: "video", description: "Learn chipping and putting.", source: DEFAULT_BUNNY_VIDEO_ID, chapter_name: "Putting Foundations", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 1, duration: "8:42", xpValue: 50 },
   { id: "2", title: "The Pendulum Stroke", type: "video", description: "The pendulum stroke technique.", source: "", chapter_name: "Putting Foundations", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 2, duration: "5:20", xpValue: 30 },
   { id: "3", title: "Putting Practice Routine", type: "drill", description: "A 30-day putting routine.", source: `Focus on stance and grip.`, chapter_name: "Chipping Basics", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 3, xpValue: 75 },
   { id: "4", title: "Short Game Quiz", type: "quiz", description: "Test your knowledge.", source: "", chapter_name: "Chipping Basics", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 4, xpValue: 100 },
@@ -87,6 +90,21 @@ function resolveYoutubeEmbedUrl(source: string): string | null {
   if (!isPlayableVideoSource(source)) return null;
   const id = extractYoutubeVideoId(source);
   return id ? `https://www.youtube.com/embed/${id}` : null;
+}
+
+const BUNNY_VIDEO_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function extractBunnyVideoId(source: string | undefined | null): string | null {
+  if (!source?.trim()) return null;
+  const value = source.trim();
+  if (value.startsWith("bunny:")) {
+    const id = value.slice(6).trim();
+    return BUNNY_VIDEO_ID_RE.test(id) ? id : null;
+  }
+  if (BUNNY_VIDEO_ID_RE.test(value)) return value;
+  const embedMatch = value.match(/mediadelivery\.net\/embed\/[^/]+\/([0-9a-f-]{36})/i);
+  return embedMatch?.[1] ?? null;
 }
 
 function getThumbnailUrl(source: string) {
@@ -537,8 +555,20 @@ function LibraryPageContent() {
     return <Circle className="w-4 h-4 text-gray-300" aria-hidden="true" />;
   };
 
-  const videoUrl =
+  const bunnyVideoId =
     activeLesson && activeLesson.type === "video"
+      ? extractBunnyVideoId(activeLesson.source || "")
+      : null;
+
+  const { metadata: bunnyVideoMetadata } = useBunnyVideoMetadata(bunnyVideoId);
+  const activeLessonTitle = bunnyVideoMetadata?.title || activeLesson?.title || "";
+  const activeLessonDuration =
+    bunnyVideoMetadata?.lengthSeconds
+      ? formatBunnyDuration(bunnyVideoMetadata.lengthSeconds)
+      : activeLesson?.duration;
+
+  const videoUrl =
+    activeLesson && activeLesson.type === "video" && !bunnyVideoId
       ? resolveYoutubeEmbedUrl(activeLesson.source || "")
       : null;
 
@@ -1017,22 +1047,31 @@ function LibraryPageContent() {
 
             {/* Print-only header */}
             <div className="lesson-print-header hidden print:block">
-              Player Report — {activeLesson.title}
+              Player Report — {activeLessonTitle}
             </div>
 
             {/* Video Player / Thumbnail Stage */}
             <div className="lesson-video-container w-full bg-black aspect-video shrink-0 shadow-md print:min-h-[120px] relative">
-              {videoUrl ? (
+              {bunnyVideoId ? (
+                <>
+                  <div className="absolute inset-0 print:hidden">
+                    <BunnyVideoPlayer videoId={bunnyVideoId} fill />
+                  </div>
+                  <div className="hidden print:block absolute inset-0 min-h-[120px] bg-gray-800 flex items-center justify-center text-gray-400 text-sm">
+                    [Video: {activeLessonTitle}]
+                  </div>
+                </>
+              ) : videoUrl ? (
                 <>
                   <iframe
                     src={videoUrl}
                     className="w-full h-full border-0 print:hidden"
                     allowFullScreen
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    title={activeLesson.title}
+                    title={activeLessonTitle}
                   />
                   <div className="hidden print:block absolute inset-0 min-h-[120px] bg-gray-800 flex items-center justify-center text-gray-400 text-sm">
-                    [Video: {activeLesson.title}]
+                    [Video: {activeLessonTitle}]
                   </div>
                 </>
               ) : activeLesson.type === "video" ? (
@@ -1068,14 +1107,17 @@ function LibraryPageContent() {
                 <span className="text-gray-300"> · </span>
                 {activeLesson.chapter_name}
               </p>
-              <h2 className="text-2xl font-black text-gray-900 mb-2 leading-tight">
-                {activeLesson.title}
+              <h2 className="text-2xl font-black text-gray-900 mb-1 leading-tight">
+                {activeLessonTitle}
               </h2>
+              {activeLesson.type === "video" ? (
+                <p className="text-sm text-gray-500 mb-2">{APP_VIDEO_COACH_NAME}</p>
+              ) : null}
 
               {/* Stats row for PDF */}
               <div className="lesson-stat-card flex flex-wrap gap-3 text-xs text-gray-500 mb-4">
                 <span>+{activeLesson.xpValue} XP</span>
-                {activeLesson.duration && <span>{activeLesson.duration}</span>}
+                {activeLessonDuration && <span>{activeLessonDuration}</span>}
                 <span>{activeLesson.type}</span>
               </div>
               

@@ -39,6 +39,42 @@ export const LIVE_APPROACH_CLUB_OPTIONS = [
   "60°",
 ] as const;
 
+/** Approach clubs grouped for the questionnaire picker. */
+export const LIVE_APPROACH_CLUB_GROUPS: { id: string; label: string; clubs: string[] }[] = [
+  {
+    id: "woods",
+    label: "Woods",
+    clubs: [
+      "Driver",
+      "2W",
+      "3W",
+      "4W",
+      "5W",
+      "7W",
+      "9W",
+      "2H",
+      "3H",
+      "Hybrid",
+      "4H",
+      "5H",
+      "6H",
+      "7H",
+      "8H",
+      "Driving Iron",
+    ],
+  },
+  {
+    id: "irons",
+    label: "Irons",
+    clubs: ["2i", "3i", "4i", "5i", "6i", "7i", "8i", "9i"],
+  },
+  {
+    id: "wedges",
+    label: "Wedges",
+    clubs: ["PW", "GW", "AW", "SW", "LW", "48°", "50°", "52°", "54°", "56°", "58°", "60°"],
+  },
+];
+
 export type LiveApproachShotDirection =
   | "top-left"
   | "top"

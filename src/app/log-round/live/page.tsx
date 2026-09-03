@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronLeft, ChevronRight, Radio, Save, Check, MoveUpLeft, MoveUp, MoveUpRight, MoveLeft, MoveRight, MoveDownLeft, MoveDown, MoveDownRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
-  LIVE_APPROACH_CLUB_OPTIONS,
+  LIVE_APPROACH_CLUB_GROUPS,
   LIVE_APPROACH_MATRIX_ROWS,
   LIVE_NOT_POSSIBLE_REASONS,
   formatLiveApproachDirection,
@@ -21,6 +21,7 @@ import {
   puttingCompleteFromLogs,
   type LivePuttMissLine,
   type LivePuttMissLength,
+  type LivePuttBreak,
 } from "@/lib/livePuttingConfig";
 import { useAuth } from "@/contexts/AuthContext";
 import { useStats } from "@/contexts/StatsContext";
@@ -52,9 +53,11 @@ import {
   saveLiveRoundHandoff,
   roundTotalsThroughCurrent,
   isLiveTeeOtherClub,
-  LIVE_TEE_OTHER_CLUBS,
   LIVE_ROUND_TYPE_OPTIONS,
   LIVE_TEE_QUICK_CLUBS,
+  LIVE_TEE_CLUB_GROUPS,
+  loadFavouriteTeeClubs,
+  rememberFavouriteTeeClub,
   LIVE_TEE_BOX_OPTIONS,
   LIVE_TEE_FACE_COLS,
   LIVE_TEE_FACE_ROWS,
@@ -66,6 +69,8 @@ import {
   nextApproachShotNumber,
   normalizeApproachShots,
   defaultLiveHoleWorkflow,
+  isLiveTeeShotReady,
+  getLiveTeeQuestionStep,
   type LiveFirResult,
   type LiveGreenHitResult,
   type LiveHoleEntry,
@@ -182,31 +187,42 @@ function LiveRoundEntryContent() {
   const [shouldSaveCourseProfile, setShouldSaveCourseProfile] = useState(true);
   const [customCourseMode, setCustomCourseMode] = useState(false);
   const [otherClubOpen, setOtherClubOpen] = useState(false);
+  const [favouriteTeeClubs, setFavouriteTeeClubs] = useState<string[]>([]);
+  const [showFullBag, setShowFullBag] = useState(false);
   const [approachDistanceText, setApproachDistanceText] = useState("");
   const [puttDistanceText, setPuttDistanceText] = useState("");
-  const [approachClub, setApproachClub] = useState<string>("7i");
+  const [approachClub, setApproachClub] = useState<string>("");
   const [approachDirection, setApproachDirection] =
     useState<LiveApproachShotDirection | null>(null);
   const [approachPenalties, setApproachPenalties] = useState(0);
+  const [approachQuestionStep, setApproachQuestionStep] = useState<
+    "distance" | "penalties" | "club" | "direction" | "green"
+  >("distance");
   const [pendingNotPossible, setPendingNotPossible] = useState(false);
-  const [pendingPuttMiss, setPendingPuttMiss] = useState(false);
   const [puttMissLine, setPuttMissLine] = useState<LivePuttMissLine | null>(null);
   const [puttMissLength, setPuttMissLength] = useState<LivePuttMissLength | null>(null);
+  const [puttQuestionStep, setPuttQuestionStep] = useState<
+    "distance" | "break" | "result" | "missLine" | "missLength"
+  >("distance");
   const [sharePromptOpen, setSharePromptOpen] = useState(false);
   const pendingFinishDraftRef = useRef<LiveRoundDraft | null>(null);
+  const teeQuestionStageRef = useRef<HTMLDivElement | null>(null);
+  const approachQuestionStageRef = useRef<HTMLDivElement | null>(null);
+  const puttQuestionStageRef = useRef<HTMLDivElement | null>(null);
 
   const resetApproachFormDraft = () => {
     setApproachDistanceText("");
-    setApproachClub("7i");
+    setApproachClub("");
     setApproachDirection(null);
     setApproachPenalties(0);
     setPendingNotPossible(false);
+    setApproachQuestionStep("distance");
   };
 
   const syncPuttingFormForEntry = (entry: LiveHoleEntry) => {
-    setPendingPuttMiss(false);
     setPuttMissLine(null);
     setPuttMissLength(null);
+    setPuttQuestionStep("distance");
     const puttNumber = entry.currentPuttNumber ?? 1;
     if (puttNumber === 1 && entry.firstPuttDistanceFeet != null) {
       setPuttDistanceText(String(entry.firstPuttDistanceFeet));
@@ -241,6 +257,7 @@ function LiveRoundEntryContent() {
   useEffect(() => {
     if (!user?.id) return;
     setSavedCourses(loadRecentCourseNames(user.id));
+    setFavouriteTeeClubs(loadFavouriteTeeClubs(user.id));
     const existing = loadLiveRoundDraft(user.id);
     if (existing) {
       setDraft(existing);
@@ -391,10 +408,171 @@ function LiveRoundEntryContent() {
     }
   };
 
+  const clearShotSequenceAfterTee = () => ({
+    approachShots: [] as LiveHoleEntry["approachShots"],
+    penalties: 0,
+    gir: null as boolean | null,
+    girNotPossibleAttempt: false,
+    putts: 0,
+    firstPuttDistanceFeet: null as number | null,
+    puttGreenBreak: null,
+    puttLogs: [] as LiveHoleEntry["puttLogs"],
+    currentPuttNumber: 1,
+    currentApproachShot: 2,
+  });
+
+  const clearTeeAfterClub = {
+    teeDirection: null as LiveTeeDirection | null,
+    teeMissLie: null as LiveTeeMissLie | null,
+    teeSolidStrike: null as boolean | null,
+    teeFaceContact: null as LiveTeeFaceContact | null,
+    teeCorrectFlight: null as boolean | null,
+    teeDoubleCross: null as boolean | null,
+  };
+
+  const clearTeeAfterFairway = {
+    teeSolidStrike: null as boolean | null,
+    teeFaceContact: null as LiveTeeFaceContact | null,
+    teeCorrectFlight: null as boolean | null,
+    teeDoubleCross: null as boolean | null,
+  };
+
+  const clearTeeAfterSolid = {
+    teeCorrectFlight: null as boolean | null,
+    teeDoubleCross: null as boolean | null,
+  };
+
+  /** Apply a tee answer; auto-advance to approach when Shot 1 is complete. */
+  const answerTeeAndMaybeAdvance = (patch: Partial<LiveHoleEntry>) => {
+    if (!currentHoleEntry || currentHoleEntry.par === 3) return;
+    let merged: LiveHoleEntry = { ...currentHoleEntry, ...patch };
+    if (patch.teeDirection != null) {
+      merged = { ...merged, fir: patch.teeDirection as LiveFirResult };
+    }
+    if (patch.teeSolidStrike === true) {
+      merged = { ...merged, teeFaceContact: null };
+    }
+    if (patch.teeCorrectFlight === true) {
+      merged = { ...merged, teeDoubleCross: null };
+    }
+
+    if (isLiveTeeShotReady(merged)) {
+      updateCurrentHole({
+        ...patch,
+        teeRecorded: true,
+        holePhase: "approach",
+        ...clearShotSequenceAfterTee(),
+      });
+      resetApproachFormDraft();
+      setPuttDistanceText("");
+      return;
+    }
+
+    updateCurrentHole(patch);
+  };
+
   const selectTeeClub = (club: string | null, otherOpen: boolean) => {
     setOtherClubOpen(otherOpen);
-    updateCurrentHole({ teeClub: club });
+    if (!club) {
+      updateCurrentHole({ teeClub: null, ...clearTeeAfterClub });
+      return;
+    }
+    if (user?.id) {
+      setFavouriteTeeClubs(rememberFavouriteTeeClub(user.id, club));
+    }
+    setShowFullBag(false);
+    answerTeeAndMaybeAdvance({ teeClub: club, ...clearTeeAfterClub });
+  };
+
+  const answerTeeDirection = (value: LiveTeeDirection) => {
+    answerTeeAndMaybeAdvance({
+      teeDirection: value,
+      teeMissLie: null,
+      ...clearTeeAfterFairway,
+    });
+  };
+
+  const answerTeeMissLie = (value: LiveTeeMissLie) => {
+    answerTeeAndMaybeAdvance({
+      teeMissLie: value,
+      ...clearTeeAfterFairway,
+    });
+  };
+
+  const answerTeeSolidStrike = (solid: boolean) => {
+    answerTeeAndMaybeAdvance({
+      teeSolidStrike: solid,
+      teeFaceContact: solid ? null : currentHoleEntry?.teeFaceContact ?? null,
+      ...clearTeeAfterSolid,
+    });
+  };
+
+  const answerTeeFaceContact = (value: LiveTeeFaceContact) => {
+    answerTeeAndMaybeAdvance({
+      teeFaceContact: value,
+      ...clearTeeAfterSolid,
+    });
+  };
+
+  const answerTeeCorrectFlight = (correct: boolean) => {
+    answerTeeAndMaybeAdvance({
+      teeCorrectFlight: correct,
+      teeDoubleCross: correct ? null : currentHoleEntry?.teeDoubleCross ?? null,
+    });
+  };
+
+  const answerTeeDoubleCross = (value: boolean) => {
+    answerTeeAndMaybeAdvance({ teeDoubleCross: value });
+  };
+
+  const backTeeToClub = () => {
+    setOtherClubOpen(false);
+    updateCurrentHole({ teeClub: null, ...clearTeeAfterClub });
+  };
+
+  const backTeeToFairway = () => {
+    updateCurrentHole({
+      teeDirection: null,
+      teeMissLie: null,
+      ...clearTeeAfterFairway,
+    });
+  };
+
+  const backTeeToSolid = () => {
+    updateCurrentHole({
+      teeSolidStrike: null,
+      teeFaceContact: null,
+      ...clearTeeAfterSolid,
+    });
+  };
+
+  /** Commit Shot 1 and unlock the approach questionnaire. */
+  const commitTeeShot = () => {
+    if (!currentHoleEntry || currentHoleEntry.par === 3) return;
+    if (!isLiveTeeShotReady(currentHoleEntry)) return;
+    updateCurrentHole({
+      teeRecorded: true,
+      holePhase: "approach",
+      ...clearShotSequenceAfterTee(),
+    });
     resetApproachFormDraft();
+    setPuttDistanceText("");
+  };
+
+  /** Re-open Shot 1 questionnaire (clears later shots). */
+  const editTeeShot = () => {
+    if (!currentHoleEntry || currentHoleEntry.par === 3) return;
+    updateCurrentHole({
+      teeRecorded: false,
+      holePhase: "tee",
+      ...clearShotSequenceAfterTee(),
+      ...clearTeeAfterClub,
+      teeClub: null,
+    });
+    setOtherClubOpen(false);
+    resetApproachFormDraft();
+    setPuttDistanceText("");
+    setPendingNotPossible(false);
   };
 
   const finalizeCurrentHoleStrokes = (holes: LiveHoleEntry[]) => {
@@ -518,7 +696,9 @@ function LiveRoundEntryContent() {
       return;
     }
 
-    const shotNumber = currentHoleEntry.currentApproachShot ?? 2;
+    const shotNumber =
+      currentHoleEntry.currentApproachShot ??
+      (currentHoleEntry.par === 3 ? 1 : 2);
     const distanceMeters = optionalNumberFromInput(approachDistanceText);
     const completedShot = {
       shotNumber,
@@ -550,10 +730,8 @@ function LiveRoundEntryContent() {
         firstPuttDistanceFeet: null,
         puttGreenBreak: null,
       });
-      setApproachDistanceText("");
-      setApproachDirection(null);
-      setApproachPenalties(0);
-      setPuttDistanceText("");
+      resetApproachFormDraft();
+      resetPuttFormDraft();
       return;
     }
 
@@ -567,13 +745,44 @@ function LiveRoundEntryContent() {
         greenHit === "not_possible" ||
         prior.some((s) => s.greenHit === "not_possible"),
     });
-    setApproachDistanceText("");
-    setApproachDirection(null);
-    setApproachPenalties(0);
+    resetApproachFormDraft();
+  };
+
+  const backApproachQuestion = () => {
+    setPendingNotPossible(false);
+    if (approachQuestionStep === "penalties") {
+      setApproachQuestionStep("distance");
+      return;
+    }
+    if (approachQuestionStep === "club") {
+      setApproachQuestionStep("penalties");
+      return;
+    }
+    if (approachQuestionStep === "direction") {
+      setApproachDirection(null);
+      setApproachQuestionStep("club");
+      return;
+    }
+    if (approachQuestionStep === "green") {
+      setApproachDirection(null);
+      setApproachQuestionStep("direction");
+    }
+  };
+
+  const selectApproachClub = (club: string) => {
+    setApproachClub(club);
+    setApproachQuestionStep("direction");
+  };
+
+  const selectApproachDirection = (direction: LiveApproachShotDirection) => {
+    setApproachDirection(direction);
+    setApproachQuestionStep("green");
   };
 
   const editApproachShot = (targetShot: number) => {
-    if (!currentHoleEntry || targetShot < 2) return;
+    if (!currentHoleEntry) return;
+    const minApproachShot = currentHoleEntry.par === 3 ? 1 : 2;
+    if (targetShot < minApproachShot) return;
     const all = currentHoleEntry.approachShots ?? [];
     const editing = all.find((s) => s.shotNumber === targetShot);
     const kept = all.filter((s) => s.shotNumber < targetShot);
@@ -594,11 +803,19 @@ function LiveRoundEntryContent() {
     setApproachDistanceText(
       editing?.distanceMeters != null ? String(editing.distanceMeters) : "",
     );
-    setApproachClub(editing?.club ?? "7i");
+    setApproachClub(editing?.club ?? "");
     setApproachDirection(editing?.shotDirection ?? null);
     setApproachPenalties(editing?.penalties ?? 0);
     setPendingNotPossible(false);
+    setApproachQuestionStep("distance");
     setPuttDistanceText("");
+  };
+
+  const resetPuttFormDraft = () => {
+    setPuttDistanceText("");
+    setPuttMissLine(null);
+    setPuttMissLength(null);
+    setPuttQuestionStep("distance");
   };
 
   const commitPutt = (
@@ -630,7 +847,6 @@ function LiveRoundEntryContent() {
         firstPuttDistanceFeet:
           puttNumber === 1 ? distanceFeet : currentHoleEntry.firstPuttDistanceFeet,
       });
-      setPuttDistanceText("");
     } else {
       updateCurrentHole({
         puttLogs,
@@ -639,19 +855,53 @@ function LiveRoundEntryContent() {
         firstPuttDistanceFeet:
           puttNumber === 1 ? distanceFeet : currentHoleEntry.firstPuttDistanceFeet,
       });
-      setPuttDistanceText("");
     }
 
-    setPendingPuttMiss(false);
-    setPuttMissLine(null);
-    setPuttMissLength(null);
+    resetPuttFormDraft();
   };
 
-  const tryCommitPuttMiss = (
-    line: LivePuttMissLine | null,
-    length: LivePuttMissLength | null,
-  ) => {
-    if (line && length) commitPutt(false, line, length);
+  const selectPuttBreak = (breakType: LivePuttBreak) => {
+    updateCurrentHole({ puttGreenBreak: breakType });
+    setPuttQuestionStep("result");
+  };
+
+  const startPuttMiss = () => {
+    setPuttMissLine(null);
+    setPuttMissLength(null);
+    setPuttQuestionStep("missLine");
+  };
+
+  const selectPuttMissLine = (line: LivePuttMissLine) => {
+    setPuttMissLine(line);
+    setPuttQuestionStep("missLength");
+  };
+
+  const selectPuttMissLength = (length: LivePuttMissLength) => {
+    setPuttMissLength(length);
+    if (puttMissLine) {
+      commitPutt(false, puttMissLine, length);
+    }
+  };
+
+  const backPuttQuestion = () => {
+    if (puttQuestionStep === "break") {
+      setPuttQuestionStep("distance");
+      return;
+    }
+    if (puttQuestionStep === "result") {
+      setPuttQuestionStep("break");
+      return;
+    }
+    if (puttQuestionStep === "missLine") {
+      setPuttMissLine(null);
+      setPuttMissLength(null);
+      setPuttQuestionStep("result");
+      return;
+    }
+    if (puttQuestionStep === "missLength") {
+      setPuttMissLength(null);
+      setPuttQuestionStep("missLine");
+    }
   };
 
   const editPutt = (targetPutt: number) => {
@@ -674,9 +924,9 @@ function LiveRoundEntryContent() {
     setPuttDistanceText(
       editing?.distanceFeet != null ? String(editing.distanceFeet) : "",
     );
-    setPendingPuttMiss(false);
     setPuttMissLine(null);
     setPuttMissLength(null);
+    setPuttQuestionStep("distance");
   };
 
   const greenHitButton = (value: LiveGreenHitResult, label: string) => {
@@ -695,10 +945,10 @@ function LiveRoundEntryContent() {
             handleApproachGreenHit(value);
           }
         }}
-        className={`rounded-xl border-2 px-2 py-2.5 text-xs font-semibold transition-colors ${
+        className={`rounded-xl border-2 px-2 py-3.5 text-sm font-bold capitalize transition-colors sm:text-base ${
           active
             ? "border-[#014421] bg-[#014421] text-white"
-            : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
+            : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
         }`}
       >
         {label}
@@ -711,20 +961,11 @@ function LiveRoundEntryContent() {
     return (
       <button
         type="button"
-        onClick={() => {
-          const directionChanged = currentHoleEntry?.teeDirection !== value;
-          updateCurrentHole({
-            teeDirection: value,
-            teeMissLie:
-              value === "hit" || directionChanged
-                ? null
-                : (currentHoleEntry?.teeMissLie ?? null),
-          });
-        }}
-        className={`rounded-xl border-2 px-2 py-2.5 text-xs font-semibold transition-colors ${
+        onClick={() => answerTeeDirection(value)}
+        className={`rounded-xl border-2 px-3 py-4 text-base font-bold capitalize transition-colors ${
           active
             ? "border-[#014421] bg-[#014421] text-white"
-            : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
+            : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
         }`}
       >
         {label}
@@ -737,11 +978,11 @@ function LiveRoundEntryContent() {
     return (
       <button
         type="button"
-        onClick={() => updateCurrentHole({ teeMissLie: value })}
-        className={`rounded-xl border-2 px-2 py-2 text-xs font-semibold transition-colors ${
+        onClick={() => answerTeeMissLie(value)}
+        className={`rounded-xl border-2 px-2 py-4 text-sm font-bold capitalize transition-colors sm:text-base ${
           active
             ? "border-[#014421] bg-[#014421] text-white"
-            : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
+            : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
         }`}
       >
         {label}
@@ -754,11 +995,11 @@ function LiveRoundEntryContent() {
     return (
       <button
         type="button"
-        onClick={() => updateCurrentHole({ teeFaceContact: value })}
-        className={`w-full rounded-xl border-2 px-3 py-2.5 text-sm font-semibold transition-colors ${
+        onClick={() => answerTeeFaceContact(value)}
+        className={`w-full rounded-xl border-2 px-3 py-3.5 text-base font-bold capitalize transition-colors ${
           active
             ? "border-[#014421] bg-[#014421] text-white"
-            : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
+            : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
         }`}
       >
         {label}
@@ -772,21 +1013,66 @@ function LiveRoundEntryContent() {
     : 1;
 
   const holePar = currentHoleEntry?.par ?? null;
-  const showPuttingPhase = currentHoleEntry?.holePhase === "putting";
-  const showTeeShot = holePar != null && holePar !== 3 && !showPuttingPhase;
-  const showApproachPhase = holePar != null && !showPuttingPhase;
-  const currentApproachShot = currentHoleEntry?.currentApproachShot ?? 2;
+  const holePhase =
+    currentHoleEntry?.holePhase ??
+    (holePar === 3 ? "approach" : holePar != null ? "tee" : null);
+  const showPuttingPhase = holePhase === "putting";
+  const showTeeShot = holePar != null && holePar !== 3 && holePhase === "tee";
+  const showApproachPhase = holePar != null && holePhase === "approach";
+  const currentApproachShot =
+    currentHoleEntry?.currentApproachShot ?? (holePar === 3 ? 1 : 2);
   const loggedApproachShots = normalizeApproachShots(currentHoleEntry?.approachShots);
   const loggedPutts = normalizePuttLogs(currentHoleEntry?.puttLogs);
   const currentPuttNumber = currentHoleEntry?.currentPuttNumber ?? 1;
   const puttingComplete = puttingCompleteFromLogs(loggedPutts);
-  const canGoBackApproachShot = currentApproachShot > 2 || loggedApproachShots.length > 0;
-  const showTeeMissLie =
-    showTeeShot &&
+  const teeShotReady = currentHoleEntry ? isLiveTeeShotReady(currentHoleEntry) : false;
+  const teeQuestionStep = currentHoleEntry
+    ? getLiveTeeQuestionStep(currentHoleEntry)
+    : "club";
+  const canGoBackToTee =
+    showApproachPhase &&
+    holePar != null &&
+    holePar !== 3 &&
+    loggedApproachShots.length === 0;
+  const canGoBackApproachShot = loggedApproachShots.length > 0;
+  const showTeeMissLiePrompt =
+    teeQuestionStep === "fairway" &&
     (currentHoleEntry?.teeDirection === "left" ||
       currentHoleEntry?.teeDirection === "right");
-  const showTeeFaceContact = showTeeShot && currentHoleEntry?.teeSolidStrike === false;
-  const showTeeDoubleCross = showTeeShot && currentHoleEntry?.teeCorrectFlight === false;
+  const showTeeFaceContactPrompt =
+    teeQuestionStep === "solid" && currentHoleEntry?.teeSolidStrike === false;
+  const showTeeDoubleCrossPrompt =
+    teeQuestionStep === "flight" && currentHoleEntry?.teeCorrectFlight === false;
+
+  useEffect(() => {
+    if (!showTeeShot) return;
+    teeQuestionStageRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [
+    showTeeShot,
+    teeQuestionStep,
+    showTeeMissLiePrompt,
+    showTeeFaceContactPrompt,
+    showTeeDoubleCrossPrompt,
+  ]);
+
+  useEffect(() => {
+    if (!showApproachPhase) return;
+    approachQuestionStageRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [showApproachPhase, approachQuestionStep, pendingNotPossible, currentApproachShot]);
+
+  useEffect(() => {
+    if (!showPuttingPhase || puttingComplete) return;
+    puttQuestionStageRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [showPuttingPhase, puttingComplete, puttQuestionStep, currentPuttNumber]);
   const currentHoleStrokes = currentHoleEntry
     ? effectiveHoleStrokes(currentHoleEntry)
     : null;
@@ -1269,377 +1555,367 @@ function LiveRoundEntryContent() {
                   </div>
 
                   {showTeeShot && (
-                    <div className="mb-5 rounded-xl border-2 border-[#FFA500]/40 bg-amber-50/50 p-3">
-                      <p className="mb-3 text-sm font-bold text-gray-900">Shot 1</p>
-                      <div className="mb-3">
-                        <label className="mb-2 block text-xs font-medium text-gray-600">Club</label>
-                        <div className="flex flex-wrap gap-1.5">
-                          {LIVE_TEE_QUICK_CLUBS.map((club) => {
-                            const active =
-                              currentHoleEntry.teeClub === club && !otherClubOpen;
-                            return (
-                              <button
-                                key={club}
-                                type="button"
-                                onClick={() => selectTeeClub(club, false)}
-                                className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
-                                  active
-                                    ? "border-[#014421] bg-[#014421] text-white"
-                                    : "border-gray-200 bg-white text-gray-700"
-                                }`}
-                              >
-                                {club}
-                              </button>
-                            );
-                          })}
+                    <div
+                      ref={teeQuestionStageRef}
+                      className="mb-5 rounded-xl border-2 border-[#FFA500]/40 bg-amber-50/50 p-4"
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="text-lg font-bold text-gray-900">Shot 1 — Tee</p>
+                        {teeQuestionStep !== "club" && (
                           <button
                             type="button"
-                            onClick={() => setOtherClubOpen(true)}
-                            className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
-                              otherClubOpen
-                                ? "border-[#014421] bg-[#014421] text-white"
-                                : "border-gray-200 bg-white text-gray-700"
-                            }`}
+                            onClick={() => {
+                              if (teeQuestionStep === "fairway") {
+                                if (showTeeMissLiePrompt) backTeeToFairway();
+                                else backTeeToClub();
+                              } else if (teeQuestionStep === "solid") {
+                                if (showTeeFaceContactPrompt) {
+                                  updateCurrentHole({
+                                    teeSolidStrike: null,
+                                    teeFaceContact: null,
+                                    ...clearTeeAfterSolid,
+                                  });
+                                } else {
+                                  backTeeToFairway();
+                                }
+                              } else if (teeQuestionStep === "flight") {
+                                if (showTeeDoubleCrossPrompt) {
+                                  updateCurrentHole({
+                                    teeCorrectFlight: null,
+                                    teeDoubleCross: null,
+                                  });
+                                } else {
+                                  backTeeToSolid();
+                                }
+                              } else {
+                                backTeeToSolid();
+                              }
+                            }}
+                            className="shrink-0 text-sm font-semibold text-[#014421] underline-offset-2 hover:underline"
                           >
-                            Other
+                            ← Back
+                          </button>
+                        )}
+                      </div>
+
+                      <div
+                        className={`flex w-full flex-col items-center px-1 text-center ${
+                          teeQuestionStep === "club" && showFullBag
+                            ? "min-h-[20rem] justify-start pt-2"
+                            : "min-h-[20rem] justify-center"
+                        }`}
+                      >
+                        <div className="w-full max-w-md">
+                      {teeQuestionStep === "club" && (
+                        <div>
+                          <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                            What club was used on the tee?
+                          </p>
+
+                          <div className="mb-4">
+                            <p className="mb-2 text-sm font-bold uppercase tracking-wide text-gray-500">
+                              {favouriteTeeClubs.length > 0 ? "Favourites" : "Quick picks"}
+                            </p>
+                            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                              {(favouriteTeeClubs.length > 0
+                                ? favouriteTeeClubs
+                                : [...LIVE_TEE_QUICK_CLUBS]
+                              ).map((club) => {
+                                const active = currentHoleEntry.teeClub === club;
+                                return (
+                                  <button
+                                    key={`fav-${club}`}
+                                    type="button"
+                                    onClick={() => selectTeeClub(club, false)}
+                                    className={`rounded-xl border-2 px-2 py-3.5 text-base font-bold transition-colors ${
+                                      active
+                                        ? "border-[#014421] bg-[#014421] text-white"
+                                        : "border-[#FFA500]/50 bg-amber-50 text-gray-900 hover:border-[#FFA500]"
+                                    }`}
+                                  >
+                                    {club}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {favouriteTeeClubs.length === 0 && (
+                              <p className="mt-2 text-sm text-gray-500">
+                                Clubs you use get pinned here next time.
+                              </p>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setShowFullBag((v) => !v)}
+                            className="mb-3 w-full rounded-xl border-2 border-gray-200 bg-white py-3 text-base font-bold capitalize text-gray-800 hover:border-[#FFA500]"
+                          >
+                            {showFullBag ? "Hide Full Bag" : "Show Full Bag"}
+                          </button>
+
+                          {showFullBag && (
+                            <div className="space-y-2.5 rounded-xl border border-gray-200 bg-white p-2.5 text-left">
+                              {LIVE_TEE_CLUB_GROUPS.map((group) => (
+                                <div key={group.id}>
+                                  <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                                    {group.label}
+                                  </p>
+                                  <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5">
+                                    {group.clubs.map((club) => {
+                                      const active = currentHoleEntry.teeClub === club;
+                                      const isFavourite = favouriteTeeClubs.includes(club);
+                                      return (
+                                        <button
+                                          key={club}
+                                          type="button"
+                                          onClick={() => selectTeeClub(club, false)}
+                                          className={`rounded-lg border-2 px-1 py-2 text-xs font-bold transition-colors sm:text-sm ${
+                                            active
+                                              ? "border-[#014421] bg-[#014421] text-white"
+                                              : isFavourite
+                                                ? "border-[#FFA500]/40 bg-amber-50/80 text-gray-900 hover:border-[#FFA500]"
+                                                : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
+                                          }`}
+                                        >
+                                          {club}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {teeQuestionStep === "fairway" && (
+                        <div>
+                          <p className="mb-2 text-xl font-bold leading-snug text-gray-900">
+                            Did it hit the fairway?
+                          </p>
+                          {currentHoleEntry.teeClub && (
+                            <p className="mb-4 text-sm text-gray-500">
+                              Tee club: {currentHoleEntry.teeClub}
+                            </p>
+                          )}
+                          {!showTeeMissLiePrompt ? (
+                            <div className="grid grid-cols-3 gap-2">
+                              {teeDirButton("left", "Left")}
+                              {teeDirButton("hit", "Hit fairway")}
+                              {teeDirButton("right", "Right")}
+                            </div>
+                          ) : (
+                            <div>
+                              <p className="mb-3 text-lg font-bold text-gray-900">
+                                Where did it finish?
+                              </p>
+                              <div className="grid grid-cols-3 gap-2">
+                                {teeMissLieButton("rough", "Rough")}
+                                {teeMissLieButton("recovery", "Recovery / Trees")}
+                                {teeMissLieButton("hazard", "Hazard")}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {teeQuestionStep === "solid" && (
+                        <div>
+                          {!showTeeFaceContactPrompt ? (
+                            <>
+                              <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                                Solid strike?
+                              </p>
+                              <div className="grid grid-cols-2 gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => answerTeeSolidStrike(true)}
+                                  className={`rounded-xl border-2 py-4 text-lg font-bold capitalize transition-colors ${
+                                    currentHoleEntry.teeSolidStrike === true
+                                      ? "border-[#014421] bg-[#014421] text-white"
+                                      : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
+                                  }`}
+                                >
+                                  Yes
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => answerTeeSolidStrike(false)}
+                                  className={`rounded-xl border-2 py-4 text-lg font-bold capitalize transition-colors ${
+                                    currentHoleEntry.teeSolidStrike === false
+                                      ? "border-[#014421] bg-[#014421] text-white"
+                                      : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
+                                  }`}
+                                >
+                                  No
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                                Face contact?
+                              </p>
+                              <div className="grid grid-cols-3 gap-2">
+                                {LIVE_TEE_FACE_ROWS.flatMap((row) =>
+                                  LIVE_TEE_FACE_COLS.map((col) => {
+                                    const id = liveTeeFaceContactId(row, col);
+                                    return (
+                                      <div key={id} className="min-w-0">
+                                        {teeFaceContactButton(
+                                          id,
+                                          liveTeeFaceContactLabel(id),
+                                        )}
+                                      </div>
+                                    );
+                                  }),
+                                )}
+                                <div className="col-span-3">
+                                  {teeFaceContactButton("not_sure", "Not sure")}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {teeQuestionStep === "flight" && (
+                        <div>
+                          {!showTeeDoubleCrossPrompt ? (
+                            <>
+                              <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                                Correct flight?
+                              </p>
+                              <div className="grid grid-cols-2 gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => answerTeeCorrectFlight(true)}
+                                  className={`rounded-xl border-2 py-4 text-lg font-bold capitalize transition-colors ${
+                                    currentHoleEntry.teeCorrectFlight === true
+                                      ? "border-[#014421] bg-[#014421] text-white"
+                                      : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
+                                  }`}
+                                >
+                                  Yes
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => answerTeeCorrectFlight(false)}
+                                  className={`rounded-xl border-2 py-4 text-lg font-bold capitalize transition-colors ${
+                                    currentHoleEntry.teeCorrectFlight === false
+                                      ? "border-[#014421] bg-[#014421] text-white"
+                                      : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
+                                  }`}
+                                >
+                                  No
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                                Double cross?
+                              </p>
+                              <div className="grid grid-cols-2 gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => answerTeeDoubleCross(true)}
+                                  className={`rounded-xl border-2 py-4 text-lg font-bold capitalize transition-colors ${
+                                    currentHoleEntry.teeDoubleCross === true
+                                      ? "border-[#014421] bg-[#014421] text-white"
+                                      : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
+                                  }`}
+                                >
+                                  Yes
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => answerTeeDoubleCross(false)}
+                                  className={`rounded-xl border-2 py-4 text-lg font-bold capitalize transition-colors ${
+                                    currentHoleEntry.teeDoubleCross === false
+                                      ? "border-[#014421] bg-[#014421] text-white"
+                                      : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
+                                  }`}
+                                >
+                                  No
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {teeQuestionStep === "done" && (
+                        <div>
+                          <p className="mb-4 text-lg font-semibold text-gray-800">
+                            Tee shot logged. Continue to the next shot.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={commitTeeShot}
+                            disabled={!teeShotReady}
+                            className="w-full rounded-xl bg-[#FFA500] py-4 text-lg font-bold capitalize text-black shadow-md transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Next shot →
                           </button>
                         </div>
-                        {otherClubOpen && (
-                          <select
-                            value={
-                              isLiveTeeOtherClub(currentHoleEntry.teeClub)
-                                ? (currentHoleEntry.teeClub ?? "")
-                                : ""
-                            }
-                            onChange={(e) => {
-                              const club = e.target.value;
-                              selectTeeClub(club || null, true);
-                            }}
-                            className="mt-2 w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-900 focus:border-[#FFA500] focus:outline-none"
-                          >
-                            <option value="">Select club…</option>
-                            {LIVE_TEE_OTHER_CLUBS.map((club) => (
-                              <option key={club} value={club}>
-                                {club}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                      <div className="mb-3">
-                        <label className="mb-2 block text-xs font-medium text-gray-600">
-                          Direction
-                        </label>
-                        <div className="grid grid-cols-3 gap-2">
-                          {teeDirButton("left", "Left")}
-                          {teeDirButton("hit", "Hit fairway")}
-                          {teeDirButton("right", "Right")}
-                        </div>
-                        {showTeeMissLie && (
-                          <div className="mt-2 grid grid-cols-3 gap-2">
-                            {teeMissLieButton("rough", "Rough")}
-                            {teeMissLieButton("recovery", "Recovery / Trees")}
-                            {teeMissLieButton("hazard", "Hazard")}
-                          </div>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="mb-2 block text-xs font-medium text-gray-600">
-                            Solid strike?
-                          </label>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateCurrentHole({
-                                  teeSolidStrike: true,
-                                  teeFaceContact: null,
-                                })
-                              }
-                              className={`rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors ${
-                                currentHoleEntry.teeSolidStrike === true
-                                  ? "border-[#014421] bg-[#014421] text-white"
-                                  : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
-                              }`}
-                            >
-                              Yes
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => updateCurrentHole({ teeSolidStrike: false })}
-                              className={`rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors ${
-                                currentHoleEntry.teeSolidStrike === false
-                                  ? "border-[#014421] bg-[#014421] text-white"
-                                  : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
-                              }`}
-                            >
-                              No
-                            </button>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="mb-2 block text-xs font-medium text-gray-600">
-                            Correct flight?
-                          </label>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateCurrentHole({
-                                  teeCorrectFlight: true,
-                                  teeDoubleCross: null,
-                                })
-                              }
-                              className={`rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors ${
-                                currentHoleEntry.teeCorrectFlight === true
-                                  ? "border-[#014421] bg-[#014421] text-white"
-                                  : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
-                              }`}
-                            >
-                              Yes
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => updateCurrentHole({ teeCorrectFlight: false })}
-                              className={`rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors ${
-                                currentHoleEntry.teeCorrectFlight === false
-                                  ? "border-[#014421] bg-[#014421] text-white"
-                                  : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
-                              }`}
-                            >
-                              No
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                      {showTeeDoubleCross && (
-                        <div className="mt-3 space-y-2">
-                          <p className="text-xs font-medium text-gray-600">Double cross?</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => updateCurrentHole({ teeDoubleCross: true })}
-                              className={`rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors ${
-                                currentHoleEntry.teeDoubleCross === true
-                                  ? "border-[#014421] bg-[#014421] text-white"
-                                  : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
-                              }`}
-                            >
-                              Yes
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => updateCurrentHole({ teeDoubleCross: false })}
-                              className={`rounded-xl border-2 py-2.5 text-sm font-semibold transition-colors ${
-                                currentHoleEntry.teeDoubleCross === false
-                                  ? "border-[#014421] bg-[#014421] text-white"
-                                  : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
-                              }`}
-                            >
-                              No
-                            </button>
-                          </div>
-                        </div>
                       )}
-                      {showTeeFaceContact && (
-                        <div className="mt-3 space-y-2">
-                          <p className="text-xs font-medium text-gray-600">Face contact</p>
-                          <div className="grid grid-cols-3 gap-2">
-                            {LIVE_TEE_FACE_ROWS.flatMap((row) =>
-                              LIVE_TEE_FACE_COLS.map((col) => {
-                                const id = liveTeeFaceContactId(row, col);
-                                return (
-                                  <div key={id} className="min-w-0">
-                                    {teeFaceContactButton(
-                                      id,
-                                      liveTeeFaceContactLabel(id),
-                                    )}
-                                  </div>
-                                );
-                              }),
-                            )}
-                            <div className="col-span-3">
-                              {teeFaceContactButton("not_sure", "Not sure")}
-                            </div>
-                          </div>
                         </div>
-                      )}
+                      </div>
                     </div>
                   )}
 
                   {showApproachPhase && (
-                    <div className="mb-5 rounded-xl border-2 border-[#014421]/30 bg-emerald-50/40 p-3">
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <p className="text-sm font-bold text-gray-900">
+                    <div
+                      ref={approachQuestionStageRef}
+                      className="mb-5 rounded-xl border-2 border-[#014421]/30 bg-emerald-50/40 p-4"
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="text-lg font-bold text-gray-900">
                           Shot {currentApproachShot}
                         </p>
-                        {canGoBackApproachShot && (
+                        {approachQuestionStep === "distance" ? (
+                          canGoBackToTee ? (
+                            <button
+                              type="button"
+                              onClick={editTeeShot}
+                              className="shrink-0 text-sm font-semibold text-[#014421] underline-offset-2 hover:underline"
+                            >
+                              ← Back to Shot 1
+                            </button>
+                          ) : canGoBackApproachShot ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const target =
+                                  loggedApproachShots[loggedApproachShots.length - 1]
+                                    .shotNumber;
+                                editApproachShot(target);
+                              }}
+                              className="shrink-0 text-sm font-semibold text-[#014421] underline-offset-2 hover:underline"
+                            >
+                              ← Back to Shot{" "}
+                              {
+                                loggedApproachShots[loggedApproachShots.length - 1]
+                                  .shotNumber
+                              }
+                            </button>
+                          ) : null
+                        ) : (
                           <button
                             type="button"
-                            onClick={() => {
-                              const target =
-                                loggedApproachShots.length > 0
-                                  ? loggedApproachShots[loggedApproachShots.length - 1]
-                                      .shotNumber
-                                  : currentApproachShot - 1;
-                              editApproachShot(target);
-                            }}
-                            className="shrink-0 text-xs font-semibold text-[#014421] underline-offset-2 hover:underline"
+                            onClick={backApproachQuestion}
+                            className="shrink-0 text-sm font-semibold text-[#014421] underline-offset-2 hover:underline"
                           >
-                            ← Back to Shot{" "}
-                            {loggedApproachShots.length > 0
-                              ? loggedApproachShots[loggedApproachShots.length - 1].shotNumber
-                              : currentApproachShot - 1}
+                            ← Back
                           </button>
                         )}
                       </div>
-                      <div className="mb-3">
-                        <label className="mb-1 block text-xs font-medium text-gray-600">
-                          Shot distance (meters)
-                        </label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={approachDistanceText}
-                          onChange={(e) => setApproachDistanceText(e.target.value)}
-                          placeholder="e.g. 132"
-                          className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-center text-lg font-semibold tabular-nums text-gray-900 focus:border-[#FFA500] focus:outline-none"
-                        />
-                      </div>
-                      <div className="mb-4">
-                        <label className="mb-2 block text-xs font-medium text-gray-600">
-                          Penalties (this shot)
-                        </label>
-                        <div className="flex items-center justify-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setApproachPenalties((n) => Math.max(0, n - 1))
-                            }
-                            className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-gray-200 bg-white text-lg font-bold text-gray-900 hover:border-[#FFA500]"
-                          >
-                            −
-                          </button>
-                          <span className="min-w-[2.5rem] rounded-xl border-2 border-gray-200 bg-white px-2 py-1 text-center text-2xl font-bold tabular-nums text-gray-900">
-                            {approachPenalties}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setApproachPenalties((n) => n + 1)}
-                            className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-gray-200 bg-white text-lg font-bold text-gray-900 hover:border-[#FFA500]"
-                          >
-                            +
-                          </button>
-                        </div>
-                        {totalApproachPenalties(loggedApproachShots) > 0 && (
-                          <p className="mt-1 text-center text-[11px] text-gray-500">
-                            {totalApproachPenalties(loggedApproachShots)} penalty stroke
-                            {totalApproachPenalties(loggedApproachShots) !== 1 ? "s" : ""}{" "}
-                            logged on earlier shots
-                          </p>
-                        )}
-                      </div>
-                      <div className="mb-4">
-                        <label
-                          htmlFor="live-approach-club"
-                          className="mb-1 block text-xs font-medium text-gray-600"
-                        >
-                          Club used
-                        </label>
-                        <select
-                          id="live-approach-club"
-                          value={approachClub}
-                          onChange={(e) => setApproachClub(e.target.value)}
-                          className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-900 focus:border-[#FFA500] focus:outline-none"
-                        >
-                          {LIVE_APPROACH_CLUB_OPTIONS.map((club) => (
-                            <option key={club} value={club}>
-                              {club}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="mb-4">
-                        <p className="mb-2 text-xs font-medium text-gray-600">
-                          Shot direction
-                        </p>
-                        <div
-                          className="mx-auto grid w-full max-w-[220px] grid-cols-3 gap-3"
-                          role="group"
-                          aria-label="Approach shot direction"
-                        >
-                          {LIVE_APPROACH_MATRIX_ROWS.flatMap((row) =>
-                            row.map((result) => {
-                              const Icon = LIVE_APPROACH_DIRECTION_ICONS[result];
-                              const isSelected = approachDirection === result;
-                              return (
-                                <button
-                                  key={result}
-                                  type="button"
-                                  onClick={() => setApproachDirection(result)}
-                                  title={
-                                    result === "gir"
-                                      ? "On target"
-                                      : result.replace(/-/g, " ")
-                                  }
-                                  className={`flex aspect-square w-full max-w-[4.25rem] shrink-0 items-center justify-center justify-self-center rounded-full border-2 bg-white transition-all active:scale-95 ${
-                                    isSelected
-                                      ? "border-[#014421] text-[#014421] ring-2 ring-[#014421]/30"
-                                      : "border-gray-300 text-gray-600 hover:border-[#FFA500]"
-                                  }`}
-                                >
-                                  <Icon className="h-5 w-5" strokeWidth={1.75} />
-                                </button>
-                              );
-                            }),
-                          )}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="mb-2 block text-xs font-medium text-gray-600">
-                          Green hit?
-                        </label>
-                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                          {greenHitButton("yes", "Yes")}
-                          {greenHitButton("no", "No")}
-                          {greenHitButton("short_sided", "Short Sided")}
-                          {greenHitButton("not_possible", "Not Possible")}
-                        </div>
-                        {pendingNotPossible && (
-                          <div className="mt-3 space-y-2 rounded-xl border border-gray-200 bg-white p-3">
-                            <p className="text-xs font-semibold text-gray-800">
-                              No GIR opportunity?
-                            </p>
-                            <p className="text-[11px] leading-snug text-gray-500">
-                              Choose why the green wasn&apos;t realistically in play for this shot.
-                            </p>
-                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                              {LIVE_NOT_POSSIBLE_REASONS.map(({ id, label }) => (
-                                <button
-                                  key={id}
-                                  type="button"
-                                  onClick={() =>
-                                    handleApproachGreenHit("not_possible", id)
-                                  }
-                                  className="rounded-xl border-2 border-gray-200 bg-white px-2 py-2.5 text-xs font-semibold text-gray-700 transition-colors hover:border-[#FFA500]"
-                                >
-                                  {label}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        <p className="mt-2 text-[11px] text-gray-500">
-                          Use <span className="font-medium">No</span> when you had a look but missed.
-                          Use <span className="font-medium">Short Sided</span> when you missed and
-                          left a tough angle. Use <span className="font-medium">Not Possible</span>{" "}
-                          when going for the green wasn&apos;t realistic.
-                        </p>
-                      </div>
-                      {loggedApproachShots.length > 0 && (
-                        <div className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-xs text-gray-600">
-                          <p className="font-semibold text-gray-800">Logged shots</p>
+
+                      {loggedApproachShots.length > 0 && approachQuestionStep === "distance" && (
+                        <div className="mb-3 rounded-lg bg-white/70 px-3 py-2 text-left text-sm text-gray-600">
+                          <p className="font-semibold text-gray-800">Earlier shots</p>
                           <ul className="mt-1 space-y-1">
                             {loggedApproachShots.map((s) => (
                               <li
@@ -1650,7 +1926,7 @@ function LiveRoundEntryContent() {
                                 <button
                                   type="button"
                                   onClick={() => editApproachShot(s.shotNumber)}
-                                  className="shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-[#014421] hover:border-[#FFA500]"
+                                  className="shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-semibold capitalize text-[#014421] hover:border-[#FFA500]"
                                 >
                                   Edit
                                 </button>
@@ -1659,125 +1935,367 @@ function LiveRoundEntryContent() {
                           </ul>
                         </div>
                       )}
+
+                      <div
+                        className={`flex w-full flex-col items-center px-1 text-center ${
+                          approachQuestionStep === "club"
+                            ? "min-h-0 justify-start pt-1"
+                            : "min-h-[20rem] justify-center"
+                        }`}
+                      >
+                        <div className="w-full max-w-md">
+                          {approachQuestionStep === "distance" && (
+                            <div>
+                              <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                                How far was the shot? (meters)
+                              </p>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={approachDistanceText}
+                                onChange={(e) => setApproachDistanceText(e.target.value)}
+                                placeholder="e.g. 132"
+                                className="mb-4 w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-4 text-center text-2xl font-bold tabular-nums text-gray-900 focus:border-[#FFA500] focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setApproachQuestionStep("penalties")}
+                                className="w-full rounded-xl bg-[#FFA500] py-4 text-lg font-bold capitalize text-black shadow-md transition hover:bg-amber-500"
+                              >
+                                Next →
+                              </button>
+                            </div>
+                          )}
+
+                          {approachQuestionStep === "penalties" && (
+                            <div>
+                              <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                                Any penalties on this shot?
+                              </p>
+                              <div className="mb-4 flex items-center justify-center gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setApproachPenalties((n) => Math.max(0, n - 1))
+                                  }
+                                  className="flex h-12 w-12 items-center justify-center rounded-xl border-2 border-gray-200 bg-white text-2xl font-bold text-gray-900 hover:border-[#FFA500]"
+                                >
+                                  −
+                                </button>
+                                <span className="min-w-[3rem] rounded-xl border-2 border-gray-200 bg-white px-3 py-2 text-center text-3xl font-bold tabular-nums text-gray-900">
+                                  {approachPenalties}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setApproachPenalties((n) => n + 1)}
+                                  className="flex h-12 w-12 items-center justify-center rounded-xl border-2 border-gray-200 bg-white text-2xl font-bold text-gray-900 hover:border-[#FFA500]"
+                                >
+                                  +
+                                </button>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setApproachQuestionStep("club")}
+                                className="w-full rounded-xl bg-[#FFA500] py-4 text-lg font-bold capitalize text-black shadow-md transition hover:bg-amber-500"
+                              >
+                                Next →
+                              </button>
+                            </div>
+                          )}
+
+                          {approachQuestionStep === "club" && (
+                            <div>
+                              <p className="mb-3 text-xl font-bold leading-snug text-gray-900">
+                                What club was used?
+                              </p>
+                              <div className="space-y-2.5 rounded-xl border border-gray-200 bg-white p-2.5 text-left">
+                                {LIVE_APPROACH_CLUB_GROUPS.map((group) => (
+                                  <div key={group.id}>
+                                    <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                                      {group.label}
+                                    </p>
+                                    <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5">
+                                      {group.clubs.map((club) => {
+                                        const active = approachClub === club;
+                                        return (
+                                          <button
+                                            key={club}
+                                            type="button"
+                                            onClick={() => selectApproachClub(club)}
+                                            className={`rounded-lg border-2 px-1 py-2 text-xs font-bold transition-colors sm:text-sm ${
+                                              active
+                                                ? "border-[#014421] bg-[#014421] text-white"
+                                                : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
+                                            }`}
+                                          >
+                                            {club}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {approachQuestionStep === "direction" && (
+                            <div>
+                              <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                                Shot direction?
+                              </p>
+                              {approachClub && (
+                                <p className="mb-4 text-sm text-gray-500">
+                                  Club: {approachClub}
+                                </p>
+                              )}
+                              <div
+                                className="mx-auto grid w-full max-w-[240px] grid-cols-3 gap-3"
+                                role="group"
+                                aria-label="Approach shot direction"
+                              >
+                                {LIVE_APPROACH_MATRIX_ROWS.flatMap((row) =>
+                                  row.map((result) => {
+                                    const Icon = LIVE_APPROACH_DIRECTION_ICONS[result];
+                                    const isSelected = approachDirection === result;
+                                    return (
+                                      <button
+                                        key={result}
+                                        type="button"
+                                        onClick={() => selectApproachDirection(result)}
+                                        title={
+                                          result === "gir"
+                                            ? "On target"
+                                            : result.replace(/-/g, " ")
+                                        }
+                                        className={`flex aspect-square w-full max-w-[4.5rem] shrink-0 items-center justify-center justify-self-center rounded-full border-2 bg-white transition-all active:scale-95 ${
+                                          isSelected
+                                            ? "border-[#014421] text-[#014421] ring-2 ring-[#014421]/30"
+                                            : "border-gray-300 text-gray-600 hover:border-[#FFA500]"
+                                        }`}
+                                      >
+                                        <Icon className="h-6 w-6" strokeWidth={1.75} />
+                                      </button>
+                                    );
+                                  }),
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {approachQuestionStep === "green" && (
+                            <div>
+                              <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                                Green hit?
+                              </p>
+                              <div className="grid grid-cols-2 gap-2">
+                                {greenHitButton("yes", "Yes")}
+                                {greenHitButton("no", "No")}
+                                {greenHitButton("short_sided", "Short Sided")}
+                                {greenHitButton("not_possible", "Not Possible")}
+                              </div>
+                              {pendingNotPossible && (
+                                <div className="mt-4 space-y-3 rounded-xl border border-gray-200 bg-white p-3 text-left">
+                                  <p className="text-base font-bold text-gray-900">
+                                    Why wasn&apos;t the green in play?
+                                  </p>
+                                  <div className="grid grid-cols-1 gap-2">
+                                    {LIVE_NOT_POSSIBLE_REASONS.map(({ id, label }) => (
+                                      <button
+                                        key={id}
+                                        type="button"
+                                        onClick={() =>
+                                          handleApproachGreenHit("not_possible", id)
+                                        }
+                                        className="rounded-xl border-2 border-gray-200 bg-white px-3 py-3.5 text-base font-bold capitalize text-gray-800 transition-colors hover:border-[#FFA500]"
+                                      >
+                                        {label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {!pendingNotPossible && (
+                                <p className="mt-4 text-sm text-gray-500">
+                                  Use <span className="font-semibold">No</span> when you had a look
+                                  but missed. Use{" "}
+                                  <span className="font-semibold">Short Sided</span> for a tough
+                                  miss angle. Use{" "}
+                                  <span className="font-semibold">Not Possible</span> when going for
+                                  the green wasn&apos;t realistic.
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )}
 
                   {showPuttingPhase && (
-                    <div className="mb-5 rounded-xl border-2 border-[#FFA500]/50 bg-amber-50/60 p-3">
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <p className="text-sm font-bold text-gray-900">Putting</p>
-                        {loggedApproachShots.length > 0 && !puttingComplete && (
+                    <div
+                      ref={puttQuestionStageRef}
+                      className="mb-5 rounded-xl border-2 border-[#FFA500]/50 bg-amber-50/60 p-4"
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="text-lg font-bold text-gray-900">
+                          {puttingComplete ? "Putting" : `Putt ${currentPuttNumber}`}
+                        </p>
+                        {!puttingComplete && puttQuestionStep === "distance" ? (
+                          loggedApproachShots.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                editApproachShot(
+                                  loggedApproachShots[loggedApproachShots.length - 1]
+                                    .shotNumber,
+                                )
+                              }
+                              className="shrink-0 text-sm font-semibold text-[#014421] underline-offset-2 hover:underline"
+                            >
+                              ← Back to Shot{" "}
+                              {
+                                loggedApproachShots[loggedApproachShots.length - 1]
+                                  .shotNumber
+                              }
+                            </button>
+                          ) : null
+                        ) : !puttingComplete ? (
                           <button
                             type="button"
-                            onClick={() =>
-                              editApproachShot(
-                                loggedApproachShots[loggedApproachShots.length - 1].shotNumber,
-                              )
-                            }
-                            className="shrink-0 text-xs font-semibold text-[#014421] underline-offset-2 hover:underline"
+                            onClick={backPuttQuestion}
+                            className="shrink-0 text-sm font-semibold text-[#014421] underline-offset-2 hover:underline"
                           >
-                            ← Back to Shot{" "}
-                            {loggedApproachShots[loggedApproachShots.length - 1].shotNumber}
+                            ← Back
                           </button>
-                        )}
+                        ) : null}
                       </div>
 
-                      {!puttingComplete ? (
-                        <>
-                          <p className="mb-3 text-sm font-semibold text-gray-800">
-                            Putt {currentPuttNumber}
-                          </p>
-                          <div className="mb-4">
-                            <label className="mb-1 block text-xs font-medium text-gray-600">
-                              Putt distance (feet)
-                            </label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={puttDistanceText}
-                              onChange={(e) => {
-                                const raw = e.target.value;
-                                setPuttDistanceText(raw);
-                                if (currentPuttNumber === 1) {
-                                  updateCurrentHole({
-                                    firstPuttDistanceFeet: optionalNumberFromInput(raw),
-                                  });
-                                }
-                              }}
-                              placeholder="e.g. 25"
-                              className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-center text-lg font-semibold tabular-nums text-gray-900 focus:border-[#FFA500] focus:outline-none"
-                            />
-                          </div>
-                          <div className="mb-4">
-                            <label className="mb-2 block text-xs font-medium text-gray-600">
-                              Green break
-                            </label>
-                            <div className="grid grid-cols-2 gap-2">
-                              {LIVE_PUTT_BREAK_OPTIONS.map((option) => {
-                                const active = currentHoleEntry.puttGreenBreak === option.id;
-                                return (
+                      {loggedPutts.length > 0 &&
+                        (puttingComplete || puttQuestionStep === "distance") && (
+                          <div className="mb-3 rounded-lg bg-white/70 px-3 py-2 text-left text-sm text-gray-600">
+                            <p className="font-semibold text-gray-800">Logged putts</p>
+                            <ul className="mt-1 space-y-1">
+                              {loggedPutts.map((p) => (
+                                <li
+                                  key={p.puttNumber}
+                                  className="flex items-center justify-between gap-2"
+                                >
+                                  <span className="min-w-0">{formatLivePuttEntry(p)}</span>
                                   <button
-                                    key={option.id}
                                     type="button"
-                                    onClick={() =>
-                                      updateCurrentHole({ puttGreenBreak: option.id })
-                                    }
-                                    className={`rounded-xl border-2 px-2 py-2.5 text-xs font-semibold transition-colors ${
-                                      active
-                                        ? "border-[#014421] bg-[#014421] text-white"
-                                        : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
-                                    }`}
+                                    onClick={() => editPutt(p.puttNumber)}
+                                    className="shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-semibold capitalize text-[#014421] hover:border-[#FFA500]"
                                   >
-                                    {option.label}
+                                    Edit
                                   </button>
-                                );
-                              })}
-                            </div>
+                                </li>
+                              ))}
+                            </ul>
                           </div>
-                          {!pendingPuttMiss ? (
-                            <div className="mb-3">
-                              <label className="mb-2 block text-xs font-medium text-gray-600">
-                                Result
-                              </label>
-                              <div className="grid grid-cols-2 gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => commitPutt(true)}
-                                  className="rounded-xl border-2 border-gray-200 bg-white py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:border-[#FFA500]"
-                                >
-                                  Make
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setPendingPuttMiss(true);
-                                    setPuttMissLine(null);
-                                    setPuttMissLength(null);
+                        )}
+
+                      {!puttingComplete ? (
+                        <div className="flex min-h-[20rem] w-full flex-col items-center justify-center px-1 text-center">
+                          <div className="w-full max-w-md">
+                            {puttQuestionStep === "distance" && (
+                              <div>
+                                <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                                  How far is the putt? (feet)
+                                </p>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={puttDistanceText}
+                                  onChange={(e) => {
+                                    const raw = e.target.value;
+                                    setPuttDistanceText(raw);
+                                    if (currentPuttNumber === 1) {
+                                      updateCurrentHole({
+                                        firstPuttDistanceFeet: optionalNumberFromInput(raw),
+                                      });
+                                    }
                                   }}
-                                  className="rounded-xl border-2 border-gray-200 bg-white py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:border-[#FFA500]"
+                                  placeholder="e.g. 25"
+                                  className="mb-4 w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-4 text-center text-2xl font-bold tabular-nums text-gray-900 focus:border-[#FFA500] focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setPuttQuestionStep("break")}
+                                  className="w-full rounded-xl bg-[#FFA500] py-4 text-lg font-bold capitalize text-black shadow-md transition hover:bg-amber-500"
                                 >
-                                  Miss
+                                  Next →
                                 </button>
                               </div>
-                            </div>
-                          ) : (
-                            <div className="mb-3 space-y-3 rounded-xl border border-gray-200 bg-white p-3">
-                              <p className="text-xs font-semibold text-gray-800">Miss details</p>
+                            )}
+
+                            {puttQuestionStep === "break" && (
                               <div>
-                                <p className="mb-2 text-xs font-medium text-gray-600">Line</p>
+                                <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                                  Green break?
+                                </p>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {LIVE_PUTT_BREAK_OPTIONS.map((option) => {
+                                    const active =
+                                      currentHoleEntry.puttGreenBreak === option.id;
+                                    return (
+                                      <button
+                                        key={option.id}
+                                        type="button"
+                                        onClick={() => selectPuttBreak(option.id)}
+                                        className={`rounded-xl border-2 px-2 py-4 text-base font-bold capitalize transition-colors ${
+                                          active
+                                            ? "border-[#014421] bg-[#014421] text-white"
+                                            : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
+                                        }`}
+                                      >
+                                        {option.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {puttQuestionStep === "result" && (
+                              <div>
+                                <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                                  Result?
+                                </p>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => commitPutt(true)}
+                                    className="rounded-xl border-2 border-gray-200 bg-white py-4 text-lg font-bold capitalize text-gray-800 transition-colors hover:border-[#FFA500]"
+                                  >
+                                    Make
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={startPuttMiss}
+                                    className="rounded-xl border-2 border-gray-200 bg-white py-4 text-lg font-bold capitalize text-gray-800 transition-colors hover:border-[#FFA500]"
+                                  >
+                                    Miss
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {puttQuestionStep === "missLine" && (
+                              <div>
+                                <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                                  Miss line?
+                                </p>
                                 <div className="grid grid-cols-3 gap-2">
                                   {(["high", "good", "low"] as const).map((line) => (
                                     <button
                                       key={line}
                                       type="button"
-                                      onClick={() => {
-                                        setPuttMissLine(line);
-                                        tryCommitPuttMiss(line, puttMissLength);
-                                      }}
-                                      className={`rounded-xl border-2 py-2.5 text-sm font-semibold capitalize transition-colors ${
+                                      onClick={() => selectPuttMissLine(line)}
+                                      className={`rounded-xl border-2 py-4 text-base font-bold capitalize transition-colors ${
                                         puttMissLine === line
                                           ? "border-[#014421] bg-[#014421] text-white"
-                                          : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
+                                          : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
                                       }`}
                                     >
                                       {line}
@@ -1785,21 +2303,23 @@ function LiveRoundEntryContent() {
                                   ))}
                                 </div>
                               </div>
+                            )}
+
+                            {puttQuestionStep === "missLength" && (
                               <div>
-                                <p className="mb-2 text-xs font-medium text-gray-600">Distance</p>
+                                <p className="mb-4 text-xl font-bold leading-snug text-gray-900">
+                                  Miss distance?
+                                </p>
                                 <div className="grid grid-cols-3 gap-2">
                                   {(["long", "short", "good"] as const).map((length) => (
                                     <button
                                       key={length}
                                       type="button"
-                                      onClick={() => {
-                                        setPuttMissLength(length);
-                                        tryCommitPuttMiss(puttMissLine, length);
-                                      }}
-                                      className={`rounded-xl border-2 py-2.5 text-xs font-semibold capitalize transition-colors ${
+                                      onClick={() => selectPuttMissLength(length)}
+                                      className={`rounded-xl border-2 py-4 text-base font-bold capitalize transition-colors ${
                                         puttMissLength === length
                                           ? "border-[#014421] bg-[#014421] text-white"
-                                          : "border-gray-200 bg-white text-gray-700 hover:border-[#FFA500]"
+                                          : "border-gray-200 bg-white text-gray-800 hover:border-[#FFA500]"
                                       }`}
                                     >
                                       {length}
@@ -1807,48 +2327,14 @@ function LiveRoundEntryContent() {
                                   ))}
                                 </div>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setPendingPuttMiss(false);
-                                  setPuttMissLine(null);
-                                  setPuttMissLength(null);
-                                }}
-                                className="text-xs font-medium text-gray-500 underline-offset-2 hover:underline"
-                              >
-                                Cancel miss
-                              </button>
-                            </div>
-                          )}
-                        </>
+                            )}
+                          </div>
+                        </div>
                       ) : (
-                        <p className="mb-3 text-center text-sm font-semibold text-[#014421]">
+                        <p className="mb-3 text-center text-base font-semibold text-[#014421]">
                           Holed out — {loggedPutts.length} putt
                           {loggedPutts.length !== 1 ? "s" : ""}
                         </p>
-                      )}
-
-                      {loggedPutts.length > 0 && (
-                        <div className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-xs text-gray-600">
-                          <p className="font-semibold text-gray-800">Logged putts</p>
-                          <ul className="mt-1 space-y-1">
-                            {loggedPutts.map((p) => (
-                              <li
-                                key={p.puttNumber}
-                                className="flex items-center justify-between gap-2"
-                              >
-                                <span className="min-w-0">{formatLivePuttEntry(p)}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => editPutt(p.puttNumber)}
-                                  className="shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-[#014421] hover:border-[#FFA500]"
-                                >
-                                  Edit
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
                       )}
 
                       {currentHoleEntry.gir === true && (
