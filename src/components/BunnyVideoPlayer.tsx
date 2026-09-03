@@ -1,4 +1,5 @@
 import React from "react";
+import { resolveBunnyLibraryId } from "@/lib/bunnyStream";
 
 interface BunnyVideoPlayerProps {
   videoId: string;
@@ -11,16 +12,18 @@ interface BunnyVideoPlayerProps {
 
 export const BunnyVideoPlayer: React.FC<BunnyVideoPlayerProps> = ({
   videoId,
-  libraryId = process.env.NEXT_PUBLIC_BUNNY_LIBRARY_ID,
+  libraryId,
   autoplay = false,
   fill = false,
   className = "",
 }) => {
-  if (!libraryId || !videoId) {
+  const resolvedLibraryId = resolveBunnyLibraryId(libraryId);
+
+  if (!resolvedLibraryId || !videoId) {
     return <div className="p-4 text-sm text-gray-500">Missing Video or Library ID</div>;
   }
 
-  const src = `https://player.mediadelivery.net/embed/${libraryId}/${videoId}?autoplay=${autoplay}&preload=true`;
+  const src = `https://player.mediadelivery.net/embed/${resolvedLibraryId}/${videoId}?autoplay=${autoplay}&preload=true`;
 
   if (fill) {
     return (

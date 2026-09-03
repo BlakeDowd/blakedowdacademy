@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveBunnyLibraryId } from "@/lib/bunnyStream";
 import { fetchBunnyVideoTitleFromEmbed } from "@/lib/bunnyStreamServer";
 
 export const dynamic = "force-dynamic";
@@ -12,8 +13,7 @@ type BunnyVideoResponse = {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const videoId = searchParams.get("videoId")?.trim();
-  const libraryId =
-    searchParams.get("libraryId")?.trim() ?? process.env.NEXT_PUBLIC_BUNNY_LIBRARY_ID;
+  const libraryId = resolveBunnyLibraryId(searchParams.get("libraryId"));
   const apiKey = process.env.BUNNY_STREAM_API_KEY?.trim();
 
   if (!videoId) {
