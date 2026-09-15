@@ -353,7 +353,6 @@ export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflo
             ref={fileRef}
             type="file"
             accept="video/*"
-            capture="environment"
             className="hidden"
             onChange={(e) => void handleUpload(e.target.files?.[0] ?? null)}
           />
