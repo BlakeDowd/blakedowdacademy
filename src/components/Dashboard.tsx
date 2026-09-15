@@ -226,7 +226,7 @@ export function GoalAccountabilityModule() {
   const [loading, setLoading] = useState(true);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const [isGoalSettingOpen, setIsGoalSettingOpen] = useState(false);
+  const [isGoalSettingOpen, setIsGoalSettingOpen] = useState(true);
   /** Set when `player_goals` SELECT fails — do not overwrite local drafts (avoids "save then reset"). */
   const [goalsLoadError, setGoalsLoadError] = useState<string | null>(null);
 

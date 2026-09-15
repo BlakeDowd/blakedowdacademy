@@ -43,7 +43,7 @@ import { DEFAULT_BUNNY_VIDEO_ID, APP_VIDEO_COACH_NAME, formatBunnyDuration } fro
 import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 import { HallOfFameLeaderboard } from "@/components/academy/HallOfFameLeaderboard";
 
-const FEATURED_LIBRARY_DRILL_ID = "1";
+const FEATURED_LIBRARY_DRILL_ID = "swing-hell-drill";
 
 interface ActivityItem {
   id: string;
@@ -754,103 +754,6 @@ export default function HomeDashboard() {
           </div>
         )}
 
-        {/* Action Buttons */}
-        <div className="w-full px-4 mb-6 space-y-3">
-          {LIVE_ENTRY_ENABLED && activeLiveDraft && (
-            <LiveRoundInProgressBanner draft={activeLiveDraft} variant="home" />
-          )}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => router.push('/log-round')}
-              className="flex-1 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              Log Round
-            </button>
-            <button
-              type="button"
-              onClick={openLiveEntry}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <Radio className="h-4 w-4 shrink-0" aria-hidden />
-              Live Entry
-            </button>
-          </div>
-          <LiveEntryNotReadyModal
-            open={liveEntryGateOpen}
-            onClose={() => setLiveEntryGateOpen(false)}
-            onOpenForTesting={openLiveEntryForTesting}
-          />
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => router.push('/practice')}
-              className="flex-1 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              Log Practice
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push('/practice?plan=schedule')}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <Calendar className="h-4 w-4 shrink-0" aria-hidden />
-              Practice Plan
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => router.push('/practice?plan=combine')}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <Target className="h-4 w-4 shrink-0" aria-hidden />
-              Combine Tests
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push('/?view=leaderboard')}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <Trophy className="h-4 w-4 shrink-0" aria-hidden />
-              Leaderboards
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push('/practice?plan=library')}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
-              Drill Library
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push('/practice?plan=fuel')}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <Apple className="h-4 w-4 shrink-0" aria-hidden />
-              Fuel Planner
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push('/virtual-caddie')}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <Bot className="h-4 w-4 shrink-0" aria-hidden />
-              Virtual Caddie
-            </button>
-          </div>
-        </div>
-
         <HallOfFameLeaderboard />
 
         {/* Featured video */}
@@ -1138,6 +1041,103 @@ export default function HomeDashboard() {
               </div>
             )
           )}
+        </div>
+
+        {/* Action Buttons */}
+        <div className="w-full px-4 mb-6 space-y-3">
+          {LIVE_ENTRY_ENABLED && activeLiveDraft && (
+            <LiveRoundInProgressBanner draft={activeLiveDraft} variant="home" />
+          )}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => router.push('/log-round')}
+              className="flex-1 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              Log Round
+            </button>
+            <button
+              type="button"
+              onClick={openLiveEntry}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Radio className="h-4 w-4 shrink-0" aria-hidden />
+              Live Entry
+            </button>
+          </div>
+          <LiveEntryNotReadyModal
+            open={liveEntryGateOpen}
+            onClose={() => setLiveEntryGateOpen(false)}
+            onOpenForTesting={openLiveEntryForTesting}
+          />
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => router.push('/practice')}
+              className="flex-1 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              Log Practice
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/practice?plan=schedule')}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Calendar className="h-4 w-4 shrink-0" aria-hidden />
+              Practice Plan
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => router.push('/practice?plan=combine')}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Target className="h-4 w-4 shrink-0" aria-hidden />
+              Combine Tests
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/?view=leaderboard')}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Trophy className="h-4 w-4 shrink-0" aria-hidden />
+              Leaderboards
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/practice?plan=library')}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
+              Drill Library
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/practice?plan=fuel')}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Apple className="h-4 w-4 shrink-0" aria-hidden />
+              Fuel Planner
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/virtual-caddie')}
+              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Bot className="h-4 w-4 shrink-0" aria-hidden />
+              Virtual Caddie
+            </button>
+          </div>
         </div>
 
         <div className="w-full px-4 mb-4">

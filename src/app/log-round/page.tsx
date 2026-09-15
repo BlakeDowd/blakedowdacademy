@@ -705,7 +705,7 @@ export default function LogRoundPage() {
 
       setIsSaving(false);
       // Navigate to academy page to see the updated leaderboard
-      router.push('/academy');
+      router.push('/profile');
     } catch (error) {
       console.error('Unexpected error saving round:', error);
       console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');

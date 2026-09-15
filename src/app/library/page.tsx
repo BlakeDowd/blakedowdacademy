@@ -55,11 +55,21 @@ interface Module {
   completedCount: number;
 }
 
-const FALLBACK_LESSONS: Lesson[] = [
-  { id: "1", title: "Mastering Your Short Game", type: "video", description: "Learn chipping and putting.", source: DEFAULT_BUNNY_VIDEO_ID, chapter_name: "Putting Foundations", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 1, duration: "8:42", xpValue: 50 },
-  { id: "2", title: "The Pendulum Stroke", type: "video", description: "The pendulum stroke technique.", source: "", chapter_name: "Putting Foundations", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 2, duration: "5:20", xpValue: 30 },
-  { id: "3", title: "Putting Practice Routine", type: "drill", description: "A 30-day putting routine.", source: `Focus on stance and grip.`, chapter_name: "Chipping Basics", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 3, xpValue: 75 },
-  { id: "4", title: "Short Game Quiz", type: "quiz", description: "Test your knowledge.", source: "", chapter_name: "Chipping Basics", module_name: "The Full Game Masterclass", category: "Short Game", sort_order: 4, xpValue: 100 },
+/** Live curriculum only — ghost/placeholder modules are hidden while real videos are filmed. */
+const HELL_DRILL_LESSON_ID = "swing-hell-drill";
+const LIBRARY_CURRICULUM_LESSONS: Lesson[] = [
+  {
+    id: HELL_DRILL_LESSON_ID,
+    title: "Hell Drill",
+    type: "video",
+    description: "Swing drill with Blake Dowd.",
+    source: DEFAULT_BUNNY_VIDEO_ID,
+    chapter_name: "Swing Videos",
+    module_name: "Swing Drills",
+    category: "Swing",
+    sort_order: 1,
+    xpValue: 50,
+  },
 ];
 
 /** Placeholder YouTube IDs (e.g. joke embeds) — show “coming soon” instead. */
@@ -129,8 +139,8 @@ function VideoComingSoon() {
 
 /** Shown in the header on the main library screen and in lesson breadcrumbs. */
 const ONLINE_LEARNING_LIBRARY = "Online Learning Library";
-const COURSE_TITLE = "Golf Fundamentals Course";
-const CATEGORIES = ["All", "Driving", "Short Game", "Putting", "Irons", "Mental"];
+const COURSE_TITLE = "Swing Drills";
+const CATEGORIES = ["All", "Swing"];
 const HERO_IMAGE = "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?q=80&w=1200&auto=format&fit=crop";
 
 function getLessonTypeTag(type: LessonType) {
@@ -335,49 +345,66 @@ function LibraryPageContent() {
     }
   }, []);
 
-  // Fetch Lessons
+  // Fetch Lessons — curated Swing Drills curriculum only (hide ghost modules/lessons).
   useEffect(() => {
     let cancelled = false;
     async function fetchLessons() {
       try {
         const raw = await fetchDrillsCatalogRows();
-        const data = [...raw].sort(
-          (a, b) =>
-            Number((a as any).sort_order ?? (a as any).estimated_minutes ?? 0) -
-            Number((b as any).sort_order ?? (b as any).estimated_minutes ?? 0)
-        );
-
         if (cancelled) return;
-        if (data.length === 0) {
-          setLessons(FALLBACK_LESSONS);
-        } else {
-          const mapped: Lesson[] = data.map((row: any) => {
+
+        const fromDb: Lesson[] = [...raw]
+          .filter((row: any) => {
+            const moduleName = String(row.module_name || "").trim().toLowerCase();
+            return moduleName === "swing drills";
+          })
+          .sort(
+            (a, b) =>
+              Number((a as any).sort_order ?? (a as any).estimated_minutes ?? 0) -
+              Number((b as any).sort_order ?? (b as any).estimated_minutes ?? 0),
+          )
+          .map((row: any) => {
             const videoUrl = row.video_url || row.source || row.youtube_link || "";
             const type = (row.type as string) || (videoUrl ? "video" : "text");
             return {
               id: String(row.id),
               title: String(row.drill_name || row.title || "Untitled"),
-              type: (type === "quiz" ? "quiz" : type === "drill" ? "drill" : type === "pdf" ? "pdf" : type === "video" ? "video" : "text") as LessonType,
+              type: (type === "quiz"
+                ? "quiz"
+                : type === "drill"
+                  ? "drill"
+                  : type === "pdf"
+                    ? "pdf"
+                    : type === "video"
+                      ? "video"
+                      : "text") as LessonType,
               description: String(row.description || ""),
               source: videoUrl || String(row.description || ""),
-              chapter_name: String(row.chapter_name || row.category || "Uncategorized"),
-              module_name: String(row.module_name || row.category || "General"),
-              category: String(row.category || "General"),
+              chapter_name: String(row.chapter_name || "Swing Videos"),
+              module_name: "Swing Drills",
+              category: String(row.category || "Swing"),
               sort_order: Number(row.sort_order ?? row.estimated_minutes ?? 0),
               duration: row.duration ? String(row.duration) : undefined,
               xpValue: Number(row.xp_value ?? row.xp ?? 50),
             };
           });
-          setLessons(mapped);
-        }
-      } catch (e) {
-        if (!cancelled) setLessons(FALLBACK_LESSONS);
+
+        const withoutHellDuplicate = fromDb.filter(
+          (l) =>
+            l.id !== HELL_DRILL_LESSON_ID &&
+            extractBunnyVideoId(l.source) !== DEFAULT_BUNNY_VIDEO_ID,
+        );
+        setLessons([...LIBRARY_CURRICULUM_LESSONS, ...withoutHellDuplicate]);
+      } catch {
+        if (!cancelled) setLessons(LIBRARY_CURRICULUM_LESSONS);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     fetchLessons();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Filter lessons

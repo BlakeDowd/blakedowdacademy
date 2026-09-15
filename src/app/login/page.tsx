@@ -45,9 +45,9 @@ export default function LoginPage() {
         
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          console.log('Login: Session exists, forcing redirect to /academy');
+          console.log('Login: Session exists, forcing redirect to /profile');
           // Force hard redirect to break any spinner loop
-          window.location.href = '/academy';
+          window.location.href = '/profile';
         }
       } catch (err) {
         console.error('Login: Error checking session:', err);
@@ -104,12 +104,12 @@ export default function LoginPage() {
           const supabase = createClient();
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
-            window.location.assign('/academy');
+            window.location.assign('/profile');
           }
         } catch (err) {
           console.error('Login: Error verifying session before redirect:', err);
           // Still redirect after delay
-          setTimeout(() => window.location.assign('/academy'), 200);
+          setTimeout(() => window.location.assign('/profile'), 200);
         }
       } else {
         await Promise.race([
@@ -124,12 +124,12 @@ export default function LoginPage() {
           const supabase = createClient();
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
-            window.location.assign('/academy');
+            window.location.assign('/profile');
           }
         } catch (err) {
           console.error('Login: Error verifying session before redirect:', err);
           // Still redirect after delay
-          setTimeout(() => window.location.assign('/academy'), 200);
+          setTimeout(() => window.location.assign('/profile'), 200);
         }
       }
     } catch (err: any) {
@@ -151,8 +151,8 @@ export default function LoginPage() {
             const supabase = createClient();
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
-              console.log('Login: Session exists after timeout, forcing redirect to /academy');
-              window.location.href = '/academy';
+              console.log('Login: Session exists after timeout, forcing redirect to /profile');
+              window.location.href = '/profile';
             }
           } catch (checkErr) {
             console.error('Login: Error checking session after timeout:', checkErr);

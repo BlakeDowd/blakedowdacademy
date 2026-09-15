@@ -1,0 +1,2180 @@
+"use client";
+
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
+import Link from "next/link";
+import { AdvancedApproachStatsPanel } from "@/components/stats/AdvancedApproachStatsPanel";
+import { LivePuttingBreakdownPanel } from "@/components/stats/LivePuttingBreakdownPanel";
+import type { AcademyTrophyDbRow } from "@/components/AcademyTrophyCasePanel";
+import {
+  TourPlayerProfileHero,
+  ProfileSegmentedTabs,
+  type ProfileTab,
+} from "@/components/profile/TourPlayerProfileHero";
+import CoachSwingInbox from "@/components/coach/CoachSwingInbox";
+import CoachFeaturedFeedback from "@/components/coach/CoachFeaturedFeedback";
+import BunnySwingWorkflow from "@/components/coach/BunnySwingWorkflow";
+import { APP_VIDEO_COACH_NAME } from "@/lib/bunnyStream";
+import { useStats } from "@/contexts/StatsContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { motion, useSpring, useTransform } from "framer-motion";
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpDown,
+  ArrowUpRight,
+  BarChart3,
+  Bird,
+  ChevronDown,
+  ChevronUp,
+  CircleDot,
+  Minus,
+  Navigation2,
+  Percent,
+  PieChart,
+  Shuffle,
+  Table2,
+  Target,
+} from "lucide-react";
+import {
+  computeDeepDiveRoundMetrics,
+  computeStrokeOpportunityTop3,
+  sortMetricMatrix,
+} from "@/lib/deepDiveRoundMetrics";
+import { TROPHY_LIST } from "@/lib/academyTrophies";
+import { fetchTrophyCollectionRankForUser } from "@/lib/trophyCollectionLeaderboard";
+import { fetchUserTrophiesForUser } from "@/lib/userTrophiesDb";
+import { resolveAuthUserId } from "@/lib/resolveAuthUserId";
+import type { PlayerGoalRow } from "@/types/playerGoals";
+import { PracticeVsGoalsSection } from "@/components/stats/PracticeVsGoalsSection";
+import { AcademyProfileSection } from "@/components/academy/AcademyProfileSection";
+import { getBenchmarkGoals } from "@/lib/benchmarkGoals";
+import { countUserCombineCompletions } from "@/lib/combineCompletionDetection";
+import { practiceSessionMinutesFromRow, practiceSessionsForUser } from "@/lib/practiceSessionDuration";
+import { buildDummyRoundsForUser } from "@/lib/seedDummyRounds";
+
+function AnimatedNumber({ value, isPercentage = false }: { value: number; isPercentage?: boolean }) {
+  const spring = useSpring(value >= 0 ? value : 0, { mass: 0.8, stiffness: 75, damping: 15 });
+  const display = useTransform(spring, (current) => value === -1 ? '--' : `${current.toFixed(1)}${isPercentage ? '%' : ''}`);
+
+  useEffect(() => {
+    spring.set(value >= 0 ? value : 0);
+  }, [value, spring]);
+
+  return <motion.span>{display}</motion.span>;
+}
+
+const StatDisplay = ({
+  label,
+  tooltip,
+  current,
+  goal,
+  isPercentage = false,
+  inverse = false,
+  isAdjustingGoal
+}: {
+  label: string;
+  tooltip?: string;
+  current: number;
+  goal: number;
+  isPercentage?: boolean;
+  inverse?: boolean;
+  isAdjustingGoal: boolean;
+}) => {
+  const noData = current === -1;
+  const diff = goal - (noData ? 0 : current);
+  const gap = inverse ? -diff : diff;
+  const needsImprovement = gap > 0;
+  const gapText = noData ? 'No Data' : needsImprovement ? `${inverse ? '-' : '+'}${Math.abs(gap).toFixed(1)}${isPercentage ? '%' : ''}` : `Target Met`;
+  
+  const isMeetingGoal = noData ? false : inverse ? current <= goal : current >= goal;
+  const goalColor = noData ? 'text-gray-400' : isMeetingGoal ? 'text-green-500' : 'text-red-500';
+
+  return (
+    <div className="flex items-center justify-between py-2">
+      {tooltip ? (
+        <div className="flex items-center gap-1 group relative">
+          <div className="text-sm text-gray-700">{label}</div>
+          <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[10px] font-bold cursor-help border border-gray-200 transition-colors hover:bg-gray-200">i</div>
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-48 max-w-[200px] bg-gray-900 text-white text-xs rounded-lg p-2 shadow-xl z-10 whitespace-normal break-words">
+            {tooltip}
+          </div>
+        </div>
+      ) : (
+        <div className="text-sm text-gray-700">{label}</div>
+      )}
+      
+      <div className="flex items-center gap-3">
+        {isAdjustingGoal && (
+          <div className="flex items-center gap-2 animate-in fade-in duration-300">
+            <span className="text-[10px] font-bold text-[#FF9800] uppercase tracking-wider bg-orange-50 px-2 py-0.5 rounded border border-orange-100">
+              Gap: {gapText}
+            </span>
+          </div>
+        )}
+        <div className="flex items-baseline gap-2">
+          <div className="text-2xl font-bold transition-colors duration-300 text-[#FF9800]">
+            <AnimatedNumber value={current} isPercentage={isPercentage} />
+          </div>
+          <div className="flex flex-col items-end justify-center">
+            <span className="text-[9px] leading-none text-gray-400 font-bold uppercase tracking-wider mb-0.5">Goal</span>
+            <div className={`text-sm leading-none font-bold transition-all duration-300 ${isAdjustingGoal ? 'text-[#FF9800] scale-110 drop-shadow-sm' : goalColor}`}>
+              <AnimatedNumber value={goal} isPercentage={isPercentage} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+function clampTargetGoalHandicap(raw: number): number {
+  const r = Math.round(Number(raw));
+  if (!Number.isFinite(r)) return 9;
+  return Math.min(54, Math.max(-5, r));
+}
+
+function roundSortTimeMs(r: { created_at?: string; date?: string }): number {
+  const raw = r.created_at || r.date;
+  const ms = new Date(raw || 0).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+export default function ProfilePage() {
+  // ============================================
+  // ALL HOOKS MUST BE AT THE TOP - NO EXCEPTIONS
+  // ============================================
+  
+  // Context hooks
+  const { rounds, practiceSessions, practiceLogs, loading: statsLoading, refreshRounds } = useStats();
+  const { user, loading: authLoading } = useAuth();
+  
+  // Filter by User ID: StatsContext `rounds` are already loaded with `.eq("user_id", authUser.id)`.
+  // Still filter when `user_id` is present (e.g. if context ever merges sources). If `user_id` is missing
+  // or does not match profile id but rows exist, keep those rounds so the matrix / tiles stay in sync.
+  const personalRounds = useMemo(() => {
+    if (!rounds?.length) return [];
+    // Do not require `user?.id` here: `loadMyRounds` is session-scoped and can finish before
+    // AuthContext profile hydrates `user.id`, which would zero out rounds and hide the matrix.
+    if (!user?.id) return rounds;
+    const mine = rounds.filter((r: any) => {
+      const uid = (r as any).user_id;
+      return uid == null || uid === user.id;
+    });
+    return mine.length > 0 ? mine : rounds;
+  }, [rounds, user?.id]);
+  
+  const personalPractice = useMemo(() => {
+    if (!practiceSessions || !user?.id) return [];
+    return practiceSessions.filter((p: any) => p.user_id === user.id);
+  }, [practiceSessions, user?.id]);
+
+  const practiceHoursTotal = useMemo(() => {
+    const mine = practiceSessionsForUser(practiceSessions, user?.id);
+    if (!mine.length) return 0;
+    const totalMinutes = mine.reduce(
+      (sum: number, session: { duration_minutes?: unknown; duration?: unknown; estimatedMinutes?: unknown }) =>
+        sum + practiceSessionMinutesFromRow(session),
+      0,
+    );
+    return Math.round((totalMinutes / 60) * 10) / 10;
+  }, [practiceSessions, user?.id]);
+
+  const bestScore = useMemo(() => {
+    if (!personalRounds.length) return null;
+    const validScores = personalRounds
+      .map((r: { score?: unknown }) => r.score)
+      .filter((s): s is number => s !== null && s !== undefined && Number.isFinite(Number(s)))
+      .map((s) => Number(s));
+    if (!validScores.length) return null;
+    return Math.min(...validScores);
+  }, [personalRounds]);
+
+  const combinesCompleted = useMemo(
+    () =>
+      countUserCombineCompletions({
+        userId: user?.id,
+        practiceSessions: practiceSessionsForUser(practiceSessions, user?.id),
+        practiceLogs: practiceLogs || [],
+      }),
+    [user?.id, practiceSessions, practiceLogs],
+  );
+  
+  // Ensure rounds is always an array (use personalRounds for stats page)
+  const safeRounds = personalRounds || [];
+
+  // Debug: Log rounds data
+  useEffect(() => {
+    console.log('StatsPage: Rounds Data:', rounds);
+    console.log('StatsPage: Rounds Length:', rounds?.length || 0);
+    console.log('StatsPage: Stats Loading:', statsLoading);
+  }, [rounds, statsLoading]);
+
+  // Force refresh when roundsUpdated event is fired
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleRoundsUpdate = () => {
+      console.log('StatsPage: Received roundsUpdated event, calling refreshRounds...');
+      // Use the context's refreshRounds function to reload data
+      if (refreshRounds) {
+        refreshRounds();
+      }
+    };
+
+    window.addEventListener('roundsUpdated', handleRoundsUpdate);
+
+    return () => {
+      window.removeEventListener('roundsUpdated', handleRoundsUpdate);
+    };
+  }, [refreshRounds]);
+  
+  // State hooks - MUST be before any conditional returns
+  // Whole-number handicap for benchmarks (slider step 1)
+  const [selectedGoal, setSelectedGoal] = useState<number>(() =>
+    clampTargetGoalHandicap(user?.initialHandicap ?? 9),
+  );
+  const [profileTab, setProfileTab] = useState<ProfileTab>("stats");
+  const [isAdjustingGoal, setIsAdjustingGoal] = useState<boolean>(false);
+  const adjustTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [seedingSampleRounds, setSeedingSampleRounds] = useState(false);
+  const [seedSampleError, setSeedSampleError] = useState("");
+  
+  const handleGoalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newGoal = clampTargetGoalHandicap(parseInt(e.target.value, 10));
+    setSelectedGoal(newGoal);
+    setIsAdjustingGoal(true);
+    
+    if (adjustTimeoutRef.current) {
+      clearTimeout(adjustTimeoutRef.current);
+    }
+    
+    // Debounce the Supabase update
+    adjustTimeoutRef.current = setTimeout(async () => {
+      setIsAdjustingGoal(false);
+      
+      if (user?.id) {
+        try {
+          const { createClient } = await import("@/lib/supabase/client");
+          const supabase = createClient();
+          const { error } = await supabase
+            .from('profiles')
+            .update({ initial_handicap: newGoal })
+            .eq('id', user.id);
+            
+          if (error) {
+            console.error('Error updating goal handicap:', error);
+          }
+
+          // Keep Goal Setting + Stats in sync so the target slider remembers the user's chosen goal.
+          const uid = await resolveAuthUserId(supabase);
+          if (uid) {
+            const { error: goalSyncError } = await supabase
+              .from("player_goals")
+              .update({
+                current_handicap: newGoal,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("user_id", uid);
+            if (goalSyncError) {
+              console.warn("[StatsPage] player_goals handicap sync failed:", goalSyncError.message);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to update goal handicap:', err);
+        }
+      }
+    }, 1000); // 1 second debounce for the DB update
+  };
+
+  const handleSeedSampleRounds = async () => {
+    setSeedingSampleRounds(true);
+    setSeedSampleError("");
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const uid = user?.id ?? (await resolveAuthUserId(supabase));
+      if (!uid) {
+        throw new Error("Sign in to load sample rounds.");
+      }
+
+      const rows = buildDummyRoundsForUser(uid);
+      const { data, error } = await supabase
+        .from("rounds")
+        .insert(rows)
+        .select("id, date, course_name, score, holes");
+
+      if (error) {
+        throw new Error(error.message || "Failed to load sample rounds.");
+      }
+
+      if (!data?.length) {
+        throw new Error("No sample rounds were inserted.");
+      }
+
+      refreshRounds?.();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("roundsUpdated"));
+      }
+    } catch (err) {
+      setSeedSampleError(err instanceof Error ? err.message : "Failed to load sample rounds.");
+    } finally {
+      setSeedingSampleRounds(false);
+    }
+  };
+  
+  const [selectedMetric, setSelectedMetric] = useState<'nettScore' | 'gross' | 'birdies' | 'pars' | 'bogeys' | 'totalPutts' | 'doubleBogeys' | 'eagles' | 'threePutts' | 'fairwaysHit' | 'gir' | 'gir8ft' | 'gir20ft' | 'upAndDown' | 'bunkerSaves' | 'chipInside6ft' | 'doubleChips' | 'totalPenalties'>('nettScore');
+  const [activeHistory, setActiveHistory] = useState<'LAST 5' | 'LAST 10'>('LAST 10');
+  const [holeFilter, setHoleFilter] = useState<'9' | '18'>('18');
+  /** Rounds window for every player-stats section below Trend Analysis (not the trend chart itself). */
+  const [playerStatsScope, setPlayerStatsScope] = useState<"LAST 5" | "LAST 10" | "LAST 20" | "ALL">("ALL");
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [forceLoaded, setForceLoaded] = useState(false);
+  const [metricMatrixWorstFirst, setMetricMatrixWorstFirst] = useState(false);
+  const [playerGoalRow, setPlayerGoalRow] = useState<PlayerGoalRow | null>(null);
+  const [playerGoalsLoaded, setPlayerGoalsLoaded] = useState(false);
+  const [collapsedCards, setCollapsedCards] = useState<Record<string, boolean>>({
+    trendAnalysis: false,
+    coreScoring: false,
+    fullMatrix: false,
+    scoringLeaks: false,
+    strokeOpportunities: false,
+    driving: false,
+    approach: false,
+    advancedApproach: false,
+    shortGame: false,
+    putting: false,
+    penalties: false,
+    practiceVsGoals: false,
+  });
+  const [perfStatsForMatrix, setPerfStatsForMatrix] = useState<Record<string, unknown>[]>([]);
+  const [statsProfileTrophies, setStatsProfileTrophies] = useState<AcademyTrophyDbRow[]>([]);
+  const [statsTrophySummary, setStatsTrophySummary] = useState<{ total: number; rank: number | null }>({
+    total: 0,
+    rank: null,
+  });
+
+  const toggleCard = useCallback((key: string) => {
+    setCollapsedCards((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  // Prefer Goal Setting's saved handicap, fallback to profile handicap.
+  useEffect(() => {
+    const goalHandicapRaw = playerGoalRow?.current_handicap;
+    const hasGoalHandicap =
+      goalHandicapRaw !== null &&
+      goalHandicapRaw !== undefined &&
+      String(goalHandicapRaw).trim() !== "";
+
+    if (hasGoalHandicap) {
+      const parsed = Number(goalHandicapRaw);
+      if (Number.isFinite(parsed)) {
+        setSelectedGoal(clampTargetGoalHandicap(parsed));
+        return;
+      }
+    }
+
+    if (user?.initialHandicap !== undefined) {
+      setSelectedGoal(clampTargetGoalHandicap(user.initialHandicap));
+    }
+  }, [playerGoalRow?.current_handicap, user?.initialHandicap]);
+
+  const scopedPlayerStatsRounds = useMemo(() => {
+    if (!safeRounds.length) return [];
+    const chronological = [...safeRounds].sort((a, b) => roundSortTimeMs(a) - roundSortTimeMs(b));
+    if (playerStatsScope === "ALL") return chronological;
+    const cap = playerStatsScope === "LAST 5" ? 5 : playerStatsScope === "LAST 10" ? 10 : 20;
+    return chronological.slice(-Math.min(cap, chronological.length));
+  }, [safeRounds, playerStatsScope]);
+
+  /** Min/max round dates for loading `performance_stats` rows — matches scoped rounds below Trend Analysis. */
+  const roundsPerfDateSpan = useMemo(() => {
+    if (!scopedPlayerStatsRounds.length) return null;
+    const days = scopedPlayerStatsRounds
+      .map((r) => (typeof r.date === "string" ? r.date.slice(0, 10) : ""))
+      .filter((d) => d.length >= 8)
+      .sort();
+    if (!days.length) return null;
+    return { start: days[0]!, end: days[days.length - 1]! };
+  }, [scopedPlayerStatsRounds]);
+
+  // Safety Net Mock Data
+  const safetyNetData: {val: number, date: string}[] = [
+    { val: 92, date: 'Round 1' }, { val: 88, date: 'Round 2' }, { val: 85, date: 'Round 3' },
+    { val: 90, date: 'Round 4' }, { val: 87, date: 'Round 5' }, { val: 83, date: 'Round 6' },
+    { val: 80, date: 'Round 7' }, { val: 78, date: 'Round 8' }, { val: 82, date: 'Round 9' },
+    { val: 79, date: 'Round 10' },
+  ];
+
+  // Emergency Timeout: Force setForceLoaded(true) after 3 seconds only if still loading
+  useEffect(() => {
+    // Don't set timeout if data has already loaded
+    if (!statsLoading && rounds !== undefined) {
+      setForceLoaded(true);
+      return;
+    }
+    
+    const timeout = setTimeout(() => {
+      if (statsLoading) {
+        setForceLoaded(true);
+        console.log('Emergency timeout: Forcing Stats component to render after 3 seconds');
+      }
+    }, 3000);
+    return () => clearTimeout(timeout);
+  }, [statsLoading, rounds]);
+
+  // Performance_stats in your round date span — extra matrix rows match coach deep dive
+  useEffect(() => {
+    if (!user?.id || !roundsPerfDateSpan) {
+      setPerfStatsForMatrix([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const { start, end } = roundsPerfDateSpan;
+        const { data, error } = await supabase
+          .from("performance_stats")
+          .select("*")
+          .eq("user_id", user.id)
+          .gte("date", start)
+          .lte("date", end)
+          .order("date", { ascending: true });
+        if (!cancelled) {
+          if (error || !data?.length) setPerfStatsForMatrix([]);
+          else setPerfStatsForMatrix(data as Record<string, unknown>[]);
+        }
+      } catch {
+        if (!cancelled) setPerfStatsForMatrix([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, roundsPerfDateSpan?.start, roundsPerfDateSpan?.end]);
+
+  const fetchPlayerGoals = useCallback(async () => {
+    if (!user?.id) {
+      setPlayerGoalRow(null);
+      setPlayerGoalsLoaded(true);
+      return;
+    }
+    setPlayerGoalsLoaded(false);
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const uid = await resolveAuthUserId(supabase);
+      if (!uid) {
+        console.warn("[StatsPage] player_goals: no Supabase auth user (JWT not ready for RLS).");
+        setPlayerGoalRow(null);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("player_goals")
+        .select(
+          "user_id, scoring_milestone, focus_area, weekly_hour_commitment, practice_allocation, lowest_score, current_handicap, updated_at",
+        )
+        .eq("user_id", uid)
+        .maybeSingle();
+
+      if (error) {
+        console.warn("[StatsPage] player_goals:", error.message, error.code);
+        setPlayerGoalRow(null);
+      } else {
+        setPlayerGoalRow((data ?? null) as PlayerGoalRow | null);
+      }
+    } catch (e) {
+      console.warn("[StatsPage] player_goals fetch failed", e);
+      setPlayerGoalRow(null);
+    } finally {
+      setPlayerGoalsLoaded(true);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    void fetchPlayerGoals();
+  }, [fetchPlayerGoals]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onGoalsUpdated = () => void fetchPlayerGoals();
+    window.addEventListener("playerGoalsUpdated", onGoalsUpdated);
+    return () => window.removeEventListener("playerGoalsUpdated", onGoalsUpdated);
+  }, [fetchPlayerGoals]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      if (typeof window !== "undefined" && !window.location.pathname.includes("stats")) return;
+      void fetchPlayerGoals();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [fetchPlayerGoals]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let subscription: { unsubscribe: () => void } | null = null;
+    void (async () => {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        if (cancelled) return;
+        const supabase = createClient();
+        const {
+          data: { subscription: sub },
+        } = supabase.auth.onAuthStateChange((event, session) => {
+          if (
+            (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "TOKEN_REFRESHED") &&
+            session?.user
+          ) {
+            void fetchPlayerGoals();
+          }
+        });
+        subscription = sub;
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      subscription?.unsubscribe();
+    };
+  }, [fetchPlayerGoals]);
+
+  // Get benchmark goals based on selected goal handicap
+  const goals = getBenchmarkGoals(selectedGoal);
+
+  const { bigSix, penaltyStats, metricMatrix } = useMemo(() => {
+    const g = getBenchmarkGoals(selectedGoal);
+    return computeDeepDiveRoundMetrics(scopedPlayerStatsRounds as unknown as Record<string, unknown>[], g, {
+      perfStatsData: perfStatsForMatrix,
+    });
+  }, [scopedPlayerStatsRounds, selectedGoal, perfStatsForMatrix]);
+
+  const strokeOpportunityRows = useMemo(
+    () => computeStrokeOpportunityTop3(metricMatrix),
+    [metricMatrix],
+  );
+
+  const sortedMetricMatrix = useMemo(
+    () => sortMetricMatrix(metricMatrix, metricMatrixWorstFirst),
+    [metricMatrix, metricMatrixWorstFirst],
+  );
+
+  const hasRoundData = scopedPlayerStatsRounds.length > 0;
+
+  const statsProfileDisplayName = useMemo(() => {
+    if (user?.fullName?.trim()) return user.fullName.trim();
+    const em = user?.email?.trim();
+    if (em && em.includes("@")) return em.split("@")[0] ?? APP_VIDEO_COACH_NAME;
+    return APP_VIDEO_COACH_NAME;
+  }, [user?.fullName, user?.email]);
+
+  const heroHandicap = useMemo(() => {
+    if (user?.initialHandicap != null && Number.isFinite(user.initialHandicap)) {
+      return user.initialHandicap;
+    }
+    return selectedGoal;
+  }, [user?.initialHandicap, selectedGoal]);
+
+  const statsProfileHeroCompact = useMemo(() => {
+    const noRange = safeRounds.length === 0 && personalPractice.length === 0;
+    const noXp = user?.totalXP == null || user.totalXP <= 0;
+    return noRange && noXp;
+  }, [safeRounds.length, personalPractice.length, user?.totalXP]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setStatsProfileTrophies([]);
+      setStatsTrophySummary({ total: 0, rank: null });
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const { rows, error } = await fetchUserTrophiesForUser(supabase, user.id);
+        if (cancelled) return;
+        if (error) {
+          setStatsProfileTrophies([]);
+          setStatsTrophySummary({ total: 0, rank: null });
+          return;
+        }
+        const enriched: AcademyTrophyDbRow[] = rows.map((r) => {
+          const def = TROPHY_LIST.find((t) => t.id === r.achievement_id);
+          return {
+            achievement_id: r.achievement_id,
+            earned_at: r.earned_at,
+            id: r.achievement_id,
+            trophy_name: def?.name ?? r.achievement_id,
+            description: r.description,
+            trophy_icon: r.trophy_icon,
+          };
+        });
+        setStatsProfileTrophies(enriched);
+
+        const deduped = new Set(
+          enriched.map((e) => (e.achievement_id || "").trim().toLowerCase()).filter(Boolean),
+        ).size;
+        let totalMerged = deduped;
+        let rank: number | null = null;
+        try {
+          const vr = await fetchTrophyCollectionRankForUser(supabase, user.id);
+          rank = vr.rank;
+          const rpcTotal = Number.isFinite(vr.totalDbEvents) ? vr.totalDbEvents : 0;
+          totalMerged = Math.max(deduped, rpcTotal);
+        } catch {
+          // RPC missing or not authorized — keep distinct count from rows only
+        }
+        if (!cancelled) setStatsTrophySummary({ total: totalMerged, rank });
+      } catch {
+        if (!cancelled) {
+          setStatsProfileTrophies([]);
+          setStatsTrophySummary({ total: 0, rank: null });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  // Calculate ALL performance metrics for tiles (-1 = no data sentinel for AnimatedNumber)
+  const performanceMetrics = useMemo(() => {
+    if (scopedPlayerStatsRounds.length === 0) {
+      return {
+        // DRIVING
+        firPercent: -1,
+        missedLeft: -1,
+        missedRight: -1,
+        totalFirShots: 0,
+        firHit: 0,
+        firMissed: 0,
+        // APPROACH
+        girPercent: -1,
+        gir8ft: -1,
+        gir20ft: -1,
+        // SHORT GAME
+        upAndDownPercent: -1,
+        bunkerSaves: -1,
+        chipInside6ft: -1,
+        // PUTTING
+        avgPutts: -1,
+        puttsUnder6ftMake: -1,
+        avgThreePutts: -1,
+        // PENALTIES
+        teePenalties: -1,
+        approachPenalties: -1,
+        totalPenalties: -1,
+      };
+    }
+
+    // DRIVING: FIR percentage and shot breakdown
+    const totalFir = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.firHit || 0) + (r.firLeft || 0) + (r.firRight || 0), 0);
+    const firHit = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.firHit || 0), 0);
+    const firLeft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.firLeft || 0), 0);
+    const firRight = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.firRight || 0), 0);
+    const firMissed = firLeft + firRight;
+    const firPercent = totalFir > 0 ? (firHit / totalFir) * 100 : 0;
+    const missedLeft = totalFir > 0 ? (firLeft / totalFir) * 100 : 0;
+    const missedRight = totalFir > 0 ? (firRight / totalFir) * 100 : 0;
+
+    // APPROACH: GIR percentage
+    const totalGir = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.totalGir || 0), 0);
+    const totalHoles = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.holes || 18), 0);
+    const girPercent = totalHoles > 0 ? (totalGir / totalHoles) * 100 : 0;
+
+    // APPROACH: GIR from distances - % of holes (18) hit within 8ft/20ft
+    const totalGir8ft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.gir8ft || 0), 0);
+    const totalGir20ft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.gir20ft || 0), 0);
+    const gir8ft = totalHoles > 0 ? (totalGir8ft / totalHoles) * 100 : 0;
+    const gir20ft = totalHoles > 0 ? (totalGir20ft / totalHoles) * 100 : 0;
+
+    // SHORT GAME: Up & Down percentage
+    const totalUpDownAttempts = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.upAndDownConversions || 0) + (r.missed || 0), 0);
+    const upDownSuccess = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.upAndDownConversions || 0), 0);
+    const upAndDownPercent = totalUpDownAttempts > 0 ? (upDownSuccess / totalUpDownAttempts) * 100 : 0;
+
+    // SHORT GAME: Bunker Saves percentage
+    const totalBunkerAttempts = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.bunkerAttempts || 0) + (r.bunkerSaves || 0), 0);
+    const bunkerSavesCount = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.bunkerSaves || 0), 0);
+    const bunkerSaves = totalBunkerAttempts > 0 ? (bunkerSavesCount / totalBunkerAttempts) * 100 : 0;
+
+    // SHORT GAME: Chip Inside 6ft (Scrambling %)
+    const totalChips = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.chipInside6ft || 0) + (r.doubleChips || 0), 0); // Need to know total chips, using doubleChips as missed for now or just standardizing based on up&down attempts
+    // Better way for Chip Inside 6ft percentage: It's usually chip inside 6ft / total chips
+    // Let's use totalUpDownAttempts as the denominator since that's roughly total short game shots
+    const chipInside6ft = totalUpDownAttempts > 0 ? (scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.chipInside6ft || 0), 0) / totalUpDownAttempts) * 100 : 0;
+
+    // PUTTING: Average Putts per round
+    const totalPutts = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0);
+    const avgPutts = scopedPlayerStatsRounds.length > 0 ? totalPutts / scopedPlayerStatsRounds.length : 0;
+
+    // PUTTING: < 6ft Make percentage (made_under_6ft / putts_under_6ft_attempts)
+    const totalPuttsUnder6ft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.puttsUnder6ftAttempts || 0), 0);
+    const puttsMadeUnder6ft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.made6ftAndIn || 0), 0);
+    const puttsUnder6ftMake = totalPuttsUnder6ft > 0 ? Math.round((puttsMadeUnder6ft / totalPuttsUnder6ft) * 100) : 0;
+
+    // PUTTING: 3-Putts (average per round)
+    const totalThreePutts = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.threePutts || 0), 0);
+    const avgThreePutts = scopedPlayerStatsRounds.length > 0 ? totalThreePutts / scopedPlayerStatsRounds.length : 0;
+
+    // PENALTIES: All penalty types
+    const totalTeePenalties = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.teePenalties || 0), 0);
+    const teePenalties = scopedPlayerStatsRounds.length > 0 ? totalTeePenalties / scopedPlayerStatsRounds.length : 0;
+    const totalApproachPenalties = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.approachPenalties || 0), 0);
+    const approachPenalties = scopedPlayerStatsRounds.length > 0 ? totalApproachPenalties / scopedPlayerStatsRounds.length : 0;
+    const totalPenaltiesCount = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.totalPenalties || 0), 0);
+    const totalPenalties = scopedPlayerStatsRounds.length > 0 ? totalPenaltiesCount / scopedPlayerStatsRounds.length : 0;
+
+    return {
+      // DRIVING
+      firPercent: Math.round(firPercent * 10) / 10,
+      missedLeft: Math.round(missedLeft * 10) / 10,
+      missedRight: Math.round(missedRight * 10) / 10,
+      totalFirShots: totalFir,
+      firHit: firHit,
+      firMissed: firMissed,
+      // APPROACH
+      girPercent: Math.round(girPercent * 10) / 10,
+      gir8ft: Math.round(gir8ft * 10) / 10,
+      gir20ft: Math.round(gir20ft * 10) / 10,
+      // SHORT GAME
+      upAndDownPercent: Math.round(upAndDownPercent * 10) / 10,
+      bunkerSaves: Math.round(bunkerSaves * 10) / 10,
+      chipInside6ft: Math.round(chipInside6ft * 10) / 10,
+      // PUTTING
+      avgPutts: Math.round(avgPutts * 10) / 10,
+      puttsUnder6ftMake: Math.round(puttsUnder6ftMake * 10) / 10,
+      avgThreePutts: Math.round(avgThreePutts * 10) / 10,
+      // PENALTIES
+      teePenalties: Math.round(teePenalties * 10) / 10,
+      approachPenalties: Math.round(approachPenalties * 10) / 10,
+      totalPenalties: Math.round(totalPenalties * 10) / 10,
+    };
+  }, [scopedPlayerStatsRounds]);
+
+  // Full data collection for trend graph
+  const fullData: Record<string, {val: number, date: string}[]> = useMemo(() => {
+    const filteredRounds = holeFilter === '9' 
+      ? safeRounds.filter(r => r.holes === 9)
+      : safeRounds.filter(r => r.holes === 18);
+
+    if (!filteredRounds || filteredRounds.length === 0) {
+      return {
+        'NETT SCORE': safetyNetData,
+        'GROSS SCORE': safetyNetData,
+        'BIRDIES': safetyNetData.map(d => ({ ...d, val: 0 })),
+        'PARS': safetyNetData.map(d => ({ ...d, val: 8 })),
+        'BOGEYS': safetyNetData.map(d => ({ ...d, val: 6 })),
+        'DOUBLE BOGEYS': safetyNetData.map(d => ({ ...d, val: 2 })),
+        'EAGLES': safetyNetData.map(d => ({ ...d, val: 0 })),
+        'TOTAL PUTTS': safetyNetData.map(d => ({ ...d, val: 32 })),
+        'THREE PUTTS': safetyNetData.map(d => ({ ...d, val: 1 })),
+        'FAIRWAYS HIT': safetyNetData.map(d => ({ ...d, val: 10 })),
+        'GIR': safetyNetData.map(d => ({ ...d, val: 8 })),
+        'GIR 8FT': safetyNetData.map(d => ({ ...d, val: 2 })),
+        'GIR 20FT': safetyNetData.map(d => ({ ...d, val: 5 })),
+        'UP AND DOWN': safetyNetData.map(d => ({ ...d, val: 3 })),
+        'BUNKER SAVES': safetyNetData.map(d => ({ ...d, val: 2 })),
+        'CHIP INSIDE 6FT': safetyNetData.map(d => ({ ...d, val: 4 })),
+        'DOUBLE CHIPS': safetyNetData.map(d => ({ ...d, val: 1 })),
+        'TOTAL PENALTIES': safetyNetData.map(d => ({ ...d, val: 1 })),
+        'TEE PENALTIES': safetyNetData.map(d => ({ ...d, val: 0 })),
+        'APPROACH PENALTIES': safetyNetData.map(d => ({ ...d, val: 1 })),
+        'MADE 6FT AND IN': safetyNetData.map(d => ({ ...d, val: 2 })),
+      };
+    }
+
+    const data: Record<string, {val: number, date: string}[]> = {
+      'NETT SCORE': [],
+      'GROSS SCORE': [],
+      'BIRDIES': [],
+      'PARS': [],
+      'BOGEYS': [],
+      'DOUBLE BOGEYS': [],
+      'EAGLES': [],
+      'TOTAL PUTTS': [],
+      'THREE PUTTS': [],
+      'FAIRWAYS HIT': [],
+      'FAIRWAYS LEFT': [],
+      'FAIRWAYS RIGHT': [],
+      'GIR': [],
+      'GIR 8FT': [],
+      'GIR 20FT': [],
+      'UP AND DOWN': [],
+      'BUNKER SAVES': [],
+      'CHIP INSIDE 6FT': [],
+      'DOUBLE CHIPS': [],
+      'TOTAL PENALTIES': [],
+      'TEE PENALTIES': [],
+      'APPROACH PENALTIES': [],
+      'MADE 6FT AND IN': [],
+    };
+
+    filteredRounds.forEach((round, index) => {
+      const roundDate = round.date ? new Date(round.date).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }) : `Round ${index + 1}`;
+      
+      data['NETT SCORE'].push({ val: round.nett || 0, date: roundDate });
+      data['GROSS SCORE'].push({ val: round.score || 0, date: roundDate });
+      data['BIRDIES'].push({ val: round.birdies || 0, date: roundDate });
+      data['PARS'].push({ val: round.pars || 0, date: roundDate });
+      data['BOGEYS'].push({ val: round.bogeys || 0, date: roundDate });
+      data['DOUBLE BOGEYS'].push({ val: round.doubleBogeys || 0, date: roundDate });
+      data['EAGLES'].push({ val: round.eagles || 0, date: roundDate });
+      data['TOTAL PUTTS'].push({ val: round.totalPutts || 0, date: roundDate });
+      data['THREE PUTTS'].push({ val: round.threePutts || 0, date: roundDate });
+      data['FAIRWAYS HIT'].push({ val: round.firHit || 0, date: roundDate });
+      data['FAIRWAYS LEFT'].push({ val: round.firLeft || 0, date: roundDate });
+      data['FAIRWAYS RIGHT'].push({ val: round.firRight || 0, date: roundDate });
+      data['GIR'].push({ val: round.totalGir || 0, date: roundDate });
+      data['GIR 8FT'].push({ val: round.gir8ft || 0, date: roundDate });
+      data['GIR 20FT'].push({ val: round.gir20ft || 0, date: roundDate });
+      data['UP AND DOWN'].push({ val: round.upAndDownConversions || 0, date: roundDate });
+      data['BUNKER SAVES'].push({ val: round.bunkerSaves || 0, date: roundDate });
+      data['CHIP INSIDE 6FT'].push({ val: round.chipInside6ft || 0, date: roundDate });
+      data['DOUBLE CHIPS'].push({ val: round.doubleChips || 0, date: roundDate });
+      data['TOTAL PENALTIES'].push({ val: round.totalPenalties || 0, date: roundDate });
+      data['TEE PENALTIES'].push({ val: round.teePenalties || 0, date: roundDate });
+      data['APPROACH PENALTIES'].push({ val: round.approachPenalties || 0, date: roundDate });
+      data['MADE 6FT AND IN'].push({ val: round.made6ftAndIn || 0, date: roundDate });
+    });
+
+    return data;
+  }, [safeRounds, holeFilter]);
+
+  // Universal Key Mapper
+  const metricKeyMap: Record<string, string> = {
+    'nettScore': 'NETT SCORE', 'nett_score': 'NETT SCORE',
+    'gross': 'GROSS SCORE', 'gross_score': 'GROSS SCORE',
+    'birdies': 'BIRDIES',
+    'pars': 'PARS',
+    'bogeys': 'BOGEYS',
+    'doubleBogeys': 'DOUBLE BOGEYS', 'double_bogeys': 'DOUBLE BOGEYS',
+    'eagles': 'EAGLES',
+    'totalPutts': 'TOTAL PUTTS', 'total_putts': 'TOTAL PUTTS',
+    'threePutts': 'THREE PUTTS', 'three_putts': 'THREE PUTTS',
+    'fairwaysHit': 'FAIRWAYS HIT', 'fairways_hit': 'FAIRWAYS HIT', 'firHit': 'FAIRWAYS HIT',
+    'gir': 'GIR', 'totalGir': 'GIR', 'total_gir': 'GIR',
+    'gir8ft': 'GIR 8FT', 'gir_8ft': 'GIR 8FT',
+    'gir20ft': 'GIR 20FT', 'gir_20ft': 'GIR 20FT',
+    'upAndDown': 'UP AND DOWN', 'up_and_down': 'UP AND DOWN',
+    'bunkerSaves': 'BUNKER SAVES', 'bunker_saves': 'BUNKER SAVES',
+    'chipInside6ft': 'CHIP INSIDE 6FT', 'chip_inside_6ft': 'CHIP INSIDE 6FT',
+    'doubleChips': 'DOUBLE CHIPS', 'double_chips': 'DOUBLE CHIPS',
+    'totalPenalties': 'TOTAL PENALTIES', 'total_penalties': 'TOTAL PENALTIES',
+  };
+
+  const resolveMetricKey = (metric: string): string => {
+    const lowerMetric = metric.toLowerCase();
+    for (const [key, value] of Object.entries(metricKeyMap)) {
+      if (key.toLowerCase() === lowerMetric) {
+        return value;
+      }
+    }
+    return 'NETT SCORE';
+  };
+
+  // Active dataset for trend graph
+  const activeDataset = useMemo(() => {
+    const mappedKey = resolveMetricKey(selectedMetric);
+    let dataFromDB = (fullData[mappedKey] && Array.isArray(fullData[mappedKey])) ? fullData[mappedKey] : [];
+    
+    if (!dataFromDB || dataFromDB.length === 0) {
+      dataFromDB = (fullData['NETT SCORE'] && Array.isArray(fullData['NETT SCORE'])) ? fullData['NETT SCORE'] : [];
+    }
+    
+    if (!dataFromDB || dataFromDB.length === 0) {
+      dataFromDB = safetyNetData;
+    }
+
+    const limit = activeHistory === 'LAST 5' ? 5 : 10;
+
+    const finalData = dataFromDB.length > 0 
+      ? dataFromDB.slice(-Math.min(limit, dataFromDB.length))
+      : [];
+
+    return finalData;
+  }, [selectedMetric, activeHistory, fullData]);
+
+  // Calculate goal value for the selected metric
+  const getGoalValueForMetric = (metric: string): number => {
+    const metricLower = metric.toLowerCase();
+    if (metricLower === 'nettscore' || metricLower === 'nett_score') {
+      return goals.score - selectedGoal;
+    } else if (metricLower === 'gross' || metricLower === 'gross_score') {
+      return goals.score;
+    } else if (metricLower === 'birdies') {
+      return goals.birdies;
+    } else if (metricLower === 'pars') {
+      return goals.pars;
+    } else if (metricLower === 'bogeys') {
+      return goals.bogeys;
+    } else if (metricLower === 'doublebogeys' || metricLower === 'double_bogeys') {
+      return goals.doubleBogeys;
+    } else if (metricLower === 'eagles') {
+      return goals.eagles;
+    } else if (metricLower === 'totalputts' || metricLower === 'total_putts') {
+      return goals.putts;
+    } else if (metricLower === 'threeputts' || metricLower === 'three_putts') {
+      return Math.max(0, goals.putts / 18 - 1);
+    } else if (metricLower === 'fairwayshit' || metricLower === 'fairways_hit' || metricLower === 'firhit') {
+      return goals.fir;
+    } else if (metricLower === 'gir' || metricLower === 'totalgir' || metricLower === 'total_gir') {
+      return goals.gir;
+    } else if (metricLower === 'gir8ft' || metricLower === 'gir_8ft') {
+      return goals.within8ft;
+    } else if (metricLower === 'gir20ft' || metricLower === 'gir_20ft') {
+      return goals.within20ft;
+    } else if (metricLower === 'upanddown' || metricLower === 'up_and_down') {
+      return goals.upAndDown;
+    } else if (metricLower === 'bunkersaves' || metricLower === 'bunker_saves') {
+      return goals.bunkerSaves;
+    } else if (metricLower === 'chipinside6ft' || metricLower === 'chip_inside_6ft') {
+      return goals.chipsInside6ft;
+    } else if (metricLower === 'totalpenalties' || metricLower === 'total_penalties') {
+      return goals.totalPenalties;
+    } else if (metricLower === 'teepenalties' || metricLower === 'tee_penalties') {
+      return goals.teePenalties;
+    } else if (metricLower === 'approachpenalties' || metricLower === 'approach_penalties') {
+      return goals.approachPenalties;
+    }
+    return goals.score - selectedGoal;
+  };
+  
+  const goalValue = getGoalValueForMetric(selectedMetric);
+
+  // Y-Axis configuration
+  const yAxisConfig = useMemo(() => {
+    if (!activeDataset || activeDataset.length === 0) {
+      return { yMin: 0, yMax: 100, labels: [100.0, 66.7, 33.3, 0.0] };
+    }
+
+    const numericValues = activeDataset.map(d => d?.val ?? 0).filter(v => !isNaN(v) && isFinite(v));
+    if (numericValues.length === 0) {
+      return { yMin: 0, yMax: 100, labels: [100.0, 66.7, 33.3, 0.0] };
+    }
+
+    const dataMin = Math.min(...numericValues, goalValue);
+    const dataMax = Math.max(...numericValues, goalValue);
+    const range = dataMax - dataMin;
+
+    let yMin: number, yMax: number;
+    if (range === 0) {
+      if (dataMin === 0) {
+        yMin = 0;
+        yMax = 4;
+      } else {
+        yMin = Math.max(0, dataMin - 1);
+        yMax = dataMax + 1;
+      }
+    } else {
+      const isLowNumberStat = dataMax < 20;
+      const padding = isLowNumberStat ? Math.max(0.2, range * 0.15) : range * 0.1;
+      yMin = Math.max(0, dataMin - padding);
+      yMax = dataMax + padding;
+    }
+
+    const numLabels = 4;
+    const step = (yMax - yMin) / (numLabels - 1);
+    const labels = Array.from({ length: numLabels }, (_, i) => {
+      return Number((yMin + (step * i)).toFixed(1));
+    }).reverse();
+
+    return { yMin, yMax, labels };
+  }, [activeDataset, goalValue]);
+
+  // SVG dimensions — x-axis sits on the plot bottom (no gap); viewBox height only fits labels below
+  const viewBoxWidth = 400;
+  const graphWidth = 328;
+  const graphHeight = 262;
+  const graphStartX = 52;
+  const graphStartY = 12;
+  const xAxisY = graphStartY + graphHeight;
+  const xLabelY = xAxisY + 18;
+  const viewBoxHeight = xLabelY + 32;
+
+  // Coordinate functions - Define ONCE
+  const getX = (index: number, totalPoints: number) => {
+    if (totalPoints <= 1) return graphStartX + graphWidth / 2;
+    return (index / (totalPoints - 1)) * graphWidth + graphStartX;
+  };
+
+  const getY = (val: number) => {
+    if (yAxisConfig.yMax === yAxisConfig.yMin) {
+      return graphStartY + graphHeight / 2;
+    }
+    const range = yAxisConfig.yMax - yAxisConfig.yMin;
+    if (range === 0) {
+      return graphStartY + graphHeight / 2;
+    }
+    const normalized = (val - yAxisConfig.yMin) / range;
+    const calculatedY = graphStartY + graphHeight - (normalized * graphHeight);
+    return Math.max(graphStartY, Math.min(graphStartY + graphHeight, calculatedY));
+  };
+
+  // ============================================
+  // NOW WE CAN DO CONDITIONAL RETURNS
+  // ============================================
+  
+  // Show loading state (with emergency timeout bypass)
+  if ((authLoading || statsLoading) && !forceLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f4f6f4]">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-[#014421] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-stone-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="coach-deepdive-root w-full max-w-3xl overflow-x-hidden bg-[#f4f6f4] min-w-0 mx-auto">
+      {/* Single column scroll lives on AppFrame <main>; avoid nested overflow-y here or the bottom of the page never scrolls into view. */}
+      <div className="overflow-x-hidden px-4 pb-32 pt-4 min-w-0">
+        <TourPlayerProfileHero
+          playerName={statsProfileDisplayName}
+          rank={statsTrophySummary.rank}
+          handicap={heroHandicap}
+          trophies={statsTrophySummary.total}
+          practiceHours={practiceHoursTotal}
+          preferredIconId={user?.preferredIconId}
+        />
+
+        <div className="mt-4 mb-5">
+          <ProfileSegmentedTabs value={profileTab} onChange={setProfileTab} />
+        </div>
+
+        {profileTab === "stats" ? (
+          <>
+        {user?.id && safeRounds.length === 0 ? (
+          <section className="mb-4 rounded-2xl border border-dashed border-[#FF9800]/40 bg-orange-50/80 p-4">
+            <p className="text-sm font-medium text-stone-800">No logged rounds yet</p>
+            <p className="mt-1 text-xs text-stone-600">
+              Load three sample rounds (18-hole, 18-hole, and 9-hole) with full stats and approach shot data to preview this page.
+            </p>
+            <button
+              type="button"
+              onClick={handleSeedSampleRounds}
+              disabled={seedingSampleRounds}
+              className="mt-3 rounded-xl bg-[#FF9800] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#e68900] disabled:opacity-60"
+            >
+              {seedingSampleRounds ? "Loading sample rounds…" : "Load sample rounds"}
+            </button>
+            {seedSampleError ? (
+              <p className="mt-2 text-xs font-medium text-red-600">{seedSampleError}</p>
+            ) : null}
+          </section>
+        ) : null}
+
+        {/* Target goal — same card pattern as coach deep dive benchmark handicap */}
+        <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#014421]/10 text-[#014421]">
+              <Target className="h-4 w-4" aria-hidden />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-base font-semibold tracking-tight text-stone-900">Target Goal</h2>
+              <p className="text-xs text-stone-500">
+                Sets benchmark targets for stats below (GIR, FIR, putting, and more).
+              </p>
+            </div>
+          </div>
+          <div className="flex min-w-0 items-center gap-4">
+            <input
+              type="range"
+              min={-5}
+              max={54}
+              step={1}
+              value={selectedGoal}
+              onChange={handleGoalChange}
+              className="h-2 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-stone-200 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#014421] [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:ring-2 [&::-webkit-slider-thumb]:ring-white"
+              style={{
+                background: `linear-gradient(to right, #014421 0%, #014421 ${((selectedGoal + 5) / 59) * 100}%, #e7e5e4 ${((selectedGoal + 5) / 59) * 100}%, #e7e5e4 100%)`,
+              }}
+            />
+            <div className="min-w-[3.75rem] shrink-0 text-right text-lg font-semibold tabular-nums text-stone-900">
+              {(selectedGoal ?? 0) >= 0 ? `${Math.round(selectedGoal ?? 0)}` : `+${Math.abs(Math.round(selectedGoal ?? 0))}`}{" "}
+              <span className="text-sm font-medium text-stone-500">
+                {(selectedGoal ?? 0) <= 0 ? "Pro" : "HCP"}
+              </span>
+            </div>
+          </div>
+          <p className="mt-3 text-xs leading-relaxed text-stone-600">
+            GIR: {goals.gir}% · FIR: {goals.fir}% · Up &amp; down: {goals.upAndDown}% · Putts: {goals.putts} · Bunker:{" "}
+            {goals.bunkerSaves}%
+          </p>
+        </section>
+
+        <div className="mb-6 rounded-3xl border border-stone-200 bg-white p-4 shadow-md sm:p-5">
+          <div className="mb-3 flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-700">
+              <Table2 className="h-4 w-4" aria-hidden />
+            </div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-stone-500">
+              Player Stats Round Window
+            </p>
+          </div>
+          <p className="mb-3 text-center text-xs text-stone-600">
+            Core metrics, matrix, and category stats below use the rounds you select here. The trend chart keeps its
+            own history buttons.
+          </p>
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {(["LAST 5", "LAST 10", "LAST 20", "ALL"] as const).map((scope) => (
+              <button
+                key={scope}
+                type="button"
+                onClick={() => setPlayerStatsScope(scope)}
+                className={`rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-tight transition-all sm:px-4 sm:text-[11px] ${
+                  playerStatsScope === scope
+                    ? "border border-[#014421] bg-[#014421] text-white shadow-sm"
+                    : "border border-stone-200 bg-stone-50 text-stone-600 hover:bg-white"
+                }`}
+              >
+                {scope === "ALL" ? "All" : scope.replace("LAST ", "Last ")}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-center text-[11px] tabular-nums text-stone-500">
+            Showing {scopedPlayerStatsRounds.length} of {safeRounds.length} logged rounds
+          </p>
+        </div>
+
+        {/* TREND ANALYSIS — unchanged block; lives on stats only */}
+        <section className="mb-8 min-w-0" aria-labelledby="stats-trend-analysis-heading">
+          <h2 id="stats-trend-analysis-heading" className="sr-only">
+            Trend Analysis
+          </h2>
+          <div className="min-w-0 overflow-hidden rounded-3xl border border-stone-200 bg-white p-3 shadow-md sm:p-6">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+                <BarChart3 className="h-4 w-4" aria-hidden />
+              </div>
+              <h2
+                className="text-base font-semibold tracking-tight text-stone-900 sm:text-lg"
+                style={{ textDecoration: "underline", textDecorationColor: "#FF9800", textDecorationThickness: "2px", textUnderlineOffset: "8px" }}
+              >
+                Trend Analysis
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleCard("trendAnalysis")}
+              className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+              aria-expanded={!collapsedCards.trendAnalysis}
+              aria-label={collapsedCards.trendAnalysis ? "Expand trend analysis" : "Collapse trend analysis"}
+            >
+              {collapsedCards.trendAnalysis ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+            </button>
+          </div>
+          {!collapsedCards.trendAnalysis && (
+          <div className="rounded-2xl border border-stone-100 bg-stone-50/70 p-3 overflow-hidden sm:rounded-[28px] sm:p-6">
+            {/* Controls */}
+            <div className="mb-4 space-y-3 rounded-2xl border border-stone-200 bg-white p-3 sm:p-5">
+              {/* Metric Selection */}
+              <div className="flex justify-between items-center gap-2 min-w-0">
+                <span className="text-[10px] font-bold text-stone-500 uppercase shrink-0">Metric:</span>
+                <select 
+                  value={selectedMetric} 
+                  onChange={(e) => setSelectedMetric(e.target.value as typeof selectedMetric)} 
+                  className="bg-white text-stone-900 border border-stone-200 text-xs font-bold py-2 px-3 rounded-xl outline-none max-h-48 overflow-y-auto flex-1 min-w-0"
+                  style={{ maxHeight: '200px' }}
+                >
+                  <option value="nettScore">NETT SCORE</option>
+                  <option value="gross">GROSS SCORE</option>
+                  <option value="birdies">BIRDIES</option>
+                  <option value="pars">PARS</option>
+                  <option value="bogeys">BOGEYS</option>
+                  <option value="doubleBogeys">DOUBLE BOGEYS</option>
+                  <option value="eagles">EAGLES</option>
+                  <option value="totalPutts">TOTAL PUTTS</option>
+                  <option value="threePutts">THREE PUTTS</option>
+                  <option value="fairwaysHit">FAIRWAYS HIT</option>
+                  <option value="gir">GIR</option>
+                  <option value="gir8ft">GIR 8FT</option>
+                  <option value="gir20ft">GIR 20FT</option>
+                  <option value="upAndDown">UP & DOWN</option>
+                  <option value="bunkerSaves">BUNKER SAVES</option>
+                  <option value="chipInside6ft">CHIP INSIDE 6FT</option>
+                  <option value="doubleChips">DOUBLE CHIPS</option>
+                  <option value="totalPenalties">TOTAL PENALTIES</option>
+                </select>
+              </div>
+
+              {/* Hole Filter */}
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 border-t border-stone-200 pt-4">
+                <span className="text-[10px] font-bold text-stone-500 uppercase tracking-tight shrink-0">Filter:</span>
+                <div className="flex gap-1 flex-wrap">
+                  <button 
+                    onClick={() => setHoleFilter('9')} 
+                    className={`px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase transition-all ${
+                      holeFilter === '9' 
+                        ? 'bg-[#014421] text-white border border-[#014421]' 
+                        : 'bg-stone-100 text-stone-500 border border-stone-200'
+                    }`}
+                  >
+                    9 HOLES
+                  </button>
+                  <button 
+                    onClick={() => setHoleFilter('18')} 
+                    className={`px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase transition-all ${
+                      holeFilter === '18' 
+                        ? 'bg-[#014421] text-white border border-[#014421]' 
+                        : 'bg-stone-100 text-stone-500 border border-stone-200'
+                    }`}
+                  >
+                    18 HOLES
+                  </button>
+                </div>
+              </div>
+
+              {/* History Filter */}
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 border-t border-stone-200 pt-4">
+                <span className="text-[10px] font-bold text-stone-500 uppercase tracking-tight shrink-0">History:</span>
+                <div className="flex gap-1 flex-wrap">
+                  {(['LAST 5', 'LAST 10'] as const).map((h) => (
+                    <button 
+                      key={h} 
+                      onClick={() => setActiveHistory(h)} 
+                      className={`px-2 py-1.5 rounded-xl text-[9px] font-bold uppercase transition-all ${
+                        activeHistory === h 
+                          ? 'bg-[#014421] text-white border border-[#014421]' 
+                          : 'bg-stone-100 text-stone-500 border border-stone-200'
+                      }`}
+                    >
+                      {h}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* SVG Graph */}
+            <div className="relative w-full min-w-0 bg-white rounded-2xl p-3 border border-stone-200 overflow-hidden" style={{ height: "min(72vw, 320px)", minHeight: "280px" }}>
+              <div className="w-full h-full min-h-0 min-w-0 overflow-visible">
+                <svg 
+                  key={`${selectedMetric}-${activeHistory}-${yAxisConfig.yMin}-${yAxisConfig.yMax}-${selectedGoal}`}
+                  viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`} 
+                  preserveAspectRatio="xMidYMid meet"
+                  className="w-full h-full block max-w-full"
+                  overflow="visible"
+                >
+                  <defs>
+                    <linearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stopColor="#FF9800" stopOpacity="0.15" />
+                      <stop offset="100%" stopColor="#FF9800" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  
+                  {/* Grid lines */}
+                  {yAxisConfig.labels.map((label: number, idx: number) => {
+                    const totalLabels = yAxisConfig.labels.length;
+                    const yPos = totalLabels > 1 
+                      ? graphStartY + (idx / (totalLabels - 1)) * graphHeight
+                      : graphStartY + graphHeight / 2;
+                    return (
+                      <line
+                        key={`grid-${idx}`}
+                        x1={graphStartX}
+                        y1={yPos}
+                        x2={graphStartX + graphWidth}
+                        y2={yPos}
+                        stroke="#cbd5e1"
+                        strokeWidth="1"
+                        strokeOpacity="0.45"
+                        strokeDasharray="4 4"
+                      />
+                    );
+                  })}
+                  
+                  {/* Y-Axis Numbers */}
+                  {yAxisConfig.labels.map((label: number, idx: number) => {
+                    const totalLabels = yAxisConfig.labels.length;
+                    const yPos = totalLabels > 1 
+                      ? graphStartY + (idx / (totalLabels - 1)) * graphHeight
+                      : graphStartY + graphHeight / 2;
+                    
+                    // Find the closest label to the goal value
+                    const distances = yAxisConfig.labels.map(l => Math.abs(l - goalValue));
+                    const minDistance = Math.min(...distances);
+                    const isClosest = isAdjustingGoal && Math.abs(label - goalValue) === minDistance;
+                    
+                    return (
+                      <text
+                        key={`y-label-${idx}`}
+                        x={graphStartX - 8}
+                        y={yPos}
+                        textAnchor="end"
+                        fill={isClosest ? "#FF9800" : "#334155"}
+                        fontWeight="bold"
+                        opacity={isClosest ? "1" : "0.95"}
+                        fontSize={isClosest ? "17" : "16"}
+                        dominantBaseline="middle"
+                        className="tabular-nums transition-all duration-300"
+                      >
+                        {label.toFixed(1)}
+                      </text>
+                    );
+                  })}
+                  
+                  {/* Y-axis line */}
+                  <line 
+                    x1={graphStartX} 
+                    y1={graphStartY} 
+                    x2={graphStartX} 
+                    y2={graphStartY + graphHeight} 
+                    stroke="#94a3b8" 
+                    strokeWidth="1" 
+                  />
+                  
+                  {/* X-axis line */}
+                  <line 
+                    x1={graphStartX} 
+                    y1={xAxisY} 
+                    x2={graphStartX + graphWidth} 
+                    y2={xAxisY} 
+                    stroke="#94a3b8" 
+                    strokeWidth="1" 
+                  />
+                  
+                  {/* Goal Trend Line - Dashed Orange Line synced with slider */}
+                  {(() => {
+                    const goalY = getY(goalValue);
+                    return (
+                      <g className="transition-all duration-300">
+                        <line
+                          x1={graphStartX}
+                          y1={goalY}
+                          x2={graphStartX + graphWidth}
+                          y2={goalY}
+                          stroke="#FF9800"
+                          strokeWidth="2"
+                          strokeDasharray="5,5"
+                          opacity={isAdjustingGoal ? "1" : "0.7"}
+                        />
+                        <rect
+                          x={graphStartX + graphWidth - 65}
+                          y={goalY - 10}
+                          width="65"
+                          height="20"
+                          rx="4"
+                          fill="#FF9800"
+                          opacity={isAdjustingGoal ? "1" : "0.9"}
+                        />
+                        <text
+                          x={graphStartX + graphWidth - 5}
+                          y={goalY + 4}
+                          textAnchor="end"
+                          fill="#ffffff"
+                          fontWeight="bold"
+                          fontSize="11"
+                        >
+                          GOAL: {goalValue.toFixed(1)}
+                        </text>
+                      </g>
+                    );
+                  })()}
+                  
+                  {/* Area fill */}
+                  {activeDataset && activeDataset.length > 0 && (
+                    <path
+                      fill="url(#areaGradient)"
+                      d={`M ${activeDataset.map((d, i) => {
+                        const x = getX(i, activeDataset.length);
+                        const y = getY(d?.val ?? 0);
+                        return `${x},${y}`;
+                      }).join(' L ')} L ${getX(activeDataset.length - 1, activeDataset.length)},${xAxisY} L ${getX(0, activeDataset.length)},${xAxisY} Z`}
+                    />
+                  )}
+                  
+                  {/* Trend Line - Orange #FF9800, stroke width 5 */}
+                  {activeDataset && activeDataset.length > 0 && (
+                    <polyline
+                      fill="none"
+                      stroke="#FF9800"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      points={activeDataset.map((d, i) => {
+                        const x = getX(i, activeDataset.length);
+                        const y = getY(d?.val ?? 0);
+                        return `${x},${y}`;
+                      }).join(' ')}
+                    />
+                  )}
+                  
+                  {/* Nodes - Hollow white circles, radius 6, rendered last */}
+                  {activeDataset && activeDataset.length > 0 && activeDataset.map((d, i) => {
+                    const nodeX = getX(i, activeDataset.length);
+                    const nodeY = getY(d?.val ?? 0);
+                    const isHovered = hoveredIndex === i;
+                    return (
+                      <g key={`node-${i}`}>
+                        {/* Invisible larger hitbox for easier hovering */}
+                        <circle
+                          cx={nodeX}
+                          cy={nodeY}
+                          r={24}
+                          fill="transparent"
+                          onMouseEnter={() => setHoveredIndex(i)}
+                          onMouseLeave={() => setHoveredIndex(null)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        {/* Visible node */}
+                        <circle
+                          cx={nodeX}
+                          cy={nodeY}
+                          r={isHovered ? 7.5 : 6}
+                          fill={isHovered ? "#FF9800" : "#ffffff"}
+                          stroke={isHovered ? "#b45309" : "#014421"}
+                          strokeWidth="2.5"
+                          style={{ pointerEvents: 'none' }}
+                        />
+                        
+                        {isHovered && (
+                          <g transform={`translate(${nodeX - 55}, ${nodeY - 55})`} style={{ pointerEvents: 'none' }}>
+                            <rect width="116" height="52" rx="10" fill="white" stroke="#0f766e" strokeWidth="2" />
+                            <text x="58" y="19" textAnchor="middle" fontSize="11" fontWeight="700" fill="#0F172A" opacity="1">{d?.date || ''}</text>
+                            <text x="58" y="39" textAnchor="middle" fontSize="16" fontWeight="800" fill="#0F172A" opacity="1">{(d?.val ?? 0).toFixed(1)}</text>
+                          </g>
+                        )}
+                      </g>
+                    );
+                  })}
+                  
+                  {/* Round labels */}
+                  {activeDataset && activeDataset.length > 0 && activeDataset.map((d, i) => {
+                    const nodeX = getX(i, activeDataset.length);
+                    return (
+                      <text
+                        key={`x-label-${i}`}
+                        x={nodeX}
+                        y={xLabelY}
+                        textAnchor="end"
+                        fill="#334155"
+                        fontWeight="bold"
+                        opacity="1"
+                        fontSize="16"
+                        dominantBaseline="hanging"
+                        className="fill-slate-700 tabular-nums"
+                        transform={`rotate(-32 ${nodeX} ${xLabelY})`}
+                        style={{ pointerEvents: 'none' }}
+                      >
+                        R{i + 1}
+                      </text>
+                    );
+                  })}
+                </svg>
+              </div>
+            </div>
+          </div>
+          )}
+          </div>
+        </section>
+
+        {/* Core scoring metrics — above the matrix so it stays visible (matrix can be very long) */}
+        <section
+          id="stats-core-scoring-metrics"
+          className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6"
+          aria-labelledby="stats-core-scoring-heading"
+        >
+          <div className="mb-5 flex items-center gap-3 border-b border-stone-100 pb-4">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+              <BarChart3 className="h-4 w-4" aria-hidden />
+            </div>
+            <div className="flex-1">
+              <h3 id="stats-core-scoring-heading" className="text-base font-semibold tracking-tight text-stone-900">
+                Core Scoring Metrics
+              </h3>
+              <p className="text-xs text-stone-500">
+                Based on the round window you chose above (most recent rounds, oldest to newest in the average).
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleCard("coreScoring")}
+              className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+              aria-expanded={!collapsedCards.coreScoring}
+              aria-label={collapsedCards.coreScoring ? "Expand core scoring metrics" : "Collapse core scoring metrics"}
+            >
+              {collapsedCards.coreScoring ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+            </button>
+          </div>
+          {!collapsedCards.coreScoring && (bigSix ? (
+            <div
+              id="coach-deepdive-big-six-grid"
+              className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4"
+            >
+              {(
+                [
+                  {
+                    label: "Scoring average",
+                    statValue: bigSix.scoringAvg,
+                    unit: "",
+                    Icon: BarChart3,
+                  },
+                  { label: "GIR", statValue: bigSix.girPct, unit: "%", Icon: Percent },
+                  { label: "Fairways", statValue: bigSix.firPct, unit: "%", Icon: Navigation2 },
+                  { label: "Scrambling", statValue: bigSix.scramblePct, unit: "%", Icon: Shuffle },
+                  { label: "Putts / 18", statValue: bigSix.puttsPer18, unit: "", Icon: CircleDot },
+                  { label: "Birdies / 18", statValue: bigSix.birdiesPer18, unit: "", Icon: Bird },
+                ] as const
+              ).map((stat, i) => {
+                const val = stat.statValue ?? 0;
+                const Icon = stat.Icon;
+                return (
+                  <div
+                    key={i}
+                    className="coach-deepdive-stat-card group rounded-2xl border border-stone-100 bg-stone-50/40 p-4 transition-colors hover:border-stone-200 hover:bg-white"
+                  >
+                    <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-white text-stone-600 shadow-sm ring-1 ring-stone-100 group-hover:text-[#014421]">
+                      <Icon className="h-4 w-4" aria-hidden />
+                    </div>
+                    <p className="text-[11px] font-medium leading-tight text-stone-500">{stat.label}</p>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-stone-900">
+                      {val}
+                      {stat.unit}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-stone-500">
+              Log at least one round with scores to see scoring average, GIR, fairways, scrambling, putts per 18, and
+              birdies per 18.
+            </p>
+          ))}
+        </section>
+
+        {/* Full metric matrix — below core scoring; same card as coach deep dive */}
+        <section
+          id="full-metric-matrix"
+          className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6"
+          aria-labelledby="stats-full-metric-matrix-heading"
+        >
+          <div className="mb-5 flex flex-col gap-4 border-b border-stone-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#014421]/10 text-[#014421]">
+                <Table2 className="h-4 w-4" aria-hidden />
+              </div>
+              <div>
+                <h3 id="stats-full-metric-matrix-heading" className="text-base font-semibold tracking-tight text-stone-900">
+                  Full Metric Matrix
+                </h3>
+                <p className="text-xs text-stone-500">
+                  {metricMatrixWorstFirst
+                    ? "Largest benchmark gaps first — flip to review strengths."
+                    : "Strongest vs benchmark first — flip to prioritize improvement opportunities."}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setMetricMatrixWorstFirst((v) => !v)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-800 shadow-sm transition-colors hover:border-stone-300 hover:bg-white"
+              >
+                <ArrowUpDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
+                {metricMatrixWorstFirst ? "Show strongest first" : "Show largest gaps first"}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleCard("fullMatrix")}
+                className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                aria-expanded={!collapsedCards.fullMatrix}
+                aria-label={collapsedCards.fullMatrix ? "Expand full metric matrix" : "Collapse full metric matrix"}
+              >
+                {collapsedCards.fullMatrix ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+              </button>
+            </div>
+          </div>
+          {!collapsedCards.fullMatrix && (metricMatrix.length > 0 ? (
+            <div className="divide-y divide-stone-100">
+              {sortedMetricMatrix.map((stat, i) => {
+                const val = stat.current;
+                const goalVal = stat.goal;
+                const gapVal = stat.gap;
+                const isMeetingGoal = stat.isLowerBetter ? val <= goalVal : val >= goalVal;
+                const isPositive = gapVal > 0;
+                const name = stat.name;
+
+                return (
+                  <div
+                    key={`${name}-${i}`}
+                    className="coach-deepdive-stat-card flex items-center justify-between gap-3 py-3.5 first:pt-0 transition-colors hover:bg-stone-50/80 sm:gap-4"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-stone-900">
+                        <span className="truncate">{name}</span>
+                        {stat.trend === "up" && (
+                          <ArrowUpRight
+                            className={`h-3.5 w-3.5 shrink-0 ${stat.isLowerBetter ? "text-rose-500" : "text-emerald-600"}`}
+                            aria-hidden
+                          />
+                        )}
+                        {stat.trend === "down" && (
+                          <ArrowDownRight
+                            className={`h-3.5 w-3.5 shrink-0 ${stat.isLowerBetter ? "text-emerald-600" : "text-rose-500"}`}
+                            aria-hidden
+                          />
+                        )}
+                        {stat.trend === "neutral" && (
+                          <Minus className="h-3.5 w-3.5 shrink-0 text-stone-300" aria-hidden />
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-[11px] font-medium text-stone-500">
+                        Target {goalVal} · Gap {isPositive ? "+" : ""}
+                        {gapVal}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3 sm:gap-4">
+                      <span className="text-lg font-semibold tabular-nums text-stone-900">{val}</span>
+                      <span
+                        className={`min-w-[5.25rem] rounded-full px-2.5 py-1 text-center text-[10px] font-semibold uppercase tracking-wide ${
+                          isMeetingGoal
+                            ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100"
+                            : "bg-rose-50 text-rose-800 ring-1 ring-rose-100"
+                        }`}
+                      >
+                        {isMeetingGoal ? "ON TARGET" : `${isPositive ? "+" : ""}${gapVal}`}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-stone-500">
+              Log at least one round with scores to see every benchmark row vs your averages (same view as coach deep dive).
+            </p>
+          ))}
+        </section>
+
+        <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+            <div className="mb-5 flex items-center gap-3 border-b border-stone-100 pb-4">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-800">
+                <AlertTriangle className="h-4 w-4" aria-hidden />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-base font-semibold tracking-tight text-stone-900">Scoring Leaks</h2>
+                <p className="text-xs text-stone-500">Penalties, three-putts, and doubles or worse · per round</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleCard("scoringLeaks")}
+                className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                aria-expanded={!collapsedCards.scoringLeaks}
+                aria-label={collapsedCards.scoringLeaks ? "Expand scoring leaks" : "Collapse scoring leaks"}
+              >
+                {collapsedCards.scoringLeaks ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+              </button>
+            </div>
+            {!collapsedCards.scoringLeaks && (penaltyStats ? (
+              <>
+                <div className="grid grid-cols-3 divide-x divide-stone-100 rounded-2xl border border-stone-100 bg-stone-50/50">
+                  {(
+                    [
+                      { label: "Penalties", value: penaltyStats.penaltiesPerRound },
+                      { label: "3-putts", value: penaltyStats.threePuttsPerRound },
+                      { label: "Double+", value: penaltyStats.doublesPerRound },
+                    ] as const
+                  ).map((row) => (
+                    <div key={row.label} className="px-3 py-4 text-center sm:px-4">
+                      <p className="text-[11px] font-medium text-stone-500">{row.label}</p>
+                      <p className="mt-1 text-2xl font-semibold tabular-nums text-stone-900">{row.value}</p>
+                      <p className="mt-0.5 text-[10px] text-stone-400">per round</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-4 border-l-2 border-amber-200 pl-3 text-xs leading-relaxed text-stone-600">
+                  Tightening these three areas is often the fastest path to lower scores without changing swing technique.
+                </p>
+              </>
+            ) : (
+              <p className="py-6 text-center text-sm text-stone-500">
+                Log at least one round to populate Scoring Leaks.
+              </p>
+            ))}
+          </section>
+
+        <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+            <div className="mb-4 flex items-center gap-3 border-b border-stone-100 pb-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-800">
+                <Target className="h-4 w-4" aria-hidden />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-base font-semibold tracking-tight text-stone-900">Top 3 Stroke Opportunities</h2>
+                <p className="text-xs text-stone-500">Estimated strokes per round if you closed the gap to your target benchmarks</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleCard("strokeOpportunities")}
+                className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                aria-expanded={!collapsedCards.strokeOpportunities}
+                aria-label={collapsedCards.strokeOpportunities ? "Expand stroke opportunities" : "Collapse stroke opportunities"}
+              >
+                {collapsedCards.strokeOpportunities ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+              </button>
+            </div>
+            {!collapsedCards.strokeOpportunities && (strokeOpportunityRows.length > 0 ? (
+              <div className="space-y-3">
+                {strokeOpportunityRows.map((row, idx) => (
+                  <div
+                    key={`${row.name}-${idx}`}
+                    className="rounded-2xl border border-stone-100 bg-stone-50/40 p-4 transition-colors hover:border-stone-200 hover:bg-white"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-stone-900">{row.name}</p>
+                        <p className="text-xs text-stone-500">{row.category} focus</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-base font-bold tabular-nums text-[#014421]">-{row.estimatedGain.toFixed(2)}</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">strokes / round</p>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-stone-600">
+                      Current: {row.current} · Goal: {row.goal} ({row.unit})
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="py-6 text-center text-sm text-stone-500">
+                Log at least one round to calculate Top 3 Stroke Opportunities.
+              </p>
+            ))}
+          </section>
+
+        <div className="mb-8 min-w-0 space-y-6">
+            {/* DRIVING Section */}
+            <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+              <div className="mb-4 flex items-center gap-3 border-b border-stone-100 pb-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+                  <Navigation2 className="h-4 w-4" aria-hidden />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-base font-semibold tracking-tight text-stone-900">Driving</h3>
+                  <p className="text-xs text-stone-500">Fairways and miss pattern vs your goal benchmarks</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("driving")}
+                  className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                  aria-expanded={!collapsedCards.driving}
+                  aria-label={collapsedCards.driving ? "Expand driving" : "Collapse driving"}
+                >
+                  {collapsedCards.driving ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+                </button>
+              </div>
+
+              {!collapsedCards.driving && (
+                <>
+              {/* Top Level FIR % */}
+              <StatDisplay 
+                label="FIR %"
+                current={performanceMetrics.firPercent}
+                goal={goals.fir}
+                isPercentage={true}
+                isAdjustingGoal={isAdjustingGoal}
+              />
+              
+              {hasRoundData ? (
+              <div className="space-y-3 pt-3 border-t border-gray-100">
+                {/* FIR % Progress Bar */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-gray-700">Fairways Hit (FIR %)</span>
+                    <span className="text-xs font-bold" style={{ color: '#FF9800' }}>{Math.max(0, performanceMetrics.firPercent).toFixed(1)}%</span>
+                  </div>
+                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full rounded-full transition-all"
+                      style={{ 
+                        width: `${Math.min(100, Math.max(0, performanceMetrics.firPercent))}%`,
+                        backgroundColor: '#FF9800'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Left Miss % Progress Bar */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-gray-700">Left Miss %</span>
+                    <span className="text-xs font-bold" style={{ color: '#FF9800' }}>{Math.max(0, performanceMetrics.missedLeft).toFixed(1)}%</span>
+                  </div>
+                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full rounded-full transition-all"
+                      style={{ 
+                        width: `${Math.min(100, Math.max(0, performanceMetrics.missedLeft))}%`,
+                        backgroundColor: '#FF9800'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Right Miss % Progress Bar */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-gray-700">Right Miss %</span>
+                    <span className="text-xs font-bold" style={{ color: '#FF9800' }}>{Math.max(0, performanceMetrics.missedRight).toFixed(1)}%</span>
+                  </div>
+                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full rounded-full transition-all"
+                      style={{ 
+                        width: `${Math.min(100, Math.max(0, performanceMetrics.missedRight))}%`,
+                        backgroundColor: '#FF9800'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Shot Breakdown */}
+                <div className="border-t border-gray-200 pt-3 mt-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-bold text-gray-900">Total Shots</span>
+                    <span className="text-sm font-bold text-gray-900">{performanceMetrics.totalFirShots}</span>
+                  </div>
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-sm font-bold text-gray-900">Hit</span>
+                    <span className="text-sm font-bold text-gray-900">{performanceMetrics.firHit}</span>
+                  </div>
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-sm font-bold text-gray-900">Missed</span>
+                    <span className="text-sm font-bold text-gray-900">{performanceMetrics.firMissed}</span>
+                  </div>
+                </div>
+              </div>
+              ) : (
+              <div className="pt-3 border-t border-gray-100 text-center py-4">
+                <p className="text-xs text-gray-400">No rounds logged yet</p>
+              </div>
+              )}
+                </>
+              )}
+            </section>
+
+            {/* APPROACH Section */}
+            <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+              <div className="mb-4 flex items-center gap-3 border-b border-stone-100 pb-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+                  <BarChart3 className="h-4 w-4" aria-hidden />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-base font-semibold tracking-tight text-stone-900">Approach</h3>
+                  <p className="text-xs text-stone-500">GIR and proximity benchmarks</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("approach")}
+                  className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                  aria-expanded={!collapsedCards.approach}
+                  aria-label={collapsedCards.approach ? "Expand approach" : "Collapse approach"}
+                >
+                  {collapsedCards.approach ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+                </button>
+              </div>
+              {!collapsedCards.approach && (
+              <div className="space-y-0">
+                <StatDisplay 
+                  label="GIR %"
+                  current={performanceMetrics.girPercent}
+                  goal={goals.gir}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
+                <div className="border-t border-gray-200"></div>
+                <StatDisplay 
+                  label="GIR 8ft"
+                  tooltip="Approximately 2.4 metres"
+                  current={performanceMetrics.gir8ft}
+                  goal={goals.within8ft}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
+                <div className="border-t border-gray-200"></div>
+                <StatDisplay 
+                  label="GIR 20ft"
+                  tooltip="Approximately 6.1 metres"
+                  current={performanceMetrics.gir20ft}
+                  goal={goals.within20ft}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
+              </div>
+              )}
+            </section>
+
+            <section
+              id="stats-advanced-approach"
+              className="min-w-0 overflow-hidden rounded-3xl border border-stone-200 bg-white p-5 shadow-md print:break-inside-avoid print:shadow-none sm:p-6"
+            >
+              <div className="mb-4 flex items-center justify-between gap-3 border-b border-stone-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+                    <Navigation2 className="h-4 w-4" aria-hidden />
+                  </div>
+                  <h3 className="text-base font-semibold tracking-tight text-stone-900">Advanced Approach</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("advancedApproach")}
+                  className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                  aria-expanded={!collapsedCards.advancedApproach}
+                  aria-label={collapsedCards.advancedApproach ? "Expand advanced approach" : "Collapse advanced approach"}
+                >
+                  {collapsedCards.advancedApproach ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+                </button>
+              </div>
+              {!collapsedCards.advancedApproach && <AdvancedApproachStatsPanel
+                rounds={scopedPlayerStatsRounds}
+                holeFilter={holeFilter}
+                showHeader={false}
+                className="border-stone-200 shadow-md print:border-stone-400 sm:p-6"
+                headerEnd={
+                  <div className="flex gap-0.5 rounded-xl border border-stone-200 bg-stone-50/90 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setHoleFilter("9")}
+                      className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase transition-colors ${
+                        holeFilter === "9"
+                          ? "bg-[#014421] text-white shadow-sm"
+                          : "text-stone-600 hover:bg-white"
+                      }`}
+                    >
+                      9
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHoleFilter("18")}
+                      className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase transition-colors ${
+                        holeFilter === "18"
+                          ? "bg-[#014421] text-white shadow-sm"
+                          : "text-stone-600 hover:bg-white"
+                      }`}
+                    >
+                      18
+                    </button>
+                  </div>
+                }
+              />}
+            </section>
+
+            {/* SHORT GAME Section */}
+            <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+              <div className="mb-4 flex items-center gap-3 border-b border-stone-100 pb-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+                  <Shuffle className="h-4 w-4" aria-hidden />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-base font-semibold tracking-tight text-stone-900">Short Game</h3>
+                  <p className="text-xs text-stone-500">Scrambling, bunkers, and chips inside 6 ft</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("shortGame")}
+                  className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                  aria-expanded={!collapsedCards.shortGame}
+                  aria-label={collapsedCards.shortGame ? "Expand short game" : "Collapse short game"}
+                >
+                  {collapsedCards.shortGame ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+                </button>
+              </div>
+              {!collapsedCards.shortGame && (
+              <div className="space-y-0">
+                <StatDisplay 
+                  label="Up & Down %"
+                  current={performanceMetrics.upAndDownPercent}
+                  goal={goals.upAndDown}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
+                <div className="border-t border-gray-200"></div>
+                <StatDisplay 
+                  label="Bunker Saves"
+                  current={performanceMetrics.bunkerSaves}
+                  goal={goals.bunkerSaves}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
+                <div className="border-t border-gray-200"></div>
+                <StatDisplay 
+                  label="Scrambling % (< 6ft)"
+                  tooltip="Approximately 1.8 metres. Chip shots ending inside 6ft."
+                  current={performanceMetrics.chipInside6ft}
+                  goal={goals.chipsInside6ft}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
+              </div>
+              )}
+            </section>
+
+            {/* PUTTING PRECISION Section */}
+            <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+              <div className="mb-4 flex items-center gap-3 border-b border-stone-100 pb-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+                  <CircleDot className="h-4 w-4" aria-hidden />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-base font-semibold tracking-tight text-stone-900">Putting</h3>
+                  <p className="text-xs text-stone-500">Putts per round, short putt makes, three-putts, and live-entry detail</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("putting")}
+                  className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                  aria-expanded={!collapsedCards.putting}
+                  aria-label={collapsedCards.putting ? "Expand putting" : "Collapse putting"}
+                >
+                  {collapsedCards.putting ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+                </button>
+              </div>
+              {!collapsedCards.putting && (
+              <div className="space-y-0">
+                <StatDisplay 
+                  label="Total Putts"
+                  current={performanceMetrics.avgPutts}
+                  goal={goals.putts}
+                  inverse={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
+                <div className="border-t border-gray-200"></div>
+                <StatDisplay 
+                  label="< 6ft Make %"
+                  tooltip="Approximately 1.8 metres"
+                  current={performanceMetrics.puttsUnder6ftMake}
+                  goal={goals.puttMake6ft}
+                  isPercentage={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
+                <div className="border-t border-gray-200"></div>
+                <StatDisplay 
+                  label="3-Putts (Avg)"
+                  current={performanceMetrics.avgThreePutts}
+                  goal={Math.max(0, goals.putts / 18 - 1)}
+                  inverse={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
+                <div className="border-t border-gray-200 pt-4 mt-2">
+                  <LivePuttingBreakdownPanel
+                    rounds={scopedPlayerStatsRounds}
+                    holeFilter={holeFilter}
+                  />
+                </div>
+              </div>
+              )}
+            </section>
+
+            {/* PENALTIES Section */}
+            <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+              <div className="mb-4 flex items-center gap-3 border-b border-stone-100 pb-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-800">
+                  <AlertTriangle className="h-4 w-4" aria-hidden />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-base font-semibold tracking-tight text-stone-900">Penalties</h3>
+                  <p className="text-xs text-stone-500">Tee, approach, and total penalties per round</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("penalties")}
+                  className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                  aria-expanded={!collapsedCards.penalties}
+                  aria-label={collapsedCards.penalties ? "Expand penalties" : "Collapse penalties"}
+                >
+                  {collapsedCards.penalties ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+                </button>
+              </div>
+              {!collapsedCards.penalties && (
+              <div className="space-y-0">
+                <StatDisplay 
+                  label="Tee Penalties"
+                  current={performanceMetrics.teePenalties}
+                  goal={goals.teePenalties}
+                  inverse={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
+                <div className="border-t border-gray-200"></div>
+                <StatDisplay 
+                  label="Approach Penalties"
+                  current={performanceMetrics.approachPenalties}
+                  goal={goals.approachPenalties}
+                  inverse={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
+                <div className="border-t border-gray-200"></div>
+                <StatDisplay 
+                  label="Total Penalties"
+                  current={performanceMetrics.totalPenalties}
+                  goal={goals.totalPenalties}
+                  inverse={true}
+                  isAdjustingGoal={isAdjustingGoal}
+                />
+              </div>
+              )}
+            </section>
+        </div>
+          </>
+        ) : null}
+
+        {profileTab === "practice" ? (
+          <div className="space-y-4">
+            <AcademyProfileSection />
+            <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+              <div className="mb-4 flex items-center justify-between gap-3 border-b border-stone-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+                    <PieChart className="h-4 w-4" aria-hidden />
+                  </div>
+                  <h3 className="text-base font-semibold tracking-tight text-stone-900">Practice vs Goals</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("practiceVsGoals")}
+                  className="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:bg-stone-50"
+                  aria-expanded={!collapsedCards.practiceVsGoals}
+                  aria-label={collapsedCards.practiceVsGoals ? "Expand practice vs goals" : "Collapse practice vs goals"}
+                >
+                  {collapsedCards.practiceVsGoals ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
+                </button>
+              </div>
+              {!collapsedCards.practiceVsGoals && (
+                <PracticeVsGoalsSection
+                  practiceRows={personalPractice}
+                  playerGoalRow={playerGoalRow}
+                  playerGoalsLoaded={playerGoalsLoaded}
+                  variant="self"
+                  typeMatch="strict"
+                  showHeader={false}
+                />
+              )}
+            </section>
+          </div>
+        ) : null}
+
+        {profileTab === "swings" ? (
+          <div className="mb-6 space-y-6">
+            <BunnySwingWorkflow onOpenFeedback={() => setProfileTab("feedback")} />
+            <CoachSwingInbox />
+          </div>
+        ) : null}
+
+        {profileTab === "feedback" ? (
+          <div className="mb-6" id="coach-feedback">
+            <CoachFeaturedFeedback />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}

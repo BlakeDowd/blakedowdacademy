@@ -10,7 +10,7 @@ import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
 import { DrillLibrary } from "@/components/DrillLibrary";
 import { NutritionPlannerPanel } from "@/components/NutritionPlannerPanel";
-import { getBenchmarkGoals } from "@/app/stats/page";
+import { getBenchmarkGoals } from "@/lib/benchmarkGoals";
 import {
   fetchDrillsCatalogRows,
   fetchDrillRowById,

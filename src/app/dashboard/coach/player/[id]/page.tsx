@@ -22,7 +22,7 @@ import {
   ArrowUpDown,
   Table2,
 } from "lucide-react";
-import { getBenchmarkGoals } from "@/app/stats/page";
+import { getBenchmarkGoals } from "@/lib/benchmarkGoals";
 import type { PlayerGoalRow } from "@/types/playerGoals";
 import type { PracticeLogAccountabilityRow } from "@/types/playerGoals";
 import {
