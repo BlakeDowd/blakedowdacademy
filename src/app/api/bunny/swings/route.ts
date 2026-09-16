@@ -12,6 +12,7 @@ import {
   listBunnyStudentSwings,
   listDeletableBunnyStudentVideoIds,
   registerBunnyStudentSwing,
+  unregisterBunnyStudentSwing,
 } from "@/lib/bunnyStudentSwings";
 import {
   isProtectedLibraryBunnyVideo,
@@ -116,6 +117,33 @@ export async function POST(request: Request) {
       const videoTitle = title || "Swing upload";
       const created = await bunnyCreateVideo(videoTitle);
       const upload = createBunnyTusUploadCredentials(created.guid, created.title);
+
+      let uploadedBy: string | null = null;
+      try {
+        const supabase = await createServerSupabase();
+        const { data } = await supabase.auth.getUser();
+        uploadedBy = data.user?.id ?? null;
+      } catch {
+        uploadedBy = null;
+      }
+      if (!uploadedBy) {
+        await bunnyDeleteVideo(created.guid).catch(() => undefined);
+        return NextResponse.json(
+          { error: "You must be signed in to send a swing to Blake." },
+          { status: 401 },
+        );
+      }
+
+      // Register immediately so refresh / inbox keep the player + swing while Bunny processes.
+      await registerBunnyStudentSwing({
+        bunnyVideoId: created.guid,
+        title: created.title || videoTitle,
+        uploadedBy,
+        keyIssues,
+        contactInfo,
+        directionalMisses,
+      });
+
       return NextResponse.json({
         ok: true,
         phase: "prepare",
@@ -179,6 +207,7 @@ export async function DELETE(request: Request) {
       );
     }
     await bunnyDeleteVideo(videoId);
+    await unregisterBunnyStudentSwing(videoId);
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Cleanup failed";

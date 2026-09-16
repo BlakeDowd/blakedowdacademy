@@ -23,6 +23,7 @@ const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 type BunnySwingWorkflowProps = {
   onOpenFeedback?: () => void;
+  reviewVideoId?: string | null;
 };
 
 type BunnyListItem = {
@@ -38,6 +39,7 @@ type StudentSwingMeta = {
   bunny_video_id: string;
   title: string | null;
   uploaded_by: string | null;
+  player_name: string | null;
   key_issues: string | null;
   contact_info: string | null;
   directional_misses: string | null;
@@ -94,7 +96,10 @@ function ClientNoteField({
   );
 }
 
-export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflowProps) {
+export default function BunnySwingWorkflow({
+  onOpenFeedback,
+  reviewVideoId,
+}: BunnySwingWorkflowProps) {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const isCoach = COACH_EMAILS.includes((user?.email || "").toLowerCase().trim());
@@ -140,23 +145,37 @@ export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflo
       }
       setConfigError(null);
       const swings = Array.isArray(data.studentSwings) ? data.studentSwings : [];
+      const scopedSwings = isCoach
+        ? swings
+        : swings.filter((s) => !user?.id || s.uploaded_by === user.id);
       const deletable = Array.isArray(data.deletableVideoIds)
         ? data.deletableVideoIds
-        : swings.map((s) => s.bunny_video_id);
-      const visibleSwingIds = new Set(
-        isCoach
-          ? deletable
-          : swings
-              .filter((s) => !user?.id || s.uploaded_by === user.id)
-              .map((s) => s.bunny_video_id),
+        : scopedSwings.map((s) => s.bunny_video_id);
+      const bunnyById = new Map(
+        (Array.isArray(data.items) ? data.items : []).map((v) => [v.guid, v] as const),
       );
-      const list = (Array.isArray(data.items) ? data.items : []).filter((v) =>
-        visibleSwingIds.has(v.guid),
-      );
+      // Prefer registry rows so swings stay visible while Bunny is still processing.
+      const list: BunnyListItem[] = scopedSwings.map((s) => {
+        const fromBunny = bunnyById.get(s.bunny_video_id);
+        if (fromBunny) {
+          return {
+            ...fromBunny,
+            title: s.player_name
+              ? `${s.player_name} · ${fromBunny.title || s.title || "Swing"}`
+              : fromBunny.title || s.title || "Swing",
+          };
+        }
+        return {
+          guid: s.bunny_video_id,
+          title: s.player_name
+            ? `${s.player_name} · ${s.title || "Processing…"}`
+            : s.title || "Processing…",
+          length: 0,
+          status: 0,
+        };
+      });
       setItems(list);
-      setStudentSwings(
-        isCoach ? swings : swings.filter((s) => !user?.id || s.uploaded_by === user.id),
-      );
+      setStudentSwings(scopedSwings);
       setDeletableVideoIds(deletable);
       setSelectedId((prev) => {
         if (prev && list.some((v) => v.guid === prev)) return prev;
@@ -177,6 +196,10 @@ export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflo
     if (!user?.id) return;
     void loadVideos();
   }, [user?.id, loadVideos]);
+
+  useEffect(() => {
+    if (reviewVideoId) setSelectedId(reviewVideoId);
+  }, [reviewVideoId]);
 
   const selected = items.find((v) => v.guid === selectedId) ?? null;
   const selectedNotes = useMemo(
@@ -260,6 +283,7 @@ export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflo
         throw new Error("Upload credentials missing from server.");
       }
       preparedVideoId = upload.videoId;
+      await loadVideos();
 
       await new Promise<void>((resolve, reject) => {
         const tusUpload = new tus.Upload(file, {
@@ -556,8 +580,15 @@ export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflo
         {selectedNotes ? (
           <div className="space-y-2 rounded-xl border border-stone-200 bg-white p-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-              {isCoach ? "Client notes — what to work on" : "Notes you sent"}
+              {isCoach
+                ? `Client notes${selectedNotes.player_name ? ` · ${selectedNotes.player_name}` : ""}`
+                : "Notes you sent"}
             </p>
+            {selected?.length === 0 ? (
+              <p className="text-xs text-amber-800">
+                Bunny is still processing this swing — it stays in your inbox and will play when ready.
+              </p>
+            ) : null}
             <ClientNoteField
               label="Key issues"
               icon={<Target className="h-3.5 w-3.5" aria-hidden />}

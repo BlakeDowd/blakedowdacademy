@@ -234,6 +234,7 @@ export default function ProfilePage() {
     clampTargetGoalHandicap(user?.initialHandicap ?? 9),
   );
   const [profileTab, setProfileTab] = useState<ProfileTab>("stats");
+  const [reviewSwingId, setReviewSwingId] = useState<string | null>(null);
   const [isAdjustingGoal, setIsAdjustingGoal] = useState<boolean>(false);
   const adjustTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [seedingSampleRounds, setSeedingSampleRounds] = useState(false);
@@ -2164,8 +2165,11 @@ export default function ProfilePage() {
 
         {profileTab === "swings" ? (
           <div className="mb-6 space-y-6">
-            <BunnySwingWorkflow onOpenFeedback={() => setProfileTab("feedback")} />
-            <CoachSwingInbox />
+            <BunnySwingWorkflow
+              onOpenFeedback={() => setProfileTab("feedback")}
+              reviewVideoId={reviewSwingId}
+            />
+            <CoachSwingInbox onReviewSwing={(id) => setReviewSwingId(id)} />
           </div>
         ) : null}
 

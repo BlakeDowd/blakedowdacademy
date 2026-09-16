@@ -8,13 +8,14 @@ export type BunnyStudentSwingMeta = {
   bunny_video_id: string;
   title: string | null;
   uploaded_by: string | null;
+  player_name: string | null;
   key_issues: string | null;
   contact_info: string | null;
   directional_misses: string | null;
   created_at: string;
 };
 
-function mapSwingRow(row: Record<string, unknown>): BunnyStudentSwingMeta | null {
+function mapSwingRow(row: Record<string, unknown>): Omit<BunnyStudentSwingMeta, "player_name"> | null {
   const bunnyVideoId = String(row.bunny_video_id || "").trim();
   if (!bunnyVideoId || isProtectedLibraryBunnyVideo(bunnyVideoId)) return null;
   return {
@@ -27,6 +28,42 @@ function mapSwingRow(row: Record<string, unknown>): BunnyStudentSwingMeta | null
       typeof row.directional_misses === "string" ? row.directional_misses : null,
     created_at: typeof row.created_at === "string" ? row.created_at : "",
   };
+}
+
+async function attachPlayerNames(
+  swings: Omit<BunnyStudentSwingMeta, "player_name">[],
+): Promise<BunnyStudentSwingMeta[]> {
+  const ids = Array.from(
+    new Set(swings.map((s) => s.uploaded_by).filter((id): id is string => Boolean(id))),
+  );
+  if (ids.length === 0) {
+    return swings.map((s) => ({ ...s, player_name: null }));
+  }
+
+  try {
+    const supabase = await createServerSupabase();
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .in("id", ids);
+    if (error) {
+      console.warn("[bunny_student_swings] profile lookup failed:", error.message);
+      return swings.map((s) => ({ ...s, player_name: null }));
+    }
+    const nameById = new Map<string, string>();
+    for (const row of data || []) {
+      const id = String((row as { id?: string }).id || "");
+      const name = String((row as { full_name?: string | null }).full_name || "").trim();
+      if (id) nameById.set(id, name || "Golfer");
+    }
+    return swings.map((s) => ({
+      ...s,
+      player_name: (s.uploaded_by && nameById.get(s.uploaded_by)) || null,
+    }));
+  } catch (err) {
+    console.warn("[bunny_student_swings] profile lookup threw:", err);
+    return swings.map((s) => ({ ...s, player_name: null }));
+  }
 }
 
 export async function listBunnyStudentSwings(): Promise<BunnyStudentSwingMeta[]> {
@@ -42,9 +79,10 @@ export async function listBunnyStudentSwings(): Promise<BunnyStudentSwingMeta[]>
       console.warn("[bunny_student_swings] list failed:", error.message);
       return [];
     }
-    return (data || [])
+    const mapped = (data || [])
       .map((row) => mapSwingRow(row as Record<string, unknown>))
-      .filter((row): row is BunnyStudentSwingMeta => Boolean(row));
+      .filter((row): row is Omit<BunnyStudentSwingMeta, "player_name"> => Boolean(row));
+    return attachPlayerNames(mapped);
   } catch (err) {
     console.warn("[bunny_student_swings] list threw:", err);
     return [];
@@ -65,26 +103,24 @@ export async function registerBunnyStudentSwing(input: {
   directionalMisses?: string | null;
 }): Promise<void> {
   const videoId = input.bunnyVideoId.trim();
-  if (!videoId || isProtectedLibraryBunnyVideo(videoId)) return;
+  if (!videoId || isProtectedLibraryBunnyVideo(videoId)) {
+    throw new Error("That video cannot be registered as a student swing.");
+  }
 
-  try {
-    const supabase = await createServerSupabase();
-    const { error } = await supabase.from("bunny_student_swings").upsert(
-      {
-        bunny_video_id: videoId,
-        title: input.title || null,
-        uploaded_by: input.uploadedBy || null,
-        key_issues: input.keyIssues?.trim() || null,
-        contact_info: input.contactInfo?.trim() || null,
-        directional_misses: input.directionalMisses?.trim() || null,
-      },
-      { onConflict: "bunny_video_id" },
-    );
-    if (error) {
-      console.warn("[bunny_student_swings] register failed:", error.message);
-    }
-  } catch (err) {
-    console.warn("[bunny_student_swings] register threw:", err);
+  const supabase = await createServerSupabase();
+  const { error } = await supabase.from("bunny_student_swings").upsert(
+    {
+      bunny_video_id: videoId,
+      title: input.title || null,
+      uploaded_by: input.uploadedBy || null,
+      key_issues: input.keyIssues?.trim() || null,
+      contact_info: input.contactInfo?.trim() || null,
+      directional_misses: input.directionalMisses?.trim() || null,
+    },
+    { onConflict: "bunny_video_id" },
+  );
+  if (error) {
+    throw new Error(`Could not save swing for inbox: ${error.message}`);
   }
 }
 
