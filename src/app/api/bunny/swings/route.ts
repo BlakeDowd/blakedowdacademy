@@ -76,6 +76,25 @@ type PrepareBody = {
   directionalMisses?: string;
 };
 
+/** Browser auth uses localStorage (`academy-auth`), so API routes need the Bearer token. */
+async function resolveUploadedByUserId(request: Request): Promise<string | null> {
+  const supabase = await createServerSupabase();
+  const authHeader = request.headers.get("authorization");
+  const bearer =
+    authHeader && authHeader.toLowerCase().startsWith("bearer ")
+      ? authHeader.slice(7).trim()
+      : "";
+
+  if (bearer) {
+    const { data, error } = await supabase.auth.getUser(bearer);
+    if (!error && data.user?.id) return data.user.id;
+  }
+
+  const { data, error } = await supabase.auth.getUser();
+  if (!error && data.user?.id) return data.user.id;
+  return null;
+}
+
 /**
  * Prepare: create Bunny video + pre-signed TUS credentials (small JSON only).
  * Complete: register student notes after the browser finishes uploading to Bunny.
@@ -89,6 +108,14 @@ export async function POST(request: Request) {
             "Bunny Stream API key missing. Set BUNNY_STREAM_API_KEY to your Stream library API key (not the library ID).",
         },
         { status: 503 },
+      );
+    }
+
+    const uploadedBy = await resolveUploadedByUserId(request);
+    if (!uploadedBy) {
+      return NextResponse.json(
+        { error: "You must be signed in to send a swing to Blake." },
+        { status: 401 },
       );
     }
 
@@ -118,22 +145,6 @@ export async function POST(request: Request) {
       const created = await bunnyCreateVideo(videoTitle);
       const upload = createBunnyTusUploadCredentials(created.guid, created.title);
 
-      let uploadedBy: string | null = null;
-      try {
-        const supabase = await createServerSupabase();
-        const { data } = await supabase.auth.getUser();
-        uploadedBy = data.user?.id ?? null;
-      } catch {
-        uploadedBy = null;
-      }
-      if (!uploadedBy) {
-        await bunnyDeleteVideo(created.guid).catch(() => undefined);
-        return NextResponse.json(
-          { error: "You must be signed in to send a swing to Blake." },
-          { status: 401 },
-        );
-      }
-
       // Register immediately so refresh / inbox keep the player + swing while Bunny processes.
       await registerBunnyStudentSwing({
         bunnyVideoId: created.guid,
@@ -160,14 +171,6 @@ export async function POST(request: Request) {
     }
 
     const video = await bunnyGetVideo(videoId);
-    let uploadedBy: string | null = null;
-    try {
-      const supabase = await createServerSupabase();
-      const { data } = await supabase.auth.getUser();
-      uploadedBy = data.user?.id ?? null;
-    } catch {
-      uploadedBy = null;
-    }
 
     await registerBunnyStudentSwing({
       bunnyVideoId: video.guid,

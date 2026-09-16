@@ -16,6 +16,7 @@ import * as tus from "tus-js-client";
 import { useAuth } from "@/contexts/AuthContext";
 import Toast from "@/components/Toast";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
+import { createClient } from "@/lib/supabase/client";
 import { formatBunnyDuration } from "@/lib/bunnyStream";
 
 const COACH_EMAILS = ["bdowd@pgamember.org.au", "allendowd86@gmail.com"];
@@ -72,6 +73,15 @@ async function readApiJson(res: Response): Promise<unknown> {
         `Upload failed (${res.status}). Try a shorter MP4/MOV clip.`,
     };
   }
+}
+
+async function authHeaders(): Promise<HeadersInit> {
+  const supabase = createClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token
+    ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
+    : { "Content-Type": "application/json" };
 }
 
 function ClientNoteField({
@@ -257,7 +267,7 @@ export default function BunnySwingWorkflow({
     try {
       const prepRes = await fetch("/api/bunny/swings", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await authHeaders(),
         body: JSON.stringify({
           phase: "prepare",
           title: videoTitle,
@@ -314,7 +324,7 @@ export default function BunnySwingWorkflow({
       setUploadPercent(100);
       const completeRes = await fetch("/api/bunny/swings", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await authHeaders(),
         body: JSON.stringify({
           phase: "complete",
           videoId: upload.videoId,
