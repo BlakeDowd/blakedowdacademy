@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import {
   bunnyApiConfigured,
-  bunnyCreateAndUploadVideo,
+  bunnyCreateVideo,
+  bunnyDeleteVideo,
+  bunnyGetVideo,
   bunnyListVideos,
+  createBunnyTusUploadCredentials,
 } from "@/lib/bunnyStreamAdmin";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
 import {
@@ -17,7 +20,7 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 export async function GET() {
   try {
@@ -63,6 +66,19 @@ export async function GET() {
   }
 }
 
+type PrepareBody = {
+  phase?: "prepare" | "complete";
+  title?: string;
+  videoId?: string;
+  keyIssues?: string;
+  contactInfo?: string;
+  directionalMisses?: string;
+};
+
+/**
+ * Prepare: create Bunny video + pre-signed TUS credentials (small JSON only).
+ * Complete: register student notes after the browser finishes uploading to Bunny.
+ */
 export async function POST(request: Request) {
   try {
     if (!bunnyApiConfigured()) {
@@ -75,19 +91,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const form = await request.formData();
-    const file = form.get("file");
-    const title = String(form.get("title") || "").trim();
-    const keyIssues = String(form.get("keyIssues") || "").trim();
-    const contactInfo = String(form.get("contactInfo") || "").trim();
-    const directionalMisses = String(form.get("directionalMisses") || "").trim();
+    const body = (await request.json().catch(() => null)) as PrepareBody | null;
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: "file is required" }, { status: 400 });
-    }
-    if (!file.type.startsWith("video/") && !file.name.match(/\.(mp4|mov|m4v|webm)$/i)) {
-      return NextResponse.json({ error: "Please upload a video file." }, { status: 400 });
-    }
+    const phase = body.phase === "complete" ? "complete" : "prepare";
+    const title = String(body.title || "").trim();
+    const keyIssues = String(body.keyIssues || "").trim();
+    const contactInfo = String(body.contactInfo || "").trim();
+    const directionalMisses = String(body.directionalMisses || "").trim();
+
     if (!keyIssues && !contactInfo && !directionalMisses) {
       return NextResponse.json(
         {
@@ -98,39 +112,76 @@ export async function POST(request: Request) {
       );
     }
 
-    const maxBytes = 80 * 1024 * 1024;
-    if (file.size > maxBytes) {
-      return NextResponse.json(
-        { error: "Video is too large for this test upload (max ~80MB). Try a shorter clip." },
-        { status: 413 },
-      );
-    }
-
-    const videoTitle = title || file.name.replace(/\.[^.]+$/, "") || "Swing upload";
-    const video = await bunnyCreateAndUploadVideo(videoTitle, file, file.name);
-
-    if (video.guid && !isProtectedLibraryBunnyVideo(video.guid)) {
-      let uploadedBy: string | null = null;
-      try {
-        const supabase = await createServerSupabase();
-        const { data } = await supabase.auth.getUser();
-        uploadedBy = data.user?.id ?? null;
-      } catch {
-        uploadedBy = null;
-      }
-      await registerBunnyStudentSwing({
-        bunnyVideoId: video.guid,
-        title: video.title || videoTitle,
-        uploadedBy,
-        keyIssues,
-        contactInfo,
-        directionalMisses,
+    if (phase === "prepare") {
+      const videoTitle = title || "Swing upload";
+      const created = await bunnyCreateVideo(videoTitle);
+      const upload = createBunnyTusUploadCredentials(created.guid, created.title);
+      return NextResponse.json({
+        ok: true,
+        phase: "prepare",
+        upload,
       });
     }
 
-    return NextResponse.json({ ok: true, video, deletable: true });
+    const videoId = String(body.videoId || "").trim();
+    if (!videoId) {
+      return NextResponse.json({ error: "videoId is required to complete upload" }, { status: 400 });
+    }
+    if (isProtectedLibraryBunnyVideo(videoId)) {
+      return NextResponse.json({ error: "That video cannot be registered as a student swing." }, { status: 403 });
+    }
+
+    const video = await bunnyGetVideo(videoId);
+    let uploadedBy: string | null = null;
+    try {
+      const supabase = await createServerSupabase();
+      const { data } = await supabase.auth.getUser();
+      uploadedBy = data.user?.id ?? null;
+    } catch {
+      uploadedBy = null;
+    }
+
+    await registerBunnyStudentSwing({
+      bunnyVideoId: video.guid,
+      title: video.title || title || "Swing upload",
+      uploadedBy,
+      keyIssues,
+      contactInfo,
+      directionalMisses,
+    });
+
+    return NextResponse.json({ ok: true, phase: "complete", video, deletable: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Upload failed";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+/** Best-effort cleanup if the client aborts after prepare (empty Bunny stub only). */
+export async function DELETE(request: Request) {
+  try {
+    if (!bunnyApiConfigured()) {
+      return NextResponse.json({ error: "Bunny Stream is not configured." }, { status: 503 });
+    }
+    const { searchParams } = new URL(request.url);
+    const videoId = searchParams.get("videoId")?.trim();
+    if (!videoId) {
+      return NextResponse.json({ error: "videoId is required" }, { status: 400 });
+    }
+    if (isProtectedLibraryBunnyVideo(videoId)) {
+      return NextResponse.json({ error: "Protected video" }, { status: 403 });
+    }
+    const video = await bunnyGetVideo(videoId);
+    if (video.length > 0) {
+      return NextResponse.json(
+        { error: "Only unfinished empty uploads can be cleaned up here." },
+        { status: 403 },
+      );
+    }
+    await bunnyDeleteVideo(videoId);
+    return NextResponse.json({ ok: true });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Cleanup failed";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

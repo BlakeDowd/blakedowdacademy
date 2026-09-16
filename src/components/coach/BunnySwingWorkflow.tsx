@@ -12,12 +12,14 @@ import {
   Trash2,
   Video,
 } from "lucide-react";
+import * as tus from "tus-js-client";
 import { useAuth } from "@/contexts/AuthContext";
 import Toast from "@/components/Toast";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
 import { formatBunnyDuration } from "@/lib/bunnyStream";
 
 const COACH_EMAILS = ["bdowd@pgamember.org.au", "allendowd86@gmail.com"];
+const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 type BunnySwingWorkflowProps = {
   onOpenFeedback?: () => void;
@@ -105,6 +107,7 @@ export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflo
   const [selectedId, setSelectedId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [uploadTitle, setUploadTitle] = useState("");
@@ -210,21 +213,99 @@ export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflo
       });
       return;
     }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setToast({
+        message: "Video is too large (max ~200MB). Trim it or export a shorter clip.",
+        type: "warning",
+      });
+      return;
+    }
+
     setUploading(true);
+    setUploadPercent(0);
+    let preparedVideoId: string | null = null;
+    const notesPayload = {
+      keyIssues: keyIssuesDraft.trim(),
+      contactInfo: contactDraft.trim(),
+      directionalMisses: directionalDraft.trim(),
+    };
+    const videoTitle = uploadTitle.trim() || file.name.replace(/\.[^.]+$/, "") || "Swing upload";
+
     try {
-      const body = new FormData();
-      body.append("file", file, file.name || "swing.mp4");
-      body.append("title", uploadTitle.trim() || file.name.replace(/\.[^.]+$/, ""));
-      body.append("keyIssues", keyIssuesDraft.trim());
-      body.append("contactInfo", contactDraft.trim());
-      body.append("directionalMisses", directionalDraft.trim());
-      const res = await fetch("/api/bunny/swings", { method: "POST", body });
-      const data = await readApiJson(res);
-      if (!res.ok) throw new Error(formatApiError(data, "Upload failed"));
+      const prepRes = await fetch("/api/bunny/swings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phase: "prepare",
+          title: videoTitle,
+          ...notesPayload,
+        }),
+      });
+      const prepData = await readApiJson(prepRes);
+      if (!prepRes.ok) throw new Error(formatApiError(prepData, "Could not start upload"));
+
+      const upload =
+        prepData && typeof prepData === "object" && "upload" in prepData
+          ? (prepData as {
+              upload?: {
+                videoId: string;
+                libraryId: string;
+                expirationTime: number;
+                signature: string;
+                endpoint: string;
+              };
+            }).upload
+          : null;
+      if (!upload?.videoId || !upload.signature) {
+        throw new Error("Upload credentials missing from server.");
+      }
+      preparedVideoId = upload.videoId;
+
+      await new Promise<void>((resolve, reject) => {
+        const tusUpload = new tus.Upload(file, {
+          endpoint: upload.endpoint || "https://video.bunnycdn.com/tusupload",
+          retryDelays: [0, 3000, 5000, 10000, 20000],
+          headers: {
+            AuthorizationSignature: upload.signature,
+            AuthorizationExpire: String(upload.expirationTime),
+            VideoId: upload.videoId,
+            LibraryId: upload.libraryId,
+          },
+          metadata: {
+            filename: file.name || "swing.mp4",
+            filetype: file.type || "video/mp4",
+            title: videoTitle,
+          },
+          onError: (error) => reject(error),
+          onProgress: (bytesUploaded, bytesTotal) => {
+            if (bytesTotal > 0) {
+              setUploadPercent(Math.min(99, Math.round((bytesUploaded / bytesTotal) * 100)));
+            }
+          },
+          onSuccess: () => resolve(),
+        });
+        tusUpload.start();
+      });
+
+      setUploadPercent(100);
+      const completeRes = await fetch("/api/bunny/swings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phase: "complete",
+          videoId: upload.videoId,
+          title: videoTitle,
+          ...notesPayload,
+        }),
+      });
+      const completeData = await readApiJson(completeRes);
+      if (!completeRes.ok) throw new Error(formatApiError(completeData, "Could not save swing notes"));
+
       const video =
-        data && typeof data === "object" && "video" in data
-          ? ((data as { video?: BunnyListItem }).video as BunnyListItem | undefined)
+        completeData && typeof completeData === "object" && "video" in completeData
+          ? ((completeData as { video?: BunnyListItem }).video as BunnyListItem | undefined)
           : undefined;
+
       setToast({
         message: isCoach
           ? "Video sent with client notes."
@@ -238,17 +319,24 @@ export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflo
       if (fileRef.current) fileRef.current.value = "";
       await loadVideos();
       if (video?.guid) setSelectedId(video.guid);
+      else if (upload.videoId) setSelectedId(upload.videoId);
     } catch (err: unknown) {
+      if (preparedVideoId) {
+        void fetch(`/api/bunny/swings?videoId=${encodeURIComponent(preparedVideoId)}`, {
+          method: "DELETE",
+        }).catch(() => undefined);
+      }
       const raw = err instanceof Error ? err.message : "Upload failed";
       setToast({
         message:
-          /expected pattern/i.test(raw)
-            ? "Could not read that video. Pick an MP4 or MOV from Photos, or try a shorter clip."
+          /expected pattern|payload too large|too large/i.test(raw)
+            ? "Upload failed. Try an MP4/MOV under a few minutes long, or check your connection."
             : raw,
         type: "error",
       });
     } finally {
       setUploading(false);
+      setUploadPercent(null);
     }
   };
 
@@ -408,7 +496,11 @@ export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflo
             ) : (
               <CloudUpload className="h-4 w-4" aria-hidden />
             )}
-            {uploading ? "Sending to Blake…" : "Send video to Blake"}
+            {uploading
+              ? uploadPercent != null
+                ? `Sending… ${uploadPercent}%`
+                : "Sending to Blake…"
+              : "Send video to Blake"}
           </label>
           {!hasClientNotes ? (
             <p className="text-center text-[11px] text-stone-500">

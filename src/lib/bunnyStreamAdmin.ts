@@ -1,6 +1,8 @@
+import { createHash } from "crypto";
 import { resolveBunnyLibraryId } from "@/lib/bunnyStream";
 
 const BUNNY_VIDEO_API = "https://video.bunnycdn.com";
+export const BUNNY_TUS_ENDPOINT = "https://video.bunnycdn.com/tusupload";
 
 export function getBunnyStreamApiKey(): string | null {
   const key = process.env.BUNNY_STREAM_API_KEY?.trim();
@@ -31,6 +33,15 @@ export type BunnyVideoDetails = {
   hasOriginal?: boolean | null;
   dateUploaded?: string;
   thumbnailFileName?: string | null;
+};
+
+export type BunnyTusUploadCredentials = {
+  videoId: string;
+  libraryId: string;
+  expirationTime: number;
+  signature: string;
+  endpoint: string;
+  title: string;
 };
 
 export async function bunnyListVideos(limit = 20): Promise<BunnyVideoDetails[]> {
@@ -95,11 +106,7 @@ export async function bunnyGetVideo(videoId: string): Promise<BunnyVideoDetails>
   };
 }
 
-export async function bunnyCreateAndUploadVideo(
-  title: string,
-  file: Blob,
-  fileName: string,
-): Promise<BunnyVideoDetails> {
+export async function bunnyCreateVideo(title: string): Promise<{ guid: string; title: string }> {
   const apiKey = getBunnyStreamApiKey();
   const libraryId = resolveBunnyLibraryId();
   if (!apiKey || !libraryId) {
@@ -111,7 +118,7 @@ export async function bunnyCreateAndUploadVideo(
   const createRes = await fetch(`${BUNNY_VIDEO_API}/library/${libraryId}/videos`, {
     method: "POST",
     headers: bunnyAuthHeaders(apiKey, true),
-    body: JSON.stringify({ title: title || fileName || "Swing upload" }),
+    body: JSON.stringify({ title: title || "Swing upload" }),
   });
   if (!createRes.ok) {
     const text = await createRes.text();
@@ -120,10 +127,49 @@ export async function bunnyCreateAndUploadVideo(
   const created = (await createRes.json()) as { guid?: string; title?: string };
   const videoId = created.guid?.trim();
   if (!videoId) throw new Error("Bunny create returned no video id.");
+  return { guid: videoId, title: created.title || title || "Swing upload" };
+}
+
+/** Pre-signed TUS credentials so the browser can upload directly to Bunny (bypasses Vercel body limits). */
+export function createBunnyTusUploadCredentials(
+  videoId: string,
+  title: string,
+  expiresInSeconds = 3600,
+): BunnyTusUploadCredentials {
+  const apiKey = getBunnyStreamApiKey();
+  const libraryId = resolveBunnyLibraryId();
+  if (!apiKey || !libraryId) {
+    throw new Error("Bunny Stream is not configured.");
+  }
+  const expirationTime = Math.floor(Date.now() / 1000) + expiresInSeconds;
+  const signature = createHash("sha256")
+    .update(`${libraryId}${apiKey}${expirationTime}${videoId}`)
+    .digest("hex");
+  return {
+    videoId,
+    libraryId,
+    expirationTime,
+    signature,
+    endpoint: BUNNY_TUS_ENDPOINT,
+    title,
+  };
+}
+
+export async function bunnyCreateAndUploadVideo(
+  title: string,
+  file: Blob,
+  fileName: string,
+): Promise<BunnyVideoDetails> {
+  const created = await bunnyCreateVideo(title || fileName || "Swing upload");
+  const apiKey = getBunnyStreamApiKey();
+  const libraryId = resolveBunnyLibraryId();
+  if (!apiKey || !libraryId) {
+    throw new Error("Bunny Stream is not configured.");
+  }
 
   const bytes = Buffer.from(await file.arrayBuffer());
   const uploadRes = await fetch(
-    `${BUNNY_VIDEO_API}/library/${libraryId}/videos/${videoId}`,
+    `${BUNNY_VIDEO_API}/library/${libraryId}/videos/${created.guid}`,
     {
       method: "PUT",
       headers: {
@@ -139,7 +185,7 @@ export async function bunnyCreateAndUploadVideo(
     throw new Error(`Bunny upload failed (${uploadRes.status}): ${text.slice(0, 200)}`);
   }
 
-  return bunnyGetVideo(videoId);
+  return bunnyGetVideo(created.guid);
 }
 
 export async function bunnyDeleteVideo(videoId: string): Promise<void> {
