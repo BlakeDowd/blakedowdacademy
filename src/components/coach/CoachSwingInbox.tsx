@@ -43,11 +43,14 @@ function formatApiError(payload: unknown, fallback: string): string {
   return fallback;
 }
 
-async function authHeaders(): Promise<HeadersInit> {
-  const supabase = createClient();
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+function formatSupabaseError(err: unknown): string {
+  if (!err) return "Unknown error";
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "object" && err && "message" in err) {
+    const msg = (err as { message?: unknown }).message;
+    if (typeof msg === "string" && msg.trim()) return msg;
+  }
+  return "Failed to load swing inbox";
 }
 
 type CoachSwingInboxProps = {
@@ -75,19 +78,41 @@ export default function CoachSwingInbox({ onReviewSwing }: CoachSwingInboxProps)
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/bunny/swings", {
-        cache: "no-store",
-        headers: await authHeaders(),
-      });
-      const data = (await res.json()) as {
-        studentSwings?: InboxSwing[];
-        error?: string;
-      };
-      if (!res.ok) throw new Error(data.error || "Failed to load swing inbox");
-      setItems(Array.isArray(data.studentSwings) ? data.studentSwings : []);
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("bunny_student_swings")
+        .select(
+          "bunny_video_id, title, uploaded_by, key_issues, contact_info, directional_misses, created_at",
+        )
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+
+      const rows = (data || []) as Omit<InboxSwing, "player_name">[];
+      const uploaderIds = Array.from(
+        new Set(rows.map((r) => r.uploaded_by).filter((id): id is string => Boolean(id))),
+      );
+      const nameById = new Map<string, string>();
+      if (uploaderIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", uploaderIds);
+        for (const p of profiles || []) {
+          const id = String((p as { id?: string }).id || "");
+          const name = String((p as { full_name?: string | null }).full_name || "").trim();
+          if (id) nameById.set(id, name || "Golfer");
+        }
+      }
+
+      setItems(
+        rows.map((row) => ({
+          ...row,
+          player_name: (row.uploaded_by && nameById.get(row.uploaded_by)) || null,
+        })),
+      );
     } catch (err: unknown) {
       setToast({
-        message: err instanceof Error ? err.message : "Failed to load swing inbox",
+        message: formatSupabaseError(err),
         type: "error",
       });
       setItems([]);
@@ -150,6 +175,10 @@ export default function CoachSwingInbox({ onReviewSwing }: CoachSwingInboxProps)
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(formatApiError(data, "Delete failed"));
+
+      const supabase = createClient();
+      await supabase.from("bunny_student_swings").delete().eq("bunny_video_id", item.bunny_video_id);
+
       setItems((prev) => prev.filter((row) => row.bunny_video_id !== item.bunny_video_id));
       setToast({
         message: `Removed ${item.player_name || "player"}'s swing.`,

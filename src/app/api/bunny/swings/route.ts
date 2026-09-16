@@ -11,7 +11,6 @@ import { createClient as createServerSupabase } from "@/lib/supabase/server";
 import {
   listBunnyStudentSwings,
   listDeletableBunnyStudentVideoIds,
-  registerBunnyStudentSwing,
   unregisterBunnyStudentSwing,
 } from "@/lib/bunnyStudentSwings";
 import {
@@ -124,7 +123,7 @@ export async function POST(request: Request) {
         { status: 401 },
       );
     }
-    const { userId: uploadedBy, accessToken } = auth;
+    const { userId: uploadedBy } = auth;
 
     const body = (await request.json().catch(() => null)) as PrepareBody | null;
     if (!body || typeof body !== "object") {
@@ -152,21 +151,13 @@ export async function POST(request: Request) {
       const created = await bunnyCreateVideo(videoTitle);
       const upload = createBunnyTusUploadCredentials(created.guid, created.title);
 
-      // Register immediately so refresh / inbox keep the player + swing while Bunny processes.
-      await registerBunnyStudentSwing({
-        bunnyVideoId: created.guid,
-        title: created.title || videoTitle,
-        uploadedBy,
-        keyIssues,
-        contactInfo,
-        directionalMisses,
-        accessToken,
-      });
-
+      // Inbox row is written from the browser (session in localStorage). Server register
+      // often fails RLS because cookie auth is empty even when Bearer auth succeeds.
       return NextResponse.json({
         ok: true,
         phase: "prepare",
         upload,
+        uploadedBy,
       });
     }
 
@@ -180,17 +171,13 @@ export async function POST(request: Request) {
 
     const video = await bunnyGetVideo(videoId);
 
-    await registerBunnyStudentSwing({
-      bunnyVideoId: video.guid,
-      title: video.title || title || "Swing upload",
+    return NextResponse.json({
+      ok: true,
+      phase: "complete",
+      video,
+      deletable: true,
       uploadedBy,
-      keyIssues,
-      contactInfo,
-      directionalMisses,
-      accessToken,
     });
-
-    return NextResponse.json({ ok: true, phase: "complete", video, deletable: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Upload failed";
     return NextResponse.json({ error: message }, { status: 500 });

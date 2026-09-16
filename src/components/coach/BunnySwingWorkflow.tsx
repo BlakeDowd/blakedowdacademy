@@ -84,6 +84,42 @@ async function authHeaders(): Promise<HeadersInit> {
     : { "Content-Type": "application/json" };
 }
 
+async function registerSwingInBrowserInbox(input: {
+  videoId: string;
+  title: string;
+  keyIssues: string;
+  contactInfo: string;
+  directionalMisses: string;
+}): Promise<void> {
+  const supabase = createClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+  if (userError || !user?.id) {
+    throw new Error("You must be signed in to save this swing to the inbox.");
+  }
+
+  const { error } = await supabase.from("bunny_student_swings").upsert(
+    {
+      bunny_video_id: input.videoId,
+      title: input.title || null,
+      uploaded_by: user.id,
+      key_issues: input.keyIssues || null,
+      contact_info: input.contactInfo || null,
+      directional_misses: input.directionalMisses || null,
+    },
+    { onConflict: "bunny_video_id" },
+  );
+  if (error) {
+    throw new Error(
+      error.message.toLowerCase().includes("row-level security")
+        ? "Could not save swing to inbox (RLS). Run the latest bunny_student_swings RLS SQL in Supabase, then try again."
+        : `Could not save swing to inbox: ${error.message}`,
+    );
+  }
+}
+
 function ClientNoteField({
   label,
   icon,
@@ -296,6 +332,14 @@ export default function BunnySwingWorkflow({
         throw new Error("Upload credentials missing from server.");
       }
       preparedVideoId = upload.videoId;
+
+      await registerSwingInBrowserInbox({
+        videoId: upload.videoId,
+        title: videoTitle,
+        keyIssues: notesPayload.keyIssues,
+        contactInfo: notesPayload.contactInfo,
+        directionalMisses: notesPayload.directionalMisses,
+      });
       await loadVideos();
 
       await new Promise<void>((resolve, reject) => {
@@ -325,6 +369,14 @@ export default function BunnySwingWorkflow({
       });
 
       setUploadPercent(100);
+      await registerSwingInBrowserInbox({
+        videoId: upload.videoId,
+        title: videoTitle,
+        keyIssues: notesPayload.keyIssues,
+        contactInfo: notesPayload.contactInfo,
+        directionalMisses: notesPayload.directionalMisses,
+      });
+
       const completeRes = await fetch("/api/bunny/swings", {
         method: "POST",
         headers: await authHeaders(),
@@ -336,7 +388,7 @@ export default function BunnySwingWorkflow({
         }),
       });
       const completeData = await readApiJson(completeRes);
-      if (!completeRes.ok) throw new Error(formatApiError(completeData, "Could not save swing notes"));
+      if (!completeRes.ok) throw new Error(formatApiError(completeData, "Could not finish upload"));
 
       const video =
         completeData && typeof completeData === "object" && "video" in completeData
