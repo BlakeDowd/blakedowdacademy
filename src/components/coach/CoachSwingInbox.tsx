@@ -169,16 +169,17 @@ export default function CoachSwingInbox({ onReviewSwing }: CoachSwingInboxProps)
     }
     setDeletingId(item.bunny_video_id);
     try {
+      const supabaseAuth = createClient();
+      const { data: sessionData } = await supabaseAuth.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+
       const res = await fetch(
         `/api/bunny/swings/${encodeURIComponent(item.bunny_video_id)}`,
         {
           method: "DELETE",
-          headers: await (async () => {
-            const supabase = createClient();
-            const { data } = await supabase.auth.getSession();
-            const token = data.session?.access_token;
-            return token ? { Authorization: `Bearer ${token}` } : {};
-          })(),
+          headers,
         },
       );
       const data = await res.json().catch(() => ({}));
