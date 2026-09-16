@@ -18,21 +18,22 @@ export type BunnyStudentSwingMeta = {
 };
 
 /**
- * Prefer service role (bypasses RLS). Fallback: user JWT (browser auth is localStorage,
- * so cookie-based server clients often look anonymous and fail RLS).
+ * Prefer the caller's JWT when present (browser auth is localStorage, not cookies).
+ * Service role is optional fallback for server-only reads when no token is available.
  */
 async function getBunnySwingsClient(accessToken?: string | null): Promise<SupabaseClient> {
-  const service = createServiceRoleSupabase();
-  if (service) return service;
-
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+
   if (url && anon && accessToken) {
     return createClient(url, anon, {
       global: { headers: { Authorization: `Bearer ${accessToken}` } },
       auth: { persistSession: false, autoRefreshToken: false },
     });
   }
+
+  const service = createServiceRoleSupabase();
+  if (service) return service;
 
   return createServerSupabase();
 }
