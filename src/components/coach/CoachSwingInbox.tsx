@@ -11,6 +11,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import Toast from "@/components/Toast";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
+import { createClient } from "@/lib/supabase/client";
 
 const COACH_EMAILS = ["bdowd@pgamember.org.au", "allendowd86@gmail.com"];
 
@@ -42,6 +43,13 @@ function formatApiError(payload: unknown, fallback: string): string {
   return fallback;
 }
 
+async function authHeaders(): Promise<HeadersInit> {
+  const supabase = createClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 type CoachSwingInboxProps = {
   onReviewSwing?: (videoId: string) => void;
 };
@@ -67,7 +75,10 @@ export default function CoachSwingInbox({ onReviewSwing }: CoachSwingInboxProps)
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/bunny/swings", { cache: "no-store" });
+      const res = await fetch("/api/bunny/swings", {
+        cache: "no-store",
+        headers: await authHeaders(),
+      });
       const data = (await res.json()) as {
         studentSwings?: InboxSwing[];
         error?: string;

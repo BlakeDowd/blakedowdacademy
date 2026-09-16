@@ -1,4 +1,6 @@
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
+import { createServiceRoleSupabase } from "@/lib/supabaseServiceRole";
 import {
   isProtectedLibraryBunnyVideo,
   PROTECTED_LIBRARY_BUNNY_VIDEO_IDS,
@@ -14,6 +16,26 @@ export type BunnyStudentSwingMeta = {
   directional_misses: string | null;
   created_at: string;
 };
+
+/**
+ * Prefer service role (bypasses RLS). Fallback: user JWT (browser auth is localStorage,
+ * so cookie-based server clients often look anonymous and fail RLS).
+ */
+async function getBunnySwingsClient(accessToken?: string | null): Promise<SupabaseClient> {
+  const service = createServiceRoleSupabase();
+  if (service) return service;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  if (url && anon && accessToken) {
+    return createClient(url, anon, {
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
+
+  return createServerSupabase();
+}
 
 function mapSwingRow(row: Record<string, unknown>): Omit<BunnyStudentSwingMeta, "player_name"> | null {
   const bunnyVideoId = String(row.bunny_video_id || "").trim();
@@ -31,6 +53,7 @@ function mapSwingRow(row: Record<string, unknown>): Omit<BunnyStudentSwingMeta, 
 }
 
 async function attachPlayerNames(
+  supabase: SupabaseClient,
   swings: Omit<BunnyStudentSwingMeta, "player_name">[],
 ): Promise<BunnyStudentSwingMeta[]> {
   const ids = Array.from(
@@ -41,11 +64,7 @@ async function attachPlayerNames(
   }
 
   try {
-    const supabase = await createServerSupabase();
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, full_name")
-      .in("id", ids);
+    const { data, error } = await supabase.from("profiles").select("id, full_name").in("id", ids);
     if (error) {
       console.warn("[bunny_student_swings] profile lookup failed:", error.message);
       return swings.map((s) => ({ ...s, player_name: null }));
@@ -66,9 +85,11 @@ async function attachPlayerNames(
   }
 }
 
-export async function listBunnyStudentSwings(): Promise<BunnyStudentSwingMeta[]> {
+export async function listBunnyStudentSwings(
+  accessToken?: string | null,
+): Promise<BunnyStudentSwingMeta[]> {
   try {
-    const supabase = await createServerSupabase();
+    const supabase = await getBunnySwingsClient(accessToken);
     const { data, error } = await supabase
       .from("bunny_student_swings")
       .select(
@@ -82,15 +103,17 @@ export async function listBunnyStudentSwings(): Promise<BunnyStudentSwingMeta[]>
     const mapped = (data || [])
       .map((row) => mapSwingRow(row as Record<string, unknown>))
       .filter((row): row is Omit<BunnyStudentSwingMeta, "player_name"> => Boolean(row));
-    return attachPlayerNames(mapped);
+    return attachPlayerNames(supabase, mapped);
   } catch (err) {
     console.warn("[bunny_student_swings] list threw:", err);
     return [];
   }
 }
 
-export async function listDeletableBunnyStudentVideoIds(): Promise<string[]> {
-  const swings = await listBunnyStudentSwings();
+export async function listDeletableBunnyStudentVideoIds(
+  accessToken?: string | null,
+): Promise<string[]> {
+  const swings = await listBunnyStudentSwings(accessToken);
   return swings.map((s) => s.bunny_video_id);
 }
 
@@ -101,13 +124,14 @@ export async function registerBunnyStudentSwing(input: {
   keyIssues?: string | null;
   contactInfo?: string | null;
   directionalMisses?: string | null;
+  accessToken?: string | null;
 }): Promise<void> {
   const videoId = input.bunnyVideoId.trim();
   if (!videoId || isProtectedLibraryBunnyVideo(videoId)) {
     throw new Error("That video cannot be registered as a student swing.");
   }
 
-  const supabase = await createServerSupabase();
+  const supabase = await getBunnySwingsClient(input.accessToken);
   const { error } = await supabase.from("bunny_student_swings").upsert(
     {
       bunny_video_id: videoId,
@@ -124,18 +148,24 @@ export async function registerBunnyStudentSwing(input: {
   }
 }
 
-export async function unregisterBunnyStudentSwing(videoId: string): Promise<void> {
+export async function unregisterBunnyStudentSwing(
+  videoId: string,
+  accessToken?: string | null,
+): Promise<void> {
   const id = videoId.trim();
   if (!id) return;
   try {
-    const supabase = await createServerSupabase();
+    const supabase = await getBunnySwingsClient(accessToken);
     await supabase.from("bunny_student_swings").delete().eq("bunny_video_id", id);
   } catch (err) {
     console.warn("[bunny_student_swings] unregister threw:", err);
   }
 }
 
-export async function assertBunnyVideoDeletable(videoId: string): Promise<void> {
+export async function assertBunnyVideoDeletable(
+  videoId: string,
+  accessToken?: string | null,
+): Promise<void> {
   const id = videoId.trim();
   if (!id) throw new Error("videoId is required");
 
@@ -145,7 +175,7 @@ export async function assertBunnyVideoDeletable(videoId: string): Promise<void> 
     );
   }
 
-  const deletable = await listDeletableBunnyStudentVideoIds();
+  const deletable = await listDeletableBunnyStudentVideoIds(accessToken);
   if (!deletable.includes(id)) {
     throw new Error(
       "Only swings sent by students (Send to Blake) can be deleted — not library drills.",

@@ -137,7 +137,10 @@ export default function BunnySwingWorkflow({
   const loadVideos = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/bunny/swings", { cache: "no-store" });
+      const res = await fetch("/api/bunny/swings", {
+        cache: "no-store",
+        headers: await authHeaders(),
+      });
       const data = (await res.json()) as {
         items?: BunnyListItem[];
         studentSwings?: StudentSwingMeta[];

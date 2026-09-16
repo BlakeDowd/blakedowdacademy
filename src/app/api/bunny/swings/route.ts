@@ -23,7 +23,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     if (!bunnyApiConfigured()) {
       return NextResponse.json(
@@ -39,10 +39,11 @@ export async function GET() {
         { status: 503 },
       );
     }
+    const accessToken = readBearerToken(request);
     const [items, studentSwings, deletableVideoIds] = await Promise.all([
       bunnyListVideos(30),
-      listBunnyStudentSwings(),
-      listDeletableBunnyStudentVideoIds(),
+      listBunnyStudentSwings(accessToken),
+      listDeletableBunnyStudentVideoIds(accessToken),
     ]);
     return NextResponse.json({
       configured: true,
@@ -76,22 +77,27 @@ type PrepareBody = {
   directionalMisses?: string;
 };
 
-/** Browser auth uses localStorage (`academy-auth`), so API routes need the Bearer token. */
-async function resolveUploadedByUserId(request: Request): Promise<string | null> {
-  const supabase = await createServerSupabase();
+function readBearerToken(request: Request): string | null {
   const authHeader = request.headers.get("authorization");
-  const bearer =
-    authHeader && authHeader.toLowerCase().startsWith("bearer ")
-      ? authHeader.slice(7).trim()
-      : "";
+  if (!authHeader || !authHeader.toLowerCase().startsWith("bearer ")) return null;
+  const token = authHeader.slice(7).trim();
+  return token || null;
+}
+
+/** Browser auth uses localStorage (`academy-auth`), so API routes need the Bearer token. */
+async function resolveUploadedByUserId(
+  request: Request,
+): Promise<{ userId: string; accessToken: string | null } | null> {
+  const supabase = await createServerSupabase();
+  const bearer = readBearerToken(request);
 
   if (bearer) {
     const { data, error } = await supabase.auth.getUser(bearer);
-    if (!error && data.user?.id) return data.user.id;
+    if (!error && data.user?.id) return { userId: data.user.id, accessToken: bearer };
   }
 
   const { data, error } = await supabase.auth.getUser();
-  if (!error && data.user?.id) return data.user.id;
+  if (!error && data.user?.id) return { userId: data.user.id, accessToken: bearer };
   return null;
 }
 
@@ -111,13 +117,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const uploadedBy = await resolveUploadedByUserId(request);
-    if (!uploadedBy) {
+    const auth = await resolveUploadedByUserId(request);
+    if (!auth) {
       return NextResponse.json(
         { error: "You must be signed in to send a swing to Blake." },
         { status: 401 },
       );
     }
+    const { userId: uploadedBy, accessToken } = auth;
 
     const body = (await request.json().catch(() => null)) as PrepareBody | null;
     if (!body || typeof body !== "object") {
@@ -153,6 +160,7 @@ export async function POST(request: Request) {
         keyIssues,
         contactInfo,
         directionalMisses,
+        accessToken,
       });
 
       return NextResponse.json({
@@ -179,6 +187,7 @@ export async function POST(request: Request) {
       keyIssues,
       contactInfo,
       directionalMisses,
+      accessToken,
     });
 
     return NextResponse.json({ ok: true, phase: "complete", video, deletable: true });
