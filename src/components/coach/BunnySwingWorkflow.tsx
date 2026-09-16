@@ -50,6 +50,26 @@ function formatApiError(payload: unknown, fallback: string): string {
   return fallback;
 }
 
+function isLikelyVideoFile(file: File): boolean {
+  if (file.type.startsWith("video/")) return true;
+  // iOS Photos often leaves type empty for library videos
+  return /\.(mp4|mov|m4v|webm|avi|mpeg|mpg)$/i.test(file.name);
+}
+
+async function readApiJson(res: Response): Promise<unknown> {
+  const text = await res.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return {
+      error:
+        text.slice(0, 180) ||
+        `Upload failed (${res.status}). Try a shorter MP4/MOV clip.`,
+    };
+  }
+}
+
 function ClientNoteField({
   label,
   icon,
@@ -183,18 +203,28 @@ export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflo
       });
       return;
     }
+    if (!isLikelyVideoFile(file)) {
+      setToast({
+        message: "Please choose a video from your library (MP4 or MOV).",
+        type: "warning",
+      });
+      return;
+    }
     setUploading(true);
     try {
       const body = new FormData();
-      body.append("file", file);
+      body.append("file", file, file.name || "swing.mp4");
       body.append("title", uploadTitle.trim() || file.name.replace(/\.[^.]+$/, ""));
       body.append("keyIssues", keyIssuesDraft.trim());
       body.append("contactInfo", contactDraft.trim());
       body.append("directionalMisses", directionalDraft.trim());
       const res = await fetch("/api/bunny/swings", { method: "POST", body });
-      const data = await res.json();
+      const data = await readApiJson(res);
       if (!res.ok) throw new Error(formatApiError(data, "Upload failed"));
-      const video = data.video as BunnyListItem | undefined;
+      const video =
+        data && typeof data === "object" && "video" in data
+          ? ((data as { video?: BunnyListItem }).video as BunnyListItem | undefined)
+          : undefined;
       setToast({
         message: isCoach
           ? "Video sent with client notes."
@@ -209,8 +239,12 @@ export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflo
       await loadVideos();
       if (video?.guid) setSelectedId(video.guid);
     } catch (err: unknown) {
+      const raw = err instanceof Error ? err.message : "Upload failed";
       setToast({
-        message: err instanceof Error ? err.message : "Upload failed",
+        message:
+          /expected pattern/i.test(raw)
+            ? "Could not read that video. Pick an MP4 or MOV from Photos, or try a shorter clip."
+            : raw,
         type: "error",
       });
     } finally {
@@ -350,17 +384,24 @@ export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflo
             className={fieldClassName}
           />
           <input
+            id="send-to-blake-video"
             ref={fileRef}
             type="file"
-            accept="video/*"
-            className="hidden"
-            onChange={(e) => void handleUpload(e.target.files?.[0] ?? null)}
+            accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.m4v,.webm"
+            className="sr-only"
+            onChange={(e) => {
+              const picked = e.target.files?.[0] ?? null;
+              void handleUpload(picked);
+            }}
           />
-          <button
-            type="button"
-            disabled={uploading || configured === false || !hasClientNotes}
-            onClick={() => fileRef.current?.click()}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#014421] px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#013320] disabled:opacity-60"
+          <label
+            htmlFor="send-to-blake-video"
+            aria-disabled={uploading || configured === false || !hasClientNotes}
+            className={`inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#014421] px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#013320] ${
+              uploading || configured === false || !hasClientNotes
+                ? "pointer-events-none opacity-60"
+                : ""
+            }`}
           >
             {uploading ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -368,7 +409,7 @@ export default function BunnySwingWorkflow({ onOpenFeedback }: BunnySwingWorkflo
               <CloudUpload className="h-4 w-4" aria-hidden />
             )}
             {uploading ? "Sending to Blake…" : "Send video to Blake"}
-          </button>
+          </label>
           {!hasClientNotes ? (
             <p className="text-center text-[11px] text-stone-500">
               Fill in at least one note above before sending.
