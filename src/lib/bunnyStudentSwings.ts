@@ -145,7 +145,13 @@ export async function registerBunnyStudentSwing(input: {
     { onConflict: "bunny_video_id" },
   );
   if (error) {
-    throw new Error(`Could not save swing for inbox: ${error.message}`);
+    const msg = error.message || "unknown error";
+    if (/invalid api key/i.test(msg)) {
+      throw new Error(
+        "Could not save swing for inbox: Supabase API key mismatch. Check NEXT_PUBLIC_SUPABASE_URL / ANON_KEY match your project, and you are signed in.",
+      );
+    }
+    throw new Error(`Could not save swing for inbox: ${msg}`);
   }
 }
 
