@@ -14,6 +14,7 @@ import CoachSwingInbox from "@/components/coach/CoachSwingInbox";
 import CoachFeaturedFeedback from "@/components/coach/CoachFeaturedFeedback";
 import BunnySwingWorkflow from "@/components/coach/BunnySwingWorkflow";
 import { APP_VIDEO_COACH_NAME } from "@/lib/bunnyStream";
+import { isCoachEmail } from "@/lib/coachEmails";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { motion, useSpring, useTransform } from "framer-motion";
@@ -2169,7 +2170,9 @@ export default function ProfilePage() {
               onOpenFeedback={() => setProfileTab("feedback")}
               reviewVideoId={reviewSwingId}
             />
-            <CoachSwingInbox onReviewSwing={(id) => setReviewSwingId(id)} />
+            {isCoachEmail(user?.email) ? (
+              <CoachSwingInbox onReviewSwing={(id) => setReviewSwingId(id)} />
+            ) : null}
           </div>
         ) : null}
 

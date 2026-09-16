@@ -13,7 +13,7 @@ import Toast from "@/components/Toast";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
 import { createClient } from "@/lib/supabase/client";
 
-const COACH_EMAILS = ["bdowd@pgamember.org.au", "allendowd86@gmail.com"];
+import { isCoachEmail } from "@/lib/coachEmails";
 
 type InboxSwing = {
   bunny_video_id: string;
@@ -59,7 +59,7 @@ type CoachSwingInboxProps = {
 
 export default function CoachSwingInbox({ onReviewSwing }: CoachSwingInboxProps) {
   const { user } = useAuth();
-  const isCoach = COACH_EMAILS.includes((user?.email || "").toLowerCase().trim());
+  const isCoach = isCoachEmail(user?.email);
   const [items, setItems] = useState<InboxSwing[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -171,7 +171,15 @@ export default function CoachSwingInbox({ onReviewSwing }: CoachSwingInboxProps)
     try {
       const res = await fetch(
         `/api/bunny/swings/${encodeURIComponent(item.bunny_video_id)}`,
-        { method: "DELETE" },
+        {
+          method: "DELETE",
+          headers: await (async () => {
+            const supabase = createClient();
+            const { data } = await supabase.auth.getSession();
+            const token = data.session?.access_token;
+            return token ? { Authorization: `Bearer ${token}` } : {};
+          })(),
+        },
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(formatApiError(data, "Delete failed"));

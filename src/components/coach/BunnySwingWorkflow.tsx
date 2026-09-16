@@ -19,7 +19,8 @@ import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
 import { createClient } from "@/lib/supabase/client";
 import { formatBunnyDuration } from "@/lib/bunnyStream";
 
-const COACH_EMAILS = ["bdowd@pgamember.org.au", "allendowd86@gmail.com"];
+import { isCoachEmail } from "@/lib/coachEmails";
+
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 type BunnySwingWorkflowProps = {
@@ -148,7 +149,7 @@ export default function BunnySwingWorkflow({
 }: BunnySwingWorkflowProps) {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const isCoach = COACH_EMAILS.includes((user?.email || "").toLowerCase().trim());
+  const isCoach = isCoachEmail(user?.email);
 
   const [items, setItems] = useState<BunnyListItem[]>([]);
   const [studentSwings, setStudentSwings] = useState<StudentSwingMeta[]>([]);
@@ -340,7 +341,7 @@ export default function BunnySwingWorkflow({
         contactInfo: notesPayload.contactInfo,
         directionalMisses: notesPayload.directionalMisses,
       });
-      await loadVideos();
+      if (isCoach) await loadVideos();
 
       await new Promise<void>((resolve, reject) => {
         const tusUpload = new tus.Upload(file, {
@@ -406,9 +407,11 @@ export default function BunnySwingWorkflow({
       setContactDraft("");
       setDirectionalDraft("");
       if (fileRef.current) fileRef.current.value = "";
-      await loadVideos();
-      if (video?.guid) setSelectedId(video.guid);
-      else if (upload.videoId) setSelectedId(upload.videoId);
+      if (isCoach) {
+        await loadVideos();
+        if (video?.guid) setSelectedId(video.guid);
+        else if (upload.videoId) setSelectedId(upload.videoId);
+      }
     } catch (err: unknown) {
       if (preparedVideoId) {
         void fetch(`/api/bunny/swings?videoId=${encodeURIComponent(preparedVideoId)}`, {
@@ -484,6 +487,7 @@ export default function BunnySwingWorkflow({
     try {
       const res = await fetch(`/api/bunny/swings/${encodeURIComponent(selectedId)}`, {
         method: "DELETE",
+        headers: await authHeaders(),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(formatApiError(data, "Delete failed"));
@@ -530,7 +534,7 @@ export default function BunnySwingWorkflow({
       <div className="space-y-3">
         <div className="space-y-2">
           <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-            {isCoach ? "1 · Send swing (with notes)" : "1 · Send to Blake"}
+            {isCoach ? "1 · Send swing (with notes)" : "Send to Blake"}
           </label>
           <input
             type="text"
@@ -598,9 +602,11 @@ export default function BunnySwingWorkflow({
           ) : null}
         </div>
 
+        {isCoach ? (
+          <>
         <div>
           <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-            {isCoach ? "Student swing to review" : "Your sent swings"}
+            Student swing to review
           </label>
           {loading ? (
             <div className="flex items-center gap-2 rounded-xl border border-stone-200 px-3 py-3 text-sm text-stone-500">
@@ -609,9 +615,7 @@ export default function BunnySwingWorkflow({
             </div>
           ) : items.length === 0 ? (
             <p className="rounded-xl border border-dashed border-stone-200 bg-stone-50 px-3 py-3 text-sm text-stone-500">
-              {isCoach
-                ? "No student swings yet. When a client sends a video with notes, it appears here."
-                : "No swings sent yet. Add your notes above and send a video to Blake."}
+              No student swings yet. When a client sends a video with notes, it appears here.
             </p>
           ) : (
             <select
@@ -645,9 +649,7 @@ export default function BunnySwingWorkflow({
         {selectedNotes ? (
           <div className="space-y-2 rounded-xl border border-stone-200 bg-white p-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-              {isCoach
-                ? `Client notes${selectedNotes.player_name ? ` · ${selectedNotes.player_name}` : ""}`
-                : "Notes you sent"}
+              {`Client notes${selectedNotes.player_name ? ` · ${selectedNotes.player_name}` : ""}`}
             </p>
             {selected?.length === 0 ? (
               <p className="text-xs text-amber-800">
@@ -672,8 +674,6 @@ export default function BunnySwingWorkflow({
           </div>
         ) : null}
 
-        {isCoach ? (
-          <>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 type="button"

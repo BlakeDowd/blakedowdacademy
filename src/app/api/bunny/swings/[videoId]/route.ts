@@ -10,12 +10,32 @@ import {
   assertBunnyVideoDeletable,
   unregisterBunnyStudentSwing,
 } from "@/lib/bunnyStudentSwings";
+import { isCoachEmail } from "@/lib/coachEmails";
+import { createClient as createServerSupabase } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 type RouteContext = { params: Promise<{ videoId: string }> };
+
+async function requireCoach(request: Request): Promise<string | null> {
+  const supabase = await createServerSupabase();
+  const authHeader = request.headers.get("authorization");
+  const bearer =
+    authHeader && authHeader.toLowerCase().startsWith("bearer ")
+      ? authHeader.slice(7).trim()
+      : "";
+
+  if (bearer) {
+    const { data } = await supabase.auth.getUser(bearer);
+    if (data.user && isCoachEmail(data.user.email)) return data.user.id;
+  }
+
+  const { data } = await supabase.auth.getUser();
+  if (data.user && isCoachEmail(data.user.email)) return data.user.id;
+  return null;
+}
 
 export async function GET(_request: Request, context: RouteContext) {
   try {
@@ -81,12 +101,20 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
+export async function DELETE(request: Request, context: RouteContext) {
   try {
     if (!bunnyApiConfigured()) {
       return NextResponse.json(
         { error: "Bunny Stream API key is not configured." },
         { status: 503 },
+      );
+    }
+
+    const coachId = await requireCoach(request);
+    if (!coachId) {
+      return NextResponse.json(
+        { error: "Only coaches can delete student swings." },
+        { status: 403 },
       );
     }
 
@@ -104,7 +132,8 @@ export async function DELETE(_request: Request, context: RouteContext) {
     const message = err instanceof Error ? err.message : "Delete failed";
     const status =
       message.toLowerCase().includes("cannot be deleted") ||
-      message.toLowerCase().includes("only swings")
+      message.toLowerCase().includes("only swings") ||
+      message.toLowerCase().includes("only coaches")
         ? 403
         : 500;
     return NextResponse.json({ error: message }, { status });
