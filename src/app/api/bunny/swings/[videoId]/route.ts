@@ -3,6 +3,7 @@ import {
   bunnyApiConfigured,
   bunnyDeleteVideo,
   bunnyGetVideo,
+  buildBunnyDownloadCandidateUrls,
   buildBunnyOriginalUrl,
   resolveBunnyCdnHostname,
 } from "@/lib/bunnyStreamAdmin";
@@ -37,6 +38,22 @@ async function requireCoach(request: Request): Promise<string | null> {
   return null;
 }
 
+async function fetchFirstAvailableDownload(
+  urls: string[],
+): Promise<{ response: Response; url: string } | null> {
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (response.ok && response.body) {
+        return { response, url };
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
+}
+
 export async function GET(_request: Request, context: RouteContext) {
   try {
     if (!bunnyApiConfigured()) {
@@ -53,13 +70,13 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     const video = await bunnyGetVideo(videoId);
-    const originalUrl = buildBunnyOriginalUrl(videoId);
+    const candidates = buildBunnyDownloadCandidateUrls(videoId);
 
-    if (!originalUrl) {
+    if (candidates.length === 0) {
       return NextResponse.json(
         {
           error:
-            "Raw download needs your Bunny CDN hostname. Add NEXT_PUBLIC_BUNNY_CDN_HOSTNAME to .env.local (e.g. vz-xxxx.b-cdn.net from Stream → library → CDN / Pull Zone). Also enable Keep Original Files in Bunny encoding settings.",
+            "Raw download needs your Bunny CDN hostname. Add NEXT_PUBLIC_BUNNY_CDN_HOSTNAME in Vercel (e.g. vz-xxxx.b-cdn.net from Stream → library → CDN / Pull Zone).",
           hasOriginal: video.hasOriginal ?? null,
           cdnConfigured: Boolean(resolveBunnyCdnHostname()),
         },
@@ -67,34 +84,57 @@ export async function GET(_request: Request, context: RouteContext) {
       );
     }
 
-    const upstream = await fetch(originalUrl, { cache: "no-store" });
-    if (!upstream.ok) {
+    // Still encoding — originals/MP4s are often missing until Finished.
+    if (video.status === 2 || video.status === 1 || video.status === 0) {
       return NextResponse.json(
         {
-          error: `Could not fetch original file (${upstream.status}). Confirm Keep Original Files is enabled and Block Direct URL File Access is off (or allow this app).`,
+          error:
+            "This swing is still processing on Bunny. Wait until encoding finishes, then download again.",
           hasOriginal: video.hasOriginal ?? null,
-          originalUrl,
+          status: video.status,
+        },
+        { status: 409 },
+      );
+    }
+
+    const preferred =
+      video.hasOriginal === false
+        ? candidates.filter((url) => !url.endsWith("/original"))
+        : candidates;
+
+    const hit = await fetchFirstAvailableDownload(preferred);
+    if (!hit) {
+      return NextResponse.json(
+        {
+          error:
+            video.hasOriginal === false
+              ? "No downloadable file yet. In Bunny Stream → library → Encoding, enable Keep Original Files and MP4 fallback, then re-upload or wait for processing."
+              : "Could not fetch the video file from Bunny CDN. Check Keep Original Files is on, Block Direct URL File Access is off, and Token Authentication is off for this pull zone (or wait until encoding finishes).",
+          hasOriginal: video.hasOriginal ?? null,
+          status: video.status,
+          triedOriginal: buildBunnyOriginalUrl(videoId),
         },
         { status: 502 },
       );
     }
 
-    const safeTitle = (video.title || "swing-original")
+    const isOriginal = hit.url.endsWith("/original");
+    const safeTitle = (video.title || "swing")
       .replace(/[^\w\-]+/g, "_")
       .slice(0, 80);
     const headers = new Headers();
     headers.set(
       "Content-Type",
-      upstream.headers.get("Content-Type") || "application/octet-stream",
+      hit.response.headers.get("Content-Type") || "application/octet-stream",
     );
     headers.set(
       "Content-Disposition",
-      `attachment; filename="${safeTitle}-original.mp4"`,
+      `attachment; filename="${safeTitle}-${isOriginal ? "original" : "video"}.mp4"`,
     );
-    const len = upstream.headers.get("Content-Length");
+    const len = hit.response.headers.get("Content-Length");
     if (len) headers.set("Content-Length", len);
 
-    return new NextResponse(upstream.body, { status: 200, headers });
+    return new NextResponse(hit.response.body, { status: 200, headers });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Download failed";
     return NextResponse.json({ error: message }, { status: 500 });

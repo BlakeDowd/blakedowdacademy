@@ -220,3 +220,20 @@ export function buildBunnyOriginalUrl(videoId: string): string | null {
   const clean = host.replace(/^https?:\/\//, "").replace(/\/$/, "");
   return `https://${clean}/${videoId}/original`;
 }
+
+/** Prefer original when available; otherwise fall back to encoded MP4 ladders. */
+export function buildBunnyDownloadCandidateUrls(videoId: string): string[] {
+  const host = resolveBunnyCdnHostname();
+  if (!host) return [];
+  const clean = host.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const base = `https://${clean}/${videoId}`;
+  return [
+    `${base}/original`,
+    `${base}/play_1080p.mp4`,
+    `${base}/play_720p.mp4`,
+    `${base}/play_480p.mp4`,
+    `${base}/play_360p.mp4`,
+    `${base}/play_240p.mp4`,
+  ];
+}
+
