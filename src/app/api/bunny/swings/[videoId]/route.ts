@@ -230,9 +230,15 @@ export async function DELETE(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "videoId is required" }, { status: 400 });
     }
 
-    await assertBunnyVideoDeletable(videoId);
+    const authHeader = request.headers.get("authorization");
+    const accessToken =
+      authHeader && authHeader.toLowerCase().startsWith("bearer ")
+        ? authHeader.slice(7).trim()
+        : null;
+
+    await assertBunnyVideoDeletable(videoId, accessToken);
     await bunnyDeleteVideo(videoId);
-    await unregisterBunnyStudentSwing(videoId);
+    await unregisterBunnyStudentSwing(videoId, accessToken);
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Delete failed";

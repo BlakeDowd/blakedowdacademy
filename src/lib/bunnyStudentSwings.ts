@@ -208,7 +208,8 @@ export async function assertBunnyVideoDeletable(
   }
 
   const deletable = await listDeletableBunnyStudentVideoIds(accessToken);
-  if (!deletable.includes(id)) {
+  const idLower = id.toLowerCase();
+  if (!deletable.some((candidate) => candidate.toLowerCase() === idLower)) {
     throw new Error(
       "Only swings sent by students (Send to Blake) can be deleted — not library drills.",
     );
