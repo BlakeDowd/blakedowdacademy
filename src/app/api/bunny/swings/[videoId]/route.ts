@@ -9,10 +9,13 @@ import {
 } from "@/lib/bunnyStreamAdmin";
 import {
   assertBunnyVideoDeletable,
+  getBunnyStudentSwingStoragePath,
   unregisterBunnyStudentSwing,
 } from "@/lib/bunnyStudentSwings";
 import { isCoachEmail } from "@/lib/coachEmails";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
+import { createServiceRoleSupabase } from "@/lib/supabaseServiceRole";
+import { createHash } from "crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,7 +57,49 @@ async function fetchFirstAvailableDownload(
   return null;
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+/** Optional Bunny CDN URL Token Authentication (Pull Zone → Security). */
+function signBunnyCdnUrl(urlString: string): string {
+  const securityKey = process.env.BUNNY_CDN_TOKEN_AUTH_KEY?.trim();
+  if (!securityKey) return urlString;
+  try {
+    const expires = Math.floor(Date.now() / 1000) + 3600;
+    const parsed = new URL(urlString);
+    const signaturePath = parsed.pathname;
+    const hashable = `${securityKey}${signaturePath}${expires}`;
+    const token = createHash("md5")
+      .update(hashable)
+      .digest("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
+    parsed.searchParams.set("token", token);
+    parsed.searchParams.set("expires", String(expires));
+    return parsed.toString();
+  } catch {
+    return urlString;
+  }
+}
+
+async function tryDownloadFromSupabaseStorage(
+  videoId: string,
+  accessToken: string | null,
+): Promise<Response | null> {
+  const storagePath = await getBunnyStudentSwingStoragePath(videoId, accessToken);
+  if (!storagePath) return null;
+
+  const service = createServiceRoleSupabase();
+  const supabase = service || (await createServerSupabase());
+  const { data: signed, error } = await supabase.storage
+    .from("swing-submissions")
+    .createSignedUrl(storagePath, 120);
+  if (error || !signed?.signedUrl) return null;
+
+  const upstream = await fetch(signed.signedUrl, { cache: "no-store" });
+  if (!upstream.ok || !upstream.body) return null;
+  return upstream;
+}
+
+export async function GET(request: Request, context: RouteContext) {
   try {
     if (!bunnyApiConfigured()) {
       return NextResponse.json(
@@ -69,14 +114,41 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: "videoId is required" }, { status: 400 });
     }
 
+    const authHeader = request.headers.get("authorization");
+    const accessToken =
+      authHeader && authHeader.toLowerCase().startsWith("bearer ")
+        ? authHeader.slice(7).trim()
+        : null;
+
     const video = await bunnyGetVideo(videoId);
-    const candidates = buildBunnyDownloadCandidateUrls(videoId);
+    const safeTitle = (video.title || "swing")
+      .replace(/[^\w\-]+/g, "_")
+      .slice(0, 80);
+
+    // Prefer the Supabase raw copy (reliable even when Bunny CDN blocks /original).
+    const fromStorage = await tryDownloadFromSupabaseStorage(videoId, accessToken);
+    if (fromStorage) {
+      const headers = new Headers();
+      headers.set(
+        "Content-Type",
+        fromStorage.headers.get("Content-Type") || "application/octet-stream",
+      );
+      headers.set(
+        "Content-Disposition",
+        `attachment; filename="${safeTitle}-original.mp4"`,
+      );
+      const len = fromStorage.headers.get("Content-Length");
+      if (len) headers.set("Content-Length", len);
+      return new NextResponse(fromStorage.body, { status: 200, headers });
+    }
+
+    const candidates = buildBunnyDownloadCandidateUrls(videoId).map(signBunnyCdnUrl);
 
     if (candidates.length === 0) {
       return NextResponse.json(
         {
           error:
-            "Raw download needs your Bunny CDN hostname. Add NEXT_PUBLIC_BUNNY_CDN_HOSTNAME in Vercel (e.g. vz-xxxx.b-cdn.net from Stream → library → CDN / Pull Zone).",
+            "No downloadable copy yet. Newer swings store a raw file for coaches automatically — ask the student to re-send, or set NEXT_PUBLIC_BUNNY_CDN_HOSTNAME and disable Bunny CDN Block Direct URL File Access.",
           hasOriginal: video.hasOriginal ?? null,
           cdnConfigured: Boolean(resolveBunnyCdnHostname()),
         },
@@ -84,12 +156,11 @@ export async function GET(_request: Request, context: RouteContext) {
       );
     }
 
-    // Still encoding — originals/MP4s are often missing until Finished.
     if (video.status === 2 || video.status === 1 || video.status === 0) {
       return NextResponse.json(
         {
           error:
-            "This swing is still processing on Bunny. Wait until encoding finishes, then download again.",
+            "This swing is still processing on Bunny and has no raw copy stored yet. Wait for encoding, or ask the student to re-send after the latest app update.",
           hasOriginal: video.hasOriginal ?? null,
           status: video.status,
         },
@@ -99,7 +170,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
     const preferred =
       video.hasOriginal === false
-        ? candidates.filter((url) => !url.endsWith("/original"))
+        ? candidates.filter((url) => !url.includes("/original"))
         : candidates;
 
     const hit = await fetchFirstAvailableDownload(preferred);
@@ -107,9 +178,7 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json(
         {
           error:
-            video.hasOriginal === false
-              ? "No downloadable file yet. In Bunny Stream → library → Encoding, enable Keep Original Files and MP4 fallback, then re-upload or wait for processing."
-              : "Could not fetch the video file from Bunny CDN. Check Keep Original Files is on, Block Direct URL File Access is off, and Token Authentication is off for this pull zone (or wait until encoding finishes).",
+            "Bunny CDN blocked the download (common with Block Direct URL File Access / Token Auth). For this swing, ask the student to re-send so a raw copy is saved for you. Or turn off Block Direct URL File Access on the Stream pull zone, and optionally add BUNNY_CDN_TOKEN_AUTH_KEY if Token Authentication is on.",
           hasOriginal: video.hasOriginal ?? null,
           status: video.status,
           triedOriginal: buildBunnyOriginalUrl(videoId),
@@ -118,10 +187,7 @@ export async function GET(_request: Request, context: RouteContext) {
       );
     }
 
-    const isOriginal = hit.url.endsWith("/original");
-    const safeTitle = (video.title || "swing")
-      .replace(/[^\w\-]+/g, "_")
-      .slice(0, 80);
+    const isOriginal = hit.url.includes("/original");
     const headers = new Headers();
     headers.set(
       "Content-Type",

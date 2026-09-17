@@ -14,6 +14,7 @@ export type BunnyStudentSwingMeta = {
   key_issues: string | null;
   contact_info: string | null;
   directional_misses: string | null;
+  storage_path: string | null;
   created_at: string;
 };
 
@@ -49,6 +50,7 @@ function mapSwingRow(row: Record<string, unknown>): Omit<BunnyStudentSwingMeta, 
     contact_info: typeof row.contact_info === "string" ? row.contact_info : null,
     directional_misses:
       typeof row.directional_misses === "string" ? row.directional_misses : null,
+    storage_path: typeof row.storage_path === "string" ? row.storage_path : null,
     created_at: typeof row.created_at === "string" ? row.created_at : "",
   };
 }
@@ -94,7 +96,7 @@ export async function listBunnyStudentSwings(
     const { data, error } = await supabase
       .from("bunny_student_swings")
       .select(
-        "bunny_video_id, title, uploaded_by, key_issues, contact_info, directional_misses, created_at",
+        "bunny_video_id, title, uploaded_by, key_issues, contact_info, directional_misses, storage_path, created_at",
       )
       .order("created_at", { ascending: false });
     if (error) {
@@ -125,6 +127,7 @@ export async function registerBunnyStudentSwing(input: {
   keyIssues?: string | null;
   contactInfo?: string | null;
   directionalMisses?: string | null;
+  storagePath?: string | null;
   accessToken?: string | null;
 }): Promise<void> {
   const videoId = input.bunnyVideoId.trim();
@@ -141,6 +144,7 @@ export async function registerBunnyStudentSwing(input: {
       key_issues: input.keyIssues?.trim() || null,
       contact_info: input.contactInfo?.trim() || null,
       directional_misses: input.directionalMisses?.trim() || null,
+      storage_path: input.storagePath?.trim() || null,
     },
     { onConflict: "bunny_video_id" },
   );
@@ -152,6 +156,27 @@ export async function registerBunnyStudentSwing(input: {
       );
     }
     throw new Error(`Could not save swing for inbox: ${msg}`);
+  }
+}
+
+export async function getBunnyStudentSwingStoragePath(
+  videoId: string,
+  accessToken?: string | null,
+): Promise<string | null> {
+  const id = videoId.trim();
+  if (!id) return null;
+  try {
+    const supabase = await getBunnySwingsClient(accessToken);
+    const { data, error } = await supabase
+      .from("bunny_student_swings")
+      .select("storage_path")
+      .eq("bunny_video_id", id)
+      .maybeSingle();
+    if (error) return null;
+    const path = (data as { storage_path?: string | null } | null)?.storage_path;
+    return typeof path === "string" && path.trim() ? path.trim() : null;
+  } catch {
+    return null;
   }
 }
 

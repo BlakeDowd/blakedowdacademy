@@ -130,9 +130,15 @@ export default function CoachSwingInbox({ onReviewSwing }: CoachSwingInboxProps)
   const handleDownload = async (item: InboxSwing) => {
     setDownloadingId(item.bunny_video_id);
     try {
+      const supabaseAuth = createClient();
+      const { data: sessionData } = await supabaseAuth.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+
       const res = await fetch(
         `/api/bunny/swings/${encodeURIComponent(item.bunny_video_id)}`,
-        { cache: "no-store" },
+        { cache: "no-store", headers },
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));

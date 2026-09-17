@@ -91,6 +91,7 @@ async function registerSwingInBrowserInbox(input: {
   keyIssues: string;
   contactInfo: string;
   directionalMisses: string;
+  storagePath?: string | null;
 }): Promise<void> {
   const supabase = createClient();
   const {
@@ -109,6 +110,7 @@ async function registerSwingInBrowserInbox(input: {
       key_issues: input.keyIssues || null,
       contact_info: input.contactInfo || null,
       directional_misses: input.directionalMisses || null,
+      storage_path: input.storagePath || null,
     },
     { onConflict: "bunny_video_id" },
   );
@@ -119,6 +121,29 @@ async function registerSwingInBrowserInbox(input: {
         : `Could not save swing to inbox: ${error.message}`,
     );
   }
+}
+
+async function uploadRawSwingCopy(file: File, videoId: string): Promise<string> {
+  const supabase = createClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+  if (userError || !user?.id) {
+    throw new Error("You must be signed in to upload a swing.");
+  }
+
+  const ext = file.name.split(".").pop()?.toLowerCase() || "mp4";
+  const storagePath = `${user.id}/${videoId}.${ext}`;
+  const { error } = await supabase.storage.from("swing-submissions").upload(storagePath, file, {
+    cacheControl: "3600",
+    upsert: true,
+    contentType: file.type || "video/mp4",
+  });
+  if (error) {
+    throw new Error(`Could not save raw copy for coach download: ${error.message}`);
+  }
+  return storagePath;
 }
 
 function ClientNoteField({
@@ -343,6 +368,8 @@ export default function BunnySwingWorkflow({
       });
       if (isCoach) await loadVideos();
 
+      // Upload to Bunny + store a raw copy for coach download (Bunny CDN often blocks /original).
+      let storagePath: string | null = null;
       await new Promise<void>((resolve, reject) => {
         const tusUpload = new tus.Upload(file, {
           endpoint: upload.endpoint || "https://video.bunnycdn.com/tusupload",
@@ -366,8 +393,27 @@ export default function BunnySwingWorkflow({
           },
           onSuccess: () => resolve(),
         });
-        tusUpload.start();
+
+        void (async () => {
+          try {
+            storagePath = await uploadRawSwingCopy(file, upload.videoId);
+          } catch (err) {
+            console.warn("[Send to Blake] raw copy upload failed:", err);
+          }
+          tusUpload.start();
+        })();
       });
+
+      if (storagePath) {
+        await registerSwingInBrowserInbox({
+          videoId: upload.videoId,
+          title: videoTitle,
+          keyIssues: notesPayload.keyIssues,
+          contactInfo: notesPayload.contactInfo,
+          directionalMisses: notesPayload.directionalMisses,
+          storagePath,
+        });
+      }
 
       setUploadPercent(100);
       await registerSwingInBrowserInbox({
@@ -376,6 +422,7 @@ export default function BunnySwingWorkflow({
         keyIssues: notesPayload.keyIssues,
         contactInfo: notesPayload.contactInfo,
         directionalMisses: notesPayload.directionalMisses,
+        storagePath,
       });
 
       const completeRes = await fetch("/api/bunny/swings", {
@@ -438,6 +485,7 @@ export default function BunnySwingWorkflow({
     try {
       const res = await fetch(`/api/bunny/swings/${encodeURIComponent(selectedId)}`, {
         cache: "no-store",
+        headers: await authHeaders(),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
