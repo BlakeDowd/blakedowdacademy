@@ -3,9 +3,12 @@ export const DEFAULT_BUNNY_LIBRARY_ID = "742155";
 export const APP_VIDEO_COACH_NAME = "Blake Dowd";
 
 /** Library/drill videos that must never be deleted from Bunny via the coaching UI. */
-export const PROTECTED_LIBRARY_BUNNY_VIDEO_IDS = new Set<string>([
-  DEFAULT_BUNNY_VIDEO_ID, // Hell Drill
-]);
+export const PROTECTED_LIBRARY_BUNNY_VIDEO_IDS = new Set<string>(
+  [
+    DEFAULT_BUNNY_VIDEO_ID, // Hell Drill
+    // Add more library drill Bunny GUIDs here when you upload new drills.
+  ].map((id) => id.toLowerCase()),
+);
 
 export function isProtectedLibraryBunnyVideo(videoId: string | null | undefined): boolean {
   const id = videoId?.trim().toLowerCase();

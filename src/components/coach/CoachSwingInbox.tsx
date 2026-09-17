@@ -191,9 +191,7 @@ export default function CoachSwingInbox({ onReviewSwing }: CoachSwingInboxProps)
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(formatApiError(data, "Delete failed"));
 
-      const supabase = createClient();
-      await supabase.from("bunny_student_swings").delete().eq("bunny_video_id", item.bunny_video_id);
-
+      // API already unregisters the inbox row; avoid client delete (students have no DELETE grant).
       setItems((prev) => prev.filter((row) => row.bunny_video_id !== item.bunny_video_id));
       setToast({
         message: `Removed ${item.player_name || "player"}'s swing.`,
