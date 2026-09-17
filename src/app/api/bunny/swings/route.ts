@@ -9,8 +9,7 @@ import {
 } from "@/lib/bunnyStreamAdmin";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
 import {
-  listBunnyStudentSwings,
-  listDeletableBunnyStudentVideoIds,
+  pruneOrphanedBunnyStudentSwings,
   unregisterBunnyStudentSwing,
 } from "@/lib/bunnyStudentSwings";
 import {
@@ -39,11 +38,13 @@ export async function GET(request: Request) {
       );
     }
     const accessToken = readBearerToken(request);
-    const [items, studentSwings, deletableVideoIds] = await Promise.all([
-      bunnyListVideos(30),
-      listBunnyStudentSwings(accessToken),
-      listDeletableBunnyStudentVideoIds(accessToken),
-    ]);
+    // Wider page so prune can match more live Bunny IDs without per-video GETs.
+    const items = await bunnyListVideos(100);
+    const studentSwings = await pruneOrphanedBunnyStudentSwings(
+      accessToken,
+      items.map((v) => v.guid),
+    );
+    const deletableVideoIds = studentSwings.map((s) => s.bunny_video_id);
     return NextResponse.json({
       configured: true,
       items,

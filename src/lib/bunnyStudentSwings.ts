@@ -1,10 +1,11 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
 import { createServiceRoleSupabase } from "@/lib/supabaseServiceRole";
-import {
-  isProtectedLibraryBunnyVideo,
-  PROTECTED_LIBRARY_BUNNY_VIDEO_IDS,
-} from "@/lib/bunnyStream";
+import { isProtectedLibraryBunnyVideo } from "@/lib/bunnyStream";
+import { bunnyVideoExists } from "@/lib/bunnyStreamAdmin";
+
+/** Keep brand-new uploads visible while Bunny finishes creating/indexing them. */
+const ORPHAN_GRACE_MS = 10 * 60 * 1000;
 
 export type BunnyStudentSwingMeta = {
   bunny_video_id: string;
@@ -21,8 +22,17 @@ export type BunnyStudentSwingMeta = {
 /**
  * Prefer the caller's JWT when present (browser auth is localStorage, not cookies).
  * Service role is optional fallback for server-only reads when no token is available.
+ * Use preferServiceRole for coach delete/prune — authenticated DELETE was revoked for students.
  */
-async function getBunnySwingsClient(accessToken?: string | null): Promise<SupabaseClient> {
+async function getBunnySwingsClient(
+  accessToken?: string | null,
+  opts?: { preferServiceRole?: boolean },
+): Promise<SupabaseClient> {
+  if (opts?.preferServiceRole) {
+    const service = createServiceRoleSupabase();
+    if (service) return service;
+  }
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
 
@@ -37,6 +47,10 @@ async function getBunnySwingsClient(accessToken?: string | null): Promise<Supaba
   if (service) return service;
 
   return createServerSupabase();
+}
+
+function normalizeBunnyVideoId(videoId: string): string {
+  return videoId.trim().toLowerCase();
 }
 
 function mapSwingRow(row: Record<string, unknown>): Omit<BunnyStudentSwingMeta, "player_name"> | null {
@@ -120,6 +134,58 @@ export async function listDeletableBunnyStudentVideoIds(
   return swings.map((s) => s.bunny_video_id);
 }
 
+/**
+ * Drop inbox rows for videos already deleted in the Bunny dashboard.
+ * Skips very recent uploads so processing races don't wipe the registry.
+ */
+export async function pruneOrphanedBunnyStudentSwings(
+  accessToken?: string | null,
+  knownBunnyIds?: Iterable<string>,
+): Promise<BunnyStudentSwingMeta[]> {
+  const swings = await listBunnyStudentSwings(accessToken);
+  if (swings.length === 0) return swings;
+
+  const known = new Set(
+    Array.from(knownBunnyIds || [], (id) => id.trim().toLowerCase()).filter(Boolean),
+  );
+  const now = Date.now();
+  const kept: BunnyStudentSwingMeta[] = [];
+
+  for (const swing of swings) {
+    const id = swing.bunny_video_id;
+    if (known.has(id.toLowerCase())) {
+      kept.push(swing);
+      continue;
+    }
+
+    const createdAt = Date.parse(swing.created_at);
+    const isFresh =
+      Number.isFinite(createdAt) && now - createdAt < ORPHAN_GRACE_MS;
+    if (isFresh) {
+      kept.push(swing);
+      continue;
+    }
+
+    try {
+      const exists = await bunnyVideoExists(id);
+      if (exists) {
+        kept.push(swing);
+      } else {
+        try {
+          await unregisterBunnyStudentSwing(id, accessToken);
+        } catch (err) {
+          console.warn("[bunny_student_swings] prune unregister failed:", err);
+          kept.push(swing);
+        }
+      }
+    } catch {
+      kept.push(swing);
+    }
+  }
+
+  return kept;
+}
+
 export async function registerBunnyStudentSwing(input: {
   bunnyVideoId: string;
   title?: string;
@@ -130,7 +196,7 @@ export async function registerBunnyStudentSwing(input: {
   storagePath?: string | null;
   accessToken?: string | null;
 }): Promise<void> {
-  const videoId = input.bunnyVideoId.trim();
+  const videoId = normalizeBunnyVideoId(input.bunnyVideoId);
   if (!videoId || isProtectedLibraryBunnyVideo(videoId)) {
     throw new Error("That video cannot be registered as a student swing.");
   }
@@ -163,34 +229,77 @@ export async function getBunnyStudentSwingStoragePath(
   videoId: string,
   accessToken?: string | null,
 ): Promise<string | null> {
-  const id = videoId.trim();
+  const id = normalizeBunnyVideoId(videoId);
   if (!id) return null;
   try {
-    const supabase = await getBunnySwingsClient(accessToken);
+    const supabase = await getBunnySwingsClient(accessToken, { preferServiceRole: true });
     const { data, error } = await supabase
       .from("bunny_student_swings")
-      .select("storage_path")
-      .eq("bunny_video_id", id)
-      .maybeSingle();
+      .select("bunny_video_id, storage_path");
     if (error) return null;
-    const path = (data as { storage_path?: string | null } | null)?.storage_path;
+    const match = (data || []).find(
+      (row) =>
+        normalizeBunnyVideoId(String((row as { bunny_video_id?: string }).bunny_video_id || "")) ===
+        id,
+    ) as { storage_path?: string | null } | undefined;
+    const path = match?.storage_path;
     return typeof path === "string" && path.trim() ? path.trim() : null;
   } catch {
     return null;
   }
 }
 
+/**
+ * Remove inbox row(s). Always uses service role — authenticated DELETE was revoked
+ * so students cannot wipe swings; coach API deletes must still succeed.
+ */
 export async function unregisterBunnyStudentSwing(
   videoId: string,
-  accessToken?: string | null,
+  _accessToken?: string | null,
 ): Promise<void> {
-  const id = videoId.trim();
+  const id = normalizeBunnyVideoId(videoId);
   if (!id) return;
-  try {
-    const supabase = await getBunnySwingsClient(accessToken);
-    await supabase.from("bunny_student_swings").delete().eq("bunny_video_id", id);
-  } catch (err) {
-    console.warn("[bunny_student_swings] unregister threw:", err);
+
+  const service = createServiceRoleSupabase();
+  if (!service) {
+    throw new Error(
+      "Could not clear swing from the app: set SUPABASE_SERVICE_ROLE_KEY on the server (Vercel env), then redeploy.",
+    );
+  }
+
+  // Case-insensitive match in case older rows stored mixed-case GUIDs.
+  const { data: rows, error: findError } = await service
+    .from("bunny_student_swings")
+    .select("bunny_video_id, storage_path");
+  if (findError) {
+    throw new Error(`Could not clear swing from the app: ${findError.message}`);
+  }
+
+  const matches = (rows || []).filter(
+    (row) => normalizeBunnyVideoId(String((row as { bunny_video_id?: string }).bunny_video_id || "")) === id,
+  );
+  if (matches.length === 0) return;
+
+  for (const row of matches) {
+    const storedId = String((row as { bunny_video_id?: string }).bunny_video_id || "");
+    const storagePath = String((row as { storage_path?: string | null }).storage_path || "").trim();
+
+    const { error: deleteError } = await service
+      .from("bunny_student_swings")
+      .delete()
+      .eq("bunny_video_id", storedId);
+    if (deleteError) {
+      throw new Error(`Could not clear swing from the app: ${deleteError.message}`);
+    }
+
+    if (storagePath) {
+      const { error: storageError } = await service.storage
+        .from("swing-submissions")
+        .remove([storagePath]);
+      if (storageError) {
+        console.warn("[bunny_student_swings] storage cleanup failed:", storageError.message);
+      }
+    }
   }
 }
 
@@ -198,18 +307,29 @@ export async function assertBunnyVideoDeletable(
   videoId: string,
   accessToken?: string | null,
 ): Promise<void> {
-  const id = videoId.trim();
+  const id = normalizeBunnyVideoId(videoId);
   if (!id) throw new Error("videoId is required");
 
-  if (isProtectedLibraryBunnyVideo(id) || PROTECTED_LIBRARY_BUNNY_VIDEO_IDS.has(id)) {
+  if (isProtectedLibraryBunnyVideo(id)) {
     throw new Error(
       "Library drills (like Hell Drill) cannot be deleted. Only student swing uploads can be removed.",
     );
   }
 
-  const deletable = await listDeletableBunnyStudentVideoIds(accessToken);
-  const idLower = id.toLowerCase();
-  if (!deletable.some((candidate) => candidate.toLowerCase() === idLower)) {
+  // Service role first so delete isn't blocked if JWT list is empty/RLS-limited.
+  const supabase = await getBunnySwingsClient(accessToken, { preferServiceRole: true });
+  const { data, error } = await supabase
+    .from("bunny_student_swings")
+    .select("bunny_video_id");
+  if (error) {
+    throw new Error(`Could not verify swing for delete: ${error.message}`);
+  }
+
+  const found = (data || []).some(
+    (row) =>
+      normalizeBunnyVideoId(String((row as { bunny_video_id?: string }).bunny_video_id || "")) === id,
+  );
+  if (!found) {
     throw new Error(
       "Only swings sent by students (Send to Blake) can be deleted — not library drills.",
     );

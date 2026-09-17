@@ -104,7 +104,7 @@ async function registerSwingInBrowserInbox(input: {
 
   const { error } = await supabase.from("bunny_student_swings").upsert(
     {
-      bunny_video_id: input.videoId,
+      bunny_video_id: input.videoId.trim().toLowerCase(),
       title: input.title || null,
       uploaded_by: user.id,
       key_issues: input.keyIssues || null,
@@ -282,7 +282,9 @@ export default function BunnySwingWorkflow({
     [studentSwings, selectedId],
   );
   const canDeleteSelected = Boolean(
-    isCoach && selectedId && deletableVideoIds.includes(selectedId),
+    isCoach &&
+      selectedId &&
+      deletableVideoIds.some((id) => id.toLowerCase() === selectedId.toLowerCase()),
   );
   const hasClientNotes =
     Boolean(keyIssuesDraft.trim()) ||
@@ -516,7 +518,10 @@ export default function BunnySwingWorkflow({
 
   const handleDelete = async () => {
     if (!selectedId || !isCoach) return;
-    if (!deletableVideoIds.includes(selectedId)) {
+    const deletable = deletableVideoIds.some(
+      (id) => id.toLowerCase() === selectedId.toLowerCase(),
+    );
+    if (!deletable) {
       setToast({
         message:
           "Library drills like Hell Drill are protected. Only student swings (Send to Blake) can be deleted.",
@@ -539,8 +544,16 @@ export default function BunnySwingWorkflow({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(formatApiError(data, "Delete failed"));
-      setToast({ message: "Student swing deleted from Bunny Stream.", type: "success" });
+      const removedId = selectedId;
+      setItems((prev) => prev.filter((v) => v.guid.toLowerCase() !== removedId.toLowerCase()));
+      setStudentSwings((prev) =>
+        prev.filter((s) => s.bunny_video_id.toLowerCase() !== removedId.toLowerCase()),
+      );
+      setDeletableVideoIds((prev) =>
+        prev.filter((id) => id.toLowerCase() !== removedId.toLowerCase()),
+      );
       setSelectedId("");
+      setToast({ message: "Student swing deleted from Bunny and the app.", type: "success" });
       await loadVideos();
     } catch (err: unknown) {
       setToast({

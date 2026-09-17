@@ -79,35 +79,40 @@ export default function CoachSwingInbox({ onReviewSwing }: CoachSwingInboxProps)
     setLoading(true);
     try {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("bunny_student_swings")
-        .select(
-          "bunny_video_id, title, uploaded_by, key_issues, contact_info, directional_misses, created_at",
-        )
-        .order("created_at", { ascending: false });
-      if (error) throw error;
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
 
-      const rows = (data || []) as Omit<InboxSwing, "player_name">[];
-      const uploaderIds = Array.from(
-        new Set(rows.map((r) => r.uploaded_by).filter((id): id is string => Boolean(id))),
-      );
-      const nameById = new Map<string, string>();
-      if (uploaderIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("id, full_name")
-          .in("id", uploaderIds);
-        for (const p of profiles || []) {
-          const id = String((p as { id?: string }).id || "");
-          const name = String((p as { full_name?: string | null }).full_name || "").trim();
-          if (id) nameById.set(id, name || "Golfer");
-        }
+      // Goes through /api/bunny/swings so rows deleted in Bunny are pruned from the registry.
+      const res = await fetch("/api/bunny/swings", { cache: "no-store", headers });
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        studentSwings?: Array<{
+          bunny_video_id: string;
+          title: string | null;
+          uploaded_by: string | null;
+          player_name: string | null;
+          key_issues: string | null;
+          contact_info: string | null;
+          directional_misses: string | null;
+          created_at: string;
+        }>;
+      };
+      if (!res.ok) {
+        throw new Error(formatApiError(payload, "Failed to load swing inbox"));
       }
 
       setItems(
-        rows.map((row) => ({
-          ...row,
-          player_name: (row.uploaded_by && nameById.get(row.uploaded_by)) || null,
+        (Array.isArray(payload.studentSwings) ? payload.studentSwings : []).map((row) => ({
+          bunny_video_id: row.bunny_video_id,
+          title: row.title,
+          uploaded_by: row.uploaded_by,
+          player_name: row.player_name,
+          key_issues: row.key_issues,
+          contact_info: row.contact_info,
+          directional_misses: row.directional_misses,
+          created_at: row.created_at,
         })),
       );
     } catch (err: unknown) {

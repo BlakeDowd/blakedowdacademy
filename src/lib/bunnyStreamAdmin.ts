@@ -106,6 +106,26 @@ export async function bunnyGetVideo(videoId: string): Promise<BunnyVideoDetails>
   };
 }
 
+/** True if the video still exists in the Bunny library. 404 → false. */
+export async function bunnyVideoExists(videoId: string): Promise<boolean> {
+  const id = videoId.trim();
+  if (!id) return false;
+  const apiKey = getBunnyStreamApiKey();
+  const libraryId = resolveBunnyLibraryId();
+  if (!apiKey || !libraryId) return false;
+
+  const response = await fetch(
+    `${BUNNY_VIDEO_API}/library/${libraryId}/videos/${id}`,
+    { headers: bunnyAuthHeaders(apiKey), cache: "no-store", method: "GET" },
+  );
+  if (response.status === 404) return false;
+  if (!response.ok) {
+    // Don't treat transient Bunny errors as deleted.
+    return true;
+  }
+  return true;
+}
+
 export async function bunnyCreateVideo(title: string): Promise<{ guid: string; title: string }> {
   const apiKey = getBunnyStreamApiKey();
   const libraryId = resolveBunnyLibraryId();
@@ -212,6 +232,93 @@ export function resolveBunnyCdnHostname(): string | null {
     process.env.BUNNY_CDN_HOSTNAME?.trim() ||
     null
   );
+}
+
+export function resolveBunnyCdnTokenAuthKey(): string | null {
+  return (
+    process.env.BUNNY_CDN_TOKEN_AUTH_KEY?.trim() ||
+    process.env.BUNNY_STREAM_TOKEN_AUTH_KEY?.trim() ||
+    null
+  );
+}
+
+function toBase64Url(buf: Buffer): string {
+  return buf
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+/** Basic (MD5) Bunny CDN token auth — query string. */
+export function signBunnyCdnUrlBasic(urlString: string, securityKey: string, ttlSec = 3600): string {
+  const expires = Math.floor(Date.now() / 1000) + ttlSec;
+  const parsed = new URL(urlString);
+  const signaturePath = parsed.pathname;
+  const hashable = `${securityKey}${signaturePath}${expires}`;
+  const token = toBase64Url(createHash("md5").update(hashable).digest());
+  parsed.searchParams.set("token", token);
+  parsed.searchParams.set("expires", String(expires));
+  return parsed.toString();
+}
+
+/**
+ * Advanced (SHA256) Bunny CDN token auth.
+ * Directory tokens (`token_path=/videoId/`) are what Stream needs when
+ * Block Direct URL File Access / Token Authentication is on.
+ */
+export function signBunnyCdnUrlAdvanced(
+  urlString: string,
+  securityKey: string,
+  opts?: { ttlSec?: number; directoryPath?: string; pathStyle?: boolean },
+): string {
+  const ttlSec = opts?.ttlSec ?? 3600;
+  const expires = Math.floor(Date.now() / 1000) + ttlSec;
+  const parsed = new URL(urlString);
+  const parameters = new URLSearchParams(parsed.search);
+
+  const signaturePath = opts?.directoryPath || decodeURIComponent(parsed.pathname);
+  if (opts?.directoryPath) {
+    parameters.set("token_path", opts.directoryPath);
+  }
+
+  const sortedKeys = Array.from(parameters.keys()).sort();
+  let parameterData = "";
+  let parameterDataUrl = "";
+  for (const key of sortedKeys) {
+    const value = parameters.get(key);
+    if (value == null) continue;
+    if (parameterData.length > 0) parameterData += "&";
+    parameterData += `${key}=${value}`;
+    parameterDataUrl += `&${key}=${encodeURIComponent(value)}`;
+  }
+
+  const hashableBase = `${securityKey}${signaturePath}${expires}${parameterData}`;
+  const token = toBase64Url(createHash("sha256").update(hashableBase).digest());
+
+  if (opts?.pathStyle) {
+    return `${parsed.protocol}//${parsed.host}/bcdn_token=${token}${parameterDataUrl}&expires=${expires}${parsed.pathname}${parsed.search}`;
+  }
+
+  return `${parsed.protocol}//${parsed.host}${parsed.pathname}?token=${token}${parameterDataUrl}&expires=${expires}`;
+}
+
+/** All signed URL variants to try against a locked-down Stream pull zone. */
+export function buildSignedBunnyDownloadUrls(videoId: string): string[] {
+  const raw = buildBunnyDownloadCandidateUrls(videoId);
+  const key = resolveBunnyCdnTokenAuthKey();
+  if (!key) return raw;
+
+  const id = videoId.trim();
+  const dir = `/${id}/`;
+  const out: string[] = [];
+  for (const url of raw) {
+    // Directory token first — required for Stream with locked MP4/original paths.
+    out.push(signBunnyCdnUrlAdvanced(url, key, { directoryPath: dir, pathStyle: false }));
+    out.push(signBunnyCdnUrlAdvanced(url, key, { directoryPath: dir, pathStyle: true }));
+    out.push(signBunnyCdnUrlBasic(url, key));
+  }
+  return out;
 }
 
 export function buildBunnyOriginalUrl(videoId: string): string | null {
