@@ -22,7 +22,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { logActivity } from "@/lib/activity";
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
-import { DEFAULT_BUNNY_VIDEO_ID, APP_VIDEO_COACH_NAME, formatBunnyDuration } from "@/lib/bunnyStream";
+import { DEFAULT_BUNNY_VIDEO_ID, HELL_DRILL_TOP_BUNNY_VIDEO_ID, APP_VIDEO_COACH_NAME, formatBunnyDuration } from "@/lib/bunnyStream";
 import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 // Drills / video authoring field guide: `src/lib/academyContentSchema.ts`
 
@@ -57,6 +57,7 @@ interface Module {
 
 /** Live curriculum only — ghost/placeholder modules are hidden while real videos are filmed. */
 const HELL_DRILL_LESSON_ID = "swing-hell-drill";
+const HELL_DRILL_TOP_LESSON_ID = "swing-hell-drill-top";
 const LIBRARY_CURRICULUM_LESSONS: Lesson[] = [
   {
     id: HELL_DRILL_LESSON_ID,
@@ -68,6 +69,18 @@ const LIBRARY_CURRICULUM_LESSONS: Lesson[] = [
     module_name: "Swing Drills",
     category: "Swing",
     sort_order: 1,
+    xpValue: 50,
+  },
+  {
+    id: HELL_DRILL_TOP_LESSON_ID,
+    title: "Hell Drill Top",
+    type: "video",
+    description: "Hell Drill top variation with Blake Dowd.",
+    source: HELL_DRILL_TOP_BUNNY_VIDEO_ID,
+    chapter_name: "Swing Videos",
+    module_name: "Swing Drills",
+    category: "Swing",
+    sort_order: 2,
     xpValue: 50,
   },
 ];
@@ -392,7 +405,9 @@ function LibraryPageContent() {
         const withoutHellDuplicate = fromDb.filter(
           (l) =>
             l.id !== HELL_DRILL_LESSON_ID &&
-            extractBunnyVideoId(l.source) !== DEFAULT_BUNNY_VIDEO_ID,
+            l.id !== HELL_DRILL_TOP_LESSON_ID &&
+            extractBunnyVideoId(l.source) !== DEFAULT_BUNNY_VIDEO_ID &&
+            extractBunnyVideoId(l.source) !== HELL_DRILL_TOP_BUNNY_VIDEO_ID,
         );
         setLessons([...LIBRARY_CURRICULUM_LESSONS, ...withoutHellDuplicate]);
       } catch {
