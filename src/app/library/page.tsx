@@ -22,7 +22,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { logActivity } from "@/lib/activity";
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
-import { DEFAULT_BUNNY_VIDEO_ID, HELL_DRILL_TOP_BUNNY_VIDEO_ID, APP_VIDEO_COACH_NAME, formatBunnyDuration } from "@/lib/bunnyStream";
+import { DEFAULT_BUNNY_VIDEO_ID, HELL_DRILL_TOP_BUNNY_VIDEO_ID, RECENTRE_DRILL_BUNNY_VIDEO_ID, APP_VIDEO_COACH_NAME, formatBunnyDuration, isBunnyPortraitVideo, cleanBunnyVideoTitle } from "@/lib/bunnyStream";
 import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 // Drills / video authoring field guide: `src/lib/academyContentSchema.ts`
 
@@ -58,6 +58,7 @@ interface Module {
 /** Live curriculum only — ghost/placeholder modules are hidden while real videos are filmed. */
 const HELL_DRILL_LESSON_ID = "swing-hell-drill";
 const HELL_DRILL_TOP_LESSON_ID = "swing-hell-drill-top";
+const RECENTRE_DRILL_LESSON_ID = "swing-recentre-drill";
 const LIBRARY_CURRICULUM_LESSONS: Lesson[] = [
   {
     id: HELL_DRILL_LESSON_ID,
@@ -81,6 +82,18 @@ const LIBRARY_CURRICULUM_LESSONS: Lesson[] = [
     module_name: "Swing Drills",
     category: "Swing",
     sort_order: 2,
+    xpValue: 50,
+  },
+  {
+    id: RECENTRE_DRILL_LESSON_ID,
+    title: "Recentre",
+    type: "video",
+    description: "Recentre drill with Blake Dowd.",
+    source: RECENTRE_DRILL_BUNNY_VIDEO_ID,
+    chapter_name: "Swing Videos",
+    module_name: "Swing Drills",
+    category: "Swing",
+    sort_order: 3,
     xpValue: 50,
   },
 ];
@@ -406,8 +419,10 @@ function LibraryPageContent() {
           (l) =>
             l.id !== HELL_DRILL_LESSON_ID &&
             l.id !== HELL_DRILL_TOP_LESSON_ID &&
+            l.id !== RECENTRE_DRILL_LESSON_ID &&
             extractBunnyVideoId(l.source) !== DEFAULT_BUNNY_VIDEO_ID &&
-            extractBunnyVideoId(l.source) !== HELL_DRILL_TOP_BUNNY_VIDEO_ID,
+            extractBunnyVideoId(l.source) !== HELL_DRILL_TOP_BUNNY_VIDEO_ID &&
+            extractBunnyVideoId(l.source) !== RECENTRE_DRILL_BUNNY_VIDEO_ID,
         );
         setLessons([...LIBRARY_CURRICULUM_LESSONS, ...withoutHellDuplicate]);
       } catch {
@@ -603,7 +618,9 @@ function LibraryPageContent() {
       : null;
 
   const { metadata: bunnyVideoMetadata } = useBunnyVideoMetadata(bunnyVideoId);
-  const activeLessonTitle = bunnyVideoMetadata?.title || activeLesson?.title || "";
+  const bunnyIsPortrait = isBunnyPortraitVideo(bunnyVideoMetadata);
+  const activeLessonTitle =
+    cleanBunnyVideoTitle(bunnyVideoMetadata?.title || "") || activeLesson?.title || "";
   const activeLessonDuration =
     bunnyVideoMetadata?.lengthSeconds
       ? formatBunnyDuration(bunnyVideoMetadata.lengthSeconds)
@@ -1092,8 +1109,16 @@ function LibraryPageContent() {
               Player Report — {activeLessonTitle}
             </div>
 
-            {/* Video Player / Thumbnail Stage */}
-            <div className="lesson-video-container w-full bg-black aspect-video shrink-0 shadow-md print:min-h-[120px] relative">
+            {/* Match Bunny encode: portrait files use 9:16; current Hell Drills are 1920×1080 → 16:9 */}
+            <div
+              className={`lesson-video-container w-full bg-black shrink-0 shadow-md print:min-h-[120px] relative overflow-hidden ${
+                bunnyVideoId
+                  ? bunnyIsPortrait
+                    ? "mx-auto max-w-[420px] aspect-[9/16]"
+                    : "aspect-video"
+                  : "aspect-video"
+              }`}
+            >
               {bunnyVideoId ? (
                 <>
                   <div className="absolute inset-0 print:hidden">

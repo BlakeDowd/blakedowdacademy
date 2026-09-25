@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { resolveBunnyLibraryId } from "@/lib/bunnyStream";
+import { cleanBunnyVideoTitle, resolveBunnyLibraryId } from "@/lib/bunnyStream";
 import { fetchBunnyVideoTitleFromEmbed } from "@/lib/bunnyStreamServer";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +8,8 @@ type BunnyVideoResponse = {
   title?: string;
   description?: string | null;
   length?: number;
+  width?: number;
+  height?: number;
 };
 
 export async function GET(request: Request) {
@@ -30,6 +32,8 @@ export async function GET(request: Request) {
   let title = "";
   let description: string | null = null;
   let lengthSeconds = 0;
+  let width: number | null = null;
+  let height: number | null = null;
 
   const hasValidApiKey = Boolean(apiKey && apiKey !== libraryId);
 
@@ -50,6 +54,8 @@ export async function GET(request: Request) {
       title = data.title?.trim() ?? "";
       description = data.description ?? null;
       lengthSeconds = typeof data.length === "number" ? data.length : 0;
+      width = typeof data.width === "number" && data.width > 0 ? data.width : null;
+      height = typeof data.height === "number" && data.height > 0 ? data.height : null;
     }
   }
 
@@ -65,8 +71,10 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({
-    title,
+    title: cleanBunnyVideoTitle(title),
     description,
     lengthSeconds,
+    width,
+    height,
   });
 }

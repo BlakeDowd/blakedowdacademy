@@ -39,11 +39,18 @@ import { loadLiveRoundDraft, type LiveRoundDraft } from "@/lib/liveRoundDraft";
 import IconPicker, { GOLF_ICONS } from "@/components/IconPicker";
 import Toast from "@/components/Toast";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
-import { DEFAULT_BUNNY_VIDEO_ID, APP_VIDEO_COACH_NAME, formatBunnyDuration } from "@/lib/bunnyStream";
+import {
+  APP_VIDEO_COACH_NAME,
+  buildBunnyThumbnailUrl,
+  cleanBunnyVideoTitle,
+  formatBunnyDuration,
+  isBunnyPortraitVideo,
+  resolveFeaturedHomeVideo,
+} from "@/lib/bunnyStream";
 import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 import { HallOfFameLeaderboard } from "@/components/academy/HallOfFameLeaderboard";
 
-const FEATURED_LIBRARY_DRILL_ID = "swing-hell-drill";
+const FEATURED_HOME = resolveFeaturedHomeVideo();
 
 interface ActivityItem {
   id: string;
@@ -321,11 +328,15 @@ export default function HomeDashboard() {
   
   // Remove Hardcoding: Delete any const totalXP = 0 placeholders that might be overriding the real data
   // Data Source: Use profile?.totalXP from the profile object instead of hardcoded state
-  const { metadata: bunnyVideoMetadata } = useBunnyVideoMetadata(DEFAULT_BUNNY_VIDEO_ID);
-  const dailyVideoTitle = bunnyVideoMetadata?.title ?? "";
+  const { metadata: bunnyVideoMetadata } = useBunnyVideoMetadata(FEATURED_HOME.bunnyVideoId);
+  const dailyVideoIsPortrait = isBunnyPortraitVideo(bunnyVideoMetadata);
+  const dailyVideoTitle =
+    cleanBunnyVideoTitle(bunnyVideoMetadata?.title || "") || FEATURED_HOME.label;
   const dailyVideoDuration = bunnyVideoMetadata?.lengthSeconds
     ? formatBunnyDuration(bunnyVideoMetadata.lengthSeconds)
     : "";
+  const [featuredVideoExpanded, setFeaturedVideoExpanded] = useState(false);
+  const featuredThumbUrl = buildBunnyThumbnailUrl(FEATURED_HOME.bunnyVideoId);
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [scoreTab, setScoreTab] = useState<'myRounds' | 'community'>('myRounds');
   const [activeLiveDraft, setActiveLiveDraft] = useState<LiveRoundDraft | null>(null);
@@ -756,7 +767,7 @@ export default function HomeDashboard() {
 
         <HallOfFameLeaderboard />
 
-        {/* Featured video */}
+        {/* Featured video — compact until tapped, then full player */}
         <div className="w-full px-4 mb-4">
           <div
             className="mx-auto w-full max-w-[380px] overflow-hidden bg-white"
@@ -765,32 +776,89 @@ export default function HomeDashboard() {
               boxShadow: "0 8px 24px rgba(0, 0, 0, 0.08)",
             }}
           >
-            <div className="relative aspect-[9/16] w-full overflow-hidden bg-black">
-              <BunnyVideoPlayer videoId={DEFAULT_BUNNY_VIDEO_ID} fill />
-              {dailyVideoDuration ? (
-                <div className="pointer-events-none absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-xs text-white backdrop-blur-sm">
-                  {dailyVideoDuration}
-                </div>
-              ) : null}
-            </div>
-            {dailyVideoTitle ? (
-              <div className="p-5">
+            {featuredVideoExpanded ? (
+              <div
+                className={`relative w-full overflow-hidden bg-black ${
+                  dailyVideoIsPortrait ? "aspect-[9/16]" : "aspect-video"
+                }`}
+              >
+                <BunnyVideoPlayer
+                  videoId={FEATURED_HOME.bunnyVideoId}
+                  fill
+                  autoplay
+                />
                 <button
                   type="button"
-                  onClick={() => router.push(`/library?drill=${FEATURED_LIBRARY_DRILL_ID}`)}
-                  className="mb-2 block w-full text-left text-xl font-bold tracking-tight transition-opacity hover:opacity-80"
-                  style={{
-                    color: "#014421",
-                    fontFamily: "system-ui, -apple-system, sans-serif",
-                    fontWeight: 700,
-                    letterSpacing: "-0.02em",
-                  }}
+                  onClick={() => setFeaturedVideoExpanded(false)}
+                  className="absolute right-2 top-2 z-10 rounded-full bg-black/60 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm hover:bg-black/80"
+                  aria-label="Close video"
                 >
-                  {dailyVideoTitle}
+                  Close
                 </button>
-                <p className="text-sm text-gray-500">{APP_VIDEO_COACH_NAME}</p>
               </div>
-            ) : null}
+            ) : (
+              <button
+                type="button"
+                onClick={() => setFeaturedVideoExpanded(true)}
+                className="group relative block w-full overflow-hidden bg-stone-900 text-left aspect-[16/10]"
+                aria-label={`Play ${dailyVideoTitle}`}
+              >
+                {featuredThumbUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={featuredThumbUrl}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                  />
+                ) : (
+                  <div className="absolute inset-0 bg-gradient-to-br from-[#014421] to-stone-900" />
+                )}
+                <div className="absolute inset-0 bg-black/25" />
+                <span className="absolute inset-0 flex items-center justify-center">
+                  <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#FFA500] text-white shadow-lg transition-transform group-hover:scale-105">
+                    <Play className="h-6 w-6 fill-current ml-0.5" aria-hidden />
+                  </span>
+                </span>
+                {dailyVideoDuration ? (
+                  <span className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-xs text-white backdrop-blur-sm">
+                    {dailyVideoDuration}
+                  </span>
+                ) : null}
+              </button>
+            )}
+            <div className="p-4">
+              <button
+                type="button"
+                onClick={() =>
+                  featuredVideoExpanded
+                    ? router.push(`/library?drill=${FEATURED_HOME.libraryDrillId}`)
+                    : setFeaturedVideoExpanded(true)
+                }
+                className="mb-1 block w-full text-left text-lg font-bold tracking-tight transition-opacity hover:opacity-80"
+                style={{
+                  color: "#014421",
+                  fontFamily: "system-ui, -apple-system, sans-serif",
+                  fontWeight: 700,
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {dailyVideoTitle}
+              </button>
+              <p className="text-sm text-gray-500">{APP_VIDEO_COACH_NAME}</p>
+              {!featuredVideoExpanded ? (
+                <p className="mt-1 text-xs text-stone-400">Tap to play</p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(`/library?drill=${FEATURED_HOME.libraryDrillId}`)
+                  }
+                  className="mt-2 text-xs font-semibold text-[#FFA500] hover:underline"
+                >
+                  Open in Library
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
