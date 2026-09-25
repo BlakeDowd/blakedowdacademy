@@ -22,7 +22,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { logActivity } from "@/lib/activity";
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
-import { DEFAULT_BUNNY_VIDEO_ID, HELL_DRILL_TOP_BUNNY_VIDEO_ID, RECENTRE_DRILL_BUNNY_VIDEO_ID, APP_VIDEO_COACH_NAME, formatBunnyDuration, isBunnyPortraitVideo, cleanBunnyVideoTitle } from "@/lib/bunnyStream";
+import {
+  APP_VIDEO_COACH_NAME,
+  LIBRARY_SWING_VIDEOS,
+  formatBunnyDuration,
+  isBunnyPortraitVideo,
+  cleanBunnyVideoTitle,
+} from "@/lib/bunnyStream";
 import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 // Drills / video authoring field guide: `src/lib/academyContentSchema.ts`
 
@@ -55,48 +61,24 @@ interface Module {
   completedCount: number;
 }
 
-/** Live curriculum only — ghost/placeholder modules are hidden while real videos are filmed. */
-const HELL_DRILL_LESSON_ID = "swing-hell-drill";
-const HELL_DRILL_TOP_LESSON_ID = "swing-hell-drill-top";
-const RECENTRE_DRILL_LESSON_ID = "swing-recentre-drill";
-const LIBRARY_CURRICULUM_LESSONS: Lesson[] = [
-  {
-    id: HELL_DRILL_LESSON_ID,
-    title: "Hell Drill",
-    type: "video",
-    description: "Swing drill with Blake Dowd.",
-    source: DEFAULT_BUNNY_VIDEO_ID,
-    chapter_name: "Swing Videos",
-    module_name: "Swing Drills",
-    category: "Swing",
-    sort_order: 1,
-    xpValue: 50,
-  },
-  {
-    id: HELL_DRILL_TOP_LESSON_ID,
-    title: "Hell Drill Top",
-    type: "video",
-    description: "Hell Drill top variation with Blake Dowd.",
-    source: HELL_DRILL_TOP_BUNNY_VIDEO_ID,
-    chapter_name: "Swing Videos",
-    module_name: "Swing Drills",
-    category: "Swing",
-    sort_order: 2,
-    xpValue: 50,
-  },
-  {
-    id: RECENTRE_DRILL_LESSON_ID,
-    title: "Recentre",
-    type: "video",
-    description: "Recentre drill with Blake Dowd.",
-    source: RECENTRE_DRILL_BUNNY_VIDEO_ID,
-    chapter_name: "Swing Videos",
-    module_name: "Swing Drills",
-    category: "Swing",
-    sort_order: 3,
-    xpValue: 50,
-  },
-];
+/** Live curriculum from Bunny swing library catalog. */
+const LIBRARY_CURRICULUM_LESSONS: Lesson[] = LIBRARY_SWING_VIDEOS.map((video, index) => ({
+  id: video.libraryDrillId,
+  title: video.label,
+  type: "video" as const,
+  description: `${video.label} with Blake Dowd.`,
+  source: video.bunnyVideoId,
+  chapter_name: "Swing Videos",
+  module_name: "Swing Drills",
+  category: "Swing",
+  sort_order: index + 1,
+  xpValue: 50,
+}));
+
+const CURRICULUM_LESSON_IDS = new Set(LIBRARY_CURRICULUM_LESSONS.map((l) => l.id));
+const CURRICULUM_BUNNY_IDS = new Set(
+  LIBRARY_SWING_VIDEOS.map((v) => v.bunnyVideoId.toLowerCase()),
+);
 
 /** Placeholder YouTube IDs (e.g. joke embeds) — show “coming soon” instead. */
 const PLACEHOLDER_YOUTUBE_VIDEO_IDS = new Set(["dQw4w9WgXcQ"]);
@@ -415,15 +397,12 @@ function LibraryPageContent() {
             };
           });
 
-        const withoutHellDuplicate = fromDb.filter(
-          (l) =>
-            l.id !== HELL_DRILL_LESSON_ID &&
-            l.id !== HELL_DRILL_TOP_LESSON_ID &&
-            l.id !== RECENTRE_DRILL_LESSON_ID &&
-            extractBunnyVideoId(l.source) !== DEFAULT_BUNNY_VIDEO_ID &&
-            extractBunnyVideoId(l.source) !== HELL_DRILL_TOP_BUNNY_VIDEO_ID &&
-            extractBunnyVideoId(l.source) !== RECENTRE_DRILL_BUNNY_VIDEO_ID,
-        );
+        const withoutHellDuplicate = fromDb.filter((l) => {
+          const bunnyId = extractBunnyVideoId(l.source)?.toLowerCase();
+          if (CURRICULUM_LESSON_IDS.has(l.id)) return false;
+          if (bunnyId && CURRICULUM_BUNNY_IDS.has(bunnyId)) return false;
+          return true;
+        });
         setLessons([...LIBRARY_CURRICULUM_LESSONS, ...withoutHellDuplicate]);
       } catch {
         if (!cancelled) setLessons(LIBRARY_CURRICULUM_LESSONS);

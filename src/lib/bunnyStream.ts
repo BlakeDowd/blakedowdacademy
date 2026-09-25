@@ -1,6 +1,9 @@
 export const DEFAULT_BUNNY_VIDEO_ID = "bf910a98-d8f4-4668-8e8c-d2d1fbddbb64"; // Hell Drill (1080×1920)
 export const HELL_DRILL_TOP_BUNNY_VIDEO_ID = "769c0000-f055-4a28-9b9b-b4319ffe43a7"; // Hell Drill Top Variation (1080×1920)
 export const RECENTRE_DRILL_BUNNY_VIDEO_ID = "fc21a642-e8af-46d8-9025-e5d258d213ae";
+export const THREE_FINGER_DRILL_BUNNY_VIDEO_ID = "95c2e96c-41a6-4b8e-a8c0-e26d6174e20e";
+export const ABDUCTION_DRILL_BUNNY_VIDEO_ID = "cccce901-fb9f-41b1-863a-1de2d7a38e27";
+export const RIGHT_ARM_ONLY_BUNNY_VIDEO_ID = "335a81e1-e30d-4953-8045-ea6974f79f9b";
 export const DEFAULT_BUNNY_LIBRARY_ID = "742155";
 export const APP_VIDEO_COACH_NAME = "Blake Dowd";
 
@@ -24,13 +27,31 @@ export const LIBRARY_SWING_VIDEOS = [
     bunnyVideoId: RECENTRE_DRILL_BUNNY_VIDEO_ID,
     label: "Recentre",
   },
+  {
+    key: "three-finger",
+    libraryDrillId: "swing-three-finger-drill",
+    bunnyVideoId: THREE_FINGER_DRILL_BUNNY_VIDEO_ID,
+    label: "3 Finger Drill",
+  },
+  {
+    key: "abduction",
+    libraryDrillId: "swing-abduction-drill",
+    bunnyVideoId: ABDUCTION_DRILL_BUNNY_VIDEO_ID,
+    label: "Abduction Drill",
+  },
+  {
+    key: "right-arm-only",
+    libraryDrillId: "swing-right-arm-only",
+    bunnyVideoId: RIGHT_ARM_ONLY_BUNNY_VIDEO_ID,
+    label: "Right Arm Only",
+  },
 ] as const;
 
 export type LibrarySwingVideoKey = (typeof LIBRARY_SWING_VIDEOS)[number]["key"];
 
 /**
  * Homepage featured video — change this one line to swap which drill shows.
- * Or set NEXT_PUBLIC_FEATURED_HOME_VIDEO_KEY=hell-drill|hell-drill-top|recentre in env.
+ * Or set NEXT_PUBLIC_FEATURED_HOME_VIDEO_KEY in env (see LIBRARY_SWING_VIDEOS keys).
  */
 export const FEATURED_HOME_VIDEO_KEY: LibrarySwingVideoKey = "hell-drill";
 
@@ -59,9 +80,7 @@ export function buildBunnyThumbnailUrl(videoId: string): string | null {
 /** Library/drill videos that must never be deleted from Bunny via the coaching UI. */
 export const PROTECTED_LIBRARY_BUNNY_VIDEO_IDS = new Set<string>(
   [
-    DEFAULT_BUNNY_VIDEO_ID, // Hell Drill
-    HELL_DRILL_TOP_BUNNY_VIDEO_ID, // Hell Drill Top
-    RECENTRE_DRILL_BUNNY_VIDEO_ID, // Recentre
+    ...LIBRARY_SWING_VIDEOS.map((v) => v.bunnyVideoId),
     // Legacy landscape encodes (safe to delete in Bunny dashboard once unused)
     "02c9519f-71c8-4f45-babc-8c3b8d29e33e",
     "f113cd66-8670-48b1-bc4e-0af236e12204",
