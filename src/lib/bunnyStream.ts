@@ -4,6 +4,8 @@ export const RECENTRE_DRILL_BUNNY_VIDEO_ID = "fc21a642-e8af-46d8-9025-e5d258d213
 export const THREE_FINGER_DRILL_BUNNY_VIDEO_ID = "95c2e96c-41a6-4b8e-a8c0-e26d6174e20e";
 export const ABDUCTION_DRILL_BUNNY_VIDEO_ID = "cccce901-fb9f-41b1-863a-1de2d7a38e27";
 export const RIGHT_ARM_ONLY_BUNNY_VIDEO_ID = "335a81e1-e30d-4953-8045-ea6974f79f9b";
+export const LEFT_HAND_ONLY_BUNNY_VIDEO_ID = "3e29d399-9252-402f-bbf3-7138a90a3e29";
+export const ABDUCTION_STICK_BUNNY_VIDEO_ID = "f18e87ba-30f0-4cf5-9e0a-a004a571b8e4";
 export const DEFAULT_BUNNY_LIBRARY_ID = "742155";
 export const APP_VIDEO_COACH_NAME = "Blake Dowd";
 
@@ -44,6 +46,18 @@ export const LIBRARY_SWING_VIDEOS = [
     libraryDrillId: "swing-right-arm-only",
     bunnyVideoId: RIGHT_ARM_ONLY_BUNNY_VIDEO_ID,
     label: "Right Arm Only",
+  },
+  {
+    key: "left-hand-only",
+    libraryDrillId: "swing-left-hand-only",
+    bunnyVideoId: LEFT_HAND_ONLY_BUNNY_VIDEO_ID,
+    label: "Left Hand Only",
+  },
+  {
+    key: "abduction-stick",
+    libraryDrillId: "swing-abduction-stick",
+    bunnyVideoId: ABDUCTION_STICK_BUNNY_VIDEO_ID,
+    label: "Abduction Stick",
   },
 ] as const;
 

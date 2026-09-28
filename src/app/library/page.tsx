@@ -599,7 +599,9 @@ function LibraryPageContent() {
   const { metadata: bunnyVideoMetadata } = useBunnyVideoMetadata(bunnyVideoId);
   const bunnyIsPortrait = isBunnyPortraitVideo(bunnyVideoMetadata);
   const activeLessonTitle =
-    cleanBunnyVideoTitle(bunnyVideoMetadata?.title || "") || activeLesson?.title || "";
+    activeLesson && CURRICULUM_LESSON_IDS.has(activeLesson.id)
+      ? activeLesson.title
+      : cleanBunnyVideoTitle(bunnyVideoMetadata?.title || "") || activeLesson?.title || "";
   const activeLessonDuration =
     bunnyVideoMetadata?.lengthSeconds
       ? formatBunnyDuration(bunnyVideoMetadata.lengthSeconds)

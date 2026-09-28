@@ -42,7 +42,6 @@ import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
 import {
   APP_VIDEO_COACH_NAME,
   buildBunnyThumbnailUrl,
-  cleanBunnyVideoTitle,
   formatBunnyDuration,
   isBunnyPortraitVideo,
   resolveFeaturedHomeVideo,
@@ -330,8 +329,7 @@ export default function HomeDashboard() {
   // Data Source: Use profile?.totalXP from the profile object instead of hardcoded state
   const { metadata: bunnyVideoMetadata } = useBunnyVideoMetadata(FEATURED_HOME.bunnyVideoId);
   const dailyVideoIsPortrait = isBunnyPortraitVideo(bunnyVideoMetadata);
-  const dailyVideoTitle =
-    cleanBunnyVideoTitle(bunnyVideoMetadata?.title || "") || FEATURED_HOME.label;
+  const dailyVideoTitle = FEATURED_HOME.label;
   const dailyVideoDuration = bunnyVideoMetadata?.lengthSeconds
     ? formatBunnyDuration(bunnyVideoMetadata.lengthSeconds)
     : "";
