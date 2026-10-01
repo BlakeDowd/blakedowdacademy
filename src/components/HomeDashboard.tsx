@@ -49,8 +49,6 @@ import {
 import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 import { HallOfFameLeaderboard } from "@/components/academy/HallOfFameLeaderboard";
 
-const FEATURED_HOME = resolveFeaturedHomeVideo();
-
 interface ActivityItem {
   id: string;
   type: 'drill' | 'video' | 'achievement' | 'round' | 'practice';
@@ -327,14 +325,15 @@ export default function HomeDashboard() {
   
   // Remove Hardcoding: Delete any const totalXP = 0 placeholders that might be overriding the real data
   // Data Source: Use profile?.totalXP from the profile object instead of hardcoded state
-  const { metadata: bunnyVideoMetadata } = useBunnyVideoMetadata(FEATURED_HOME.bunnyVideoId);
+  const [featuredHome] = useState(() => resolveFeaturedHomeVideo());
+  const { metadata: bunnyVideoMetadata } = useBunnyVideoMetadata(featuredHome.bunnyVideoId);
   const dailyVideoIsPortrait = isBunnyPortraitVideo(bunnyVideoMetadata);
-  const dailyVideoTitle = FEATURED_HOME.label;
+  const dailyVideoTitle = featuredHome.label;
   const dailyVideoDuration = bunnyVideoMetadata?.lengthSeconds
     ? formatBunnyDuration(bunnyVideoMetadata.lengthSeconds)
     : "";
   const [featuredVideoExpanded, setFeaturedVideoExpanded] = useState(false);
-  const featuredThumbUrl = buildBunnyThumbnailUrl(FEATURED_HOME.bunnyVideoId);
+  const featuredThumbUrl = buildBunnyThumbnailUrl(featuredHome.bunnyVideoId);
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [scoreTab, setScoreTab] = useState<'myRounds' | 'community'>('myRounds');
   const [activeLiveDraft, setActiveLiveDraft] = useState<LiveRoundDraft | null>(null);
@@ -781,7 +780,7 @@ export default function HomeDashboard() {
                 }`}
               >
                 <BunnyVideoPlayer
-                  videoId={FEATURED_HOME.bunnyVideoId}
+                  videoId={featuredHome.bunnyVideoId}
                   fill
                   autoplay
                 />
@@ -829,7 +828,7 @@ export default function HomeDashboard() {
                 type="button"
                 onClick={() =>
                   featuredVideoExpanded
-                    ? router.push(`/library?drill=${FEATURED_HOME.libraryDrillId}`)
+                    ? router.push(`/library?drill=${featuredHome.libraryDrillId}`)
                     : setFeaturedVideoExpanded(true)
                 }
                 className="mb-1 block w-full text-left text-lg font-bold tracking-tight transition-opacity hover:opacity-80"
@@ -849,7 +848,7 @@ export default function HomeDashboard() {
                 <button
                   type="button"
                   onClick={() =>
-                    router.push(`/library?drill=${FEATURED_HOME.libraryDrillId}`)
+                    router.push(`/library?drill=${featuredHome.libraryDrillId}`)
                   }
                   className="mt-2 text-xs font-semibold text-[#FFA500] hover:underline"
                 >

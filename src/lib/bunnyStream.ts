@@ -6,6 +6,9 @@ export const ABDUCTION_DRILL_BUNNY_VIDEO_ID = "cccce901-fb9f-41b1-863a-1de2d7a38
 export const RIGHT_ARM_ONLY_BUNNY_VIDEO_ID = "335a81e1-e30d-4953-8045-ea6974f79f9b";
 export const LEFT_HAND_ONLY_BUNNY_VIDEO_ID = "3e29d399-9252-402f-bbf3-7138a90a3e29";
 export const ABDUCTION_STICK_BUNNY_VIDEO_ID = "f18e87ba-30f0-4cf5-9e0a-a004a571b8e4";
+export const SHIFTING_PRESSURE_BUNNY_VIDEO_ID = "6d16011e-087c-47c7-b7f2-80e80332f36d";
+export const TAKEAWAY_STEP_DRILL_BUNNY_VIDEO_ID = "2a8cbe1f-64a4-4263-9558-906357f559b8";
+export const DOWNSWING_PRESSURE_SHIFT_BUNNY_VIDEO_ID = "f589f8a9-3faf-4caf-adc1-a99b55db1b30";
 export const DEFAULT_BUNNY_LIBRARY_ID = "742155";
 export const APP_VIDEO_COACH_NAME = "Blake Dowd";
 
@@ -59,24 +62,47 @@ export const LIBRARY_SWING_VIDEOS = [
     bunnyVideoId: ABDUCTION_STICK_BUNNY_VIDEO_ID,
     label: "Abduction Stick",
   },
+  {
+    key: "shifting-pressure",
+    libraryDrillId: "swing-shifting-pressure",
+    bunnyVideoId: SHIFTING_PRESSURE_BUNNY_VIDEO_ID,
+    label: "Shifting Pressure",
+  },
+  {
+    key: "takeaway-step-drill",
+    libraryDrillId: "swing-takeaway-step-drill",
+    bunnyVideoId: TAKEAWAY_STEP_DRILL_BUNNY_VIDEO_ID,
+    label: "Takeaway Step Drill",
+  },
+  {
+    key: "downswing-pressure-shift",
+    libraryDrillId: "swing-downswing-pressure-shift",
+    bunnyVideoId: DOWNSWING_PRESSURE_SHIFT_BUNNY_VIDEO_ID,
+    label: "Downswing Pressure Shift",
+  },
 ] as const;
 
 export type LibrarySwingVideoKey = (typeof LIBRARY_SWING_VIDEOS)[number]["key"];
 
 /**
- * Homepage featured video — change this one line to swap which drill shows.
- * Or set NEXT_PUBLIC_FEATURED_HOME_VIDEO_KEY in env (see LIBRARY_SWING_VIDEOS keys).
+ * Homepage featured video rotates through LIBRARY_SWING_VIDEOS, one per day.
+ * To pin a single drill instead, set this to a key (e.g. "hell-drill")
+ * or set NEXT_PUBLIC_FEATURED_HOME_VIDEO_KEY in env.
  */
-export const FEATURED_HOME_VIDEO_KEY: LibrarySwingVideoKey = "hell-drill";
+export const FEATURED_HOME_VIDEO_KEY: LibrarySwingVideoKey | null = null;
 
-export function resolveFeaturedHomeVideo(): (typeof LIBRARY_SWING_VIDEOS)[number] {
+export function resolveFeaturedHomeVideo(now: Date = new Date()): (typeof LIBRARY_SWING_VIDEOS)[number] {
   const fromEnv = process.env.NEXT_PUBLIC_FEATURED_HOME_VIDEO_KEY?.trim().toLowerCase();
-  const byEnv = LIBRARY_SWING_VIDEOS.find((v) => v.key === fromEnv);
-  if (byEnv) return byEnv;
-  return (
-    LIBRARY_SWING_VIDEOS.find((v) => v.key === FEATURED_HOME_VIDEO_KEY) ||
-    LIBRARY_SWING_VIDEOS[0]
+  const pinned =
+    LIBRARY_SWING_VIDEOS.find((v) => v.key === fromEnv) ||
+    LIBRARY_SWING_VIDEOS.find((v) => v.key === FEATURED_HOME_VIDEO_KEY);
+  if (pinned) return pinned;
+
+  // Local calendar day, so the video changes at the viewer's midnight.
+  const dayNumber = Math.floor(
+    Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86_400_000,
   );
+  return LIBRARY_SWING_VIDEOS[dayNumber % LIBRARY_SWING_VIDEOS.length];
 }
 
 /** Bunny CDN thumbnail for a Stream video (needs NEXT_PUBLIC_BUNNY_CDN_HOSTNAME). */
