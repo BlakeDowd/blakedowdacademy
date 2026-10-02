@@ -9,6 +9,8 @@ export const ABDUCTION_STICK_BUNNY_VIDEO_ID = "f18e87ba-30f0-4cf5-9e0a-a004a571b
 export const SHIFTING_PRESSURE_BUNNY_VIDEO_ID = "6d16011e-087c-47c7-b7f2-80e80332f36d";
 export const TAKEAWAY_STEP_DRILL_BUNNY_VIDEO_ID = "2a8cbe1f-64a4-4263-9558-906357f559b8";
 export const DOWNSWING_PRESSURE_SHIFT_BUNNY_VIDEO_ID = "f589f8a9-3faf-4caf-adc1-a99b55db1b30";
+export const NINE_TO_THREE_DRILL_BUNNY_VIDEO_ID = "a93c2709-1c60-42a3-9118-5d04f586c63e";
+export const STEP_STEP_DRILL_BUNNY_VIDEO_ID = "d90b31b7-d0d1-4f1f-a2da-73a3978e7023";
 export const DEFAULT_BUNNY_LIBRARY_ID = "742155";
 export const APP_VIDEO_COACH_NAME = "Blake Dowd";
 
@@ -79,6 +81,18 @@ export const LIBRARY_SWING_VIDEOS = [
     libraryDrillId: "swing-downswing-pressure-shift",
     bunnyVideoId: DOWNSWING_PRESSURE_SHIFT_BUNNY_VIDEO_ID,
     label: "Downswing Pressure Shift",
+  },
+  {
+    key: "nine-to-three",
+    libraryDrillId: "swing-nine-to-three-drill",
+    bunnyVideoId: NINE_TO_THREE_DRILL_BUNNY_VIDEO_ID,
+    label: "9 to 3 Drill",
+  },
+  {
+    key: "step-step",
+    libraryDrillId: "swing-step-step-drill",
+    bunnyVideoId: STEP_STEP_DRILL_BUNNY_VIDEO_ID,
+    label: "Step Step Drill",
   },
 ] as const;
 
