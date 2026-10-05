@@ -11,6 +11,9 @@ export const TAKEAWAY_STEP_DRILL_BUNNY_VIDEO_ID = "2a8cbe1f-64a4-4263-9558-90635
 export const DOWNSWING_PRESSURE_SHIFT_BUNNY_VIDEO_ID = "f589f8a9-3faf-4caf-adc1-a99b55db1b30";
 export const NINE_TO_THREE_DRILL_BUNNY_VIDEO_ID = "a93c2709-1c60-42a3-9118-5d04f586c63e";
 export const STEP_STEP_DRILL_BUNNY_VIDEO_ID = "d90b31b7-d0d1-4f1f-a2da-73a3978e7023";
+export const STEP_STEP_AWAY_BUNNY_VIDEO_ID = "0c036522-9d4d-4f23-a066-aa00aab7d34b";
+export const TEE_DRILL_BUNNY_VIDEO_ID = "46927c36-2625-454d-9f91-abc88391198e";
+export const HUG_DRILL_BUNNY_VIDEO_ID = "11752b6a-50c7-43ed-98dd-3c9268fdbe3b";
 export const DEFAULT_BUNNY_LIBRARY_ID = "742155";
 export const APP_VIDEO_COACH_NAME = "Blake Dowd";
 
@@ -93,6 +96,24 @@ export const LIBRARY_SWING_VIDEOS = [
     libraryDrillId: "swing-step-step-drill",
     bunnyVideoId: STEP_STEP_DRILL_BUNNY_VIDEO_ID,
     label: "Step Step Drill",
+  },
+  {
+    key: "step-step-away",
+    libraryDrillId: "swing-step-step-away",
+    bunnyVideoId: STEP_STEP_AWAY_BUNNY_VIDEO_ID,
+    label: "Step Step Away",
+  },
+  {
+    key: "tee-drill",
+    libraryDrillId: "swing-tee-drill",
+    bunnyVideoId: TEE_DRILL_BUNNY_VIDEO_ID,
+    label: "Tee Drill",
+  },
+  {
+    key: "hug-drill",
+    libraryDrillId: "swing-hug-drill",
+    bunnyVideoId: HUG_DRILL_BUNNY_VIDEO_ID,
+    label: "Hug Drill",
   },
 ] as const;
 
