@@ -14,6 +14,7 @@ import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
 import { createClient } from "@/lib/supabase/client";
 
 import { isCoachEmail } from "@/lib/coachEmails";
+import { keepElementInView } from "@/hooks/useKeepInView";
 
 type InboxSwing = {
   bunny_video_id: string;
@@ -264,11 +265,12 @@ export default function CoachSwingInbox({ onReviewSwing }: CoachSwingInboxProps)
             return (
               <li
                 key={item.bunny_video_id}
-                className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
+                className="scroll-mt-4 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
               >
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={(e) => {
+                    keepElementInView(e.currentTarget.closest("li"));
                     setExpandedId(expanded ? null : item.bunny_video_id);
                     onReviewSwing?.(item.bunny_video_id);
                   }}

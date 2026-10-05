@@ -2,7 +2,7 @@
 
 /**
  * Dashboard goal accountability — `player_goals`, `practice_logs`, and optional `practice` minutes.
- * Goal setting via `GoalSetting`; Accountability Card shows Target vs Actual for the current week.
+ * Compact summary (target, weekly hours, this week's progress); `GoalSetting` opens on Edit.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -10,8 +10,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useStats } from "@/contexts/StatsContext";
 import { GoalSetting } from "@/components/GoalSetting";
 import {
-  commitmentHealthBarClass,
-  commitmentHealthScore,
   computeGoalAccountabilityState,
   endOfWeekSundayLocal,
   handicapToMilestoneStrokesGap,
@@ -31,7 +29,7 @@ import {
   type ScoringMilestonePreset,
   type WeeklyHoursPreset,
 } from "@/lib/goalPresetConstants";
-import type { GoalAccountabilityState, GoalFocusArea, PlayerGoalRow, PracticeLogAccountabilityRow } from "@/types/playerGoals";
+import type { PlayerGoalRow, PracticeLogAccountabilityRow } from "@/types/playerGoals";
 import {
   computeGoalSystemMessages,
   defaultHandicapFromStats,
@@ -49,7 +47,8 @@ import {
   type PracticeHoursMap,
 } from "@/lib/practiceAllocation";
 import { resolveAuthUserId } from "@/lib/resolveAuthUserId";
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Clock, Target } from "lucide-react";
+import { buildPracticeActivity, minutesByArea } from "@/lib/practiceActivity";
+import { Pencil, Target } from "lucide-react";
 
 /** Home dashboard brand — `globals.css` / HomeDashboard cards. */
 const BRAND_GREEN = "#014421";
@@ -87,137 +86,6 @@ function parseHandicapForWarning(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function CommitmentHealthBar({
-  actualHours,
-  goalHours,
-  focusMismatch,
-  isHighVolumeCommitment,
-}: {
-  actualHours: number;
-  goalHours: number;
-  focusMismatch: boolean;
-  isHighVolumeCommitment: boolean;
-}) {
-  const score = commitmentHealthScore(actualHours, goalHours, focusMismatch);
-  const pct = Math.min(100, Math.round(score * 100));
-  const eliteHoursShortfall =
-    isHighVolumeCommitment && goalHours > 0 && actualHours < goalHours * 0.5;
-  const fillClass = commitmentHealthBarClass(score, { eliteHoursShortfall });
-  return (
-    <div className="mt-5 rounded-xl border border-gray-100 bg-gray-50/90 p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-3 text-xs text-gray-500 mb-2">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <span className="font-semibold capitalize tracking-wide text-gray-500 shrink-0">Commitment health</span>
-          {isHighVolumeCommitment && (
-            <span
-              className="shrink-0 rounded-full border border-[#014421]/35 bg-[#014421]/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#014421]"
-            >
-              High Performance
-            </span>
-          )}
-        </div>
-        <span className="tabular-nums font-bold text-gray-900 shrink-0">{pct}%</span>
-      </div>
-      <p className="text-[11px] text-gray-600 mb-2">
-        Time vs weekly target (70%) and focus alignment (30%). 15h+ under half your target shows as critical.
-      </p>
-      <div className="h-2.5 w-full overflow-hidden rounded-full bg-gray-200">
-        <div className={`h-full rounded-full transition-all duration-500 ${fillClass}`} style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function AccountabilityCard({
-  targets,
-  state,
-}: {
-  targets: { milestone: ScoringMilestonePreset; focus: GoalFocusArea; hours: WeeklyHoursPreset };
-  state: GoalAccountabilityState;
-}) {
-  const s = state;
-  const barPct = Math.min(100, Math.round(s.hourProgressPct));
-  const actualFocusLabel = s.metrics?.topCategory ?? "No combine sessions yet";
-  const sessionCount = s.metrics?.logCountThisWeek ?? 0;
-  const focusBadge = s.focusMismatch ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-300/60 shrink-0">
-      <AlertCircle className="w-3 h-3 shrink-0" aria-hidden />
-      Mismatch
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 rounded-full bg-[#014421]/10 px-2 py-0.5 text-[11px] font-semibold text-[#014421] ring-1 ring-[#014421]/25 shrink-0">
-      <CheckCircle2 className="w-3 h-3 shrink-0" aria-hidden />
-      Aligned
-    </span>
-  );
-
-  return (
-    <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <Target className="w-5 h-5 shrink-0 text-[#014421]" aria-hidden />
-        <div>
-          <p className="text-xs font-semibold capitalize tracking-wider text-gray-500">Accountability</p>
-          <h3 className="text-base font-bold text-gray-900">Target vs actual</h3>
-          <p className="text-[11px] text-gray-500">This week</p>
-        </div>
-      </div>
-
-      <div className="mb-4">
-        <div className="flex items-baseline justify-between gap-2 mb-1.5">
-          <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
-            <Clock className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-            Hours toward {formatWeeklyHoursLabel(targets.hours)}
-          </span>
-          <span className="tabular-nums text-xs font-semibold text-gray-800">
-            {s.actualHours.toFixed(1)}h / {s.commitmentHours}h
-          </span>
-        </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-[#014421] to-emerald-600 transition-all duration-500"
-            style={{ width: `${barPct}%` }}
-          />
-        </div>
-        {s.metrics && s.metrics.totalMinutesFromLogs === 0 && s.metrics.supplementalPracticeMinutes > 0 && (
-          <p className="text-[11px] text-gray-600 mt-1.5">
-            Hours include general practice from the <code className="rounded bg-gray-100 px-1 text-gray-700">practice</code> table when
-            combine logs have no <code className="rounded bg-gray-100 px-1 text-gray-700">duration_minutes</code>.
-          </p>
-        )}
-      </div>
-
-      <div className="divide-y divide-gray-100 border-t border-gray-100">
-        <div className="flex items-center justify-between gap-3 py-2.5 first:pt-3">
-          <span className="text-xs text-gray-500 shrink-0">Milestone</span>
-          <span className="min-w-0 text-right text-sm font-semibold text-gray-900">
-            {SCORING_MILESTONE_LABELS[targets.milestone]}
-          </span>
-        </div>
-        <div className="flex flex-wrap items-start justify-between gap-2 py-2.5">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="text-xs text-gray-500">Focus</span>
-              {focusBadge}
-            </div>
-            <p className="mt-0.5 text-sm text-gray-900">
-              <span className="font-semibold text-[#014421]">{targets.focus}</span>
-              <span className="mx-1.5 text-gray-400" aria-hidden>
-                →
-              </span>
-              <span className="font-medium text-gray-600">{actualFocusLabel}</span>
-            </p>
-            {sessionCount > 0 && (
-              <p className="mt-1 text-[11px] text-gray-500">
-                {sessionCount === 1 ? "1 combine session this week" : `${sessionCount} combine sessions this week`}
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function GoalAccountabilityModule() {
   const { user } = useAuth();
   const { practiceSessions, rounds } = useStats();
@@ -226,7 +94,7 @@ export function GoalAccountabilityModule() {
   const [loading, setLoading] = useState(true);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const [isGoalSettingOpen, setIsGoalSettingOpen] = useState(true);
+  const [isGoalSettingOpen, setIsGoalSettingOpen] = useState(false);
   /** Set when `player_goals` SELECT fails — do not overwrite local drafts (avoids "save then reset"). */
   const [goalsLoadError, setGoalsLoadError] = useState<string | null>(null);
 
@@ -239,7 +107,7 @@ export function GoalAccountabilityModule() {
   const [baselineLowest, setBaselineLowest] = useState("");
   const [baselineHandicap, setBaselineHandicap] = useState("");
   /** Handicap computed from round_stats / recent rounds when goal row has no saved value. */
-  const [handicapStatsDefault, setHandicapStatsDefault] = useState<number | null>(null);
+  const [, setHandicapStatsDefault] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
     if (!user?.id) {
@@ -516,6 +384,19 @@ export function GoalAccountabilityModule() {
     return minutesFromPracticeRows(practiceSessions, user.id, weekStart, weekEnd);
   }, [practiceSessions, user?.id]);
 
+  const weekAreaMinutes = useMemo(() => {
+    if (!user?.id) return null;
+    const weekStartMs = startOfWeekMondayLocal().getTime();
+    const items = buildPracticeActivity({
+      userId: user.id,
+      practiceSessions,
+      practiceLogs: [],
+      libraryCompletions: [],
+      drillCatalog: new Map(),
+    }).filter((i) => new Date(i.at).getTime() >= weekStartMs);
+    return minutesByArea(items);
+  }, [practiceSessions, user?.id]);
+
   const budgetHoursNum = useMemo(() => weeklyHoursPresetToStoredHours(draftHours), [draftHours]);
 
   const draftPrimaryFocus = useMemo(() => primaryFocusFromAllocation(draftAllocation), [draftAllocation]);
@@ -547,11 +428,6 @@ export function GoalAccountabilityModule() {
     return buildSuggestedPracticeAllocation(roundStatRows, rounds.slice(0, 8), budgetHoursNum, gapVal);
   }, [roundStatRows, rounds, budgetHoursNum, baselineHandicap, draftScoring]);
 
-  const handicapMilestoneGapDisplay = useMemo(() => {
-    const n = parseHandicapForWarning(baselineHandicap);
-    return n != null ? handicapToMilestoneStrokesGap(n, draftScoring) : null;
-  }, [baselineHandicap, draftScoring]);
-
   /** Always reflect the live preset picks so the Accountability card updates before Save. */
   const effectiveGoal: PlayerGoalRow | null = useMemo(() => {
     if (!user?.id) return null;
@@ -576,7 +452,7 @@ export function GoalAccountabilityModule() {
     return handicapToMilestoneStrokesGap(h, draftScoring) > 10;
   }, [draftHours, baselineHandicap, draftScoring]);
 
-  const { dataInsightMessage, suggestedHoursLine, coachAmbitiousBadge, accountabilityLeakAlert } = useMemo(
+  const { dataInsightMessage, coachAmbitiousBadge, accountabilityLeakAlert } = useMemo(
     () =>
       computeGoalSystemMessages({
         focus: draftPrimaryFocus,
@@ -588,14 +464,6 @@ export function GoalAccountabilityModule() {
       }),
     [draftPrimaryFocus, draftHours, baselineHandicap, draftScoring, roundStatRows, rounds],
   );
-
-  const handicapHasStatsSync = handicapStatsDefault !== null;
-  const handicapMatchesSyncedDefault = useMemo(() => {
-    if (handicapStatsDefault === null) return false;
-    const p = parseHandicapForWarning(baselineHandicap);
-    if (p === null) return false;
-    return Math.abs(p - handicapStatsDefault) < 0.051;
-  }, [baselineHandicap, handicapStatsDefault]);
 
   const saveGoals = async () => {
     if (!user?.id) return;
@@ -674,7 +542,8 @@ export function GoalAccountabilityModule() {
           if (ms !== String(draftScoring).trim()) {
             setSaveMsg(`Saved, but the server stored milestone "${row.scoring_milestone ?? ""}" instead of "${draftScoring}".`);
           } else {
-            setSaveMsg("Saved.");
+            setSaveMsg("Goals saved.");
+            setIsGoalSettingOpen(false);
           }
         }
         await loadData();
@@ -695,123 +564,185 @@ export function GoalAccountabilityModule() {
 
   if (loading) {
     return (
-      <div className="px-4 mb-8 w-full">
-        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">Loading goals…</p>
-        </div>
-      </div>
+      <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+        <p className="text-sm text-stone-500">Loading goals…</p>
+      </section>
     );
   }
 
   const s = displayState;
   if (!s) return null;
 
-  const targets = {
-    milestone: draftScoring,
-    focus: draftPrimaryFocus,
-    hours: draftHours,
-  };
+  const weekPct = s.commitmentHours > 0 ? Math.min(100, Math.round((s.actualHours / s.commitmentHours) * 100)) : 0;
+  const hoursToGo = Math.max(0, s.commitmentHours - s.actualHours);
+  const daysLeft = 7 - ((new Date().getDay() + 6) % 7);
+  const handicapNow = parseHandicapForWarning(baselineHandicap);
+  const strokesToGo = handicapNow != null ? handicapToMilestoneStrokesGap(handicapNow, draftScoring) : null;
+  const lowestNow = parseBaselineLowestForSave(baselineLowest);
+  const areaPlan = FOCUS_AREA_PRESETS.map((area) => ({
+    area,
+    plannedH: draftAllocation[area] ?? 0,
+    doneH: (weekAreaMinutes?.[area] ?? 0) / 60,
+  })).filter((r) => r.plannedH > 0 || r.doneH > 0);
+  const fmtH = (h: number) => (h === 0 ? "0" : h < 10 ? h.toFixed(1).replace(/\.0$/, "") : String(Math.round(h)));
+  const tip = accountabilityLeakAlert || coachAmbitiousBadge || dataInsightMessage;
 
   return (
-    <div className="px-4 mb-10 w-full">
-      <div
-        className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
-        style={{ boxShadow: "0 8px 24px rgba(0, 0, 0, 0.06)" }}
-      >
-        <div className="mb-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-bold text-[#014421]">Goal setting</h2>
-              <p className="text-xs text-gray-600 mt-1.5">
-                Set your milestone and weekly budget, split hours across practice categories, then review accountability. Save
-                only works when your allocation matches your weekly hours.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsGoalSettingOpen((prev) => !prev)}
-              className="flex items-center justify-center rounded-lg border border-stone-200 bg-white/90 px-2.5 py-2 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50/90"
-              aria-expanded={isGoalSettingOpen}
-              aria-controls="goal-setting-content"
-              aria-label={isGoalSettingOpen ? "Collapse goal setting" : "Expand goal setting"}
-              title={isGoalSettingOpen ? "Collapse goal setting" : "Expand goal setting"}
-            >
-              {isGoalSettingOpen ? (
-                <ChevronUp className="h-3.5 w-3.5 text-stone-500" aria-hidden />
-              ) : (
-                <ChevronDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
-              )}
-            </button>
-          </div>
-          {goalsLoadError && (
-            <div
-              className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs leading-snug text-amber-950"
-              role="alert"
-            >
-              <span className="font-semibold">Could not load saved goals. </span>
-              {goalsLoadError}
-            </div>
-          )}
-        </div>
-
-        {isGoalSettingOpen && (
-          <div id="goal-setting-content">
-            <GoalSetting
-              scoringMilestone={draftScoring}
-              weeklyHours={draftHours}
-              budgetHours={budgetHoursNum}
-              allocation={draftAllocation}
-              onAllocationChange={setDraftAllocation}
-              lowestScore={baselineLowest}
-              currentHandicap={baselineHandicap}
-              onScoringMilestone={setDraftScoring}
-              onWeeklyHours={handleWeeklyHoursChange}
-              onLowestScoreChange={setBaselineLowest}
-              onCurrentHandicapChange={setBaselineHandicap}
-              dataInsightMessage={dataInsightMessage}
-              suggestedHoursLine={suggestedHoursLine}
-              coachAmbitiousBadge={coachAmbitiousBadge}
-              accountabilityLeakAlert={accountabilityLeakAlert}
-              handicapHasStatsSync={handicapHasStatsSync}
-              handicapMatchesSyncedDefault={handicapMatchesSyncedDefault}
-              suggestedAllocation={suggestedPack.hours}
-              suggestedSource={suggestedPack.source}
-              handicapMilestoneGap={handicapMilestoneGapDisplay}
-            />
-
-            <div className="flex flex-wrap items-center gap-2 mt-5 pt-4 border-t border-gray-100">
-              <button
-                type="button"
-                disabled={saveBusy || !allocationMatchesBudget(draftAllocation, budgetHoursNum)}
-                onClick={() => void saveGoals()}
-                className="rounded-lg px-4 py-2 text-sm font-semibold text-white shadow transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ backgroundColor: BRAND_GREEN }}
-              >
-                {saveBusy ? "Saving…" : "Save goals"}
-              </button>
-              {saveMsg && <span className="text-xs text-gray-500">{saveMsg}</span>}
-            </div>
-          </div>
-        )}
-
-        {isGoalSettingOpen && (
-          <>
-            <AccountabilityCard targets={targets} state={s} />
-
-            <CommitmentHealthBar
-              actualHours={s.actualHours}
-              goalHours={s.commitmentHours}
-              focusMismatch={s.focusMismatch}
-              isHighVolumeCommitment={draftHours === "15+"}
-            />
-            {volumeEffortWarning && (
-              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-snug text-amber-900">
-                Your goal requires a higher volume of effort based on your current handicap.
-              </p>
-            )}
-          </>
+    <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-stone-900">
+          <Target className="h-4 w-4 text-[#014421]" aria-hidden />
+          Your goals
+        </h2>
+        {!isGoalSettingOpen && (
+          <button
+            type="button"
+            onClick={() => {
+              setSaveMsg(null);
+              setIsGoalSettingOpen(true);
+            }}
+            className="flex items-center gap-1 rounded-lg bg-stone-100 px-2.5 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-200"
+          >
+            <Pencil className="h-3 w-3" aria-hidden />
+            Edit
+          </button>
         )}
       </div>
-    </div>
+
+      {goalsLoadError && (
+        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-snug text-amber-900" role="alert">
+          Could not load saved goals. {goalsLoadError}
+        </p>
+      )}
+
+      {!isGoalSettingOpen ? (
+        <>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {[
+              { label: "Target", value: SCORING_MILESTONE_LABELS[draftScoring] },
+              { label: "Each week", value: formatWeeklyHoursLabel(draftHours) },
+              { label: "Main focus", value: draftPrimaryFocus },
+            ].map((item) => (
+              <div key={item.label} className="min-w-0 rounded-2xl bg-stone-50 px-3 py-2.5">
+                <p className="text-[11px] text-stone-500">{item.label}</p>
+                <p className="truncate text-sm font-bold text-stone-900">{item.value}</p>
+              </div>
+            ))}
+          </div>
+          {(handicapNow != null || lowestNow != null) && (
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-2xl bg-stone-50 px-3 py-2.5 text-xs">
+              <span className="text-stone-500">
+                {handicapNow != null && (
+                  <>
+                    Handicap <span className="font-semibold text-stone-900">{handicapNow}</span>
+                  </>
+                )}
+                {handicapNow != null && lowestNow != null && <span className="mx-1.5 text-stone-300">·</span>}
+                {lowestNow != null && (
+                  <>
+                    Lowest <span className="font-semibold text-stone-900">{lowestNow}</span>
+                  </>
+                )}
+              </span>
+              {strokesToGo != null && (
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                    strokesToGo <= 0 ? "bg-[#FFA500]/15 text-orange-700" : "bg-[#014421]/10 text-[#014421]"
+                  }`}
+                >
+                  {strokesToGo <= 0 ? "Target reached" : `${fmtH(strokesToGo)} shots to go`}
+                </span>
+              )}
+            </div>
+          )}
+
+          <div className="mt-4">
+            <div className="mb-1 flex items-baseline justify-between text-xs">
+              <span className="font-semibold text-stone-700">This week</span>
+              <span className="font-semibold tabular-nums text-stone-900">
+                {s.actualHours.toFixed(1)}h <span className="font-normal text-stone-400">/ {s.commitmentHours}h</span>
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-stone-100">
+              <div
+                className={`h-full rounded-full ${weekPct >= 100 ? "bg-[#FFA500]" : "bg-[#014421]"}`}
+                style={{ width: `${weekPct}%` }}
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-stone-500">
+              {hoursToGo <= 0
+                ? "Weekly goal hit. Nice work."
+                : `${fmtH(hoursToGo)}h to go · ${daysLeft} day${daysLeft === 1 ? "" : "s"} left (about ${fmtH(hoursToGo / daysLeft)}h a day)`}
+            </p>
+          </div>
+
+          {areaPlan.length > 0 && (
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+              {areaPlan.map((r) => {
+                const pct = r.plannedH > 0 ? Math.min(100, (r.doneH / r.plannedH) * 100) : 100;
+                const done = r.plannedH > 0 && r.doneH >= r.plannedH;
+                return (
+                  <div key={r.area} className="min-w-0">
+                    <div className="flex items-baseline justify-between gap-1 text-[11px]">
+                      <span className="truncate text-stone-600">{r.area}</span>
+                      <span className="shrink-0 tabular-nums text-stone-400">
+                        <span className="font-semibold text-stone-900">{fmtH(r.doneH)}</span>/{fmtH(r.plannedH)}h
+                      </span>
+                    </div>
+                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-stone-100">
+                      <div
+                        className={`h-full rounded-full ${done ? "bg-[#FFA500]" : "bg-[#014421]"}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {saveMsg && <p className="mt-2 text-xs text-stone-500">{saveMsg}</p>}
+        </>
+      ) : (
+        <div className="mt-4">
+          <GoalSetting
+            scoringMilestone={draftScoring}
+            weeklyHours={draftHours}
+            budgetHours={budgetHoursNum}
+            allocation={draftAllocation}
+            onAllocationChange={setDraftAllocation}
+            lowestScore={baselineLowest}
+            currentHandicap={baselineHandicap}
+            onScoringMilestone={setDraftScoring}
+            onWeeklyHours={handleWeeklyHoursChange}
+            onLowestScoreChange={setBaselineLowest}
+            onCurrentHandicapChange={setBaselineHandicap}
+            suggestedAllocation={suggestedPack.hours}
+            tip={volumeEffortWarning ? "Your target needs more practice time than 2h a week based on your current handicap." : tip}
+          />
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsGoalSettingOpen(false);
+                void loadData();
+              }}
+              className="flex-1 rounded-xl bg-stone-100 py-2.5 text-sm font-semibold text-stone-700 hover:bg-stone-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={saveBusy || !allocationMatchesBudget(draftAllocation, budgetHoursNum)}
+              onClick={() => void saveGoals()}
+              className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ backgroundColor: BRAND_GREEN }}
+            >
+              {saveBusy ? "Saving…" : "Save goals"}
+            </button>
+          </div>
+          {saveMsg && <p className="mt-2 text-xs text-stone-500">{saveMsg}</p>}
+        </div>
+      )}
+    </section>
   );
 }

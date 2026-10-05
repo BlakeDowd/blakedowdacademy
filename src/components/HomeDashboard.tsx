@@ -27,9 +27,14 @@ import {
   Pencil,
   Check,
   Flag,
+  Crosshair,
+  BarChart3,
+  Smartphone,
+  MessageSquare,
 } from "lucide-react";
-import { DeleteRoundButton } from "@/components/DeleteRoundButton";
 import { AddToHomeScreenGuide } from "@/components/AddToHomeScreenGuide";
+import { FeedbackBox } from "@/components/FeedbackBox";
+import { HomeWeekSchedule } from "@/components/HomeWeekSchedule";
 import { LiveRoundInProgressBanner } from "@/components/LiveRoundInProgressBanner";
 import {
   LIVE_ENTRY_ENABLED,
@@ -48,6 +53,9 @@ import {
 } from "@/lib/bunnyStream";
 import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 import { HallOfFameLeaderboard } from "@/components/academy/HallOfFameLeaderboard";
+
+const INSTALL_BANNER_DISMISSED_KEY = 'homeInstallBannerDismissed';
+const RECENT_ITEMS_SHOWN = 3;
 
 interface ActivityItem {
   id: string;
@@ -335,7 +343,28 @@ export default function HomeDashboard() {
   const [featuredVideoExpanded, setFeaturedVideoExpanded] = useState(false);
   const featuredThumbUrl = buildBunnyThumbnailUrl(featuredHome.bunnyVideoId);
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
-  const [scoreTab, setScoreTab] = useState<'myRounds' | 'community'>('myRounds');
+  const [recentTab, setRecentTab] = useState<'activity' | 'myRounds' | 'community'>('activity');
+  const scoreTab: 'myRounds' | 'community' = recentTab === 'community' ? 'community' : 'myRounds';
+  const [leaderboardExpanded, setLeaderboardExpanded] = useState(false);
+  const [installGuideOpen, setInstallGuideOpen] = useState(false);
+  const [installBannerHidden, setInstallBannerHidden] = useState(true);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('view') === 'leaderboard') {
+      setLeaderboardExpanded(true);
+    }
+    const isStandalone =
+      window.matchMedia?.('(display-mode: standalone)').matches ||
+      (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+    setInstallBannerHidden(isStandalone || localStorage.getItem(INSTALL_BANNER_DISMISSED_KEY) === '1');
+  }, []);
+
+  const dismissInstallBanner = () => {
+    localStorage.setItem(INSTALL_BANNER_DISMISSED_KEY, '1');
+    setInstallBannerHidden(true);
+  };
   const [activeLiveDraft, setActiveLiveDraft] = useState<LiveRoundDraft | null>(null);
   const [liveEntryGateOpen, setLiveEntryGateOpen] = useState(false);
 
@@ -762,7 +791,59 @@ export default function HomeDashboard() {
           </div>
         )}
 
-        <HallOfFameLeaderboard />
+        <HomeWeekSchedule />
+
+        {/* Quick actions */}
+        <div className="w-full px-4 mb-6 space-y-3">
+          {LIVE_ENTRY_ENABLED && activeLiveDraft && (
+            <LiveRoundInProgressBanner draft={activeLiveDraft} variant="home" />
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => router.push('/log-round')}
+              className="flex items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Flag className="h-4 w-4 shrink-0" aria-hidden />
+              Log Round
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/practice')}
+              className="flex items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
+              style={{ backgroundColor: '#FFA500' }}
+            >
+              <Target className="h-4 w-4 shrink-0" aria-hidden />
+              Practice
+            </button>
+          </div>
+          <LiveEntryNotReadyModal
+            open={liveEntryGateOpen}
+            onClose={() => setLiveEntryGateOpen(false)}
+            onOpenForTesting={openLiveEntryForTesting}
+          />
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: 'Live Entry', icon: Radio, onClick: openLiveEntry },
+              { label: 'Combine Tests', icon: Crosshair, onClick: () => router.push('/practice?plan=combine') },
+              { label: 'Drill Library', icon: BookOpen, onClick: () => router.push('/practice?plan=library') },
+              { label: 'My Stats', icon: BarChart3, onClick: () => router.push('/stats') },
+              { label: 'Fuel Planner', icon: Apple, onClick: () => router.push('/practice?plan=fuel') },
+              { label: 'Virtual Caddie', icon: Bot, onClick: () => router.push('/virtual-caddie') },
+            ].map(({ label, icon: Icon, onClick }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={onClick}
+                className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-gray-100 bg-white py-3 text-xs font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+              >
+                <Icon className="h-5 w-5 text-[#014421]" aria-hidden />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Featured video — compact until tapped, then full player */}
         <div className="w-full px-4 mb-4">
@@ -859,354 +940,233 @@ export default function HomeDashboard() {
           </div>
         </div>
 
-        {/* Recent Activity */}
+        <HallOfFameLeaderboard
+          compact
+          expanded={leaderboardExpanded}
+          onExpandedChange={setLeaderboardExpanded}
+        />
+
+        {/* Recent activity and scores */}
         <div className="px-4 mb-6 w-full">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-gray-600 font-medium text-base">Recent Activity</h3>
-            <Link 
-                href="/activity"
-                className="text-sm font-medium hover:underline transition-all"
+          <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-bold text-gray-900">Recent</h2>
+              <Link
+                href={recentTab === 'activity' ? '/activity' : '/scores'}
+                className="text-sm font-medium hover:underline"
                 style={{ color: '#FFA500' }}
               >
                 View All
               </Link>
-          </div>
-          {recentActivities.length > 0 ? (
-            <div className="space-y-3 mb-6 max-h-[400px] overflow-y-auto pr-2 pb-2 custom-scrollbar">
-              {recentActivities.map((activity) => {
-                const IconComponent = getActivityIcon(activity);
-                const iconColor = getActivityIconColor(activity);
-                const isRound = activity.type === 'round';
-                
-                return (
-                  <div key={activity.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center gap-3">
-                    <div 
-                      className="w-10 h-10 rounded-lg flex items-center justify-center" 
-                      style={{ 
-                        backgroundColor: isRound 
-                          ? 'rgba(1, 68, 33, 0.1)' 
-                          : 'rgba(255, 165, 0, 0.1)' 
-                      }}
-                    >
-                      <IconComponent className="w-5 h-5" style={{ color: iconColor }} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-gray-800 font-medium text-sm">{activity.title}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Clock className="w-3 h-3 text-gray-400" />
-                        <span className="text-gray-400 text-xs">{formatTimeAgo(activity.date)}</span>
-                        {activity.xp && (
-                          <>
-                            <span className="text-gray-400 text-xs">•</span>
-                            <span className="text-xs font-medium" style={{ color: '#FFA500' }}>
-                              +{activity.xp} XP
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
             </div>
-          ) : (
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center mb-6">
-              <Activity className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p className="text-gray-600 text-sm mb-2">No activity yet. Start your journey!</p>
-              <button
-                onClick={() => router.push('/practice')}
-                className="text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-                style={{ 
-                  backgroundColor: '#FFA500',
-                  color: 'white'
-                }}
-              >
-                Start Practicing
-              </button>
+            <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1">
+              {([
+                ['activity', 'Activity'],
+                ['myRounds', 'My Rounds'],
+                ['community', 'Community'],
+              ] as const).map(([tab, label]) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setRecentTab(tab)}
+                  className={`rounded-lg py-1.5 text-xs font-semibold transition-colors ${
+                    recentTab === tab ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-          )}
-        </div>
 
-        {/* Recent Scores */}
-        <div className="px-4 mb-6 w-full">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-gray-600 font-medium text-base">Recent Scores</h3>
-            <Link
-              href="/scores"
-              className="text-sm font-medium hover:underline transition-all"
-              style={{ color: '#FFA500' }}
-            >
-              View All
-            </Link>
-          </div>
-          
-          {/* Tab Toggles */}
-          <div className="flex gap-2 mb-4">
-            <button
-              onClick={() => setScoreTab('myRounds')}
-              className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                scoreTab === 'myRounds'
-                  ? 'bg-[#FFA500] text-white shadow-md'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              My Rounds
-            </button>
-            <button
-              onClick={() => setScoreTab('community')}
-              className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                scoreTab === 'community'
-                  ? 'bg-[#FFA500] text-white shadow-md'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              <Users className="w-4 h-4 inline mr-1" />
-              Community
-            </button>
-          </div>
-          
-          {/* Scores List */}
-          {/* Key the List: Add a unique key to the list container based on the activeTab to force React to re-render the list from scratch when switching */}
-          {scoreTab === 'myRounds' ? (
-            // Fix the Display: Once filtered, the list should show my specific rounds (like the one at Twin Creeks) instead of the 'No rounds recorded' message
-            // Strict Filtering: Use filteredRoundsByTab which is filtered by user_id === user.id for myRounds tab
-            filteredRoundsByTab && filteredRoundsByTab.length > 0 ? (
-              <div key={`myRounds-${scoreTab}`} className="space-y-3">
-                {filteredRoundsByTab
-                  .sort((a, b) => new Date(b.date || b.created_at || 0).getTime() - new Date(a.date || a.created_at || 0).getTime())
-                  .slice(0, 3)
-                  .map((round, index) => {
-                    const isPB = isPersonalBest(round);
+            {recentTab === 'activity' ? (
+              recentActivities.length > 0 ? (
+                <ul className="divide-y divide-gray-100">
+                  {recentActivities.slice(0, RECENT_ITEMS_SHOWN).map((activity) => {
+                    const IconComponent = getActivityIcon(activity);
+                    const iconColor = getActivityIconColor(activity);
+                    const isRound = activity.type === 'round';
                     return (
-                      <div key={round?.id || `my-round-${round?.date}-${index}`} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                        <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <li key={activity.id} className="flex items-center gap-3 py-2.5">
+                        <div
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                          style={{
+                            backgroundColor: isRound ? 'rgba(1, 68, 33, 0.1)' : 'rgba(255, 165, 0, 0.1)',
+                          }}
+                        >
+                          <IconComponent className="h-4 w-4" style={{ color: iconColor }} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-gray-800">{activity.title}</p>
+                          <div className="mt-0.5 flex items-center gap-2">
+                            <span className="text-xs text-gray-400">{formatTimeAgo(activity.date)}</span>
+                            {activity.xp ? (
+                              <span className="text-xs font-medium" style={{ color: '#FFA500' }}>
+                                +{activity.xp} XP
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <div className="py-4 text-center">
+                  <Activity className="mx-auto mb-2 h-8 w-8 text-gray-300" />
+                  <p className="mb-3 text-sm text-gray-600">No activity yet. Start your journey!</p>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/practice')}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-white"
+                    style={{ backgroundColor: '#FFA500' }}
+                  >
+                    Start Practicing
+                  </button>
+                </div>
+              )
+            ) : recentTab === 'myRounds' ? (
+              filteredRoundsByTab.length > 0 ? (
+                <ul className="divide-y divide-gray-100">
+                  {[...filteredRoundsByTab]
+                    .sort((a, b) => new Date(b.date || b.created_at || 0).getTime() - new Date(a.date || a.created_at || 0).getTime())
+                    .slice(0, RECENT_ITEMS_SHOWN)
+                    .map((round, index) => {
+                      const isPB = isPersonalBest(round);
+                      return (
+                        <li key={round?.id || `my-round-${round?.date}-${index}`} className="flex items-center gap-3 py-2.5">
                           {isPB ? (
-                            <Trophy className="w-5 h-5 shrink-0" style={{ color: '#FFA500' }} />
+                            <Trophy className="h-5 w-5 shrink-0" style={{ color: '#FFA500' }} />
                           ) : (
-                            <Star className="w-5 h-5 shrink-0" style={{ color: '#014421' }} />
+                            <Star className="h-5 w-5 shrink-0" style={{ color: '#014421' }} />
                           )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-gray-800 font-medium">You</p>
-                            <p className="text-gray-400 text-sm truncate">{round.course || 'Unknown Course'}</p>
-                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-gray-800">{round.course || 'Unknown Course'}</p>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-2">
                               {isPB && (
-                                <span className="text-xs px-2 py-0.5 rounded text-white font-medium" style={{ backgroundColor: '#FFA500' }}>
+                                <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: '#FFA500' }}>
                                   Personal Best
                                 </span>
                               )}
-                              <span className="text-gray-400 text-xs">• {formatTimeAgo(round.date)}</span>
+                              <span className="text-xs text-gray-400">{formatTimeAgo(round.date)}</span>
                             </div>
                           </div>
+                          <p className="shrink-0 text-xl font-bold" style={{ color: '#FFA500' }}>
+                            {round.score || round.nett?.toFixed(0) || 'N/A'}
+                          </p>
+                        </li>
+                      );
+                    })}
+                </ul>
+              ) : (
+                <div className="py-4 text-center">
+                  <Trophy className="mx-auto mb-2 h-8 w-8 text-gray-300" />
+                  <p className="mb-1 text-sm text-gray-600">
+                    {userRoundsCount === 0 ? 'No rounds recorded' : `${userRoundsCount} Round${userRoundsCount !== 1 ? 's' : ''} recorded`}
+                  </p>
+                  <p className="mb-3 text-xs text-gray-400">Log your first round to see your stats</p>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/log-round')}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-white"
+                    style={{ backgroundColor: '#FFA500' }}
+                  >
+                    Log Round
+                  </button>
+                </div>
+              )
+            ) : !communityRoundsHydrated ? (
+              <p className="py-4 text-center text-sm text-gray-600">Loading rounds...</p>
+            ) : filteredRoundsByTab.length > 0 ? (
+              <ul className="divide-y divide-gray-100">
+                {[...filteredRoundsByTab]
+                  .sort((a: any, b: any) => new Date(b?.date || b?.created_at || 0).getTime() - new Date(a?.date || a?.created_at || 0).getTime())
+                  .slice(0, RECENT_ITEMS_SHOWN)
+                  .map((round: any, index: number) => {
+                    const nett = (round?.score || 0) - (round?.handicap || 0);
+                    const roundProfile = round?.user_id ? userProfiles.get(round.user_id) : null;
+                    const roundDate = round?.date || round?.created_at || new Date().toISOString();
+                    return (
+                      <li key={round?.id || `round-${roundDate}-${index}`} className="flex items-center gap-3 py-2.5">
+                        <Star className="h-5 w-5 shrink-0" style={{ color: '#014421' }} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-gray-800">{roundProfile?.full_name || 'Golfer'}</p>
+                          <p className="truncate text-xs text-gray-400">
+                            {round?.course || 'Unknown Course'} · {formatTimeAgo(roundDate)}
+                          </p>
                         </div>
-                        <p className="text-2xl font-bold shrink-0" style={{ color: '#FFA500' }}>
-                          {round.score || round.nett?.toFixed(0) || 'N/A'}
-                        </p>
+                        <div className="shrink-0 text-right">
+                          <p className="text-xl font-bold leading-none" style={{ color: '#FFA500' }}>{nett.toFixed(0)}</p>
+                          <p className="text-[10px] text-gray-400">Nett</p>
                         </div>
-                        <div className="mt-3 flex justify-end border-t border-gray-100 pt-3">
-                          <DeleteRoundButton
-                            round={{
-                              id: round.id,
-                              created_at: round.created_at,
-                              date: round.date,
-                              course: round.course,
-                            }}
-                          />
-                        </div>
-                      </div>
+                      </li>
                     );
                   })}
+              </ul>
+            ) : (
+              <div className="py-4 text-center">
+                <Users className="mx-auto mb-2 h-8 w-8 text-gray-300" />
+                <p className="mb-1 text-sm text-gray-600">No community rounds yet</p>
+                <p className="text-xs text-gray-400">Be the first to log a round!</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="w-full px-4 mb-4 space-y-3">
+          {!installBannerHidden ? (
+            installGuideOpen ? (
+              <div className="relative">
+                <AddToHomeScreenGuide />
+                <button
+                  type="button"
+                  onClick={() => setInstallGuideOpen(false)}
+                  className="absolute right-3 top-3 rounded-full p-1 text-gray-400 hover:bg-gray-100"
+                  aria-label="Close install guide"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
             ) : (
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
-                <Trophy className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                {/* Use useStats() to get the rounds.length and replace the '0 Rounds' text */}
-                <p className="text-gray-600 text-sm mb-2">
-                  {userRoundsCount === 0 ? 'No rounds recorded' : `${userRoundsCount} Round${userRoundsCount !== 1 ? 's' : ''} recorded`}
-                </p>
-                <p className="text-gray-400 text-xs mb-4">Log your first round to see your stats</p>
+              <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+                <Smartphone className="h-5 w-5 shrink-0 text-[#014421]" aria-hidden />
+                <button type="button" onClick={() => setInstallGuideOpen(true)} className="min-w-0 flex-1 text-left">
+                  <p className="text-sm font-semibold text-gray-900">Save app to your phone</p>
+                  <p className="text-xs text-gray-500">Tap to see how</p>
+                </button>
                 <button
-                  onClick={() => router.push('/log-round')}
-                  className="text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-                  style={{ 
-                    backgroundColor: '#FFA500',
-                    color: 'white'
-                  }}
+                  type="button"
+                  onClick={dismissInstallBanner}
+                  className="rounded-full p-1 text-gray-400 hover:bg-gray-100"
+                  aria-label="Dismiss"
                 >
-                  Log Round
+                  <X className="h-4 w-4" />
                 </button>
               </div>
             )
+          ) : null}
+
+          {feedbackOpen ? (
+            <div className="relative">
+              <FeedbackBox />
+              <button
+                type="button"
+                onClick={() => setFeedbackOpen(false)}
+                className="absolute right-3 top-3 rounded-full p-1 text-gray-400 hover:bg-gray-100"
+                aria-label="Close feedback"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           ) : (
-            // Initialization Safety: Add if (!rounds || rounds.length === 0) return <div>Loading rounds...</div>; at the top of the Community section to prevent it from mapping an empty state.
-            // Strict Filtering: Use filteredRoundsByTab which returns the full rounds array for community tab
-            // Clear the Cache: Ensure that when the tab changes, the name-mapping logic re-runs so Luke's name doesn't stay stuck on my personal rounds
-            !communityRoundsHydrated ? (
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
-                <p className="text-gray-600 text-sm">Loading rounds...</p>
-              </div>
-            ) : filteredRoundsByTab.length > 0 ? (
-              <div key={`community-${scoreTab}`} className="space-y-3">
-                {/* Key the List: Add a unique key to the list container based on the activeTab to force React to re-render the list from scratch when switching */}
-                {/* Fix the 'ec' Crash: In HomeDashboard.tsx, find the .map() function for Recent Scores. Change the logic to: rounds.map((round) => { ... }) and use (round?.score || 0) - (round?.handicap || 0) for the Nett calculation. */}
-                {/* Clear the Cache: Sort and slice filteredRoundsByTab (which is the full array for community tab) */}
-                {[...filteredRoundsByTab]
-                  .sort((a: any, b: any) => {
-                    const dateA = new Date(a?.date || a?.created_at || 0);
-                    const dateB = new Date(b?.date || b?.created_at || 0);
-                    return dateB.getTime() - dateA.getTime();
-                  })
-                  .slice(0, 5)
-                  .map((round: any, index: number) => {
-                  // Fix the 'ec' Crash: Use rounds.map((round) => { ... }) and use (round?.score || 0) - (round?.handicap || 0) for the Nett calculation
-                  const nett = (round?.score || 0) - (round?.handicap || 0);
-                  
-                  // Add Name Mapping: Create a way to fetch the full_name from the profiles table for every user_id found in the rounds
-                  // Update the List: Inside the .map() function for the Community feed, replace the display of the ID (e.g., '3261994e') with the actual full_name
-                  // Safe Fallback: If a name isn't found for an ID, default to showing 'Golfer' instead of the weird code
-                  const userId = round?.user_id;
-                  const profile = userId ? userProfiles.get(userId) : null;
-                  // Update the List: Replace ID display with actual full_name
-                  const displayName = profile?.full_name || 'Golfer'; // Safe Fallback: If a name isn't found for an ID, default to showing 'Golfer' instead of the weird code
-                  
-                  // Debug logging to verify name lookup
-                  if (userId && !profile?.full_name) {
-                    console.warn('HomeDashboard: No profile found for user_id:', userId, 'in userProfiles Map');
-                  }
-                  
-                  const courseName = round?.course || 'Unknown Course';
-                  const roundDate = round?.date || round?.created_at || new Date().toISOString();
-                  const timeAgo = formatTimeAgo(roundDate);
-                  
-                  return (
-                    <div key={round?.id || `round-${roundDate}-${index}`} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
-                      <div className="flex items-center gap-3 flex-1">
-                        <Star className="w-5 h-5" style={{ color: '#014421' }} />
-                        <div className="flex-1">
-                          <p className="text-gray-800 font-medium">{displayName}</p>
-                          <p className="text-gray-400 text-sm">{courseName}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-gray-400 text-xs">• {timeAgo}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-2xl font-bold" style={{ color: '#FFA500' }}>{nett.toFixed(0)}</p>
-                        <p className="text-xs text-gray-400">Nett</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
-                <Users className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <p className="text-gray-600 text-sm mb-2">No community rounds yet</p>
-                <p className="text-gray-400 text-xs">Be the first to log a round!</p>
-              </div>
-            )
+            <button
+              type="button"
+              onClick={() => setFeedbackOpen(true)}
+              className="flex w-full items-center justify-center gap-2 py-2 text-sm font-medium text-gray-500 hover:text-[#014421]"
+            >
+              <MessageSquare className="h-4 w-4" aria-hidden />
+              Send feedback
+            </button>
           )}
-        </div>
-
-        {/* Action Buttons */}
-        <div className="w-full px-4 mb-6 space-y-3">
-          {LIVE_ENTRY_ENABLED && activeLiveDraft && (
-            <LiveRoundInProgressBanner draft={activeLiveDraft} variant="home" />
-          )}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => router.push('/log-round')}
-              className="flex-1 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              Log Round
-            </button>
-            <button
-              type="button"
-              onClick={openLiveEntry}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <Radio className="h-4 w-4 shrink-0" aria-hidden />
-              Live Entry
-            </button>
-          </div>
-          <LiveEntryNotReadyModal
-            open={liveEntryGateOpen}
-            onClose={() => setLiveEntryGateOpen(false)}
-            onOpenForTesting={openLiveEntryForTesting}
-          />
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => router.push('/practice')}
-              className="flex-1 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              Log Practice
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push('/practice?plan=schedule')}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <Calendar className="h-4 w-4 shrink-0" aria-hidden />
-              Practice Plan
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => router.push('/practice?plan=combine')}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <Target className="h-4 w-4 shrink-0" aria-hidden />
-              Combine Tests
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push('/?view=leaderboard')}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <Trophy className="h-4 w-4 shrink-0" aria-hidden />
-              Leaderboards
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push('/practice?plan=library')}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
-              Drill Library
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push('/practice?plan=fuel')}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <Apple className="h-4 w-4 shrink-0" aria-hidden />
-              Fuel Planner
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push('/virtual-caddie')}
-              className="flex flex-1 items-center justify-center gap-2 text-white font-semibold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all hover:scale-[1.02]"
-              style={{ backgroundColor: '#FFA500' }}
-            >
-              <Bot className="h-4 w-4 shrink-0" aria-hidden />
-              Virtual Caddie
-            </button>
-          </div>
-        </div>
-
-        <div className="w-full px-4 mb-4">
-          <AddToHomeScreenGuide />
         </div>
 
             </div>

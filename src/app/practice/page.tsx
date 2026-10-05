@@ -4,11 +4,13 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, FileText, BookOpen, Apple, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus } from "lucide-react";
+import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, BookOpen, Apple, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus } from "lucide-react";
 import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
 import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
 import { DrillLibrary } from "@/components/DrillLibrary";
+import { GuidedPracticeSession, type GuidedSessionDrill } from "@/components/GuidedPracticeSession";
+import { WeekDayStrip } from "@/components/WeekDayStrip";
 import { NutritionPlannerPanel } from "@/components/NutritionPlannerPanel";
 import { getBenchmarkGoals } from "@/lib/benchmarkGoals";
 import {
@@ -109,6 +111,8 @@ const PRACTICE_SECTION_TOGGLE_ICON = "h-3.5 w-3.5 text-stone-500";
 const DEFAULT_DRILL_DURATION_MINUTES = 30;
 const MIN_DRILL_SCHEDULE_BLOCK_MINUTES = 15;
 const MAX_DRILLS_PER_FACILITY_SLOT = 48;
+const GUIDED_SESSION_MAX_DRILLS = 12;
+const GUIDED_SESSION_MIN_BLOCK_MINUTES = 5;
 
 function durationMinutesForScheduling(drill: Drill): number {
   const n = Number((drill as { estimatedMinutes?: unknown }).estimatedMinutes);
@@ -566,7 +570,7 @@ async function updateUserXP(userId: string, points: number): Promise<void> {
 
 export default function PracticePage() {
   const router = useRouter();
-  const { rounds, refreshPracticeSessions, refreshDrills, practiceLogs, practiceSessions } = useStats();
+  const { rounds, refreshPracticeSessions, refreshDrills, practiceLogs, practiceSessions, loading: statsLoading } = useStats();
   const { user, refreshUser } = useAuth();
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({});
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
@@ -574,15 +578,12 @@ export default function PracticePage() {
   /** Raw Supabase rows (keyed by id + drill_id) so weekly plan can resync goal/levels after CSV edits. */
   const drillCatalogRowsByKeyRef = useRef<Map<string, Record<string, unknown>>>(new Map());
   const [mostNeededCategory, setMostNeededCategory] = useState<string>('Putting');
+  /** Areas below target from round stats, weakest first (guided "use my stats" sessions). */
+  const [statsAreaRanking, setStatsAreaRanking] = useState<FacilityType[]>(['Putting']);
   const [generatedPlan, setGeneratedPlan] = useState<WeeklyPlan | null>(null);
   const [xpNotification, setXpNotification] = useState<{ show: boolean; amount: number }>({ show: false, amount: 0 });
   const [expandedDrill, setExpandedDrill] = useState<string | null>(null); // Track which drill is expanded
   const [durationModal, setDurationModal] = useState<{ open: boolean; facility: FacilityType | null }>({ open: false, facility: null });
-  const [coachInsightsExpanded, setCoachInsightsExpanded] = useState<boolean>(false);
-  const [freestyleExpanded, setFreestyleExpanded] = useState<boolean>(false);
-  const [drillLibraryExpanded, setDrillLibraryExpanded] = useState<boolean>(false);
-  const [combineTestsExpanded, setCombineTestsExpanded] = useState<boolean>(false);
-  const [nutritionPlannerExpanded, setNutritionPlannerExpanded] = useState<boolean>(false);
   const [onCourseConfirm, setOnCourseConfirm] = useState<{
     open: boolean;
     holes: number;
@@ -604,7 +605,8 @@ export default function PracticePage() {
     drillTitle: '',
   });
   const [totalPracticeMinutes, setTotalPracticeMinutes] = useState<number>(0);
-  const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(false); // Weekly schedule expanded state
+  const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(true); // Weekly schedule expanded state
+  const [openTool, setOpenTool] = useState<"planner" | "insights" | "library" | "combine" | "fuel" | null>(null);
   const weeklyScheduleRef = useRef<HTMLDivElement>(null);
   const combineTestsRef = useRef<HTMLDivElement>(null);
   const drillLibraryRef = useRef<HTMLDivElement>(null);
@@ -617,6 +619,31 @@ export default function PracticePage() {
   };
   const [currentDayView, setCurrentDayView] = useState<number>(getTodayDayIndex()); // Current day index for single-day view (0-6, Monday-Sunday)
   const [viewMode, setViewMode] = useState<'day' | 'weekly'>('day'); // Toggle between Day View and Weekly Summary
+  const scheduleWeekMonday = useMemo(() => {
+    const today = new Date();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - getTodayDayIndex());
+    monday.setHours(0, 0, 0, 0);
+    return monday;
+  }, []);
+  const scheduleDayStatus = useMemo(
+    () =>
+      Array.from({ length: 7 }, (_, idx) => {
+        const drills = weeklyPlan[idx]?.drills ?? [];
+        return { count: drills.length, allDone: drills.length > 0 && drills.every((d) => d?.completed) };
+      }),
+    [weeklyPlan]
+  );
+  const scheduleWeekTotals = useMemo(() => {
+    let total = 0;
+    let done = 0;
+    for (let idx = 0; idx < 7; idx++) {
+      const drills = weeklyPlan[idx]?.drills ?? [];
+      total += drills.length;
+      done += drills.filter((d) => d?.completed).length;
+    }
+    return { total, done };
+  }, [weeklyPlan]);
   const [swappingDrill, setSwappingDrill] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track which drill is being swapped
   const [swapSuccess, setSwapSuccess] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track successful swap for feedback
   const [expandedScheduleDrill, setExpandedScheduleDrill] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track expanded drill in schedule
@@ -691,34 +718,44 @@ export default function PracticePage() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const plan = params.get("plan");
-    if (plan !== "schedule" && plan !== "combine" && plan !== "library" && plan !== "fuel") return;
+    if (plan !== "schedule" && plan !== "combine" && plan !== "library" && plan !== "fuel" && plan !== "insights") return;
 
     let scrollTimer: number | undefined;
 
     if (plan === "schedule") {
+      const dayParam = Number(params.get("day"));
+      const hasDay = params.has("day") && Number.isInteger(dayParam) && dayParam >= 0 && dayParam <= 6;
       setScheduleExpanded(true);
-      setCurrentDayView(getTodayDayIndex());
+      setViewMode("day");
+      setCurrentDayView(hasDay ? dayParam : getTodayDayIndex());
       scrollTimer = window.setTimeout(() => {
         weeklyScheduleRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 200);
     }
 
     if (plan === "combine") {
-      setCombineTestsExpanded(true);
+      setOpenTool("combine");
       scrollTimer = window.setTimeout(() => {
         combineTestsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 200);
     }
 
     if (plan === "library") {
-      setDrillLibraryExpanded(true);
+      setOpenTool("library");
       scrollTimer = window.setTimeout(() => {
         drillLibraryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 200);
     }
 
+    if (plan === "insights") {
+      setOpenTool("insights");
+      scrollTimer = window.setTimeout(() => {
+        document.getElementById("coach-insights-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 200);
+    }
+
     if (plan === "fuel") {
-      setNutritionPlannerExpanded(true);
+      setOpenTool("fuel");
       scrollTimer = window.setTimeout(() => {
         nutritionPlannerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 200);
@@ -1421,6 +1458,7 @@ export default function PracticePage() {
   useEffect(() => {
     if (rounds.length === 0) {
       setMostNeededCategory('Putting');
+      setStatsAreaRanking(['Putting']);
       return;
     }
 
@@ -1460,26 +1498,25 @@ export default function PracticePage() {
       putts: 32,
     };
 
-    // Check for priority: Missed < 6ft
-    const lastRound = rounds[rounds.length - 1];
-    if (lastRound && (lastRound.puttsUnder6ftAttempts - lastRound.made6ftAndIn) > 2) {
-      setMostNeededCategory('Putting');
-      return;
-    }
-
-    // Find biggest gap
-    const gaps = [
+    const gaps: { category: FacilityType; gap: number }[] = [
       { category: 'Irons', gap: goals.gir - averages.gir },
       { category: 'Driving', gap: goals.fir - averages.fir },
       { category: 'Chipping', gap: goals.upAndDown - averages.upAndDown },
       { category: 'Putting', gap: averages.putts - goals.putts },
     ];
+    const ranked = [...gaps].sort((a, b) => b.gap - a.gap);
 
-    const biggestGap = gaps.reduce((max, current) => 
-      current.gap > max.gap ? current : max
-    );
+    // Priority: more than 2 missed putts inside 6ft last round puts Putting first
+    const lastRound = rounds[rounds.length - 1];
+    if (lastRound && (lastRound.puttsUnder6ftAttempts - lastRound.made6ftAndIn) > 2) {
+      const putting = ranked.findIndex((g) => g.category === 'Putting');
+      ranked.unshift(...ranked.splice(putting, 1));
+      ranked[0] = { ...ranked[0], gap: Math.max(ranked[0].gap, 1) };
+    }
 
-    setMostNeededCategory(biggestGap.category);
+    const belowTarget = ranked.filter((g) => g.gap > 0).map((g) => g.category);
+    setStatsAreaRanking(belowTarget.length > 0 ? belowTarget : [ranked[0].category]);
+    setMostNeededCategory(ranked[0].category);
   }, [rounds]);
 
   const toggleDay = (dayIndex: number) => {
@@ -1554,7 +1591,7 @@ export default function PracticePage() {
     monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
     const dayDate = new Date(monday);
     dayDate.setDate(monday.getDate() + dayIndex);
-    const formattedDate = dayDate.toISOString().split("T")[0];
+    const formattedDate = toLocalDateString(dayDate);
 
     const facility = categoryToFacility(drill.category);
 
@@ -1682,15 +1719,15 @@ export default function PracticePage() {
     facility: FacilityType,
     duration: number,
     options?: { holes?: number },
-  ) => {
-    if (typeof window === 'undefined') return;
+  ): Promise<number | null> => {
+    if (typeof window === 'undefined') return null;
 
     // Safety Check: Ensure user_id is being pulled from the auth user so it knows it's me logging the session
     if (!user?.id) {
       alert('Please log in to log practice sessions.');
       setDurationModal({ open: false, facility: null });
       closeOnCourseConfirm();
-      return;
+      return null;
     }
 
     // Daily cap: 10 hours of freestyle practice per calendar day (same XP as leaderboard: 10 XP / 10 min)
@@ -1711,7 +1748,7 @@ export default function PracticePage() {
       }
       setDurationModal({ open: false, facility: null });
       closeOnCourseConfirm();
-      return;
+      return null;
     }
 
     const xpEarned = freestyleXpForMinutes(duration);
@@ -1752,7 +1789,7 @@ export default function PracticePage() {
         alert('Failed to save practice session. Please try again.');
         setDurationModal({ open: false, facility: null });
         closeOnCourseConfirm();
-        return;
+        return null;
       }
 
       // Success Log: Add console.log('Practice saved successfully') so I can see if the button is actually finishing the job
@@ -1827,12 +1864,105 @@ export default function PracticePage() {
       // Close modal
       setDurationModal({ open: false, facility: null });
       closeOnCourseConfirm();
+      return xpEarned;
     } catch (error) {
       console.error('Error in logFreestylePractice:', error);
       alert('Failed to save practice session. Please try again.');
       setDurationModal({ open: false, facility: null });
       closeOnCourseConfirm();
+      return null;
     }
+  };
+
+  const buildGuidedSession = (
+    blocks: { area: FacilityType; minutes: number }[],
+  ): GuidedSessionDrill[] => {
+    const session: GuidedSessionDrill[] = [];
+    const usedIds = new Set<string>();
+    const usedTitles = new Set<string>();
+    const titleOf = (d: Drill) => d.drill_name ?? d.title ?? 'Drill';
+    const poolFor = (area: FacilityType) => {
+      const categories = new Set(
+        [area, ...(facilityDrillMapping[area] || []).map((f) => f.category)].map((c) => c.toLowerCase()),
+      );
+      return drills.filter(
+        (d) =>
+          !d.isCombine &&
+          categories.has(String(d.category || '').toLowerCase()) &&
+          !usedIds.has(d.id) &&
+          !usedTitles.has(titleOf(d).trim().toLowerCase()),
+      );
+    };
+    const add = (d: Drill, area: FacilityType) => {
+      usedIds.add(d.id);
+      usedTitles.add(titleOf(d).trim().toLowerCase());
+      const insertAt = session.reduce((last, s, i) => (s.area === area ? i + 1 : last), session.length);
+      const catalogRow =
+        drillCatalogRowsByKeyRef.current.get(String(d.id)) ??
+        (d.drill_id ? drillCatalogRowsByKeyRef.current.get(String(d.drill_id)) : undefined);
+      const description =
+        (d.description && String(d.description).trim()) ||
+        DESCRIPTION_BY_DRILL_ID[d.drill_id ?? d.id] ||
+        undefined;
+      session.splice(insertAt, 0, {
+        id: d.id,
+        title: titleOf(d),
+        category: d.category,
+        area,
+        estimatedMinutes: durationMinutesForScheduling(d),
+        description,
+        goal: resolvedGoalForPlanFromCatalog(catalogRow, d) || undefined,
+        videoUrl: d.youtube_url || d.video_url || undefined,
+        pdfUrl: d.pdf_url || undefined,
+      });
+    };
+    /** Fills up to `minutes` from one area; returns the minutes it couldn't fill. */
+    const fillArea = (area: FacilityType, minutes: number): number => {
+      let minutesLeft = minutes;
+      while (session.length < GUIDED_SESSION_MAX_DRILLS && minutesLeft >= GUIDED_SESSION_MIN_BLOCK_MINUTES) {
+        const hit = pickDrillForRemainingTime(poolFor(area), usedIds, minutesLeft);
+        if (!hit) break;
+        add(hit.drill, area);
+        minutesLeft -= hit.est;
+      }
+      return minutesLeft;
+    };
+
+    let carry = 0;
+    for (const { area, minutes } of blocks) {
+      const before = session.length;
+      carry = fillArea(area, minutes + carry);
+      if (session.length === before) {
+        const shortest = poolFor(area).sort(
+          (a, b) => durationMinutesForScheduling(a) - durationMinutesForScheduling(b),
+        )[0];
+        if (shortest) {
+          add(shortest, area);
+          carry = Math.max(0, carry - durationMinutesForScheduling(shortest));
+        }
+      }
+    }
+    for (const { area } of blocks) {
+      if (carry < GUIDED_SESSION_MIN_BLOCK_MINUTES) break;
+      carry = fillArea(area, carry);
+    }
+    return session;
+  };
+
+  const addGuidedSessionToSchedule = async (drillIds: string[], dayIndex: number) => {
+    for (const id of drillIds) {
+      const drill = drills.find((d) => d.id === id);
+      if (drill) await addDrillToDay(drill as unknown as DrillRecord, dayIndex);
+    }
+  };
+
+  const viewScheduleDay = (dayIndex: number) => {
+    setViewMode('day');
+    setCurrentDayView(dayIndex);
+    setScheduleExpanded(true);
+    requestAnimationFrame(() => {
+      weeklyScheduleRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   const setRoundType = (dayIndex: number, roundType: RoundType) => {
@@ -2354,6 +2484,16 @@ export default function PracticePage() {
 
     setGeneratedPlan(newPlan);
     setWeeklyPlan(newPlan);
+  };
+
+  const buildWeekFromPlanner = async () => {
+    const plannedDays = Object.values(weeklyPlan)
+      .filter((d) => d?.selected)
+      .map((d) => d.dayIndex)
+      .sort((a, b) => a - b);
+    await generatePlan();
+    setOpenTool(null);
+    viewScheduleDay(plannedDays[0] ?? selectedDay ?? 0);
   };
 
   // Calculate XP for a drill (10 XP per minute + bonuses)
@@ -3079,323 +3219,21 @@ export default function PracticePage() {
           )}
         </div>
 
-        {/* Weekly Calendar - Fully Responsive Grid */}
-        <div className="mb-6">
-          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
-            {/* Responsive Grid: 2 cols on mobile, 4 cols on tablet, 7 cols on desktop */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-              {DAY_ABBREVIATIONS.map((abbr, idx) => {
-                const index = idx;
-                const day = weeklyPlan[index];
-                const isSelected = day?.selected ?? false;
-                return (
-                  <button
-                    key={index}
-                    onClick={() => toggleDay(index)}
-                    className={`flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl transition-all min-h-[70px] ${
-                      isSelected
-                        ? "bg-secondary border-2 border-secondary shadow-sm"
-                        : 'bg-gray-50 border border-gray-200 hover:border-gray-300' // Light gray when not selected
-                    }`}
-                  >
-                    <span className={`text-sm font-semibold ${
-                      isSelected ? 'text-white' : 'text-gray-600'
-                    }`}>
-                      {abbr}
-                    </span>
-                    {(day?.availableTime ?? 0) > 0 ? (
-                      <span className={`text-xs font-bold ${
-                        isSelected ? 'text-white' : 'text-gray-700'
-                      }`}>
-                        {formatTime(day?.availableTime ?? 0)}
-                      </span>
-                    ) : (
-                      <span className={`text-xs ${
-                        isSelected ? 'text-white/80' : 'text-gray-400'
-                      }`}>
-                        —
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+        <GuidedPracticeSession
+          statsAreas={statsAreaRanking}
+          roundsCount={rounds.length}
+          statsLoading={statsLoading}
+          buildSession={buildGuidedSession}
+          onAddToSchedule={addGuidedSessionToSchedule}
+          onLogPractice={(area, minutes, holes) =>
+            holes != null
+              ? logFreestylePractice(area, onCourseMinutesForHoles(clampOnCourseHoles(holes)), { holes })
+              : logFreestylePractice(area, minutes)
+          }
+          onViewSchedule={viewScheduleDay}
+          onOpenVideo={(url) => setYoutubeModal({ open: true, url })}
+        />
 
-        {/* Time Assignment for Selected Day */}
-        {selectedDay !== null && (
-          <div className="mb-6">
-            <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
-              <div className="flex items-center gap-2 mb-4">
-                <Clock className="w-5 h-5 text-primary" />
-                <h3 className="font-semibold text-gray-900">
-                  {DAY_NAMES[selectedDay]} - Available Practice Time
-                </h3>
-              </div>
-              
-              {/* Time Slider - Academy Hub Style with Thin Track (8 hours max) */}
-              <div className="space-y-4">
-                <div className="relative py-3">
-                  {/* Thin Track Line (Background) — primary tint */}
-                  <div className="absolute top-1/2 left-0 right-0 h-0.5 rounded-full bg-primary/20 transform -translate-y-1/2" />
-                  
-                  {/* Snap Point Indicators (every 15 minutes) - Key time markers */}
-                  <div className="absolute top-1/2 left-0 right-0 transform -translate-y-1/2 pointer-events-none">
-                    {[0, 60, 90, 120, 180, 240, 300, 360, 420, 480].map((min) => (
-                      <div
-                        key={min}
-                        className="absolute w-0.5 h-2 bg-gray-300 rounded-full transform -translate-x-1/2"
-                        style={{
-                          left: `${(min / 480) * 100}%`,
-                        }}
-                      />
-                    ))}
-                  </div>
-                  
-                  {/* Fill Line — secondary */}
-                  <div
-                    className="absolute top-1/2 left-0 h-1 rounded-full transform -translate-y-1/2 bg-secondary transition-all"
-                    style={{
-                      width: `${((weeklyPlan[selectedDay]?.availableTime || 0) / 480) * 100}%`,
-                    }}
-                  />
-                  
-                  {/* Slider Input with 5-minute snap points */}
-                  <input
-                    type="range"
-                    min="0"
-                    max="480"
-                    step="5"
-                    value={weeklyPlan[selectedDay]?.availableTime || 0}
-                    onChange={(e) => updateTime(selectedDay, parseInt(e.target.value))}
-                    className="relative w-full h-4 bg-transparent appearance-none cursor-pointer z-10"
-                    style={{
-                      WebkitAppearance: 'none',
-                      background: 'transparent',
-                    }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">0m</span>
-                  <span className="font-bold text-lg text-secondary">
-                    {formatTime(weeklyPlan[selectedDay]?.availableTime || 0)}
-                  </span>
-                  <span className="text-gray-600">8h</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Multi-Select Facility Selector - Above Generate Button */}
-        {selectedDay !== null && (
-          <div className="mb-6">
-            <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
-              <h3 className="font-semibold text-gray-900 mb-4">Where are you practicing?</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {ALL_FACILITIES.map((facilityType) => {
-                  const info = facilityInfo[facilityType];
-                  const Icon = info.icon;
-                  const isSelected = weeklyPlan[selectedDay]?.selectedFacilities?.includes(facilityType) || false;
-                  
-                  return (
-                    <button
-                      key={facilityType}
-                      type="button"
-                      onClick={() => toggleFacility(selectedDay, facilityType)}
-                      className={`flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 ${
-                        isSelected
-                          ? "bg-primary border-secondary"
-                          : 'bg-gray-50 border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <Icon 
-                        className={`w-5 h-5 ${
-                          isSelected
-                            ? "text-secondary"
-                            : 'text-gray-600'
-                        }`}
-                      />
-                      <span className={`text-xs font-medium text-center ${
-                        isSelected
-                          ? 'text-white'
-                          : 'text-gray-700'
-                      }`}>
-                        {info.label}
-                      </span>
-                    </button>
-                  );
-                })}
-                {/* Custom Round Buttons */}
-                <button
-                  type="button"
-                  onClick={() => setRoundType(selectedDay, '9-hole')}
-                  className={`flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 ${
-                    weeklyPlan[selectedDay]?.roundType === '9-hole'
-                      ? "bg-primary border-secondary"
-                      : 'bg-gray-50 border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <FlagTriangleRight 
-                    className={`w-5 h-5 ${
-                      weeklyPlan[selectedDay]?.roundType === '9-hole'
-                        ? "text-secondary"
-                        : 'text-gray-600'
-                    }`}
-                  />
-                  <span className={`text-xs font-medium text-center ${
-                    weeklyPlan[selectedDay]?.roundType === '9-hole'
-                      ? 'text-white'
-                      : 'text-gray-700'
-                  }`}>
-                    9-Hole Round
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRoundType(selectedDay, '18-hole')}
-                  className={`flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 ${
-                    weeklyPlan[selectedDay]?.roundType === '18-hole'
-                      ? "bg-primary border-secondary"
-                      : 'bg-gray-50 border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <FlagTriangleRight 
-                    className={`w-5 h-5 ${
-                      weeklyPlan[selectedDay]?.roundType === '18-hole'
-                        ? "text-secondary"
-                        : 'text-gray-600'
-                    }`}
-                  />
-                  <span className={`text-xs font-medium text-center ${
-                    weeklyPlan[selectedDay]?.roundType === '18-hole'
-                      ? 'text-white'
-                      : 'text-gray-700'
-                  }`}>
-                    18-Hole Round
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Generate Plan Button */}
-        <div className="mb-6">
-          <button
-            onClick={generatePlan}
-            disabled={!canGeneratePlan}
-            className={`w-full py-4 rounded-xl bg-primary font-semibold text-white shadow-lg hover:shadow-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2 ${
-              !canGeneratePlan ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          >
-            <Sparkles className="w-5 h-5" />
-            Practice Roadmap
-          </button>
-        </div>
-
-        {/* Summary Cards */}
-        {generatedPlan && Object.values(generatedPlan).some(day => (day?.selected ?? false) && (day?.drills?.length ?? 0) > 0) && (
-          <div className="space-y-3 mb-6">
-            {Object.values(generatedPlan)
-              .filter(day => (day?.selected ?? false) && (day?.drills?.length ?? 0) > 0)
-              .map((day) => {
-                const summary = getDaySummary(day);
-                if (!summary) return null;
-                
-                const dayComplete = isDayComplete(day);
-                const completedCount = (day?.drills ?? []).filter((d: DayPlan['drills'][0]) => d?.completed).length;
-                const totalDrills = (day?.drills ?? []).length;
-                
-                return (
-                  <div
-                    key={day.dayIndex}
-                    className={`rounded-2xl p-4 shadow-sm border-2 ${
-                      dayComplete
-                        ? "border-secondary bg-gradient-to-br from-surface to-secondary/[0.07]"
-                        : "border-gray-200 bg-surface"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-5 h-5 text-primary" />
-                        <h3 className="font-semibold text-gray-900">
-                          {dayComplete ? (
-                            <span className="flex items-center gap-2">
-                              <CheckCircle2 className="w-5 h-5 text-secondary" />
-                              <span className="text-secondary">Session Complete</span>
-                            </span>
-                          ) : (
-                            `${summary.dayName} Plan`
-                          )}
-                        </h3>
-                      </div>
-                      {dayComplete && (
-                        <span className="text-xs font-bold px-2 py-1 rounded-full bg-secondary text-primary">
-                          ✓
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-gray-700 text-sm mb-3">
-                      {summary.totalTime} mins of drills scheduled
-                      {(day.availableTime ?? 0) > 0 ? (
-                        <span className="text-gray-600">
-                          {" "}
-                          · {formatTime(day.availableTime ?? 0)} on slider
-                        </span>
-                      ) : null}
-                      . Focus: {summary.categories}
-                      {completedCount > 0 && (
-                        <span className="ml-2 font-semibold text-secondary">
-                          ({completedCount}/{totalDrills} complete)
-                        </span>
-                      )}
-                    </p>
-                    <div className="space-y-2">
-                      {(day?.drills ?? []).map((drill: DayPlan['drills'][0], idx: number) => {
-                        const actualDrillIndex = (day?.drills ?? []).findIndex((d: any) => d?.id === drill?.id);
-                        const isSwapping = swappingDrill?.dayIndex === day.dayIndex && swappingDrill?.drillIndex === actualDrillIndex;
-                        const justSwapped = swapSuccess?.dayIndex === day.dayIndex && swapSuccess?.drillIndex === actualDrillIndex;
-                        const isExpanded = expandedScheduleDrill?.dayIndex === day.dayIndex && expandedScheduleDrill?.drillIndex === actualDrillIndex;
-                        
-                        return (
-                          <DrillCard
-                            key={`${day.dayIndex}-${drill.id}-${idx}`}
-                            drill={drill}
-                            dayIndex={day.dayIndex}
-                            drillIndex={idx}
-                            actualDrillIndex={actualDrillIndex}
-                            isSwapping={isSwapping}
-                            justSwapped={justSwapped}
-                            facilityInfo={facilityInfo}
-                            onComplete={(dayIdx, drillIdx) => {
-                              markDrillComplete(dayIdx, drillIdx);
-                              setExpandedScheduleDrill(null);
-                            }}
-                            onSwap={swapDrill}
-                            onClear={requestClearDrillFromDay}
-                            onLevelToggle={updateLevelCompletion}
-                            onYoutubeOpen={(url) => setYoutubeModal({ open: true, url })}
-                            onExpandToggle={(dayIdx, drillIdx) => {
-                              if (isExpanded) {
-                                setExpandedScheduleDrill(null);
-                              } else {
-                                setExpandedScheduleDrill({ dayIndex: dayIdx, drillIndex: drillIdx });
-                              }
-                            }}
-                            defaultExpanded={isExpanded}
-                            userId={user?.id ?? null}
-                            combineBestText={drill.isCombine ? (combineBestByPlannerDrillId.get(drill.id) ?? null) : null}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        )}
 
         {/* XP Notification Toast */}
         {xpNotification.show && (
@@ -3407,138 +3245,6 @@ export default function PracticePage() {
           </div>
         )}
 
-        {/* AI Player Insights */}
-        <div className="mb-6">
-          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-primary" />
-                  <h3 className="text-lg font-semibold text-gray-900">Coach&apos;s Insights</h3>
-                </div>
-                <p className="text-xs text-gray-600 mt-1">Full-game performance analysis</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCoachInsightsExpanded((prev) => !prev)}
-                className={PRACTICE_SECTION_TOGGLE_BTN}
-                aria-expanded={coachInsightsExpanded}
-                aria-controls="coach-insights-content"
-                aria-label={coachInsightsExpanded ? "Collapse coach insights" : "Expand coach insights"}
-                title={coachInsightsExpanded ? "Collapse coach insights" : "Expand coach insights"}
-              >
-                {coachInsightsExpanded ? (
-                  <ChevronUp className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
-                ) : (
-                  <ChevronDown className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
-                )}
-              </button>
-            </div>
-            {coachInsightsExpanded && (
-              <div id="coach-insights-content">
-                <AIPlayerInsights
-                  drills={drills}
-                  performanceMetrics={performanceMetrics}
-                  goals={goals}
-                  roundCount={myRounds.length}
-                  showHeader={false}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Log Freestyle Practice Section */}
-        <div className="mb-6">
-          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <BookOpen className="w-5 h-5 text-primary" />
-                  <h3 className="text-lg font-semibold text-gray-900">Log Freestyle Practice</h3>
-                </div>
-                <p className="text-xs text-gray-600 mt-1">Tap a category to log freestyle practice</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setFreestyleExpanded((prev) => !prev)}
-                className={PRACTICE_SECTION_TOGGLE_BTN}
-                aria-expanded={freestyleExpanded}
-                aria-controls="freestyle-practice-content"
-                aria-label={freestyleExpanded ? "Collapse freestyle practice" : "Expand freestyle practice"}
-                title={freestyleExpanded ? "Collapse freestyle practice" : "Expand freestyle practice"}
-              >
-                {freestyleExpanded ? (
-                  <ChevronUp className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
-                ) : (
-                  <ChevronDown className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
-                )}
-              </button>
-            </div>
-
-            {freestyleExpanded && (
-              <div id="freestyle-practice-content" className="grid grid-cols-3 gap-3">
-                {/* Top Row: Driving, Irons, Wedges */}
-                {(['Driving', 'Irons', 'Wedges'] as FacilityType[]).map((facilityType) => {
-                  const info = facilityInfo[facilityType];
-                  const Icon = info.icon;
-                  return (
-                    <button
-                      key={`freestyle-${facilityType}`}
-                      type="button"
-                      onClick={() => setDurationModal({ open: true, facility: facilityType })}
-                      className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
-                    >
-                      <Icon className="w-5 h-5 text-gray-600" />
-                      <span className="text-xs font-medium text-center text-gray-700">{info.label}</span>
-                    </button>
-                  );
-                })}
-                {/* Middle Row: Chipping, Bunkers, Putting */}
-                {(['Chipping', 'Bunkers', 'Putting'] as FacilityType[]).map((facilityType) => {
-                  const info = facilityInfo[facilityType];
-                  const Icon = info.icon;
-                  return (
-                    <button
-                      key={`freestyle-${facilityType}`}
-                      type="button"
-                      onClick={() => setDurationModal({ open: true, facility: facilityType })}
-                      className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
-                    >
-                      <Icon className="w-5 h-5 text-gray-600" />
-                      <span className="text-xs font-medium text-center text-gray-700">{info.label}</span>
-                    </button>
-                  );
-                })}
-                {/* Bottom Row: Mental/Strategy, 9-Hole Round, 18-Hole Round */}
-                <button
-                  type="button"
-                  onClick={() => setDurationModal({ open: true, facility: 'Mental/Strategy' })}
-                  className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
-                >
-                  <BookOpen className="w-5 h-5 text-gray-600" />
-                  <span className="text-xs font-medium text-center text-gray-700">Mental/Strategy</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOnCourseConfirm({ open: true, holes: 9, label: "9-Hole Round" })}
-                  className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
-                >
-                  <FlagTriangleRight className="w-5 h-5 text-gray-600" />
-                  <span className="text-xs font-medium text-center text-gray-700">9-Hole Round</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOnCourseConfirm({ open: true, holes: 18, label: "18-Hole Round" })}
-                  className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all border-2 bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
-                >
-                  <FlagTriangleRight className="w-5 h-5 text-gray-600" />
-                  <span className="text-xs font-medium text-center text-gray-700">18-Hole Round</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* Duration Selection Modal */}
         {durationModal.open && durationModal.facility && (
@@ -3732,10 +3438,16 @@ export default function PracticePage() {
         <div id="weekly-schedule-section" ref={weeklyScheduleRef} className="mb-6 scroll-mt-24">
           <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200 overflow-hidden">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-primary" />
-                <h2 className="text-lg font-semibold text-gray-900">Weekly Training Schedule</h2>
+              <div className="flex items-center gap-2 min-w-0">
+                <Calendar className="w-5 h-5 shrink-0 text-primary" />
+                <h2 className="text-base font-bold text-gray-900 truncate">Weekly Training Schedule</h2>
               </div>
+              <div className="flex shrink-0 items-center gap-2">
+              {scheduleWeekTotals.total > 0 ? (
+                <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600 tabular-nums">
+                  {scheduleWeekTotals.done}/{scheduleWeekTotals.total} done
+                </span>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setScheduleExpanded((prev) => !prev)}
@@ -3751,114 +3463,93 @@ export default function PracticePage() {
                   <ChevronDown className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
                 )}
               </button>
+              </div>
             </div>
 
             {/* Schedule Content - Collapsible - Single Day View */}
             {scheduleExpanded && (
               <div id="weekly-schedule-content" className="w-full overflow-hidden" style={{ maxWidth: '100%' }}>
                 {/* View Mode Toggle */}
-                <div className="flex items-center justify-center gap-2 mb-4">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setViewMode('day');
-                    }}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      viewMode === 'day'
-                        ? "bg-primary text-white"
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Day View
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setViewMode('weekly');
-                    }}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      viewMode === 'weekly'
-                        ? "bg-primary text-white"
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Weekly Summary
-                  </button>
+                <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1">
+                  {([
+                    ['day', 'Day View'],
+                    ['weekly', 'Weekly Summary'],
+                  ] as const).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setViewMode(mode);
+                      }}
+                      className={`rounded-lg py-1.5 text-xs font-semibold transition-colors ${
+                        viewMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
 
                 {/* Day View - Single Day Focus */}
                 {viewMode === 'day' && (
                   <>
-                    {/* Navigation Header */}
-                    <div className="flex items-center justify-between mb-6 w-full">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCurrentDayView((prev) => (prev > 0 ? prev - 1 : 6));
-                    }}
-                    className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                    aria-label="Previous day"
-                  >
-                    <ChevronLeft className="w-6 h-6 text-gray-700" />
-                  </button>
-                  
-                  <div className="flex-1 text-center">
-                    <h3 className="text-xl font-bold text-gray-900">{DAY_NAMES[currentDayView]}</h3>
-                    {/* Get current week's date for this day */}
-                    {(() => {
-                      const today = new Date();
-                      const currentDay = today.getDay();
-                      const monday = new Date(today);
-                      monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-                      const dayDate = new Date(monday);
-                      dayDate.setDate(monday.getDate() + currentDayView);
-                      return (
-                        <p className="text-sm text-gray-600 mt-1">
-                          {dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </p>
-                      );
-                    })()}
-                  </div>
-                  
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCurrentDayView((prev) => (prev < 6 ? prev + 1 : 0));
-                    }}
-                    className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                    aria-label="Next day"
-                  >
-                    <ChevronRight className="w-6 h-6 text-gray-700" />
-                  </button>
-                </div>
+                    <WeekDayStrip
+                      weekMonday={scheduleWeekMonday}
+                      todayIndex={getTodayDayIndex()}
+                      selectedDay={currentDayView}
+                      onSelect={setCurrentDayView}
+                      days={scheduleDayStatus}
+                    />
 
-                {/* Single Day Drill List - Vertical */}
                 {(() => {
                   const day = weeklyPlan[currentDayView];
                   const dayDrills = day?.drills || [];
                   const completedCount = dayDrills.filter(d => d.completed).length;
                   const totalCount = dayDrills.length;
-                  
+                  const totalMinutes = dayDrills.reduce((sum, d) => sum + (Number(d.estimatedMinutes) || 0), 0);
+                  const todayIdx = getTodayDayIndex();
+                  const dayLabel =
+                    currentDayView === todayIdx
+                      ? 'Today'
+                      : currentDayView === todayIdx + 1
+                        ? 'Tomorrow'
+                        : DAY_NAMES[currentDayView];
+
                   if (dayDrills.length === 0) {
+                    const isPast = currentDayView < todayIdx;
                     return (
-                      <div className="text-center py-12 w-full">
-                        <p className="text-gray-500 text-lg">No drills scheduled for today</p>
+                      <div className="rounded-xl bg-gray-50 px-4 py-5 text-center w-full">
+                        <p className="text-sm font-medium text-gray-700">
+                          {isPast
+                            ? `Nothing was planned for ${DAY_NAMES[currentDayView]}.`
+                            : `Nothing planned for ${dayLabel === 'Today' ? 'today' : dayLabel}.`}
+                        </p>
+                        {!isPast ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              document.getElementById('guided-practice')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                            }
+                            className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-[#FFA500] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+                          >
+                            <Sparkles className="h-4 w-4" aria-hidden />
+                            Build a session
+                          </button>
+                        ) : null}
                       </div>
                     );
                   }
-                  
+
                   return (
-                    <div className="space-y-4 w-full">
-                      {/* Completion Status */}
-                      {totalCount > 0 && (
-                        <div className="text-center mb-4">
-                          <span className={`text-base font-semibold ${
-                            completedCount === totalCount ? "text-primary" : "text-gray-600"
-                          }`}>
-                            {completedCount}/{totalCount} drills completed
-                          </span>
-                        </div>
-                      )}
+                    <div className="space-y-1.5 w-full">
+                      <div className="mb-2 flex items-baseline justify-between gap-2">
+                        <p className="text-sm font-bold text-gray-900">{dayLabel}</p>
+                        <p className="text-xs text-gray-500 tabular-nums">
+                          {completedCount}/{totalCount} done
+                          {totalMinutes > 0 ? ` · ${totalMinutes} min` : ''}
+                        </p>
+                      </div>
                       
                       {/* Drill Cards - Full List, Vertical */}
                       {dayDrills.map((drill, drillIdx) => {
@@ -3977,178 +3668,312 @@ export default function PracticePage() {
           </div>
         </div>
 
-        {/* Drill Library */}
-        <div id="drill-library-section" ref={drillLibraryRef} className="mb-6 scroll-mt-24">
-          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-primary" />
-                <h3 className="text-lg font-semibold text-gray-900">Drill Library</h3>
-              </div>
+        <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <h2 className="mb-3 text-base font-bold text-gray-900">More tools</h2>
+          <div className="space-y-2">
+            <div className="rounded-xl bg-gray-50">
               <button
                 type="button"
-                onClick={() => setDrillLibraryExpanded((prev) => !prev)}
-                className={PRACTICE_SECTION_TOGGLE_BTN}
-                aria-expanded={drillLibraryExpanded}
-                aria-controls="drill-library-content"
-                aria-label={drillLibraryExpanded ? "Collapse drill library" : "Expand drill library"}
-                title={drillLibraryExpanded ? "Collapse drill library" : "Expand drill library"}
+                onClick={() => setOpenTool((t) => (t === "planner" ? null : "planner"))}
+                aria-expanded={openTool === "planner"}
+                className="flex w-full items-center gap-3 p-3 text-left"
               >
-                {drillLibraryExpanded ? (
-                  <ChevronUp className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
-                ) : (
-                  <ChevronDown className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
-                )}
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                  <Calendar className="h-4 w-4 text-[#014421]" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-900">Plan my whole week</span>
+                  <span className="block text-xs text-gray-500">Pick days, time and areas. We&apos;ll fill your schedule.</span>
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${openTool === "planner" ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
               </button>
-            </div>
-            {drillLibraryExpanded && (
-              <div id="drill-library-content">
-                <DrillLibrary onAssignToDay={addDrillToDay} showHeader={false} />
-              </div>
-            )}
-          </div>
-        </div>
 
-        {/* Combine Tests */}
-        <div id="combine-tests-section" ref={combineTestsRef} className="mb-6 scroll-mt-24">
-          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Target className="w-5 h-5 text-primary" />
-                  <h3 className="text-lg font-semibold text-gray-900">Combine Tests</h3>
-                </div>
-                <p className="text-xs text-gray-600 mt-1">Tap a test to start a session</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCombineTestsExpanded((prev) => !prev)}
-                className={PRACTICE_SECTION_TOGGLE_BTN}
-                aria-expanded={combineTestsExpanded}
-                aria-controls="combine-tests-content"
-                aria-label={combineTestsExpanded ? "Collapse combine tests" : "Expand combine tests"}
-                title={combineTestsExpanded ? "Collapse combine tests" : "Expand combine tests"}
-              >
-                {combineTestsExpanded ? (
-                  <ChevronUp className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
-                ) : (
-                  <ChevronDown className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
-                )}
-              </button>
-            </div>
+              {openTool === "planner" && (
+                <div className="space-y-4 border-t border-gray-200 px-3 pb-3 pt-3">
+                  <div>
+                    <p className="mb-2 text-xs font-semibold text-gray-700">1. Which days can you practise?</p>
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {DAY_ABBREVIATIONS.map((abbr, idx) => {
+                        const day = weeklyPlan[idx];
+                        const isSelected = day?.selected ?? false;
+                        const isEditing = selectedDay === idx && isSelected;
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => (isSelected && selectedDay !== idx ? setSelectedDay(idx) : toggleDay(idx))}
+                            aria-pressed={isSelected}
+                            aria-label={DAY_NAMES[idx]}
+                            className={`flex flex-col items-center gap-0.5 rounded-xl py-2 transition-colors ${
+                              isSelected ? "bg-[#014421] text-white" : "bg-white text-gray-600 ring-1 ring-gray-200"
+                            } ${isEditing ? "ring-2 ring-[#FFA500]" : ""}`}
+                          >
+                            <span className="text-[11px] font-semibold">{abbr.charAt(0)}</span>
+                            <span className={`text-[10px] tabular-nums ${isSelected ? "text-white/80" : "text-gray-400"}`}>
+                              {(day?.availableTime ?? 0) > 0 ? formatTime(day?.availableTime ?? 0) : "–"}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-            {combineTestsExpanded && (
-              <div id="combine-tests-content">
-                <div
-                  className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-1 px-1 scroll-smooth [scrollbar-width:thin]"
-                  role="tablist"
-                  aria-label="Combine test categories"
-                >
-                  {COMBINE_CATEGORY_IDS.map((cat) => {
-                    const active = combineCategoryTab === cat;
-                    return (
-                      <button
-                        key={cat}
-                        type="button"
-                        role="tab"
-                        aria-selected={active}
-                        onClick={() => setCombineCategoryTab(cat)}
-                        className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition-colors sm:text-sm border-2 ${
-                          active
-                            ? "border-gray-900 bg-gray-900 text-white shadow-sm"
-                            : "border-transparent bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        }`}
-                      >
-                        {cat}
-                      </button>
-                    );
-                  })}
-                </div>
+                  {selectedDay !== null && weeklyPlan[selectedDay]?.selected ? (
+                    <>
+                      <div>
+                        <div className="mb-1 flex items-center justify-between">
+                          <p className="text-xs font-semibold text-gray-700">2. How long on {DAY_NAMES[selectedDay]}?</p>
+                          <span className="text-sm font-bold text-[#014421] tabular-nums">
+                            {formatTime(weeklyPlan[selectedDay]?.availableTime || 0)}
+                          </span>
+                        </div>
+                        <div className="relative py-2">
+                          <div className="absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-gray-200" />
+                          <div
+                            className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-[#014421]"
+                            style={{ width: `${((weeklyPlan[selectedDay]?.availableTime || 0) / 480) * 100}%` }}
+                          />
+                          <input
+                            type="range"
+                            min="0"
+                            max="480"
+                            step="5"
+                            value={weeklyPlan[selectedDay]?.availableTime || 0}
+                            onChange={(e) => updateTime(selectedDay, parseInt(e.target.value))}
+                            aria-label={`Practice time on ${DAY_NAMES[selectedDay]}`}
+                            className="relative z-10 h-4 w-full cursor-pointer appearance-none bg-transparent"
+                          />
+                        </div>
+                        <div className="flex justify-between text-[10px] text-gray-400">
+                          <span>0m</span>
+                          <span>8h</span>
+                        </div>
+                      </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {combineCardsForTab.length === 0 ? (
-                    <p className="col-span-2 sm:col-span-3 text-center text-sm text-gray-500 py-10 px-2">
-                      Coming Soon To Online Academy.
-                    </p>
+                      <div>
+                        <p className="mb-2 text-xs font-semibold text-gray-700">3. What do you want to work on?</p>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {ALL_FACILITIES.map((facilityType) => {
+                            const info = facilityInfo[facilityType];
+                            const Icon = info.icon;
+                            const isOn = weeklyPlan[selectedDay]?.selectedFacilities?.includes(facilityType) || false;
+                            return (
+                              <button
+                                key={facilityType}
+                                type="button"
+                                onClick={() => toggleFacility(selectedDay, facilityType)}
+                                aria-pressed={isOn}
+                                className={`flex flex-col items-center gap-1 rounded-xl p-2 text-[11px] font-medium transition-colors ${
+                                  isOn ? "bg-[#014421] text-white" : "bg-white text-gray-700 ring-1 ring-gray-200"
+                                }`}
+                              >
+                                <Icon className={`h-4 w-4 ${isOn ? "text-[#FFA500]" : "text-gray-500"}`} aria-hidden />
+                                {info.label}
+                              </button>
+                            );
+                          })}
+                          {(["9-hole", "18-hole"] as const).map((rt) => {
+                            const isOn = weeklyPlan[selectedDay]?.roundType === rt;
+                            return (
+                              <button
+                                key={rt}
+                                type="button"
+                                onClick={() => setRoundType(selectedDay, rt)}
+                                aria-pressed={isOn}
+                                className={`flex flex-col items-center gap-1 rounded-xl p-2 text-[11px] font-medium transition-colors ${
+                                  isOn ? "bg-[#014421] text-white" : "bg-white text-gray-700 ring-1 ring-gray-200"
+                                }`}
+                              >
+                                <FlagTriangleRight className={`h-4 w-4 ${isOn ? "text-[#FFA500]" : "text-gray-500"}`} aria-hidden />
+                                {rt === "9-hole" ? "9-hole round" : "18-hole round"}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-gray-500">Tap another green day to set its time and areas.</p>
+                    </>
                   ) : (
-                    combineCardsForTab.map((card) => {
-                      const isGauntlet = card.visualVariant === "gauntlet";
+                    <p className="text-xs text-gray-500">Tap a day to add it, then set your time and areas.</p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => void buildWeekFromPlanner()}
+                    disabled={!canGeneratePlan}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#014421] py-3 text-sm font-semibold text-white transition-colors hover:bg-[#014421]/90 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Sparkles className="h-4 w-4" aria-hidden />
+                    Build my week
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div id="coach-insights-section" className="scroll-mt-24 rounded-xl bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setOpenTool((t) => (t === "insights" ? null : "insights"))}
+                aria-expanded={openTool === "insights"}
+                className="flex w-full items-center gap-3 p-3 text-left"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                  <Sparkles className="h-4 w-4 text-[#014421]" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-900">Coach&apos;s Insights</span>
+                  <span className="block text-xs text-gray-500">Your strengths and weaknesses from your rounds</span>
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${openTool === "insights" ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
+              </button>
+              {openTool === "insights" && (
+                <div className="border-t border-gray-200 px-3 pb-3 pt-3">
+                  <AIPlayerInsights
+                    drills={drills}
+                    performanceMetrics={performanceMetrics}
+                    goals={goals}
+                    roundCount={myRounds.length}
+                    showHeader={false}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div id="drill-library-section" ref={drillLibraryRef} className="scroll-mt-24 rounded-xl bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setOpenTool((t) => (t === "library" ? null : "library"))}
+                aria-expanded={openTool === "library"}
+                className="flex w-full items-center gap-3 p-3 text-left"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                  <BookOpen className="h-4 w-4 text-[#014421]" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-900">Drill Library</span>
+                  <span className="block text-xs text-gray-500">Browse every drill and add one to your week</span>
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${openTool === "library" ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
+              </button>
+              {openTool === "library" && (
+                <div className="border-t border-gray-200 px-3 pb-3 pt-3">
+                  <DrillLibrary onAssignToDay={addDrillToDay} showHeader={false} />
+                </div>
+              )}
+            </div>
+
+            <div id="combine-tests-section" ref={combineTestsRef} className="scroll-mt-24 rounded-xl bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setOpenTool((t) => (t === "combine" ? null : "combine"))}
+                aria-expanded={openTool === "combine"}
+                className="flex w-full items-center gap-3 p-3 text-left"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                  <Target className="h-4 w-4 text-[#014421]" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-900">Combine Tests</span>
+                  <span className="block text-xs text-gray-500">Test your skills and climb the leaderboard</span>
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${openTool === "combine" ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
+              </button>
+              {openTool === "combine" && (
+                <div className="border-t border-gray-200 px-3 pb-3 pt-3">
+                  <div
+                    className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1 scroll-smooth [scrollbar-width:thin]"
+                    role="tablist"
+                    aria-label="Combine test categories"
+                  >
+                    {COMBINE_CATEGORY_IDS.map((cat) => {
+                      const active = combineCategoryTab === cat;
                       return (
                         <button
-                          key={card.id}
+                          key={cat}
                           type="button"
-                          onClick={() => router.push(card.href)}
-                          className={`flex min-h-[5.25rem] flex-col items-center justify-center gap-1 px-2 py-3 rounded-xl transition-all border-2 ${
-                            isGauntlet
-                              ? "border-gray-900 bg-gray-900 text-white ring-2 ring-gray-900/20 ring-offset-2 ring-offset-surface hover:border-secondary hover:bg-gray-800"
-                              : "bg-gray-50 border-gray-200 hover:border-secondary hover:bg-gray-100"
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => setCombineCategoryTab(cat)}
+                          className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                            active ? "bg-[#014421] text-white" : "bg-white text-gray-700 ring-1 ring-gray-200"
                           }`}
                         >
-                          <Target
-                            className={`w-5 h-5 shrink-0 ${isGauntlet ? "text-white" : "text-gray-600"}`}
-                          />
-                          <span
-                            className={`text-[11px] font-medium leading-tight text-center sm:text-xs max-w-full ${
-                              isGauntlet ? "text-white" : "text-gray-700"
-                            }`}
-                          >
-                            {card.label}
-                          </span>
+                          {cat}
                         </button>
                       );
-                    })
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+                    })}
+                  </div>
 
-        {/* Performance Fuel Planner */}
-        <div id="nutrition-planner-section" ref={nutritionPlannerRef} className="mb-6 scroll-mt-24">
-          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-200">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Apple className="w-5 h-5 text-primary" />
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Performance Fuel Planner
-                  </h3>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {combineCardsForTab.length === 0 ? (
+                      <p className="col-span-2 px-2 py-8 text-center text-sm text-gray-500 sm:col-span-3">
+                        Coming Soon To Online Academy.
+                      </p>
+                    ) : (
+                      combineCardsForTab.map((card) => {
+                        const isGauntlet = card.visualVariant === "gauntlet";
+                        return (
+                          <button
+                            key={card.id}
+                            type="button"
+                            onClick={() => router.push(card.href)}
+                            className={`flex min-h-[4.75rem] flex-col items-center justify-center gap-1 rounded-xl px-2 py-3 transition-colors ${
+                              isGauntlet
+                                ? "bg-[#014421] text-white hover:bg-[#014421]/90"
+                                : "bg-white text-gray-700 ring-1 ring-gray-200 hover:ring-[#FFA500]"
+                            }`}
+                          >
+                            <Target className={`h-5 w-5 shrink-0 ${isGauntlet ? "text-[#FFA500]" : "text-gray-500"}`} aria-hidden />
+                            <span className="max-w-full text-center text-[11px] font-medium leading-tight sm:text-xs">
+                              {card.label}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
-                <p className="text-xs text-gray-600 mt-1">
-                  Australian climate fuel blueprint — sweat rate, sodium &amp; carbs update live
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setNutritionPlannerExpanded((prev) => !prev)}
-                className={PRACTICE_SECTION_TOGGLE_BTN}
-                aria-expanded={nutritionPlannerExpanded}
-                aria-controls="nutrition-planner-content"
-                aria-label={
-                  nutritionPlannerExpanded
-                    ? "Collapse performance fuel planner"
-                    : "Expand performance fuel planner"
-                }
-                title={
-                  nutritionPlannerExpanded
-                    ? "Collapse performance fuel planner"
-                    : "Expand performance fuel planner"
-                }
-              >
-                {nutritionPlannerExpanded ? (
-                  <ChevronUp className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
-                ) : (
-                  <ChevronDown className={PRACTICE_SECTION_TOGGLE_ICON} aria-hidden />
-                )}
-              </button>
+              )}
             </div>
 
-            {nutritionPlannerExpanded && (
-              <div id="nutrition-planner-content">
-                <NutritionPlannerPanel userId={user?.id} />
-              </div>
-            )}
+            <div id="nutrition-planner-section" ref={nutritionPlannerRef} className="scroll-mt-24 rounded-xl bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setOpenTool((t) => (t === "fuel" ? null : "fuel"))}
+                aria-expanded={openTool === "fuel"}
+                className="flex w-full items-center gap-3 p-3 text-left"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                  <Apple className="h-4 w-4 text-[#014421]" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-900">Fuel Planner</span>
+                  <span className="block text-xs text-gray-500">Water, sodium and carbs for your round</span>
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${openTool === "fuel" ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
+              </button>
+              {openTool === "fuel" && (
+                <div className="border-t border-gray-200 px-3 pb-3 pt-3">
+                  <NutritionPlannerPanel userId={user?.id} />
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

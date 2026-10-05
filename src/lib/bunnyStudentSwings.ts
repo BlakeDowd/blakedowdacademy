@@ -243,7 +243,29 @@ export async function getBunnyStudentSwingStoragePath(
         id,
     ) as { storage_path?: string | null } | undefined;
     const path = match?.storage_path;
-    return typeof path === "string" && path.trim() ? path.trim() : null;
+    if (typeof path === "string" && path.trim()) return path.trim();
+
+    const { data: post } = await supabase
+      .from("coaching_posts")
+      .select("storage_path")
+      .eq("bunny_video_id", id)
+      .eq("storage_bucket", "swing-submissions")
+      .not("storage_path", "is", null)
+      .limit(1)
+      .maybeSingle();
+    const postPath = (post as { storage_path?: string | null } | null)?.storage_path;
+    if (typeof postPath === "string" && postPath.trim()) return postPath.trim();
+
+    const { data: multi } = await supabase
+      .from("coaching_posts")
+      .select("extra_videos")
+      .contains("extra_videos", [{ bunny_video_id: id }])
+      .limit(1)
+      .maybeSingle();
+    const extras = ((multi as { extra_videos?: { bunny_video_id?: string; storage_path?: string | null }[] } | null)
+      ?.extra_videos ?? []);
+    const extraPath = extras.find((v) => v.bunny_video_id === id)?.storage_path;
+    return typeof extraPath === "string" && extraPath.trim() ? extraPath.trim() : null;
   } catch {
     return null;
   }

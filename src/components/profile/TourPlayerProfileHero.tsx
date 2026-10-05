@@ -103,30 +103,32 @@ export function TourPlayerProfileHero({
   );
 }
 
-type ProfileTab = "stats" | "practice" | "swings" | "feedback";
+type ProfileTab = "stats" | "practice" | "coaching";
 
 const PROFILE_TABS: { id: ProfileTab; label: string }[] = [
-  { id: "stats", label: "Stats" },
+  { id: "coaching", label: "Coaching" },
   { id: "practice", label: "Practice" },
-  { id: "swings", label: "Swings" },
-  { id: "feedback", label: "Feedback" },
+  { id: "stats", label: "Stats" },
 ];
 
 export function ProfileSegmentedTabs({
   value,
   onChange,
+  badges,
 }: {
   value: ProfileTab;
   onChange: (tab: ProfileTab) => void;
+  badges?: Partial<Record<ProfileTab, number>>;
 }) {
   return (
     <div
-      className="grid grid-cols-2 gap-1 rounded-2xl bg-stone-200/80 p-1 sm:grid-cols-4"
+      className="grid grid-cols-3 gap-1 rounded-2xl bg-stone-200/80 p-1"
       role="tablist"
       aria-label="Profile sections"
     >
       {PROFILE_TABS.map((tab) => {
         const active = value === tab.id;
+        const badge = badges?.[tab.id] ?? 0;
         return (
           <button
             key={tab.id}
@@ -134,13 +136,21 @@ export function ProfileSegmentedTabs({
             role="tab"
             aria-selected={active}
             onClick={() => onChange(tab.id)}
-            className={`rounded-xl px-2 py-2.5 text-xs font-semibold transition-all sm:px-3 sm:text-sm ${
+            className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-xs font-semibold transition-all sm:px-3 sm:text-sm ${
               active
                 ? "bg-white text-[#014421] shadow-sm"
                 : "text-stone-600 hover:text-stone-900"
             }`}
           >
             {tab.label}
+            {badge > 0 && (
+              <span
+                className="min-w-[18px] rounded-full bg-[#FFA500] px-1.5 text-[10px] font-bold leading-[18px] text-white"
+                aria-label={`${badge} new`}
+              >
+                {badge > 9 ? "9+" : badge}
+              </span>
+            )}
           </button>
         );
       })}

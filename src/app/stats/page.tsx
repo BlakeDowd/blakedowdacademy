@@ -4,5 +4,5 @@ import { redirect } from "next/navigation";
 export { getBenchmarkGoals } from "@/lib/benchmarkGoals";
 
 export default function StatsRedirectPage() {
-  redirect("/profile");
+  redirect("/profile?tab=stats");
 }

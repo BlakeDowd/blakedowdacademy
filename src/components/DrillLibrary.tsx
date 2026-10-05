@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { ChevronDown, ChevronUp, X, UserPlus, FileText, Youtube } from "lucide-react";
 import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
+import { keepElementInView } from "@/hooks/useKeepInView";
+import { SHOW_PDFS } from "@/lib/drillResources";
 
 const LIBRARY_CATEGORIES = [
   "Driving",
@@ -192,9 +194,9 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
             ~{drill.estimatedMinutes} min · {drill.category}
           </p>
 
-          {((drill.pdf_url || drill.video_url || (drill as any).youtube_url)) && (
+          {(((SHOW_PDFS && drill.pdf_url) || drill.video_url || (drill as any).youtube_url)) && (
             <div className="mt-4 flex flex-wrap gap-3">
-              {drill.pdf_url && (
+              {SHOW_PDFS && drill.pdf_url && (
                 <a
                   href={drill.pdf_url}
                   target="_blank"
@@ -430,12 +432,14 @@ export function DrillLibrary({ onAssignToDay, showHeader = true }: DrillLibraryP
             const isExpanded = expandedCategory === category;
 
             return (
-              <div key={category}>
+              <div key={category} className="scroll-mt-4">
                 <button
                   type="button"
-                  onClick={() =>
-                    setExpandedCategory((prev) => (prev === category ? null : category))
-                  }
+                  onClick={(e) => {
+                    const section = e.currentTarget.parentElement;
+                    setExpandedCategory((prev) => (prev === category ? null : category));
+                    keepElementInView(section);
+                  }}
                   className="w-full flex items-center justify-between gap-4 p-4 text-left hover:bg-gray-50 transition-colors"
                 >
                   <span

@@ -8,6 +8,8 @@ import {
   createBunnyTusUploadCredentials,
 } from "@/lib/bunnyStreamAdmin";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
+import { isCoachEmail } from "@/lib/coachEmails";
+import { resolveRequestUser, supabaseAsUser } from "@/lib/coachingServer";
 import {
   pruneOrphanedBunnyStudentSwings,
   unregisterBunnyStudentSwing,
@@ -37,7 +39,13 @@ export async function GET(request: Request) {
         { status: 503 },
       );
     }
-    const accessToken = readBearerToken(request);
+    const user = await resolveRequestUser(request);
+    const client = user?.accessToken ? supabaseAsUser(user.accessToken) : null;
+    const { data: isCoach } = client ? await client.rpc("is_coach") : { data: false };
+    if (!user || (!isCoachEmail(user.email) && isCoach !== true)) {
+      return NextResponse.json({ error: "Only coaches can list student swings." }, { status: 403 });
+    }
+    const accessToken = user.accessToken;
     // Wider page so prune can match more live Bunny IDs without per-video GETs.
     const items = await bunnyListVideos(100);
     const studentSwings = await pruneOrphanedBunnyStudentSwings(

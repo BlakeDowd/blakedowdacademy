@@ -8,6 +8,7 @@ import {
   Check,
   Circle,
   CircleDot,
+  Lock,
   Target,
   X,
   Play,
@@ -20,7 +21,9 @@ import {
 import ReactMarkdown from "react-markdown";
 import { useAuth } from "@/contexts/AuthContext";
 import { logActivity } from "@/lib/activity";
+import { fetchMyLibraryCompletionIds, recordLibraryCompletions } from "@/lib/libraryCompletions";
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
+import { SHOW_PDFS } from "@/lib/drillResources";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
 import {
   APP_VIDEO_COACH_NAME,
@@ -339,18 +342,12 @@ function LibraryPageContent() {
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(() => new Set());
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
   const [completedIds, setCompletedIds] = useState<Set<string>>(() => new Set());
+  /** Lessons whose video was played through this session — required before Complete unlocks. */
+  const [fullyWatchedIds, setFullyWatchedIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const saved = localStorage.getItem("libraryCompletedLessons");
-    if (saved) {
-      try {
-        const arr = JSON.parse(saved) as string[];
-        setCompletedIds(new Set(arr));
-      } catch {
-        // ignore
-      }
-    }
+    localStorage.removeItem("libraryCompletedLessons");
   }, []);
 
   // Fetch Lessons — curated Swing Drills curriculum only (hide ghost modules/lessons).
@@ -481,10 +478,19 @@ function LibraryPageContent() {
   }, [flatLessons, modules]);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("libraryCompletedLessons", JSON.stringify(Array.from(completedIds)));
+    const userId = user?.id;
+    if (!userId) {
+      setCompletedIds(new Set());
+      return;
     }
-  }, [completedIds]);
+    let cancelled = false;
+    void fetchMyLibraryCompletionIds(userId).then((ids) => {
+      if (!cancelled) setCompletedIds(new Set(ids));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   /** When Search lessons opens, every module starts collapsed until expanded. */
   useEffect(() => {
@@ -566,19 +572,37 @@ function LibraryPageContent() {
     if (activeLessonIndex > 0) selectLesson(flatLessons[activeLessonIndex - 1]);
   }, [activeLessonIndex, flatLessons, selectLesson]);
 
+  const markLessonComplete = useCallback(
+    (lesson: Lesson) => {
+      const alreadyDone = completedIds.has(lesson.id);
+      setCompletedIds((prev) => (prev.has(lesson.id) ? prev : new Set(prev).add(lesson.id)));
+      if (!user?.id) return;
+      void recordLibraryCompletions(user.id, [{ id: lesson.id, title: lesson.title }]);
+      if (!alreadyDone) logActivity(user.id, "video", `Completed ${lesson.title}`);
+    },
+    [completedIds, user?.id],
+  );
+
   const goNext = useCallback(() => {
-    if (activeLesson) setCompletedIds(prev => new Set(prev).add(activeLesson.id));
     if (activeLessonIndex < flatLessons.length - 1) {
       selectLesson(flatLessons[activeLessonIndex + 1]);
     }
-    if (activeLesson && user?.id) {
-      logActivity(user.id, "video", `Completed ${activeLesson.title}`);
-    }
-  }, [activeLesson, activeLessonIndex, flatLessons, user?.id, selectLesson]);
+  }, [activeLessonIndex, flatLessons, selectLesson]);
+
+  const handleVideoFullyWatched = useCallback(() => {
+    if (!activeLesson) return;
+    const id = activeLesson.id;
+    setFullyWatchedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+  }, [activeLesson]);
+
+  const completedLessonCount = useMemo(
+    () => flatLessons.filter((l) => completedIds.has(l.id)).length,
+    [flatLessons, completedIds],
+  );
 
   const progressPercent =
     flatLessons.length > 0
-      ? Math.round((completedIds.size / flatLessons.length) * 100)
+      ? Math.round((completedLessonCount / flatLessons.length) * 100)
       : 0;
 
   const progressRingCirc = 2 * Math.PI * 15.9;
@@ -595,6 +619,17 @@ function LibraryPageContent() {
     activeLesson && activeLesson.type === "video"
       ? extractBunnyVideoId(activeLesson.source || "")
       : null;
+
+  const activeLessonCompleted = activeLesson ? completedIds.has(activeLesson.id) : false;
+  const activeLessonNeedsFullWatch = Boolean(bunnyVideoId);
+  const canCompleteActiveLesson =
+    Boolean(activeLesson && user?.id) &&
+    !activeLessonCompleted &&
+    (!activeLessonNeedsFullWatch || fullyWatchedIds.has(activeLesson!.id));
+
+  const completeActiveLesson = useCallback(() => {
+    if (activeLesson && canCompleteActiveLesson) markLessonComplete(activeLesson);
+  }, [activeLesson, canCompleteActiveLesson, markLessonComplete]);
 
   const { metadata: bunnyVideoMetadata } = useBunnyVideoMetadata(bunnyVideoId);
   const bunnyIsPortrait = isBunnyPortraitVideo(bunnyVideoMetadata);
@@ -886,7 +921,7 @@ function LibraryPageContent() {
                 <span className="mt-1.5 text-xs font-medium text-gray-500">Complete</span>
               </div>
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-center justify-center">
-                <span className="text-xl font-bold text-gray-900">{completedIds.size}</span>
+                <span className="text-xl font-bold text-gray-900">{completedLessonCount}</span>
                 <span className="text-[10px] font-medium text-gray-500">/ {flatLessons.length}</span>
                 <span className="text-[10px] font-medium text-gray-500 mt-0.5">Lessons Watched</span>
               </div>
@@ -1072,7 +1107,7 @@ function LibraryPageContent() {
         ) : activeLesson ? (
           /* === LESSON PLAYER === */
           <div id="lesson-pdf-content" className="relative w-full flex flex-col pb-24">
-            {/* Save as PDF - FAB top-right of content */}
+            {SHOW_PDFS && (
             <div className="report-button library-no-print absolute top-4 right-4 z-30">
               <button
                 type="button"
@@ -1084,6 +1119,7 @@ function LibraryPageContent() {
                 Save as PDF
               </button>
             </div>
+            )}
 
             {/* Print-only header */}
             <div className="lesson-print-header hidden print:block">
@@ -1103,7 +1139,11 @@ function LibraryPageContent() {
               {bunnyVideoId ? (
                 <>
                   <div className="absolute inset-0 print:hidden">
-                    <BunnyVideoPlayer videoId={bunnyVideoId} fill />
+                    <BunnyVideoPlayer
+                      videoId={bunnyVideoId}
+                      fill
+                      onFullyWatched={handleVideoFullyWatched}
+                    />
                   </div>
                   <div className="hidden print:block absolute inset-0 min-h-[120px] bg-gray-800 flex items-center justify-center text-gray-400 text-sm">
                     [Video: {activeLessonTitle}]
@@ -1195,21 +1235,48 @@ function LibraryPageContent() {
       {/* Floating Action Bar (Fixed above bottom global nav which is usually h-20/5rem) */}
       {activeLesson && (
         <div className="bottom-nav library-no-print fixed bottom-[5rem] left-1/2 -translate-x-1/2 w-full max-w-md px-4 py-3 bg-white/90 backdrop-blur-md border-t border-gray-200 z-[45] shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={goPrev}
               disabled={activeLessonIndex === 0}
-              className="flex-[0.4] py-3 px-2 rounded-xl font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm text-center flex items-center justify-center gap-1"
+              aria-label="Previous lesson"
+              className="py-3 px-3 rounded-xl font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm flex items-center justify-center gap-1"
             >
-              Previous
+              <ChevronLeft className="w-4 h-4" />
+              Prev
             </button>
+            {activeLessonCompleted ? (
+              <div className="flex-1 py-3 px-2 rounded-xl font-bold text-[#014421] bg-green-50 border border-green-200 text-sm text-center flex items-center justify-center gap-1.5">
+                <Check className="w-4 h-4" />
+                Completed
+              </div>
+            ) : (
+              <button
+                onClick={completeActiveLesson}
+                disabled={!canCompleteActiveLesson}
+                className="flex-1 py-3 px-2 rounded-xl font-bold text-white bg-[#FFA500] shadow-[0_4px_14px_rgba(255,165,0,0.3)] hover:opacity-90 transition-opacity text-sm text-center flex items-center justify-center gap-1.5 disabled:bg-gray-300 disabled:text-gray-600 disabled:shadow-none disabled:cursor-not-allowed disabled:hover:opacity-100"
+              >
+                {canCompleteActiveLesson ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    Complete
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-4 h-4" />
+                    {user?.id ? "Watch full video" : "Log in to complete"}
+                  </>
+                )}
+              </button>
+            )}
             <button
               onClick={goNext}
-              className="flex-[0.6] py-3 px-2 rounded-xl font-bold text-white bg-[#FFA500] shadow-[0_4px_14px_rgba(255,165,0,0.3)] hover:opacity-90 transition-opacity text-sm text-center flex items-center justify-center gap-1"
+              disabled={activeLessonIndex >= flatLessons.length - 1}
+              aria-label="Next lesson"
+              className="py-3 px-3 rounded-xl font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm flex items-center justify-center gap-1"
             >
-              {activeLessonIndex < flatLessons.length - 1
-                ? "Next Lesson"
-                : "Complete Course"}
+              Next
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>

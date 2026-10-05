@@ -153,6 +153,22 @@ function buildInsertPayload(
   return out;
 }
 
+/** Moves a trophy's `earned_at`; returns false when nothing was updated (e.g. row-level security). */
+export async function updateUserTrophyEarnedAt(
+  supabase: SupabaseClient,
+  userId: string,
+  achievementId: string,
+  earnedAt: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("user_trophies")
+    .update({ earned_at: earnedAt } as never)
+    .eq("user_id", userId)
+    .eq("achievement_id", achievementId)
+    .select("achievement_id");
+  return !error && Array.isArray(data) && data.length > 0;
+}
+
 /** Inserts one earned `user_trophies` row (`achievement_id`, `earned_at`). */
 export async function insertUserTrophyRow(
   supabase: SupabaseClient,

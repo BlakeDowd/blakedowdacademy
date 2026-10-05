@@ -60,6 +60,37 @@ export interface TrophyData {
   isRare?: boolean; // For special styling (e.g., Eagle Eye)
 }
 
+/** Drill ids Coach's Insights has recommended (written by `AIPlayerInsights`). */
+export const RECOMMENDED_DRILLS_STORAGE_KEY = "recommendedDrills";
+
+function completedRecommendedDrillCount(
+  practiceSessions: readonly { notes?: unknown; type?: unknown }[] | undefined,
+): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const recommended = new Set<string>(
+      JSON.parse(localStorage.getItem(RECOMMENDED_DRILLS_STORAGE_KEY) || "[]"),
+    );
+    if (recommended.size === 0) return 0;
+    const done = new Set<string>();
+    for (const row of practiceSessions || []) {
+      const notes = typeof row?.notes === "string" ? row.notes.toLowerCase() : "";
+      const key = String(row?.type ?? "").trim();
+      if (notes.startsWith("completed drill") && recommended.has(key)) done.add(key);
+    }
+    const userProgress = JSON.parse(localStorage.getItem("userProgress") || "{}");
+    for (const id of userProgress.completedDrills || []) {
+      if (recommended.has(id)) done.add(id);
+    }
+    for (const [id, n] of Object.entries(userProgress.drillCompletions || {})) {
+      if (recommended.has(id) && Number(n) > 0) done.add(id);
+    }
+    return done.size;
+  } catch {
+    return 0;
+  }
+}
+
 export const TROPHY_LIST: TrophyData[] = [
   // Practice Trophies
   {
@@ -118,7 +149,7 @@ export const TROPHY_LIST: TrophyData[] = [
   {
     id: "student",
     name: "Student",
-    requirement: "Complete 5 lessons",
+    requirement: "Watch 5 library lessons to the end",
     category: "Knowledge",
     icon: BookOpen,
     checkUnlocked: (stats) => stats.completedLessons >= 5,
@@ -131,7 +162,7 @@ export const TROPHY_LIST: TrophyData[] = [
   {
     id: "scholar",
     name: "Scholar",
-    requirement: "Complete 20 lessons",
+    requirement: "Watch 20 library lessons to the end",
     category: "Knowledge",
     icon: BookOpen,
     checkUnlocked: (stats) => stats.completedLessons >= 20,
@@ -144,7 +175,7 @@ export const TROPHY_LIST: TrophyData[] = [
   {
     id: "expert",
     name: "Expert",
-    requirement: "Complete 50 lessons",
+    requirement: "Watch 50 library lessons to the end",
     category: "Knowledge",
     icon: BookOpen,
     checkUnlocked: (stats) => stats.completedLessons >= 50,
@@ -569,12 +600,11 @@ export const TROPHY_LIST: TrophyData[] = [
   {
     id: "putting-professor",
     name: "Putting Professor",
-    requirement: "Complete all Putting category lessons",
+    requirement: "Complete 5 putting drills",
     category: "Knowledge",
     icon: BookOpen,
     checkUnlocked: (stats) => {
       if (!stats.libraryCategories) return false;
-      // Check if user has completed at least 5 Putting category drills (as a proxy for "all")
       return (stats.libraryCategories["Putting"] || 0) >= 5;
     },
     getProgress: (stats) => {
@@ -589,12 +619,11 @@ export const TROPHY_LIST: TrophyData[] = [
   {
     id: "wedge-wizard",
     name: "Wedge Wizard",
-    requirement: "Complete all Wedge Play category lessons",
+    requirement: "Complete 5 wedge drills",
     category: "Knowledge",
     icon: BookOpen,
     checkUnlocked: (stats) => {
       if (!stats.libraryCategories) return false;
-      // Check if user has completed at least 5 Wedge Play category drills
       return (stats.libraryCategories["Wedge Play"] || 0) >= 5;
     },
     getProgress: (stats) => {
@@ -609,68 +638,19 @@ export const TROPHY_LIST: TrophyData[] = [
   {
     id: "coachs-pet",
     name: "Coach's Pet",
-    requirement: 'Complete a recommended drill from "Most Needed to Improve"',
+    requirement: "Complete a drill recommended in Coach's Insights",
     category: "Performance",
     icon: Award,
-    checkUnlocked: (stats) => {
-      if (typeof window === "undefined") return false;
-      try {
-        // Check if user has completed any recommended drills
-        // Recommended drills are stored when user clicks the "Most Needed to Improve" card
-        const recommendedDrills = JSON.parse(
-          localStorage.getItem("recommendedDrills") || "[]",
-        );
-        const userProgress = JSON.parse(
-          localStorage.getItem("userProgress") || "{}",
-        );
-        const completedDrillIds = userProgress.completedDrills || [];
-        const drillCompletions = userProgress.drillCompletions || {};
-
-        // Check if any recommended drill has been completed
-        return recommendedDrills.some(
-          (drillId: string) =>
-            completedDrillIds.includes(drillId) ||
-            (drillCompletions[drillId] && drillCompletions[drillId] > 0),
-        );
-      } catch (e) {
-        return false;
-      }
-    },
+    checkUnlocked: (stats) => completedRecommendedDrillCount(stats.practiceSessions) >= 1,
     getProgress: (stats) => {
-      if (typeof window === "undefined") {
-        return { current: 0, target: 1, percentage: 0 };
-      }
-      try {
-        const recommendedDrills = JSON.parse(
-          localStorage.getItem("recommendedDrills") || "[]",
-        );
-        const userProgress = JSON.parse(
-          localStorage.getItem("userProgress") || "{}",
-        );
-        const completedDrillIds = userProgress.completedDrills || [];
-        const drillCompletions = userProgress.drillCompletions || {};
-
-        const completedCount = recommendedDrills.filter(
-          (drillId: string) =>
-            completedDrillIds.includes(drillId) ||
-            (drillCompletions[drillId] && drillCompletions[drillId] > 0),
-        ).length;
-
-        return {
-          current: completedCount,
-          target: 1,
-          percentage: Math.min(100, (completedCount / 1) * 100),
-        };
-      } catch (e) {
-        return { current: 0, target: 1, percentage: 0 };
-      }
+      const n = completedRecommendedDrillCount(stats.practiceSessions);
+      return { current: n, target: 1, percentage: n > 0 ? 100 : 0 };
     },
   },
   {
     id: "combine-finisher",
     name: "Combine Finisher",
-    requirement:
-      "Finish any Academy combine session (for example Iron or Gauntlet protocol, AimPoint combine, chipping combine, or another listed combine in Practice).",
+    requirement: "Finish any combine test in Practice",
     category: "Practice",
     icon: Crosshair,
     checkUnlocked: (stats) => countUserCombineCompletions(stats) >= 1,
@@ -686,7 +666,7 @@ export const TROPHY_LIST: TrophyData[] = [
   {
     id: "champion-putting-test-18",
     name: PUTTING_TEST_CHAMPION_TROPHY_NAME,
-    requirement: `Hold #1 on the ${puttingTestConfig.testName} leaderboard (all-time best session; ties count)`,
+    requirement: `Hold #1 on the ${puttingTestConfig.testName} leaderboard (ties count)`,
     category: "Performance",
     icon: Crown,
     checkUnlocked: (stats) => {
@@ -707,26 +687,62 @@ export const TROPHY_LIST: TrophyData[] = [
   },
 ];
 
-export type TrophyCaseRow = "volume" | "performance" | "consistency";
+export type TrophyGroup = "practice" | "learning" | "rounds" | "xp";
 
-export function trophyCaseRowForId(id: string): TrophyCaseRow {
-  const volume = new Set([
-    "first-steps",
-    "dedicated",
-    "practice-master",
-    "practice-legend",
-    "monthly-legend",
-    "student",
-    "scholar",
-    "expert",
-    "putting-professor",
-    "wedge-wizard",
-    "combine-finisher",
-  ]);
-  const consistency = new Set(["week-warrior", "rising-star", "champion", "elite"]);
-  if (volume.has(id)) return "volume";
-  if (consistency.has(id)) return "consistency";
-  return "performance";
+export const TROPHY_GROUPS: { id: TrophyGroup; label: string }[] = [
+  { id: "practice", label: "Practice" },
+  { id: "rounds", label: "Rounds & scoring" },
+  { id: "learning", label: "Library" },
+  { id: "xp", label: "XP milestones" },
+];
+
+const PRACTICE_GROUP = new Set([
+  "first-steps",
+  "dedicated",
+  "practice-master",
+  "practice-legend",
+  "week-warrior",
+  "monthly-legend",
+  "combine-finisher",
+  "putting-professor",
+  "wedge-wizard",
+  "coachs-pet",
+  "champion-putting-test-18",
+]);
+
+export function trophyGroupForId(id: string): TrophyGroup {
+  if (PRACTICE_GROUP.has(id)) return "practice";
+  if (id === "student" || id === "scholar" || id === "expert") return "learning";
+  if (id === "rising-star" || id === "champion" || id === "elite") return "xp";
+  return "rounds";
+}
+
+export type TrophyEarnLink = { href: string; label: string };
+
+/** Where in the app the player goes to make progress on a trophy. */
+export function trophyEarnLink(id: string): TrophyEarnLink {
+  switch (id) {
+    case "combine-finisher":
+      return { href: "/practice?plan=combine", label: "Pick a combine test" };
+    case "putting-professor":
+      return { href: "/practice?plan=library", label: "Find putting drills" };
+    case "wedge-wizard":
+      return { href: "/practice?plan=library", label: "Find wedge drills" };
+    case "coachs-pet":
+      return { href: "/practice?plan=insights", label: "Open Coach's Insights" };
+    case "champion-putting-test-18":
+      return { href: "/practice/putting-test", label: `Take the ${puttingTestConfig.testName}` };
+  }
+  switch (trophyGroupForId(id)) {
+    case "practice":
+      return { href: "/practice", label: "Log practice" };
+    case "learning":
+      return { href: "/library", label: "Open the Library" };
+    case "xp":
+      return { href: "/practice", label: "Earn XP in Practice" };
+    default:
+      return { href: "/log-round", label: "Log a round" };
+  }
 }
 
 export type UnlockedAccent = "gold" | "emerald" | "silver";
@@ -769,18 +785,45 @@ export function formatTrophyProgressLine(
   stats: Parameters<TrophyData["getProgress"]>[0],
 ): string {
   const p = def.getProgress(stats);
-  const pct = Math.round(p.percentage);
-  if (def.id === "goal-achiever") {
-    return `Handicap index ${p.current} — goal ≤ ${p.target} (${pct}% toward unlock)`;
+  const hasRounds = (stats.roundsData?.length ?? 0) > 0;
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  switch (def.id) {
+    case "first-steps":
+    case "dedicated":
+    case "practice-master":
+    case "practice-legend":
+      return `${Math.round(p.current * 10) / 10} of ${p.target} hours`;
+    case "monthly-legend":
+      return `Best month so far: ${Math.round(p.current * 10) / 10} of ${p.target} hours`;
+    case "week-warrior":
+      return `Best streak: ${plural(p.current, "day")} in a row`;
+    case "student":
+    case "scholar":
+    case "expert":
+      return `${p.current} of ${p.target} lessons watched`;
+    case "putting-professor":
+    case "wedge-wizard":
+      return `${p.current} of ${p.target} drills done`;
+    case "first-round":
+    case "consistent":
+    case "tracker":
+      return `${p.current} of ${plural(p.target, "round")} logged`;
+    case "rising-star":
+    case "champion":
+    case "elite":
+      return `${p.current.toLocaleString()} of ${p.target.toLocaleString()} XP`;
+    case "goal-achiever":
+      return `Handicap ${p.current}, goal ${p.target} or better`;
+    case "breaking-90":
+    case "breaking-80":
+    case "breaking-70":
+      return hasRounds ? `Best score so far: ${p.current}` : "No rounds logged yet";
+    case "birdie-machine":
+      return hasRounds ? `Most birdies in a round: ${p.current}` : "No rounds logged yet";
+    case "par-train":
+      return hasRounds ? `Most pars in a round: ${p.current}` : "No rounds logged yet";
+    case "combine-finisher":
+      return p.current > 0 ? `${plural(p.current, "combine")} finished` : "No combines finished yet";
   }
-  if (def.id === "breaking-90" || def.id === "breaking-80" || def.id === "breaking-70") {
-    return `Best 18-hole score tracked: ${p.current} — need below ${p.target + 1} (${pct}%)`;
-  }
-  if (def.id === "combine-finisher") {
-    const n = p.current;
-    return n > 0
-      ? `${n} logged combine session${n === 1 ? "" : "s"}`
-      : "Log a combine session to unlock";
-  }
-  return `${p.current} / ${p.target} (${pct}%)`;
+  return p.percentage >= 100 ? "Done" : "Not done yet";
 }

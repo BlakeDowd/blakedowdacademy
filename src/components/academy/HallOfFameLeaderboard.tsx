@@ -11,6 +11,8 @@ import {
   getLeaderboardData,
   getMockLeaderboard,
 } from "@/lib/academyLeaderboard";
+import { fetchAllLibraryCompletions, type LibraryCompletionRow } from "@/lib/libraryCompletions";
+import { keepElementInView } from "@/hooks/useKeepInView";
 
 export const HALL_OF_FAME_LEADERBOARD_ID = "hall-of-fame-leaderboard";
 
@@ -30,6 +32,30 @@ type LeaderboardMetric =
 
 type TimeFilter = "week" | "month" | "year" | "allTime";
 
+const METRIC_OPTIONS: { value: LeaderboardMetric; label: string }[] = [
+  { value: "xp", label: "Overall (Total XP)" },
+  { value: "practice", label: "Practice Hours" },
+  { value: "library", label: "Library Lessons" },
+  { value: "rounds", label: "Rounds Entered" },
+  { value: "drills", label: "Drills" },
+  { value: "lowGross", label: "Low Gross" },
+  { value: "lowNett", label: "Low Nett" },
+  { value: "birdies", label: "Birdies" },
+  { value: "eagles", label: "Eagles" },
+  { value: "lowestPutts", label: "Lowest Putts" },
+  { value: "bogeyFreeRounds", label: "Bogey Free Rounds" },
+  { value: "doubleFreeRounds", label: "Double Free Rounds" },
+];
+
+const TIME_LABELS: Record<TimeFilter, string> = {
+  week: "This Week",
+  month: "This Month",
+  year: "This Year",
+  allTime: "All-Time",
+};
+
+const COMPACT_TOP_COUNT = 3;
+
 function collectLeaderboardUserIds(...sources: unknown[][]) {
   const ids = sources.flatMap((rows) =>
     (rows || []).map((r) => (r as { user_id?: string }).user_id).filter(Boolean),
@@ -40,6 +66,10 @@ function collectLeaderboardUserIds(...sources: unknown[][]) {
 export type HallOfFameLeaderboardProps = {
   id?: string;
   className?: string;
+  /** Show only the top 3 and the current user until expanded. */
+  compact?: boolean;
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 };
 
 function CircularAvatar({
@@ -94,9 +124,13 @@ function HallOfFameLeaderboardInner(
   {
     id = HALL_OF_FAME_LEADERBOARD_ID,
     className = "mb-6 w-full px-4 scroll-mt-4",
+    compact = false,
+    expanded = false,
+    onExpandedChange,
   }: HallOfFameLeaderboardProps,
   ref: React.ForwardedRef<HTMLDivElement>,
 ) {
+  const showCompact = compact && !expanded;
   const { communityRounds, drills, practiceSessions, practiceLogs } = useStats();
   const { user } = useAuth();
 
@@ -109,6 +143,19 @@ function HallOfFameLeaderboardInner(
   const [userProfiles, setUserProfiles] = useState<
     Map<string, { full_name?: string; preferred_icon_id?: string; xp?: number }>
   >(new Map());
+
+  const [libraryCompletions, setLibraryCompletions] = useState<LibraryCompletionRow[]>([]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    void fetchAllLibraryCompletions().then((rows) => {
+      if (!cancelled) setLibraryCompletions(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("week");
   const [leaderboardMetric, setLeaderboardMetric] = useState<LeaderboardMetric>("xp");
@@ -132,6 +179,7 @@ function HallOfFameLeaderboardInner(
         drills || [],
         practiceSessions || [],
         practiceLogs || [],
+        libraryCompletions,
       );
 
       if (uniqueUserIds.length === 0) return;
@@ -146,6 +194,7 @@ function HallOfFameLeaderboardInner(
     drills?.length ?? 0,
     practiceSessions?.length ?? 0,
     practiceLogsIdentity,
+    libraryCompletions,
   ]);
 
   useEffect(() => {
@@ -156,6 +205,7 @@ function HallOfFameLeaderboardInner(
           drills || [],
           practiceSessions || [],
           practiceLogs || [],
+          libraryCompletions,
         );
 
         if (uniqueUserIds.length > 0) {
@@ -175,6 +225,7 @@ function HallOfFameLeaderboardInner(
     drills?.length ?? 0,
     practiceSessions?.length ?? 0,
     practiceLogsIdentity,
+    libraryCompletions,
   ]);
 
   useEffect(() => {
@@ -291,6 +342,7 @@ function HallOfFameLeaderboardInner(
           userProfiles,
           drills,
           practiceSessions,
+          libraryCompletions,
         );
       default:
         return emptyFour;
@@ -306,11 +358,26 @@ function HallOfFameLeaderboardInner(
     practiceSessions,
     drills,
     practiceLogs,
+    libraryCompletions,
   ]);
 
   return (
     <div ref={ref} id={id} className={className}>
       <div className="rounded-2xl overflow-hidden border-2 border-amber-200/60 bg-gradient-to-b from-stone-50 via-white to-amber-50/30 shadow-md w-full flex flex-col">
+        {showCompact ? (
+          <div className="px-4 pt-4 pb-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Medal className="w-5 h-5 shrink-0 text-amber-700" />
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-stone-900 leading-tight">Leaderboard</h3>
+                <p className="text-xs text-stone-500 truncate">
+                  {METRIC_OPTIONS.find((m) => m.value === leaderboardMetric)?.label} ·{" "}
+                  {TIME_LABELS[timeFilter]}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="px-5 pt-5 pb-3 text-center border-b border-amber-100/80 bg-stone-900/[0.03]">
           <div className="inline-flex items-center gap-2 text-amber-800/90 mb-1">
             <Medal className="w-5 h-5" />
@@ -323,7 +390,10 @@ function HallOfFameLeaderboardInner(
             Pick a category to compare academy-wide rankings.
           </p>
         </div>
+        )}
 
+        {!showCompact ? (
+        <>
         <div className="px-4 pb-3 pt-4 max-w-xl mx-auto w-full">
           <label
             htmlFor="stats-category-select"
@@ -339,30 +409,17 @@ function HallOfFameLeaderboardInner(
             }}
             className="w-full px-3 py-2.5 rounded-xl text-sm font-medium text-stone-900 bg-white border border-stone-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#014421]/30 focus:border-[#014421]"
           >
-            <option value="xp">Overall (Total XP)</option>
-            <option value="practice">Practice Hours</option>
-            <option value="library">Library Lessons</option>
-            <option value="rounds">Rounds Entered</option>
-            <option value="drills">Drills</option>
-            <option value="lowGross">Low Gross</option>
-            <option value="lowNett">Low Nett</option>
-            <option value="birdies">Birdies</option>
-            <option value="eagles">Eagles</option>
-            <option value="lowestPutts">Lowest Putts</option>
-            <option value="bogeyFreeRounds">Bogey Free Rounds</option>
-            <option value="doubleFreeRounds">Double Free Rounds</option>
+            {METRIC_OPTIONS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
           </select>
         </div>
 
         <div className="px-4 pb-4 w-full">
           <div className="flex items-center justify-center gap-2 sm:gap-2.5 flex-wrap max-w-xl mx-auto">
             {(() => {
-              const labels = {
-                week: "This Week",
-                month: "This Month",
-                year: "This Year",
-                allTime: "All-Time",
-              };
               return (["week", "month", "year", "allTime"] as const).map((filter) => (
                 <button
                   key={filter}
@@ -374,14 +431,16 @@ function HallOfFameLeaderboardInner(
                       : "text-stone-600 bg-stone-100 hover:bg-stone-200"
                   }`}
                 >
-                  {labels[filter]}
+                  {TIME_LABELS[filter]}
                 </button>
               ));
             })()}
           </div>
         </div>
+        </>
+        ) : null}
 
-        <div className="px-3 sm:px-5 pb-5">
+        <div className={`px-3 sm:px-5 ${compact ? "pb-3" : "pb-5"}`}>
           {(() => {
               const dataToRender =
                 leaderboardMetric === "xp"
@@ -407,7 +466,11 @@ function HallOfFameLeaderboardInner(
                   allTime: "yet",
                 };
                 return (
-                  <div className="text-center flex-1 flex flex-col items-center justify-center min-h-[160px]">
+                  <div
+                    className={`text-center flex-1 flex flex-col items-center justify-center ${
+                      showCompact ? "min-h-[72px]" : "min-h-[160px]"
+                    }`}
+                  >
                     <p className="text-sm text-stone-500">
                       No data for {timeLabels[timeFilter]}. Start logging to take the lead!
                     </p>
@@ -415,7 +478,8 @@ function HallOfFameLeaderboardInner(
                 );
               }
 
-              const top20 = dataToRender.all.slice(0, 20);
+              const topCount = showCompact ? COMPACT_TOP_COUNT : 20;
+              const top20 = dataToRender.all.slice(0, topCount);
               const meEntry = dataToRender.all.find((e: { isCurrentUser?: boolean }) => e.isCurrentUser);
               const meInTop20 = top20.some((e: { isCurrentUser?: boolean }) => e.isCurrentUser);
               const meRank =
@@ -519,7 +583,9 @@ function HallOfFameLeaderboardInner(
                   {user?.id && meEntry && !meInTop20 && meRank > 0 ? (
                     <div className="pt-2 mt-1 border-t border-stone-200">
                       <p className="text-xs text-stone-500 mb-2 text-center">
-                        Your rank (#{meRank}) — not in the top 20 for this filter
+                        {showCompact
+                          ? `Your rank: #${meRank}`
+                          : `Your rank (#${meRank}) — not in the top 20 for this filter`}
                       </p>
                       {renderRow(meEntry as Parameters<typeof renderRow>[0], meRank, "you")}
                     </div>
@@ -527,6 +593,18 @@ function HallOfFameLeaderboardInner(
                 </div>
               );
             })()}
+          {compact ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                onExpandedChange?.(!expanded);
+                keepElementInView(e.currentTarget.closest(`#${id}`));
+              }}
+              className="mt-3 w-full rounded-xl py-2 text-sm font-semibold text-[#014421] hover:bg-stone-100"
+            >
+              {expanded ? "Show less" : "See full leaderboard"}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

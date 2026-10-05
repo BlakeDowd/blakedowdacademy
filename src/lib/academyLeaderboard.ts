@@ -546,49 +546,35 @@ function calculateUserDrills(
   }
 }
 
-// Calculate library lessons count (completed lessons with both video and text)
-function calculateUserLibraryLessons(
+// Distinct Library lessons completed per user (library_lesson_completions rows) within the time filter
+function countLibraryLessonsByUser(
+  completions: { user_id?: string; lesson_id?: string; completed_at?: string }[],
   timeFilter: "week" | "month" | "year" | "allTime",
 ) {
-  if (typeof window === "undefined") return 0;
-  try {
-    const { startDate } = getTimeframeDates(timeFilter);
-    const savedProgress = localStorage.getItem("userProgress");
-    if (!savedProgress) return 0;
-
-    const progress = JSON.parse(savedProgress);
-    const completedDrillIds = progress.completedDrills || [];
-
-    // Count completed library items (lessons)
-    // Filter by timeframe using practice activity history if available
-    if (timeFilter === "allTime") {
-      return completedDrillIds.length;
+  const { startDate } = getTimeframeDates(timeFilter);
+  const startMs = startDate.getTime();
+  const lessonsByUser = new Map<string, Set<string>>();
+  for (const row of completions || []) {
+    if (!row.user_id || !row.lesson_id) continue;
+    if (timeFilter !== "allTime") {
+      const ms = row.completed_at ? new Date(row.completed_at).getTime() : NaN;
+      if (!Number.isFinite(ms) || ms < startMs) continue;
     }
-
-    // Try to filter by timeframe using practice activity history
-    try {
-      const practiceHistory = JSON.parse(
-        localStorage.getItem("practiceActivityHistory") || "[]",
-      );
-      const filteredHistory = practiceHistory.filter((entry: any) => {
-        const entryDate = new Date(entry.timestamp || entry.date);
-        return entryDate >= startDate && entry.type === "practice";
-      });
-
-      // Count unique drill IDs from filtered history
-      const uniqueDrillIds = new Set(
-        filteredHistory
-          .map((entry: any) => entry.drillTitle || entry.id)
-          .filter(Boolean),
-      );
-      return uniqueDrillIds.size;
-    } catch (error) {
-      // Fallback: return all completed if filtering fails
-      return completedDrillIds.length;
-    }
-  } catch (error) {
-    return 0;
+    if (!lessonsByUser.has(row.user_id)) lessonsByUser.set(row.user_id, new Set());
+    lessonsByUser.get(row.user_id)!.add(row.lesson_id);
   }
+  const counts = new Map<string, number>();
+  lessonsByUser.forEach((ids, userId) => counts.set(userId, ids.size));
+  return counts;
+}
+
+function calculateUserLibraryLessons(
+  timeFilter: "week" | "month" | "year" | "allTime",
+  completions: { user_id?: string; lesson_id?: string; completed_at?: string }[] = [],
+  userId?: string,
+) {
+  if (!userId) return 0;
+  return countLibraryLessonsByUser(completions, timeFilter).get(userId) || 0;
 }
 
 // Format metric value for display (used in four-pillar cards)
@@ -839,12 +825,13 @@ function getMockLeaderboard(
   >,
   drills?: any[],
   practiceSessions?: any[],
+  libraryCompletions: { user_id?: string; lesson_id?: string; completed_at?: string }[] = [],
 ) {
   let userValue: number;
 
   switch (metric) {
     case "library":
-      userValue = calculateUserLibraryLessons(timeFilter);
+      userValue = calculateUserLibraryLessons(timeFilter, libraryCompletions, user?.id);
       break;
     case "practice":
       userValue = calculateUserPracticeTime(timeFilter);
@@ -1218,74 +1205,38 @@ function getMockLeaderboard(
     };
   }
 
-  // For library metric, create leaderboard entries (library data is in localStorage, so we can only show current user accurately)
+  // Library: completed lessons per user from library_lesson_completions
   if (metric === "library") {
-    // Library lessons are stored in localStorage, so we can only accurately show the current user
-    // For other users, we'll show 0 until we have a database source
+    const lessonCounts = countLibraryLessonsByUser(libraryCompletions, timeFilter);
     const allEntries: any[] = [];
-    
-    // Add current user's entry
-    if (user?.id) {
-      const profile = userProfiles?.get(user.id);
-      if (!profile || !profile.full_name) return; // Skip if no profile or name exists
-      const displayName = profile.full_name || userName || "Academy Member";
-      
-      let nameForAvatar = "U";
-      if (profile?.full_name) {
-        nameForAvatar =
-          profile.full_name
-            .split(" ")
-            .map((n: string) => n[0])
-            .join("")
-            .toUpperCase() || "U";
-      } else if (displayName) {
-        nameForAvatar = displayName.substring(0, 1).toUpperCase() || "U";
-      }
-      
-      const userIcon = profile?.preferred_icon_id || nameForAvatar;
-      
+
+    lessonCounts.forEach((count, userId) => {
+      if (count <= 0) return;
+      const isCurrentUser = userId === user?.id;
+      const profile = userProfiles?.get(userId);
+      const displayName =
+        profile?.full_name || (isCurrentUser ? userName : "") || "Academy Member";
+      const initials =
+        displayName
+          .split(" ")
+          .map((n: string) => n[0])
+          .join("")
+          .toUpperCase() || "U";
+
       allEntries.push({
-        id: user.id,
+        id: userId,
         name: displayName,
-        avatar: userIcon,
-        value: userValue || 0, // This comes from calculateUserLibraryLessons - ensure it's a number
-        isCurrentUser: true,
+        avatar:
+          profile?.preferred_icon_id ||
+          (isCurrentUser ? user?.preferredIconId : undefined) ||
+          initials,
+        value: count,
+        isCurrentUser,
         full_name: displayName,
       });
-    }
-    
-    // Add entries for other users (with 0 value since we don't have their library data)
-    if (userProfiles) {
-      userProfiles.forEach((profile, userId) => {
-        if (userId === user?.id) return; // Skip current user, already added
-        if (!profile || !profile.full_name) return; // Skip if no profile or name exists
-        
-        const displayName = profile.full_name || "Academy Member";
-        let nameForAvatar = "U";
-        if (profile.full_name) {
-          nameForAvatar =
-            profile.full_name
-              .split(" ")
-              .map((n: string) => n[0])
-              .join("")
-              .toUpperCase() || "U";
-        } else {
-          nameForAvatar = displayName.substring(0, 1).toUpperCase() || "U";
-        }
-        
-        const userIcon = profile.preferred_icon_id || nameForAvatar;
-        
-        allEntries.push({
-          id: userId,
-          name: displayName,
-          avatar: userIcon,
-          value: 0, // Library data not available for other users (stored in localStorage)
-          isCurrentUser: false,
-        });
-      });
-    }
-    
-    // Sort by value descending (most lessons first)
+    });
+
+    // Most lessons first
     allEntries.sort((a, b) => b.value - a.value);
     
     // If no entries exist, return empty leaderboard
@@ -1300,15 +1251,7 @@ function getMockLeaderboard(
     
     const userEntryInSorted = allEntries.find((entry) => entry.isCurrentUser);
     const finalUserValue = userEntryInSorted?.value || userValue;
-    
-    console.log("getMockLeaderboard - library metric:", {
-      totalUsers: allEntries.length,
-      top3Values: allEntries
-        .slice(0, 3)
-        .map((e) => ({ name: e.name, value: e.value, id: e.id })),
-      currentUserValue: finalUserValue,
-    });
-    
+
     return {
       top3: allEntries.slice(0, 3),
       all: allEntries,
@@ -2169,7 +2112,7 @@ function getLeaderboardData(
       }
       break;
     case "library":
-      userValue = calculateUserLibraryLessons(timeFilter);
+      userValue = calculateUserLibraryLessons(timeFilter, [], user?.id);
       break;
     case "practice":
       // For practice metric, we'll calculate from all practice sessions below in the special case
