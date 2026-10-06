@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isCoachEmail } from "@/lib/coachEmails";
 import { createClient } from "@/lib/supabase/client";
 import {
+  AUTO_JOIN_PARAM,
   acceptInvite,
   clearPendingInvite,
   fetchInvitePreview,
@@ -53,20 +54,38 @@ export default function JoinSpacePage() {
   useEffect(() => {
     if (loading || !code) return;
     let cancelled = false;
-    fetchInvitePreview(createClient(), code)
-      .then((preview) => {
+    const autoJoin =
+      isAuthenticated && !isCoach && new URLSearchParams(window.location.search).get(AUTO_JOIN_PARAM) === "1";
+    void (async () => {
+      try {
+        const preview = await fetchInvitePreview(createClient(), code);
         if (cancelled) return;
-        if (preview && !preview.joined && !isAuthenticated) rememberPendingInvite(code);
+        if (preview && !preview.joined && !isAuthenticated) rememberPendingInvite(code, preview.displayName);
         else if (!preview || preview.joined) clearPendingInvite();
+        if (autoJoin && preview?.joinedByYou) {
+          window.location.assign(COACHING_HREF);
+          return;
+        }
+        if (autoJoin && preview && !preview.joined) {
+          try {
+            await acceptInvite(createClient(), code);
+            clearPendingInvite();
+            window.location.assign(COACHING_HREF);
+            return;
+          } catch (err) {
+            if (cancelled) return;
+            setJoinError(err instanceof Error ? err.message : "Couldn't join the space.");
+          }
+        }
         setLoaded({ key: loadKey, preview });
-      })
-      .catch((err) => {
+      } catch (err) {
         if (!cancelled) setLoaded({ key: loadKey, error: err instanceof Error ? err.message : "Couldn't load the invite." });
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [code, loading, loadKey, isAuthenticated]);
+  }, [code, loading, loadKey, isAuthenticated, isCoach]);
 
   const join = async () => {
     setJoining(true);

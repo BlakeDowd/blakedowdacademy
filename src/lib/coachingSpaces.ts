@@ -246,9 +246,9 @@ const PENDING_INVITE_KEY = "coaching_pending_invite";
 const PENDING_INVITE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 /** Remembers an invite opened while signed out so login/sign-up can bring the player back to it. */
-export function rememberPendingInvite(code: string): void {
+export function rememberPendingInvite(code: string, playerName: string): void {
   try {
-    localStorage.setItem(PENDING_INVITE_KEY, JSON.stringify({ code, at: Date.now() }));
+    localStorage.setItem(PENDING_INVITE_KEY, JSON.stringify({ code, name: playerName, at: Date.now() }));
   } catch {
     // Private browsing: the player can open the link again after signing in.
   }
@@ -262,17 +262,27 @@ export function clearPendingInvite(): void {
   }
 }
 
-/** Where to go after signing in: back to a waiting invite, otherwise the profile. */
-export function postLoginPath(): string {
+function readPendingInvite(): { code: string; name: string | null } | null {
   try {
     const raw = localStorage.getItem(PENDING_INVITE_KEY);
-    if (raw) {
-      const { code, at } = JSON.parse(raw) as { code?: string; at?: number };
-      if (code && at && Date.now() - at < PENDING_INVITE_MAX_AGE_MS) return `/join/${encodeURIComponent(code)}`;
-      localStorage.removeItem(PENDING_INVITE_KEY);
-    }
+    if (!raw) return null;
+    const { code, name, at } = JSON.parse(raw) as { code?: string; name?: string; at?: number };
+    if (code && at && Date.now() - at < PENDING_INVITE_MAX_AGE_MS) return { code, name: name?.trim() || null };
+    localStorage.removeItem(PENDING_INVITE_KEY);
   } catch {
     // ignore
   }
-  return "/profile";
+  return null;
+}
+
+/** The name the coach gave the invite, to pre-fill sign-up. */
+export const pendingInviteName = () => readPendingInvite()?.name ?? null;
+
+/** Query flag telling the invite page to join straight away (the player came back from login/sign-up). */
+export const AUTO_JOIN_PARAM = "auto";
+
+/** Where to go after signing in: back to a waiting invite (joining it automatically), otherwise the profile. */
+export function postLoginPath(): string {
+  const pending = readPendingInvite();
+  return pending ? `/join/${encodeURIComponent(pending.code)}?${AUTO_JOIN_PARAM}=1` : "/profile";
 }

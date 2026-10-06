@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Mail, Lock, User, LogIn, UserPlus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import IconPicker from "@/components/IconPicker";
-import { postLoginPath } from "@/lib/coachingSpaces";
+import { pendingInviteName, postLoginPath } from "@/lib/coachingSpaces";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,6 +27,8 @@ export default function LoginPage() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("mode") === "signup") setIsSignUp(true);
+    const invitedName = pendingInviteName();
+    if (invitedName) setFullName((current) => current || invitedName);
     if (params.get("reset") === "success") {
       setError("");
       window.history.replaceState({}, "", "/login");
