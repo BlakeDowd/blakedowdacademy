@@ -923,7 +923,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Redirect to login if not authenticated (except on login page and auth callback)
   useEffect(() => {
-    if (!loading && !isAuthenticated && pathname !== "/login" && !pathname.startsWith("/auth/callback")) {
+    if (
+      !loading &&
+      !isAuthenticated &&
+      pathname !== "/login" &&
+      !pathname.startsWith("/auth/callback") &&
+      !pathname.startsWith("/join/")
+    ) {
       router.push("/login");
     }
   }, [isAuthenticated, loading, pathname, router]);

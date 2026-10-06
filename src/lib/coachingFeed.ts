@@ -291,35 +291,14 @@ export async function fetchActivity(
 }
 
 export type CoachingSpaceSummary = {
+  /** Space key: the player's user id, or the space id while their invite is waiting. */
   studentId: string;
   name: string;
   lastActivityAt: string | null;
   unread: boolean;
+  /** Set when the coach created or invited this space (see coachingSpaces.ts). */
+  space?: { id: string; inviteCode: string; pending: boolean; createdAt: string };
 };
-
-/** Every student (one space each), merged with their latest activity. */
-export async function fetchSpaces(supabase: SupabaseClient, coachId: string): Promise<CoachingSpaceSummary[]> {
-  const [inbox, withRole] = await Promise.all([
-    fetchCoachInbox(supabase, coachId),
-    supabase.from("profiles").select("id, full_name, role"),
-  ]);
-  const profilesRes = withRole.error ? await supabase.from("profiles").select("id, full_name") : withRole;
-  const byId = new Map(inbox.map((t) => [t.studentId, t] as const));
-  const spaces: CoachingSpaceSummary[] = [];
-  for (const p of (profilesRes.data ?? []) as { id: string; full_name: string | null; role?: string | null }[]) {
-    const isCoachProfile = (p.role ?? "").trim().toLowerCase() === "coach";
-    const thread = byId.get(p.id);
-    if (p.id === coachId && !thread) continue;
-    if (isCoachProfile && !thread) continue;
-    spaces.push({
-      studentId: p.id,
-      name: p.full_name?.trim() || "Golfer",
-      lastActivityAt: thread?.latest?.created_at ?? null,
-      unread: thread?.unread ?? false,
-    });
-  }
-  return spaces;
-}
 
 async function fetchReads(supabase: SupabaseClient, userId: string): Promise<Map<string, number>> {
   const { data, error } = await supabase

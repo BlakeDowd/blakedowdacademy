@@ -6,8 +6,7 @@ import Navbar from "./Navbar";
 export default function ConditionalNavbar() {
   const pathname = usePathname();
 
-  // Hide on login
-  if (pathname === "/login") {
+  if (pathname === "/login" || pathname.startsWith("/join/")) {
     return null;
   }
 

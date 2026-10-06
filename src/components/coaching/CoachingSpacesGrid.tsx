@@ -16,10 +16,12 @@ export function CoachingSpacesGrid({
   spaces,
   loading,
   onOpen,
+  onNew,
 }: {
   spaces: CoachingSpaceSummary[];
   loading: boolean;
   onOpen: (studentId: string, name: string) => void;
+  onNew: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("recent");
@@ -31,7 +33,9 @@ export function CoachingSpacesGrid({
     return list.sort((a, b) => {
       if (sort === "recent") {
         if (a.unread !== b.unread) return a.unread ? -1 : 1;
-        const diff = (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? "");
+        const diff = (b.lastActivityAt ?? b.space?.createdAt ?? "").localeCompare(
+          a.lastActivityAt ?? a.space?.createdAt ?? "",
+        );
         if (diff) return diff;
       }
       return a.name.localeCompare(b.name);
@@ -39,8 +43,9 @@ export function CoachingSpacesGrid({
   }, [spaces, query, sort]);
 
   const searching = query.trim().length > 0;
-  const active = searching ? filtered : filtered.filter((s) => s.lastActivityAt);
-  const quiet = searching ? [] : filtered.filter((s) => !s.lastActivityAt);
+  const shown = (s: CoachingSpaceSummary) => Boolean(s.lastActivityAt || s.space);
+  const active = searching ? filtered : filtered.filter(shown);
+  const quiet = searching ? [] : filtered.filter((s) => !shown(s));
 
   const tile = (s: CoachingSpaceSummary) => (
     <li key={s.studentId}>
@@ -59,9 +64,13 @@ export function CoachingSpacesGrid({
           <span className={`block truncate text-sm ${s.unread ? "font-bold text-stone-900" : "font-medium text-stone-800"}`}>
             {s.name}
           </span>
-          <span className="block text-[11px] text-stone-500">
-            {s.lastActivityAt ? activeLabel(s.lastActivityAt) : "Golf"}
-          </span>
+          {s.space?.pending ? (
+            <span className="block text-[11px] font-semibold text-[#c77700]">Invited</span>
+          ) : (
+            <span className="block text-[11px] text-stone-500">
+              {s.lastActivityAt ? activeLabel(s.lastActivityAt) : "Golf"}
+            </span>
+          )}
         </span>
       </button>
     </li>
@@ -99,11 +108,11 @@ export function CoachingSpacesGrid({
       ) : (
         <>
           <ul className="mt-4 grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-4">
-            {quiet.length > 0 && (
+            {!searching && (
               <li>
                 <button
                   type="button"
-                  onClick={() => setShowQuiet(true)}
+                  onClick={onNew}
                   className="flex w-full flex-col items-center gap-2 rounded-2xl px-1 py-2 text-center hover:bg-stone-50"
                 >
                   <span className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-dashed border-stone-300 text-stone-400">
@@ -115,6 +124,9 @@ export function CoachingSpacesGrid({
             )}
             {active.map(tile)}
           </ul>
+          {!searching && spaces.length === 0 && (
+            <p className="pb-2 text-center text-sm text-stone-500">Tap New to invite your first player.</p>
+          )}
           {searching && filtered.length === 0 && (
             <p className="py-6 text-center text-sm text-stone-500">No students match “{query.trim()}”.</p>
           )}

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Mail, Lock, User, LogIn, UserPlus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import IconPicker from "@/components/IconPicker";
+import { postLoginPath } from "@/lib/coachingSpaces";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,6 +26,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
+    if (params.get("mode") === "signup") setIsSignUp(true);
     if (params.get("reset") === "success") {
       setError("");
       window.history.replaceState({}, "", "/login");
@@ -47,7 +49,7 @@ export default function LoginPage() {
         if (session?.user) {
           console.log('Login: Session exists, forcing redirect to /profile');
           // Force hard redirect to break any spinner loop
-          window.location.href = '/profile';
+          window.location.href = postLoginPath();
         }
       } catch (err) {
         console.error('Login: Error checking session:', err);
@@ -104,12 +106,12 @@ export default function LoginPage() {
           const supabase = createClient();
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
-            window.location.assign('/profile');
+            window.location.assign(postLoginPath());
           }
         } catch (err) {
           console.error('Login: Error verifying session before redirect:', err);
           // Still redirect after delay
-          setTimeout(() => window.location.assign('/profile'), 200);
+          setTimeout(() => window.location.assign(postLoginPath()), 200);
         }
       } else {
         await Promise.race([
@@ -124,12 +126,12 @@ export default function LoginPage() {
           const supabase = createClient();
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
-            window.location.assign('/profile');
+            window.location.assign(postLoginPath());
           }
         } catch (err) {
           console.error('Login: Error verifying session before redirect:', err);
           // Still redirect after delay
-          setTimeout(() => window.location.assign('/profile'), 200);
+          setTimeout(() => window.location.assign(postLoginPath()), 200);
         }
       }
     } catch (err: any) {
@@ -152,7 +154,7 @@ export default function LoginPage() {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
               console.log('Login: Session exists after timeout, forcing redirect to /profile');
-              window.location.href = '/profile';
+              window.location.href = postLoginPath();
             }
           } catch (checkErr) {
             console.error('Login: Error checking session after timeout:', checkErr);

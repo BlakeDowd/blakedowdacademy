@@ -6,11 +6,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { APP_VIDEO_COACH_NAME } from "@/lib/bunnyStream";
 import { isCoachEmail } from "@/lib/coachEmails";
 import { createClient } from "@/lib/supabase/client";
-import { fetchSpaces, type CoachingSpaceSummary } from "@/lib/coachingFeed";
+import type { CoachingSpaceSummary } from "@/lib/coachingFeed";
+import { fetchSpaces } from "@/lib/coachingSpaces";
 import { Avatar, rememberNames } from "@/components/coaching/coachingUi";
 import { CoachingFeedList } from "@/components/coaching/CoachingFeedList";
 import { CoachingSpacesGrid } from "@/components/coaching/CoachingSpacesGrid";
 import { CoachingActivity } from "@/components/coaching/CoachingActivity";
+import { NewSpaceSheet, PendingInviteBanner } from "@/components/coaching/CoachingInvites";
 
 type View = "spaces" | "feed" | "activity";
 
@@ -61,6 +63,8 @@ export default function CoachingTab({
   const [spaces, setSpaces] = useState<CoachingSpaceSummary[]>([]);
   const [spacesLoading, setSpacesLoading] = useState(isCoach);
   const [spacesError, setSpacesError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const closeCreating = useCallback(() => setCreating(false), []);
 
   const loadSpaces = useCallback(async () => {
     if (!user?.id || !isCoach) return;
@@ -134,6 +138,7 @@ export default function CoachingTab({
   };
 
   if (open) {
+    const pending = spaces.find((s) => s.studentId === open.id)?.space;
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-3 px-1">
@@ -151,9 +156,23 @@ export default function CoachingTab({
           <Avatar name={open.name} userId={open.id} />
           <div className="min-w-0">
             <h2 className="truncate text-base font-bold text-stone-900">{open.name}</h2>
-            <p className="text-xs text-stone-500">Golf · private space with this student</p>
+            <p className="text-xs text-stone-500">
+              {pending?.pending ? "Invited · hasn't joined yet" : "Golf · private space with this student"}
+            </p>
           </div>
         </div>
+        {pending?.pending && (
+          <PendingInviteBanner
+            spaceId={pending.id}
+            inviteCode={pending.inviteCode}
+            playerName={open.name}
+            coachName={viewerName}
+            onDeleted={() => {
+              setOpen(null);
+              void loadSpaces();
+            }}
+          />
+        )}
         <CoachingFeedList
           key={open.id}
           studentId={open.id}
@@ -187,7 +206,12 @@ export default function CoachingTab({
       {view === "spaces" && spacesError ? (
         <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{spacesError}</p>
       ) : view === "spaces" ? (
-        <CoachingSpacesGrid spaces={spaces} loading={spacesLoading} onOpen={openSpace} />
+        <CoachingSpacesGrid
+          spaces={spaces}
+          loading={spacesLoading}
+          onOpen={openSpace}
+          onNew={() => setCreating(true)}
+        />
       ) : view === "feed" ? (
         <CoachingFeedList
           viewerId={user.id}
@@ -206,6 +230,19 @@ export default function CoachingTab({
           onRead={() => {
             refreshUnread();
             void loadSpaces();
+          }}
+        />
+      )}
+      {creating && (
+        <NewSpaceSheet
+          coachId={user.id}
+          coachName={viewerName}
+          existingIds={new Set(spaces.map((s) => s.studentId))}
+          onClose={closeCreating}
+          onCreated={() => void loadSpaces()}
+          onOpenSpace={(key, name) => {
+            setCreating(false);
+            openSpace(key, name);
           }}
         />
       )}
