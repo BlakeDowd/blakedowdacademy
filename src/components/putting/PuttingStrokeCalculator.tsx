@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { releaseAudio, unlockAudio } from "@/lib/unlockAudio";
 import {
   ChevronDown,
   Gauge,
@@ -442,6 +443,7 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
   }, [fullScreen]);
 
   const stop = useCallback(() => {
+    releaseAudio();
     if (timerRef.current) clearInterval(timerRef.current);
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     timerRef.current = null;
@@ -456,13 +458,10 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
     setPlaying(false);
   }, []);
 
-  const start = async () => {
-    const AudioCtor =
-      window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtor) return;
-    const ctx = ctxRef.current ?? new AudioCtor();
+  const start = () => {
+    const ctx = unlockAudio(ctxRef.current);
+    if (!ctx) return;
     ctxRef.current = ctx;
-    await ctx.resume();
 
     const master = ctx.createGain();
     master.gain.value = soundRef.current ? 1 : 0;
@@ -522,7 +521,7 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
     [],
   );
 
-  const togglePlay = () => (playing ? stop() : void start());
+  const togglePlay = () => (playing ? stop() : start());
   const distanceLabel = `${distanceUnit === "ft" ? distanceValue : distanceValue.toFixed(1)} ${distanceUnit}`;
 
   return (
@@ -729,7 +728,7 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
         </div>
         <p className="mt-3 text-[11px] text-gray-400">
           Low beep: start the takeaway. Middle beep: top of the backswing. High click: strike the ball. The putter on the stroke
-          track moves at your exact timings. On iPhone, turn off silent mode to hear the beeps.
+          track moves at your exact timings. No sound? Turn your volume up, and on older iPhones switch off silent mode.
         </p>
       </section>
 

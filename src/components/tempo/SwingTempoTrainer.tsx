@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Mic, Music, Pause, Play, Volume2, type LucideIcon } from "lucide-react";
+import { releaseAudio, unlockAudio } from "@/lib/unlockAudio";
 
 /** Frame counts at 30 FPS, e.g. 21/7 = 21 frames back, 7 frames down to impact. */
 export type TempoPreset = { back: number; down: number; label?: string };
@@ -138,6 +139,7 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
     voiceTimersRef.current.forEach(clearTimeout);
     voiceTimersRef.current.clear();
     if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    releaseAudio();
     const ctx = ctxRef.current;
     const master = masterRef.current;
     masterRef.current = null;
@@ -161,13 +163,10 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
     setPlaying(false);
   };
 
-  const play = async () => {
-    const AudioCtor =
-      window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtor) return;
-    const ctx = ctxRef.current ?? new AudioCtor();
+  const play = () => {
+    const ctx = unlockAudio(ctxRef.current);
+    if (!ctx) return;
     ctxRef.current = ctx;
-    await ctx.resume();
 
     const canSpeak = "speechSynthesis" in window;
     if (canSpeak && modeRef.current === "voice") {
@@ -361,7 +360,7 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
 
         <button
           type="button"
-          onClick={() => (playing ? pause() : void play())}
+          onClick={() => (playing ? pause() : play())}
           className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white shadow-sm transition-colors ${
             playing ? "bg-gray-800 hover:bg-gray-700" : "bg-[#014421] hover:bg-[#013320]"
           }`}
@@ -432,7 +431,7 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
           {mode === "voice"
             ? "“One” starts the takeaway, “Two” is the top, “Hit!” is impact."
             : "Low tone starts the takeaway, middle tone is the top (orange mark), high tone is impact."}{" "}
-          {resetSec}s pause between reps to address the ball. On iPhone, turn off silent mode to hear it.
+          {resetSec}s pause between reps to address the ball. No sound? Turn your volume up, and on older iPhones switch off silent mode.
         </p>
       </section>
     </div>
