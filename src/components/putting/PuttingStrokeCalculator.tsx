@@ -289,7 +289,9 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
     () => () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      void ctxRef.current?.close().catch(() => undefined);
+      const ctx = ctxRef.current;
+      ctxRef.current = null;
+      void ctx?.close().catch(() => undefined);
     },
     [],
   );
