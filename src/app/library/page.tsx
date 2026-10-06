@@ -17,6 +17,7 @@ import {
   HelpCircle,
   Search,
   BookOpen,
+  Calculator,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,9 +26,11 @@ import { fetchMyLibraryCompletionIds, recordLibraryCompletions } from "@/lib/lib
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 import { SHOW_PDFS } from "@/lib/drillResources";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
+import PuttingStrokeCalculator from "@/components/putting/PuttingStrokeCalculator";
 import {
   APP_VIDEO_COACH_NAME,
-  LIBRARY_SWING_VIDEOS,
+  LIBRARY_MODULES,
+  buildBunnyThumbnailUrl,
   formatBunnyDuration,
   isBunnyPortraitVideo,
   cleanBunnyVideoTitle,
@@ -35,7 +38,7 @@ import {
 import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 // Drills / video authoring field guide: `src/lib/academyContentSchema.ts`
 
-type LessonType = "video" | "text" | "pdf" | "quiz" | "drill";
+type LessonType = "video" | "text" | "pdf" | "quiz" | "drill" | "tool";
 
 interface Lesson {
   id: string;
@@ -55,6 +58,8 @@ interface Chapter {
   name: string;
   lessons: Lesson[];
   completedCount: number;
+  /** Lessons that count towards progress (tools excluded). */
+  total: number;
 }
 
 interface Module {
@@ -62,25 +67,44 @@ interface Module {
   chapters: Chapter[];
   lessons: Lesson[]; // flat for backward compat
   completedCount: number;
+  total: number;
 }
 
-/** Live curriculum from Bunny swing library catalog. */
-const LIBRARY_CURRICULUM_LESSONS: Lesson[] = LIBRARY_SWING_VIDEOS.map((video, index) => ({
-  id: video.libraryDrillId,
-  title: video.label,
-  type: "video" as const,
-  description: `${video.label} with Blake Dowd.`,
-  source: video.bunnyVideoId,
-  chapter_name: "Swing Videos",
-  module_name: "Swing Drills",
-  category: "Swing",
-  sort_order: index + 1,
-  xpValue: 50,
-}));
+/** Tools are interactive items with no completion, so they never count towards progress or XP. */
+const isTool = (lesson: Lesson) => lesson.type === "tool";
+const countsTowardsProgress = (lesson: Lesson) => !isTool(lesson);
+
+/** Live curriculum from the Bunny library catalog: each module's tools first, then one lesson per video. */
+const LIBRARY_CURRICULUM_LESSONS: Lesson[] = LIBRARY_MODULES.flatMap((mod) => [
+  ...(mod.tools ?? []).map((tool) => ({
+    id: tool.id,
+    title: tool.label,
+    type: "tool" as const,
+    description: tool.description,
+    source: "",
+    chapter_name: tool.chapter,
+    module_name: mod.name,
+    category: mod.category,
+    sort_order: 0,
+    xpValue: 0,
+  })),
+  ...mod.videos.map((video, index) => ({
+    id: video.libraryDrillId,
+    title: video.label,
+    type: "video" as const,
+    description: video.description ?? `${video.label} with ${APP_VIDEO_COACH_NAME}.`,
+    source: video.bunnyVideoId,
+    chapter_name: mod.chapter,
+    module_name: mod.name,
+    category: mod.category,
+    sort_order: index + 1,
+    xpValue: 50,
+  })),
+]);
 
 const CURRICULUM_LESSON_IDS = new Set(LIBRARY_CURRICULUM_LESSONS.map((l) => l.id));
 const CURRICULUM_BUNNY_IDS = new Set(
-  LIBRARY_SWING_VIDEOS.map((v) => v.bunnyVideoId.toLowerCase()),
+  LIBRARY_MODULES.flatMap((m) => m.videos.map((v) => v.bunnyVideoId.toLowerCase())),
 );
 
 /** Placeholder YouTube IDs (e.g. joke embeds) — show “coming soon” instead. */
@@ -150,15 +174,28 @@ function VideoComingSoon() {
 
 /** Shown in the header on the main library screen and in lesson breadcrumbs. */
 const ONLINE_LEARNING_LIBRARY = "Online Learning Library";
-const COURSE_TITLE = "Swing Drills";
-const CATEGORIES = ["All", "Swing"];
+const COURSE_TITLE = "Video Lessons";
+const CATEGORIES = [
+  "All",
+  ...LIBRARY_MODULES.filter((m) => m.videos.length > 0 || (m.tools?.length ?? 0) > 0).map((m) => m.category),
+];
 const HERO_IMAGE = "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?q=80&w=1200&auto=format&fit=crop";
 
 function getLessonTypeTag(type: LessonType) {
   if (type === "video") return { label: "Video", icon: Video };
   if (type === "quiz") return { label: "Quiz", icon: HelpCircle };
   if (type === "drill") return { label: "Drill", icon: Target };
+  if (type === "tool") return { label: "Tool", icon: Calculator };
   return { label: "Text", icon: FileText };
+}
+
+function formatItemCount(lessons: Lesson[]): string {
+  const tools = lessons.filter(isTool).length;
+  const videos = lessons.length - tools;
+  const parts: string[] = [];
+  if (videos > 0 || tools === 0) parts.push(`${videos} lesson${videos !== 1 ? "s" : ""}`);
+  if (tools > 0) parts.push(`${tools} tool${tools !== 1 ? "s" : ""}`);
+  return parts.join(" · ");
 }
 
 interface LibraryCategoryScrollerProps {
@@ -442,6 +479,7 @@ function LibraryPageContent() {
           name: chName,
           lessons: chLessons,
           completedCount: chLessons.filter(l => completedIds.has(l.id)).length,
+          total: chLessons.filter(countsTowardsProgress).length,
           minSort: Math.min(...chLessons.map(l => l.sort_order)),
         };
       });
@@ -450,12 +488,13 @@ function LibraryPageContent() {
         .map(({ minSort: _, ...ch }) => ch);
       const lessons = chapters.flatMap(c => c.lessons);
       const completedCount = lessons.filter(l => completedIds.has(l.id)).length;
-      return { name: modName, chapters, lessons, completedCount };
+      return { name: modName, chapters, lessons, completedCount, total: lessons.filter(countsTowardsProgress).length };
     });
   }, [filteredLessons, completedIds]);
 
   // Flat list of lessons for Prev/Next
   const flatLessons = useMemo(() => modules.flatMap(m => m.lessons), [modules]);
+  const progressLessons = useMemo(() => flatLessons.filter(countsTowardsProgress), [flatLessons]);
   const activeLessonIndex = activeLesson ? flatLessons.findIndex(l => l.id === activeLesson.id) : -1;
 
   // If URL has ?drill=id, open lesson view and select that lesson
@@ -596,13 +635,13 @@ function LibraryPageContent() {
   }, [activeLesson]);
 
   const completedLessonCount = useMemo(
-    () => flatLessons.filter((l) => completedIds.has(l.id)).length,
-    [flatLessons, completedIds],
+    () => progressLessons.filter((l) => completedIds.has(l.id)).length,
+    [progressLessons, completedIds],
   );
 
   const progressPercent =
-    flatLessons.length > 0
-      ? Math.round((completedLessonCount / flatLessons.length) * 100)
+    progressLessons.length > 0
+      ? Math.round((completedLessonCount / progressLessons.length) * 100)
       : 0;
 
   const progressRingCirc = 2 * Math.PI * 15.9;
@@ -610,6 +649,9 @@ function LibraryPageContent() {
   const getStatusIcon = (lesson: Lesson) => {
     const done = completedIds.has(lesson.id);
     const active = activeLesson?.id === lesson.id;
+    if (isTool(lesson)) {
+      return <Calculator className={`w-4 h-4 ${active ? "text-[#FFA500]" : "text-[#014421]"}`} aria-hidden="true" />;
+    }
     if (done) return <Check className="w-4 h-4 text-[#014421]" />;
     if (active) return <CircleDot className="w-4 h-4 text-[#FFA500]" aria-hidden="true" />;
     return <Circle className="w-4 h-4 text-gray-300" aria-hidden="true" />;
@@ -622,9 +664,12 @@ function LibraryPageContent() {
 
   const activeLessonCompleted = activeLesson ? completedIds.has(activeLesson.id) : false;
   const activeLessonNeedsFullWatch = Boolean(bunnyVideoId);
+  const activeLessonComingSoon =
+    activeLesson?.type === "video" && !bunnyVideoId && !isPlayableVideoSource(activeLesson.source);
   const canCompleteActiveLesson =
     Boolean(activeLesson && user?.id) &&
     !activeLessonCompleted &&
+    !activeLessonComingSoon &&
     (!activeLessonNeedsFullWatch || fullyWatchedIds.has(activeLesson!.id));
 
   const completeActiveLesson = useCallback(() => {
@@ -648,23 +693,23 @@ function LibraryPageContent() {
       : null;
 
   const totalXP = useMemo(() => {
-    return flatLessons
+    return progressLessons
       .filter(l => completedIds.has(l.id))
       .reduce((sum, l) => sum + l.xpValue, 0);
-  }, [flatLessons, completedIds]);
+  }, [progressLessons, completedIds]);
 
   /** Next lesson in path order, preferring first incomplete (e-learning “resume”). */
   const continueLesson = useMemo(() => {
-    if (flatLessons.length === 0) return null;
-    const firstIncomplete = flatLessons.find((l) => !completedIds.has(l.id));
+    if (progressLessons.length === 0) return null;
+    const firstIncomplete = progressLessons.find((l) => !completedIds.has(l.id));
     if (firstIncomplete) return firstIncomplete;
     if (typeof window !== "undefined") {
       const id = localStorage.getItem("libraryLastWatchedLessonId");
-      const last = id ? flatLessons.find((l) => l.id === id) : null;
+      const last = id ? progressLessons.find((l) => l.id === id) : null;
       if (last) return last;
     }
-    return flatLessons[0];
-  }, [flatLessons, completedIds]);
+    return progressLessons[0];
+  }, [progressLessons, completedIds]);
 
   const downloadPlayerReport = useCallback(() => {
     window.print();
@@ -698,15 +743,19 @@ function LibraryPageContent() {
             >
               <div className="flex flex-col gap-1 min-w-0 pr-2">
                 <span className="text-sm font-bold text-gray-900 truncate">{mod.name}</span>
+                {mod.total > 0 ? (
                 <div className="flex items-center gap-2">
                   <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-[#FFA500]"
-                      style={{ width: `${mod.lessons.length ? Math.round((mod.completedCount / mod.lessons.length) * 100) : 0}%` }}
+                      style={{ width: `${Math.round((mod.completedCount / mod.total) * 100)}%` }}
                     />
                   </div>
-                  <span className="text-[10px] text-gray-500 font-medium">{mod.completedCount}/{mod.lessons.length}</span>
+                  <span className="text-[10px] text-gray-500 font-medium">{mod.completedCount}/{mod.total}</span>
                 </div>
+                ) : (
+                <span className="text-[10px] text-gray-500 font-medium">{formatItemCount(mod.lessons)}</span>
+                )}
               </div>
               {collapsedModules.has(mod.name) ? (
                 <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
@@ -736,7 +785,7 @@ function LibraryPageContent() {
                             <div className={`text-sm truncate ${isActive ? "font-bold text-gray-900" : "font-medium text-gray-700"}`}>{lesson.title}</div>
                             <span className="inline-flex items-center gap-1 mt-0.5 text-[10px] text-gray-500">
                               <TagIcon className="w-3 h-3" />
-                              {tag.label} +{lesson.xpValue} XP {lesson.duration && `• ${lesson.duration}`}
+                              {tag.label} {lesson.xpValue > 0 && `+${lesson.xpValue} XP`} {lesson.duration && `• ${lesson.duration}`}
                             </span>
                           </div>
                         </button>
@@ -783,7 +832,7 @@ function LibraryPageContent() {
           )}
           <h1 className="truncate text-sm font-bold leading-snug sm:text-base">
             {isViewingLesson
-              ? COURSE_TITLE
+              ? activeLesson?.module_name ?? COURSE_TITLE
               : selectedModule
                 ? selectedModule
                 : ONLINE_LEARNING_LIBRARY}
@@ -870,7 +919,7 @@ function LibraryPageContent() {
                   </p>
                   <h2 className="mt-1 text-lg font-bold text-white sm:text-xl">{COURSE_TITLE}</h2>
                   <p className="mt-1 text-xs text-white/80">
-                    {flatLessons.length} lessons · {modules.length} module{modules.length !== 1 ? "s" : ""}
+                    {formatItemCount(flatLessons)} · {modules.length} module{modules.length !== 1 ? "s" : ""}
                   </p>
                 </div>
                 {continueLesson && (
@@ -922,7 +971,7 @@ function LibraryPageContent() {
               </div>
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-center justify-center">
                 <span className="text-xl font-bold text-gray-900">{completedLessonCount}</span>
-                <span className="text-[10px] font-medium text-gray-500">/ {flatLessons.length}</span>
+                <span className="text-[10px] font-medium text-gray-500">/ {progressLessons.length}</span>
                 <span className="text-[10px] font-medium text-gray-500 mt-0.5">Lessons Watched</span>
               </div>
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col items-center justify-center">
@@ -969,16 +1018,18 @@ function LibraryPageContent() {
               ) : (
               <div className="flex flex-col gap-4">
                 {modules.map((mod) => {
+                  const firstBunnyId = mod.lessons
+                    .map((l) => (l.type === "video" ? extractBunnyVideoId(l.source) : null))
+                    .find(Boolean);
                   const firstLesson = mod.lessons.find((l) => l.type === "video") || mod.lessons[0];
                   const thumbUrl =
-                    firstLesson &&
-                    firstLesson.type === "video" &&
-                    isPlayableVideoSource(firstLesson.source)
+                    (firstBunnyId && buildBunnyThumbnailUrl(firstBunnyId)) ||
+                    (firstLesson && firstLesson.type === "video" && isPlayableVideoSource(firstLesson.source)
                       ? getThumbnailUrl(firstLesson.source)
-                      : HERO_IMAGE;
+                      : HERO_IMAGE);
                   const chapterCount = mod.chapters.length;
-                  const modProgress = mod.lessons.length
-                    ? Math.round((mod.completedCount / mod.lessons.length) * 100)
+                  const modProgress = mod.total
+                    ? Math.round((mod.completedCount / mod.total) * 100)
                     : 0;
                   return (
                     <button
@@ -990,6 +1041,9 @@ function LibraryPageContent() {
                       <div className="relative aspect-[2.2/1] overflow-hidden bg-gray-200">
                         <img
                           src={thumbUrl ?? HERO_IMAGE}
+                          onError={(e) => {
+                            if (e.currentTarget.src !== HERO_IMAGE) e.currentTarget.src = HERO_IMAGE;
+                          }}
                           alt=""
                           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                         />
@@ -999,7 +1053,7 @@ function LibraryPageContent() {
                             {mod.name}
                           </span>
                           <span className="mt-0.5 block text-xs text-white/80">
-                            {mod.lessons.length} lessons · {chapterCount} chapter{chapterCount !== 1 ? "s" : ""}
+                            {formatItemCount(mod.lessons)} · {chapterCount} chapter{chapterCount !== 1 ? "s" : ""}
                           </span>
                         </div>
                         {modProgress === 100 && (
@@ -1010,15 +1064,21 @@ function LibraryPageContent() {
                         )}
                       </div>
                       <div className="flex items-center gap-3 px-3 py-3">
-                        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-[#FFA500] rounded-full transition-all"
-                            style={{ width: `${modProgress}%` }}
-                          />
-                        </div>
-                        <span className="shrink-0 text-xs font-semibold tabular-nums text-gray-600">
-                          {mod.completedCount}/{mod.lessons.length}
-                        </span>
+                        {mod.total > 0 ? (
+                          <>
+                            <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-[#FFA500] rounded-full transition-all"
+                                style={{ width: `${modProgress}%` }}
+                              />
+                            </div>
+                            <span className="shrink-0 text-xs font-semibold tabular-nums text-gray-600">
+                              {mod.completedCount}/{mod.total}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="flex-1 text-xs font-semibold text-gray-600">Open tools</span>
+                        )}
                         <ChevronRight className="h-5 w-5 shrink-0 text-gray-400 group-hover:text-[#014421]" />
                       </div>
                     </button>
@@ -1037,7 +1097,7 @@ function LibraryPageContent() {
               <div className="w-full flex flex-col pb-24">
                 <div className="px-4 py-4 bg-white border-b border-gray-100 shrink-0">
                   <h2 className="text-lg font-bold text-gray-900">{mod.name}</h2>
-                  <p className="text-sm text-gray-500 mt-0.5">{mod.lessons.length} lessons in {mod.chapters.length} chapter{mod.chapters.length !== 1 ? "s" : ""}</p>
+                  <p className="text-sm text-gray-500 mt-0.5">{formatItemCount(mod.lessons)} in {mod.chapters.length} chapter{mod.chapters.length !== 1 ? "s" : ""}</p>
                   <div className="mt-3">
                     <LibrarySearchFilters {...searchFilterProps} />
                   </div>
@@ -1055,7 +1115,7 @@ function LibraryPageContent() {
                         >
                           <span className="text-sm font-bold text-gray-900">{ch.name}</span>
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-gray-500">{ch.completedCount}/{ch.lessons.length}</span>
+                            {ch.total > 0 && <span className="text-[10px] text-gray-500">{ch.completedCount}/{ch.total}</span>}
                             {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                           </div>
                         </button>
@@ -1072,7 +1132,13 @@ function LibraryPageContent() {
                                   <div className="relative flex flex-col items-center pr-3">
                                     <div className={`absolute top-5 left-[9px] w-0.5 bg-gray-200 ${isLast ? "h-0" : "h-[calc(100%+8px)]"}`} aria-hidden />
                                     <span className="relative z-10 shrink-0 w-5 h-5 flex items-center justify-center mt-2.5">
-                                      {done ? <Check className="w-4 h-4 text-[#014421]" /> : <Circle className="w-4 h-4 text-gray-300" />}
+                                      {isTool(lesson) ? (
+                                        <Calculator className="w-4 h-4 text-[#014421]" aria-hidden />
+                                      ) : done ? (
+                                        <Check className="w-4 h-4 text-[#014421]" />
+                                      ) : (
+                                        <Circle className="w-4 h-4 text-gray-300" />
+                                      )}
                                     </span>
                                   </div>
                                   <button
@@ -1087,7 +1153,9 @@ function LibraryPageContent() {
                                           <TagIcon className="w-3 h-3" />
                                           {tag.label}
                                         </span>
-                                        <span className="text-[10px] font-semibold text-[#014421]">+{lesson.xpValue} XP</span>
+                                        {lesson.xpValue > 0 && (
+                                          <span className="text-[10px] font-semibold text-[#014421]">+{lesson.xpValue} XP</span>
+                                        )}
                                         {lesson.duration && <span className="text-[10px] text-gray-500">{lesson.duration}</span>}
                                       </div>
                                     </div>
@@ -1127,6 +1195,7 @@ function LibraryPageContent() {
             </div>
 
             {/* Match Bunny encode: portrait files use 9:16; current Hell Drills are 1920×1080 → 16:9 */}
+            {!isTool(activeLesson) && (
             <div
               className={`lesson-video-container w-full bg-black shrink-0 shadow-md print:min-h-[120px] relative overflow-hidden ${
                 bunnyVideoId
@@ -1174,6 +1243,7 @@ function LibraryPageContent() {
                 </div>
               )}
             </div>
+            )}
 
             {/* Content Body */}
             <div className="flex-1 bg-white px-5 py-6 relative">
@@ -1183,13 +1253,12 @@ function LibraryPageContent() {
                 {activeLesson.type === "quiz" && <HelpCircle className="w-3 h-3" />}
                 {activeLesson.type === "drill" && <Target className="w-3 h-3" />}
                 {activeLesson.type === "pdf" && <FileText className="w-3 h-3" />}
-                {activeLesson.type} Lesson
+                {activeLesson.type === "tool" && <Calculator className="w-3 h-3" />}
+                {isTool(activeLesson) ? "Practice tool" : `${activeLesson.type} Lesson`}
               </div>
               
               <p className="mb-1 text-[11px] font-medium text-gray-500">
                 {ONLINE_LEARNING_LIBRARY}
-                <span className="text-gray-300"> · </span>
-                {COURSE_TITLE}
                 <span className="text-gray-300"> · </span>
                 {activeLesson.module_name}
                 <span className="text-gray-300"> · </span>
@@ -1203,17 +1272,25 @@ function LibraryPageContent() {
               ) : null}
 
               {/* Stats row for PDF */}
+              {!isTool(activeLesson) && (
               <div className="lesson-stat-card flex flex-wrap gap-3 text-xs text-gray-500 mb-4">
                 <span>+{activeLesson.xpValue} XP</span>
                 {activeLessonDuration && <span>{activeLessonDuration}</span>}
                 <span>{activeLesson.type}</span>
               </div>
+              )}
               
               <div className="w-full h-px bg-gray-100 my-4" />
 
               {activeLesson.description && (
                 <div className="text-base text-gray-600 leading-relaxed whitespace-pre-wrap">
                   {activeLesson.description}
+                </div>
+              )}
+
+              {activeLesson.id === "putting-stroke-calculator" && (
+                <div className="mt-5 -mx-1">
+                  <PuttingStrokeCalculator hideHeader />
                 </div>
               )}
               
@@ -1245,7 +1322,12 @@ function LibraryPageContent() {
               <ChevronLeft className="w-4 h-4" />
               Prev
             </button>
-            {activeLessonCompleted ? (
+            {isTool(activeLesson) ? (
+              <div className="flex-1 py-3 px-2 rounded-xl font-semibold text-gray-600 bg-gray-50 border border-gray-200 text-sm text-center flex items-center justify-center gap-1.5">
+                <Calculator className="w-4 h-4" />
+                Practice tool
+              </div>
+            ) : activeLessonCompleted ? (
               <div className="flex-1 py-3 px-2 rounded-xl font-bold text-[#014421] bg-green-50 border border-green-200 text-sm text-center flex items-center justify-center gap-1.5">
                 <Check className="w-4 h-4" />
                 Completed
@@ -1264,7 +1346,7 @@ function LibraryPageContent() {
                 ) : (
                   <>
                     <Lock className="w-4 h-4" />
-                    {user?.id ? "Watch full video" : "Log in to complete"}
+                    {!user?.id ? "Log in to complete" : activeLessonComingSoon ? "Video coming soon" : "Watch full video"}
                   </>
                 )}
               </button>

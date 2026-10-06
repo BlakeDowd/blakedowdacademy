@@ -117,27 +117,71 @@ export const LIBRARY_SWING_VIDEOS = [
   },
 ] as const;
 
-export type LibrarySwingVideoKey = (typeof LIBRARY_SWING_VIDEOS)[number]["key"];
+export type LibraryVideo = {
+  key: string;
+  libraryDrillId: string;
+  bunnyVideoId: string;
+  label: string;
+  description?: string;
+};
+
+/** Putting Speed Control lessons. Add each video here once it's uploaded to Bunny. */
+export const LIBRARY_PUTTING_SPEED_VIDEOS: readonly LibraryVideo[] = [];
+
+/** Interactive tools shown inside a module. They don't count towards lesson progress or XP. */
+export type LibraryTool = {
+  id: string;
+  label: string;
+  description: string;
+  chapter: string;
+};
+
+/** Library modules in display order. Each video is one lesson; tools are listed first. */
+export const LIBRARY_MODULES: readonly {
+  name: string;
+  chapter: string;
+  category: string;
+  videos: readonly LibraryVideo[];
+  tools?: readonly LibraryTool[];
+}[] = [
+  { name: "Swing Drills", chapter: "Swing Videos", category: "Swing", videos: LIBRARY_SWING_VIDEOS },
+  {
+    name: "Putting Speed Control",
+    chapter: "Speed Control",
+    category: "Putting",
+    videos: LIBRARY_PUTTING_SPEED_VIDEOS,
+    tools: [
+      {
+        id: "putting-stroke-calculator",
+        label: "Stroke Length Calculator",
+        description: "Work out your backswing and follow-through for any distance and green speed, then groove your rhythm with the tempo trainer.",
+        chapter: "Tools",
+      },
+    ],
+  },
+];
+
+const FEATURED_HOME_VIDEOS: LibraryVideo[] = LIBRARY_MODULES.flatMap((m) => [...m.videos]);
 
 /**
- * Homepage featured video rotates through LIBRARY_SWING_VIDEOS, one per day.
- * To pin a single drill instead, set this to a key (e.g. "hell-drill")
+ * Homepage featured video rotates through every library video, one per day.
+ * To pin a single video instead, set this to a key (e.g. "hell-drill")
  * or set NEXT_PUBLIC_FEATURED_HOME_VIDEO_KEY in env.
  */
-export const FEATURED_HOME_VIDEO_KEY: LibrarySwingVideoKey | null = null;
+export const FEATURED_HOME_VIDEO_KEY: string | null = null;
 
-export function resolveFeaturedHomeVideo(now: Date = new Date()): (typeof LIBRARY_SWING_VIDEOS)[number] {
+export function resolveFeaturedHomeVideo(now: Date = new Date()): LibraryVideo {
   const fromEnv = process.env.NEXT_PUBLIC_FEATURED_HOME_VIDEO_KEY?.trim().toLowerCase();
   const pinned =
-    LIBRARY_SWING_VIDEOS.find((v) => v.key === fromEnv) ||
-    LIBRARY_SWING_VIDEOS.find((v) => v.key === FEATURED_HOME_VIDEO_KEY);
+    FEATURED_HOME_VIDEOS.find((v) => v.key === fromEnv) ||
+    FEATURED_HOME_VIDEOS.find((v) => v.key === FEATURED_HOME_VIDEO_KEY);
   if (pinned) return pinned;
 
   // Local calendar day, so the video changes at the viewer's midnight.
   const dayNumber = Math.floor(
     Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86_400_000,
   );
-  return LIBRARY_SWING_VIDEOS[dayNumber % LIBRARY_SWING_VIDEOS.length];
+  return FEATURED_HOME_VIDEOS[dayNumber % FEATURED_HOME_VIDEOS.length]!;
 }
 
 /** Bunny CDN thumbnail for a Stream video (needs NEXT_PUBLIC_BUNNY_CDN_HOSTNAME). */
@@ -155,7 +199,7 @@ export function buildBunnyThumbnailUrl(videoId: string): string | null {
 /** Library/drill videos that must never be deleted from Bunny via the coaching UI. */
 export const PROTECTED_LIBRARY_BUNNY_VIDEO_IDS = new Set<string>(
   [
-    ...LIBRARY_SWING_VIDEOS.map((v) => v.bunnyVideoId),
+    ...FEATURED_HOME_VIDEOS.map((v) => v.bunnyVideoId),
     // Legacy landscape encodes (safe to delete in Bunny dashboard once unused)
     "02c9519f-71c8-4f45-babc-8c3b8d29e33e",
     "f113cd66-8670-48b1-bc4e-0af236e12204",

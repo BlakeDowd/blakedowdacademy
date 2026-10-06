@@ -31,10 +31,13 @@ import {
   BarChart3,
   Smartphone,
   MessageSquare,
+  Ruler,
+  ChevronRight,
 } from "lucide-react";
 import { AddToHomeScreenGuide } from "@/components/AddToHomeScreenGuide";
 import { FeedbackBox } from "@/components/FeedbackBox";
 import { HomeWeekSchedule } from "@/components/HomeWeekSchedule";
+import { HomeCoachingCard } from "@/components/coaching/HomeCoachingCard";
 import { LiveRoundInProgressBanner } from "@/components/LiveRoundInProgressBanner";
 import {
   LIVE_ENTRY_ENABLED,
@@ -764,6 +767,8 @@ export default function HomeDashboard() {
           </div>
         </div>
 
+        <HomeCoachingCard />
+
         {/* Coach Administration - visible for authorized coaches only */}
         {(['bdowd@pgamember.org.au', 'allendowd86@gmail.com'].includes((user?.email || '').toLowerCase().trim())) && (
           <div className="w-full px-4 mb-4">
@@ -842,6 +847,18 @@ export default function HomeDashboard() {
                 {label}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => router.push('/putting-calculator')}
+              className="col-span-3 flex items-center gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 text-left shadow-sm transition-colors hover:bg-gray-50"
+            >
+              <Ruler className="h-5 w-5 shrink-0 text-[#014421]" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs font-semibold text-gray-700">Putting Calculator</span>
+                <span className="block text-[11px] text-gray-500">Stroke length &amp; tempo trainer</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+            </button>
           </div>
         </div>
 
