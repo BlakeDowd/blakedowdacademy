@@ -159,6 +159,28 @@ export const LIBRARY_MODULES: readonly {
       },
     ],
   },
+  {
+    name: "Tournament Prep",
+    chapter: "Checklists",
+    category: "On-Course",
+    videos: [],
+    tools: [
+      {
+        id: "tournament-checklist",
+        label: "Tournament Bag Prep",
+        description:
+          "Run through this 15-point check before every event: rules and clubs, tech, weather gear, fuel and first aid. Your ticks are saved on this device.",
+        chapter: "Checklists",
+      },
+      {
+        id: "fuel-planner",
+        label: "Fuel Planner",
+        description:
+          "Hydration, carb and sodium targets for your weight and the weather, plus a food list to pack for the round.",
+        chapter: "Checklists",
+      },
+    ],
+  },
 ];
 
 const FEATURED_HOME_VIDEOS: LibraryVideo[] = LIBRARY_MODULES.flatMap((m) => [...m.videos]);

@@ -18,6 +18,7 @@ import {
   type PerformanceFuelSettings,
   type TournamentShoppingManifest,
 } from "@/lib/performanceFuelPlanner";
+import { RoundFoodPack } from "@/components/oncourse/RoundFoodPack";
 
 const TARGET_BADGE: Record<FuelScheduleRow["targetKind"], string> = {
   fluid: "border-sky-200 bg-sky-50 text-sky-900",
@@ -437,6 +438,8 @@ export function NutritionPlannerPanel({ userId }: { userId: string | undefined }
           </li>
         ))}
       </ul>
+
+      <RoundFoodPack metrics={metrics} tempC={settings.tempC} perRound={isTournament} />
 
       <div className="rounded-xl bg-[#014421] px-3 py-3 text-white shadow-md sm:px-4">
         <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-white/70 sm:text-[11px]">

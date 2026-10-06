@@ -17,7 +17,9 @@ import {
   HelpCircle,
   Search,
   BookOpen,
+  Apple,
   Calculator,
+  ClipboardCheck,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useAuth } from "@/contexts/AuthContext";
@@ -27,6 +29,8 @@ import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 import { SHOW_PDFS } from "@/lib/drillResources";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
 import PuttingStrokeCalculator from "@/components/putting/PuttingStrokeCalculator";
+import TournamentChecklist from "@/components/oncourse/TournamentChecklist";
+import { NutritionPlannerPanel } from "@/components/NutritionPlannerPanel";
 import {
   APP_VIDEO_COACH_NAME,
   LIBRARY_MODULES,
@@ -73,6 +77,12 @@ interface Module {
 /** Tools are interactive items with no completion, so they never count towards progress or XP. */
 const isTool = (lesson: Lesson) => lesson.type === "tool";
 const countsTowardsProgress = (lesson: Lesson) => !isTool(lesson);
+
+function ToolIcon({ lesson, className }: { lesson: Lesson; className?: string }) {
+  if (lesson.id === "tournament-checklist") return <ClipboardCheck className={className} aria-hidden />;
+  if (lesson.id === "fuel-planner") return <Apple className={className} aria-hidden />;
+  return <Calculator className={className} aria-hidden />;
+}
 
 /** Live curriculum from the Bunny library catalog: each module's tools first, then one lesson per video. */
 const LIBRARY_CURRICULUM_LESSONS: Lesson[] = LIBRARY_MODULES.flatMap((mod) => [
@@ -650,7 +660,7 @@ function LibraryPageContent() {
     const done = completedIds.has(lesson.id);
     const active = activeLesson?.id === lesson.id;
     if (isTool(lesson)) {
-      return <Calculator className={`w-4 h-4 ${active ? "text-[#FFA500]" : "text-[#014421]"}`} aria-hidden="true" />;
+      return <ToolIcon lesson={lesson} className={`w-4 h-4 ${active ? "text-[#FFA500]" : "text-[#014421]"}`} />;
     }
     if (done) return <Check className="w-4 h-4 text-[#014421]" />;
     if (active) return <CircleDot className="w-4 h-4 text-[#FFA500]" aria-hidden="true" />;
@@ -1133,7 +1143,7 @@ function LibraryPageContent() {
                                     <div className={`absolute top-5 left-[9px] w-0.5 bg-gray-200 ${isLast ? "h-0" : "h-[calc(100%+8px)]"}`} aria-hidden />
                                     <span className="relative z-10 shrink-0 w-5 h-5 flex items-center justify-center mt-2.5">
                                       {isTool(lesson) ? (
-                                        <Calculator className="w-4 h-4 text-[#014421]" aria-hidden />
+                                        <ToolIcon lesson={lesson} className="w-4 h-4 text-[#014421]" />
                                       ) : done ? (
                                         <Check className="w-4 h-4 text-[#014421]" />
                                       ) : (
@@ -1253,7 +1263,7 @@ function LibraryPageContent() {
                 {activeLesson.type === "quiz" && <HelpCircle className="w-3 h-3" />}
                 {activeLesson.type === "drill" && <Target className="w-3 h-3" />}
                 {activeLesson.type === "pdf" && <FileText className="w-3 h-3" />}
-                {activeLesson.type === "tool" && <Calculator className="w-3 h-3" />}
+                {activeLesson.type === "tool" && <ToolIcon lesson={activeLesson} className="w-3 h-3" />}
                 {isTool(activeLesson) ? "Practice tool" : `${activeLesson.type} Lesson`}
               </div>
               
@@ -1293,6 +1303,16 @@ function LibraryPageContent() {
                   <PuttingStrokeCalculator hideHeader />
                 </div>
               )}
+              {activeLesson.id === "tournament-checklist" && (
+                <div className="mt-5 -mx-1">
+                  <TournamentChecklist hideHeader />
+                </div>
+              )}
+              {activeLesson.id === "fuel-planner" && (
+                <div className="mt-5 -mx-1">
+                  <NutritionPlannerPanel userId={user?.id} />
+                </div>
+              )}
               
               {activeLesson.type === "text" && activeLesson.source && (
                 <div className="mt-4 prose prose-sm max-w-none text-gray-800 leading-relaxed [&>p]:mb-4">
@@ -1324,7 +1344,7 @@ function LibraryPageContent() {
             </button>
             {isTool(activeLesson) ? (
               <div className="flex-1 py-3 px-2 rounded-xl font-semibold text-gray-600 bg-gray-50 border border-gray-200 text-sm text-center flex items-center justify-center gap-1.5">
-                <Calculator className="w-4 h-4" />
+                <ToolIcon lesson={activeLesson} className="w-4 h-4" />
                 Practice tool
               </div>
             ) : activeLessonCompleted ? (
