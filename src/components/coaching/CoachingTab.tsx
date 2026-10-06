@@ -148,7 +148,7 @@ export default function CoachingTab({
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />
           </button>
-          <Avatar name={open.name} />
+          <Avatar name={open.name} userId={open.id} />
           <div className="min-w-0">
             <h2 className="truncate text-base font-bold text-stone-900">{open.name}</h2>
             <p className="text-xs text-stone-500">Golf · private space with this student</p>

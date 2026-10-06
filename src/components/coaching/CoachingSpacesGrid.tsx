@@ -50,7 +50,7 @@ export function CoachingSpacesGrid({
         className="flex w-full flex-col items-center gap-2 rounded-2xl px-1 py-2 text-center hover:bg-stone-50"
       >
         <span className="relative">
-          <Avatar name={s.name} size="lg" ring={s.unread} />
+          <Avatar name={s.name} size="lg" ring={s.unread} userId={s.studentId} />
           {s.unread && (
             <span className="absolute -right-0.5 top-0.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-[#FFA500]" />
           )}

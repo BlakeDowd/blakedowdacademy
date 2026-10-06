@@ -240,7 +240,7 @@ function AnnouncementCard({
         </span>
       </div>
       <header className="flex items-start gap-3 px-4 pt-3">
-        <Avatar name={authorName} coach />
+        <Avatar name={authorName} coach userId={announcement.author_id} />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 truncate text-sm font-bold text-stone-900">
             {authorName}
@@ -298,7 +298,7 @@ function AnnouncementCard({
                   return (
                     <section key={studentId} className="rounded-2xl bg-stone-50 p-3">
                       <p className="mb-2 flex items-center gap-2 text-xs font-bold text-stone-800">
-                        <Avatar name={name} size="sm" />
+                        <Avatar name={name} size="sm" userId={studentId} />
                         {name}
                       </p>
                       <PlayerThread

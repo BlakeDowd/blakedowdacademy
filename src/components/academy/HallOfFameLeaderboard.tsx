@@ -1,8 +1,10 @@
 "use client";
 
-import { forwardRef, useEffect, useMemo, useState, type ComponentType } from "react";
+import { forwardRef, useEffect, useMemo, useState } from "react";
 import { Medal, Crown } from "lucide-react";
-import { GOLF_ICONS } from "@/components/IconPicker";
+import ProfileAvatar from "@/components/ProfileAvatar";
+import { getEmblem } from "@/components/emblems/EmblemBadge";
+import { isPhotoPicture } from "@/lib/profilePicture";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -83,8 +85,9 @@ function CircularAvatar({
   size?: number;
   bgColor?: string;
 }) {
-  const isIconId =
-    iconId && GOLF_ICONS.some((icon: { id: string }) => icon.id === iconId);
+  if (isPhotoPicture(iconId) || getEmblem(iconId)) {
+    return <ProfileAvatar picture={iconId} name={initial} size={size} />;
+  }
 
   return (
     <div
@@ -96,26 +99,12 @@ function CircularAvatar({
         fontSize: size * 0.4,
       }}
     >
-      {isIconId ? (
-        <div className="w-full h-full flex items-center justify-center p-2">
-          {(() => {
-            const { GOLF_ICONS: icons } = require("@/components/IconPicker");
-            const iconData = icons.find((i: { id: string; icon?: ComponentType<{ className?: string }> }) => i.id === iconId);
-            if (iconData?.icon) {
-              const IconComponent = iconData.icon;
-              return <IconComponent className="w-8 h-8 text-white" />;
-            }
-            return initial;
-          })()}
-        </div>
-      ) : (
-        <span
-          className="text-white font-bold"
-          style={{ fontSize: size * 0.4 }}
-        >
-          {initial}
-        </span>
-      )}
+      <span
+        className="text-white font-bold"
+        style={{ fontSize: size * 0.4 }}
+      >
+        {initial}
+      </span>
     </div>
   );
 }
@@ -551,12 +540,7 @@ function HallOfFameLeaderboardInner(
                         )}
                         <CircularAvatar
                           initial={displayName[0]}
-                          iconId={
-                            entry.avatar &&
-                            GOLF_ICONS.some((icon: { id: string }) => icon.id === entry.avatar)
-                              ? entry.avatar
-                              : undefined
-                          }
+                          iconId={entry.avatar || undefined}
                           size={36}
                           bgColor={isMe ? "#014421" : rank <= 3 ? "#b45309" : "#78716c"}
                         />

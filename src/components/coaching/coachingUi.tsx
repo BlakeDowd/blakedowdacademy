@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { fetchProfileNames } from "@/lib/coachingFeed";
+import ProfileAvatar, { useProfilePicture } from "@/components/ProfileAvatar";
+import { getEmblem } from "@/components/emblems/EmblemBadge";
+import { isPhotoPicture } from "@/lib/profilePicture";
 
 export function timeAgo(iso: string, short = false): string {
   const at = Date.parse(iso);
@@ -26,17 +29,30 @@ const SIZES = {
   lg: "h-20 w-20 text-lg",
 } as const;
 
+const PIXELS: Record<keyof typeof SIZES, number> = { sm: 28, md: 40, lg: 80 };
+
 export function Avatar({
   name,
   coach,
   size = "md",
   ring,
+  userId,
 }: {
   name: string;
   coach?: boolean;
   size?: keyof typeof SIZES;
   ring?: boolean;
+  /** When given, shows that player's photo or emblem instead of initials. */
+  userId?: string | null;
 }) {
+  const picture = useProfilePicture(userId);
+  if (isPhotoPicture(picture) || getEmblem(picture)) {
+    return (
+      <span className={`flex shrink-0 rounded-full ${ring ? "ring-2 ring-[#FFA500] ring-offset-2" : ""}`} aria-hidden>
+        <ProfileAvatar picture={picture} name={name} size={PIXELS[size]} />
+      </span>
+    );
+  }
   return (
     <span
       className={`flex shrink-0 items-center justify-center rounded-full font-semibold ${SIZES[size]} ${

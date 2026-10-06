@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 /** Prefer .env.local / Vercel env so CSV upserts and the UI hit the same project. */
 const FALLBACK_URL = 'https://zdhzarkguvvrwzjuiqdc.supabase.co'
+export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? FALLBACK_URL
 const FALLBACK_ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkaHphcmtndXZ2cnd6anVpcWRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc1OTQ1MjMsImV4cCI6MjA4MzE3MDUyM30.Kd96aQdJA7qjqR-lOFEJ4esQDkfLn0wfF1VS_jbqI3w'
 
@@ -16,7 +17,7 @@ let browserClient: SupabaseClient | undefined
 export function createClient(): SupabaseClient {
   if (browserClient) return browserClient
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? FALLBACK_URL
+  const supabaseUrl = SUPABASE_URL
   const supabaseAnonKey =
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? FALLBACK_ANON_KEY
 

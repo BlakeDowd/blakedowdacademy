@@ -33,6 +33,8 @@ import {
   MessageSquare,
   Ruler,
   Timer,
+  Camera,
+  Loader2,
 } from "lucide-react";
 import { AddToHomeScreenGuide } from "@/components/AddToHomeScreenGuide";
 import { FeedbackBox } from "@/components/FeedbackBox";
@@ -44,7 +46,14 @@ import {
   LiveEntryNotReadyModal,
 } from "@/components/LiveEntryNotReadyModal";
 import { loadLiveRoundDraft, type LiveRoundDraft } from "@/lib/liveRoundDraft";
-import IconPicker, { GOLF_ICONS } from "@/components/IconPicker";
+import IconPicker from "@/components/IconPicker";
+import ProfileAvatar from "@/components/ProfileAvatar";
+import {
+  isPhotoPicture,
+  removeProfilePhoto,
+  setCachedProfilePicture,
+  uploadProfilePhoto,
+} from "@/lib/profilePicture";
 import Toast from "@/components/Toast";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
 import {
@@ -231,6 +240,7 @@ export default function HomeDashboard() {
   const handleIconSelect = async (iconId: string) => {
     if (!user?.id) return;
     
+    const previousPicture = selectedIcon;
     setSelectedIcon(iconId);
     setIsSavingIcon(true);
     
@@ -249,7 +259,10 @@ export default function HomeDashboard() {
         setSelectedIcon(snapshotData?.preferred_icon_id || user?.preferredIconId || null);
         // Remove Browser Alerts: Use non-blocking Toast instead of alert()
         setToast({ message: 'Failed to update icon. Please try again.', type: 'error' });
+        if (isPhotoPicture(iconId)) void removeProfilePhoto(supabase, iconId);
       } else {
+        if (previousPicture !== iconId) void removeProfilePhoto(supabase, previousPicture);
+        setCachedProfilePicture(user.id, iconId);
         // Optimistically update snapshotData
         setSnapshotData(prev => ({ ...(prev || ({} as any)), preferred_icon_id: iconId }));
         // Refresh user context to sync
@@ -267,6 +280,25 @@ export default function HomeDashboard() {
     }
   };
   
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  const handlePhotoChosen = async (file: File | undefined) => {
+    if (!file || !user?.id) return;
+    setIsUploadingPhoto(true);
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const value = await uploadProfilePhoto(createClient(), user.id, file);
+      await handleIconSelect(value);
+    } catch (error) {
+      console.error('Error uploading profile photo:', error);
+      setToast({ message: error instanceof Error ? error.message : 'Photo upload failed. Please try again.', type: 'error' });
+    } finally {
+      setIsUploadingPhoto(false);
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    }
+  };
+
   // Bulletproof Save: Update full_name and profile_icon in profiles table
   const handleProfileModalSave = async () => {
     if (!user?.id || !editedName.trim()) {
@@ -690,10 +722,35 @@ export default function HomeDashboard() {
                 />
               </div>
               
-              {/* Icon Picker */}
+              <div className="mb-4">
+                <p className="block text-sm font-medium text-gray-700 mb-2">Profile Picture</p>
+                <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
+                  <ProfileAvatar picture={selectedIcon} name={editedName || user?.fullName} size={56} />
+                  <div className="min-w-0 flex-1">
+                    <button
+                      type="button"
+                      onClick={() => photoInputRef.current?.click()}
+                      disabled={isUploadingPhoto || isSavingIcon}
+                      className="inline-flex items-center gap-2 rounded-lg bg-[#014421] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#013320] disabled:opacity-60"
+                    >
+                      {isUploadingPhoto ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                      {isUploadingPhoto ? 'Uploading…' : isPhotoPicture(selectedIcon) ? 'Change photo' : 'Upload photo'}
+                    </button>
+                    <p className="mt-1 text-xs text-gray-500">Or pick an emblem below.</p>
+                  </div>
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handlePhotoChosen(e.target.files?.[0])}
+                  />
+                </div>
+              </div>
+
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Choose Your Icon
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Choose Your Emblem
                 </label>
                 <IconPicker selectedIcon={selectedIcon} onSelectIcon={handleIconSelect} />
               </div>
@@ -724,20 +781,21 @@ export default function HomeDashboard() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowProfileModal(true)}
-              className="w-14 h-14 rounded-full overflow-hidden ring-2 ring-gray-100 shadow-sm flex items-center justify-center text-3xl bg-white cursor-pointer hover:ring-[#014421] transition-all"
+              aria-label="Edit profile"
+              className="relative w-14 h-14 rounded-full ring-2 ring-gray-100 shadow-sm flex items-center justify-center bg-white cursor-pointer hover:ring-[#014421] transition-all"
             >
-              <div className="flex items-center justify-center w-full h-full">
-                {(() => {
-                  // Fallback to null (not flame) if no valid icon exists
-                  let displayIcon = snapshotData?.preferred_icon_id ?? user?.preferredIconId ?? null;
-                  if (displayIcon === 'flame') displayIcon = null; // Strictly ignore old 'flame' database artifacts
-                  
-                  return displayIcon ? (() => {
-                    const SelectedIcon = GOLF_ICONS.find(icon => icon.id === displayIcon)?.icon;
-                    return SelectedIcon ? <SelectedIcon className="w-8 h-8 text-[#014421]" strokeWidth={2.5} /> : <User className="w-8 h-8 text-gray-400" strokeWidth={2.5} />;
-                  })() : <User className="w-8 h-8 text-gray-400" strokeWidth={2.5} />;
-                })()}
-              </div>
+              {(() => {
+                // 'flame' is a legacy database artifact, not a real emblem
+                const picture = snapshotData?.preferred_icon_id ?? user?.preferredIconId ?? null;
+                return picture && picture !== 'flame' ? (
+                  <ProfileAvatar picture={picture} name={displayName} size={isPhotoPicture(picture) ? 56 : 46} />
+                ) : (
+                  <User className="w-8 h-8 text-gray-400" strokeWidth={2.5} />
+                );
+              })()}
+              <span className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#FFA500] ring-2 ring-white">
+                <Camera className="h-3 w-3 text-white" strokeWidth={2.5} />
+              </span>
             </button>
             <div className="flex-1">
               <p className="text-gray-400 text-xs">Welcome back,</p>
@@ -1095,7 +1153,7 @@ export default function HomeDashboard() {
                     const roundDate = round?.date || round?.created_at || new Date().toISOString();
                     return (
                       <li key={round?.id || `round-${roundDate}-${index}`} className="flex items-center gap-3 py-2.5">
-                        <Star className="h-5 w-5 shrink-0" style={{ color: '#014421' }} />
+                        <ProfileAvatar picture={roundProfile?.preferred_icon_id} name={roundProfile?.full_name || 'Golfer'} size={32} />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-gray-800">{roundProfile?.full_name || 'Golfer'}</p>
                           <p className="truncate text-xs text-gray-400">

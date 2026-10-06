@@ -1,7 +1,9 @@
 "use client";
 
-import { GOLF_ICONS } from "@/components/IconPicker";
 import { User } from "lucide-react";
+import ProfileAvatar from "@/components/ProfileAvatar";
+import { isPhotoPicture } from "@/lib/profilePicture";
+import { getEmblem } from "@/components/emblems/EmblemBadge";
 
 type TourPlayerProfileHeroProps = {
   playerName: string;
@@ -31,10 +33,8 @@ export function TourPlayerProfileHero({
   practiceHours,
   preferredIconId,
 }: TourPlayerProfileHeroProps) {
-  const iconId = preferredIconId === "flame" ? null : preferredIconId;
-  const SelectedIcon = iconId
-    ? GOLF_ICONS.find((icon) => icon.id === iconId)?.icon
-    : undefined;
+  const picture = preferredIconId === "flame" ? null : preferredIconId;
+  const hasPicture = isPhotoPicture(picture) || !!getEmblem(picture);
 
   const stats = [
     { label: "Handicap", value: formatHandicap(handicap) },
@@ -66,8 +66,8 @@ export function TourPlayerProfileHero({
       <div className="relative px-5 pb-5 pt-6 sm:px-6">
         <div className="flex items-center gap-4">
           <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/15 ring-2 ring-white/25 shadow-inner">
-            {SelectedIcon ? (
-              <SelectedIcon className="h-10 w-10 text-[#FFA500]" strokeWidth={2.25} />
+            {hasPicture ? (
+              <ProfileAvatar picture={picture} name={playerName} size={isPhotoPicture(picture) ? 80 : 60} />
             ) : (
               <User className="h-10 w-10 text-white/80" strokeWidth={2} />
             )}

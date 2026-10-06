@@ -604,7 +604,7 @@ export function PostComposer({
       {studentId && viewerIsCoach && (
         <div className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm">
           <span className="text-xs font-semibold text-stone-500">To</span>
-          <Avatar name={studentName || "Golfer"} size="sm" />
+          <Avatar name={studentName || "Golfer"} size="sm" userId={target?.id} />
           <span className="min-w-0 truncate font-semibold text-stone-800">{studentName || "Golfer"}</span>
           <span className="ml-auto shrink-0 text-[11px] text-stone-500">Private</span>
         </div>
@@ -825,7 +825,7 @@ export function ReplyComposer({
         onRemoveVideo={files.removeVideo}
       />
       <div className="flex items-center gap-2">
-        <Avatar name={viewerName} coach={viewerIsCoach} size="sm" />
+        <Avatar name={viewerName} coach={viewerIsCoach} size="sm" userId={viewerId} />
         <div className="flex min-w-0 flex-1 items-center rounded-full border border-stone-300 bg-white pr-1 focus-within:border-[#014421]">
           <input
             value={body}

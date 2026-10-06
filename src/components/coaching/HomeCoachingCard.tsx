@@ -168,7 +168,7 @@ export function HomeCoachingCard() {
 
           {latest ? (
             <div className="mt-3 flex items-center gap-2">
-              <Avatar name={latestName} coach={!isCoach} size="sm" />
+              <Avatar name={latestName} coach={!isCoach} size="sm" userId={latest.author_id} />
               <p className="min-w-0 truncate text-xs text-gray-600">
                 <span className="font-semibold text-gray-900">{latestName}</span> {latestVerb} · {timeAgo(latest.created_at)}
               </p>

@@ -236,7 +236,7 @@ export function CoachingActivity({
                           i.unread ? "bg-[#FFA500]/10" : ""
                         }`}
                       >
-                        <Avatar name={name} coach={isCoachPost(i)} />
+                        <Avatar name={name} coach={isCoachPost(i)} userId={i.author_id} />
                         <span className="min-w-0 flex-1">
                           <span className="block text-sm leading-snug text-stone-700">
                             <span className="font-bold text-stone-900">{name}</span> {verb}

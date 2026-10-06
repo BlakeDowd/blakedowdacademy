@@ -468,7 +468,7 @@ export function Reply({
   const replyVideos = postVideos(reply);
   return (
     <li className="flex gap-2">
-      <Avatar name={name} coach={fromCoach} size="sm" />
+      <Avatar name={name} coach={fromCoach} size="sm" userId={reply.author_id} />
       <div className="min-w-0 flex-1">
         <div className={`rounded-2xl px-3 py-2 ${fromCoach ? "bg-[#014421]/5" : "bg-stone-100"}`}>
           <div className="flex items-center gap-1.5">
@@ -538,7 +538,7 @@ export function CoachingPostCard({
   return (
     <article className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-stone-200">
       <header className="flex items-start gap-3 px-4 pt-4">
-        <Avatar name={authorName} coach={fromCoach} />
+        <Avatar name={authorName} coach={fromCoach} userId={post.author_id} />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 truncate text-sm font-bold text-stone-900">
             {authorName}
