@@ -3,6 +3,19 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Mic, Music, Pause, Play, Volume2, type LucideIcon } from "lucide-react";
 import { releaseAudio, unlockAudio } from "@/lib/unlockAudio";
+import {
+  COUNT_IN_BEATS,
+  countInTimes,
+  countLightAt,
+  createLoudOutput,
+  loadVoiceClips,
+  playTone,
+  playVoice,
+  type CountedRep,
+  type CountLight,
+  type VoiceClips,
+} from "@/lib/tempoSound";
+import { CountInLights, CountInToggle } from "./CountInLights";
 
 /** Frame counts at 30 FPS, e.g. 21/7 = 21 frames back, 7 frames down to impact. */
 export type TempoPreset = { back: number; down: number; label?: string };
@@ -22,7 +35,7 @@ export type TempoTrainerConfig = {
 
 type Cue = "takeaway" | "apex" | "impact";
 type Phase = "ready" | "back" | "down" | "hit" | "reset";
-type Rep = { start: number; back: number; down: number };
+type Rep = CountedRep;
 
 export const FRAME_MS = 1000 / 30;
 export const BRAND_GREEN = "#014421";
@@ -30,11 +43,9 @@ const BRAND_ORANGE = "#FFA500";
 
 const SCHEDULE_AHEAD_SEC = 0.15;
 const HIT_FLASH_SEC = 0.35;
-/** Speech engines take a moment to start talking, so voice cues are fired slightly early. */
-const VOICE_LEAD_MS = 70;
-const TONE_HZ: Record<Cue, number> = { takeaway: 440, apex: 587, impact: 880 };
-const CLICK_HZ: Record<Cue, number> = { takeaway: 1400, apex: 1400, impact: 2200 };
-const VOICE_WORDS: Record<Cue, string> = { takeaway: "One", apex: "Two", impact: "Hit!" };
+/** Quiet gap after the hit before the next count-in starts. */
+const SETTLE_SEC = 0.3;
+const START_DELAY_SEC = 0.5;
 const SOUND_MODES: { id: SoundMode; label: string; hint: string; icon: LucideIcon }[] = [
   { id: "tones", label: "Tones", hint: "Low, mid, high", icon: Music },
   { id: "voice", label: "Voice", hint: "One, Two, Hit!", icon: Mic },
@@ -64,32 +75,6 @@ function dialPoint(angleDeg: number, radius: number) {
   return { x: round(DIAL_C + radius * Math.sin(a)), y: round(DIAL_C - radius * Math.cos(a)) };
 }
 
-/** Short enveloped beep: linear attack and exponential release so it never clicks or clips. */
-function playCue(ctx: AudioContext, out: AudioNode, at: number, cue: Cue, mode: "tones" | "click") {
-  const osc = ctx.createOscillator();
-  const env = ctx.createGain();
-  const click = mode === "click";
-  const length = click ? 0.03 : cue === "impact" ? 0.1 : 0.14;
-  const peak = click ? 0.32 : 0.36;
-  osc.type = click || cue !== "impact" ? "sine" : "triangle";
-  osc.frequency.value = click ? CLICK_HZ[cue] : TONE_HZ[cue];
-  env.gain.setValueAtTime(0, at);
-  env.gain.linearRampToValueAtTime(peak, at + 0.005);
-  env.gain.exponentialRampToValueAtTime(0.0001, at + length);
-  osc.connect(env).connect(out);
-  osc.start(at);
-  osc.stop(at + length + 0.02);
-}
-
-function speak(word: string) {
-  const synth = window.speechSynthesis;
-  synth.cancel();
-  const u = new SpeechSynthesisUtterance(word);
-  u.rate = 1.5;
-  u.volume = 1;
-  synth.speak(u);
-}
-
 export function SwingTempoTrainer({ config, hideHeader = false }: { config: TempoTrainerConfig; hideHeader?: boolean }) {
   const { title, subtitle, ratio, presets, defaultPresetIndex, resetSec, silhouette } = config;
   const [presetIndex, setPresetIndex] = useState(defaultPresetIndex);
@@ -97,6 +82,8 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
   const [playing, setPlaying] = useState(false);
   const [phase, setPhase] = useState<Phase>("ready");
   const [reps, setReps] = useState(0);
+  const [countIn, setCountIn] = useState(true);
+  const [light, setLight] = useState<CountLight | null>(null);
 
   const preset = presets[presetIndex] ?? presets[0]!;
   const times = presetSeconds(preset);
@@ -106,19 +93,25 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
   const ctxRef = useRef<AudioContext | null>(null);
   const masterRef = useRef<GainNode | null>(null);
   const repsRef = useRef<Rep[]>([]);
-  const nextStartRef = useRef(0);
+  const nextRef = useRef({ start: 0, lead: 0 });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rafRef = useRef<number | null>(null);
-  const voiceTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const voiceRef = useRef<VoiceClips | null | undefined>(undefined);
   const dotRef = useRef<SVGCircleElement | null>(null);
   const arcRef = useRef<SVGCircleElement | null>(null);
   const phaseRef = useRef<Phase>("ready");
+  const lightRef = useRef<CountLight | null>(null);
   const presetRef = useRef(preset);
   const modeRef = useRef(mode);
+  const countInRef = useRef(countIn);
 
   useEffect(() => {
     presetRef.current = preset;
   }, [preset]);
+
+  useEffect(() => {
+    countInRef.current = countIn;
+  }, [countIn]);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -136,9 +129,6 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     timerRef.current = null;
     rafRef.current = null;
-    voiceTimersRef.current.forEach(clearTimeout);
-    voiceTimersRef.current.clear();
-    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
     releaseAudio();
     const ctx = ctxRef.current;
     const master = masterRef.current;
@@ -159,7 +149,9 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
     dotRef.current?.setAttribute("cy", String(p0.y));
     arcRef.current?.setAttribute("stroke-dashoffset", String(TRACK_CIRC));
     phaseRef.current = "ready";
+    lightRef.current = null;
     setPhase("ready");
+    setLight(null);
     setPlaying(false);
   };
 
@@ -167,49 +159,52 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
     const ctx = unlockAudio(ctxRef.current);
     if (!ctx) return;
     ctxRef.current = ctx;
+    voiceRef.current = undefined;
+    void loadVoiceClips(ctx).then((clips) => {
+      voiceRef.current = clips;
+    });
 
-    const canSpeak = "speechSynthesis" in window;
-    if (canSpeak && modeRef.current === "voice") {
-      // iOS only allows speech that starts from a tap, so prime it now.
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
-    }
-
-    const compressor = ctx.createDynamicsCompressor();
-    compressor.threshold.value = -10;
-    compressor.ratio.value = 6;
-    const master = ctx.createGain();
-    master.gain.value = 0.9;
-    master.connect(compressor).connect(ctx.destination);
+    const master = createLoudOutput(ctx);
     masterRef.current = master;
     repsRef.current = [];
-    nextStartRef.current = ctx.currentTime + 0.6;
+    const leadFor = () => (countInRef.current ? presetSeconds(presetRef.current).back : 0);
+    let primed = false;
+    let clockSeen = -1;
     setReps(0);
 
     // Preset and sound changes take effect from the next rep so a swing is never cut short.
     const schedule = () => {
-      while (nextStartRef.current < ctx.currentTime + SCHEDULE_AHEAD_SEC) {
+      if (!primed) {
+        // The audio clock can stall while the output starts up, which would bunch up the first count-in.
+        const ticking = ctx.state === "running" && clockSeen >= 0 && ctx.currentTime > clockSeen;
+        clockSeen = ctx.currentTime;
+        if (!ticking) return;
+        if (modeRef.current === "voice" && voiceRef.current === undefined) return;
+        primed = true;
+        const firstLead = leadFor();
+        nextRef.current = { start: ctx.currentTime + START_DELAY_SEC + firstLead * COUNT_IN_BEATS, lead: firstLead };
+      }
+      while (nextRef.current.start - nextRef.current.lead * COUNT_IN_BEATS < ctx.currentTime + SCHEDULE_AHEAD_SEC) {
         const { back, down } = presetSeconds(presetRef.current);
-        const rep: Rep = { start: nextStartRef.current, back, down };
+        const rep: Rep = { ...nextRef.current, back, down };
+        const voice = modeRef.current === "voice" ? voiceRef.current : null;
+        const soundMode = modeRef.current === "voice" && !voice ? "tones" : modeRef.current;
+        for (const at of countInTimes(rep)) {
+          if (at >= ctx.currentTime) playTone(ctx, master, at, "count", soundMode === "click" ? "click" : "tones");
+        }
         const cues: [Cue, number][] = [
           ["takeaway", rep.start],
           ["apex", rep.start + back],
           ["impact", rep.start + back + down],
         ];
-        const soundMode = modeRef.current === "voice" && !canSpeak ? "tones" : modeRef.current;
-        for (const [cue, at] of cues) {
-          if (soundMode === "voice") {
-            const delay = Math.max(0, (at - ctx.currentTime) * 1000 - VOICE_LEAD_MS);
-            const id = setTimeout(() => {
-              voiceTimersRef.current.delete(id);
-              speak(VOICE_WORDS[cue]);
-            }, delay);
-            voiceTimersRef.current.add(id);
-          } else {
-            playCue(ctx, master, at, cue, soundMode);
-          }
-        }
+        cues.forEach(([cue, at], i) => {
+          if (voice) playVoice(ctx, master, at, voice[cue], cues[i + 1]?.[1]);
+          else if (soundMode !== "voice") playTone(ctx, master, at, cue, soundMode);
+        });
         repsRef.current = [...repsRef.current.slice(-1), rep];
-        nextStartRef.current = rep.start + back + down + resetSec;
+        const lead = leadFor();
+        const gap = Math.max(resetSec, HIT_FLASH_SEC + SETTLE_SEC + lead * COUNT_IN_BEATS);
+        nextRef.current = { start: rep.start + back + down + gap, lead };
       }
     };
     schedule();
@@ -236,6 +231,11 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
         phaseRef.current = next;
         setPhase(next);
       }
+      const lit = countLightAt(now, list);
+      if (lit !== lightRef.current) {
+        lightRef.current = lit;
+        setLight(lit);
+      }
       rafRef.current = requestAnimationFrame(frame);
     };
     rafRef.current = requestAnimationFrame(frame);
@@ -254,6 +254,7 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
 
   const start = dialPoint(0, DIAL_R);
   const hit = phase === "hit";
+  const centreLabel = light === "red" ? "Ready" : light === "amber" ? "Set" : PHASE_LABEL[phase];
 
   return (
     <div className="w-full space-y-4">
@@ -273,6 +274,12 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
             {ratio}:1 ratio
           </span>
         </div>
+
+        {countIn && (
+          <div className="mt-3 flex justify-center">
+            <CountInLights light={light} />
+          </div>
+        )}
 
         <div className="relative mx-auto mt-2 aspect-square w-full max-w-[280px]">
           <svg viewBox={`0 0 ${DIAL_SIZE} ${DIAL_SIZE}`} className="absolute inset-0 h-full w-full" aria-hidden>
@@ -336,7 +343,7 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
               className={`mt-1 text-sm font-extrabold uppercase tracking-wider ${hit ? "text-[#FFA500]" : "text-gray-700"}`}
               aria-live="polite"
             >
-              {PHASE_LABEL[phase]}
+              {centreLabel}
             </p>
             {playing && <p className="text-[10px] font-semibold tabular-nums text-gray-400">Reps {reps}</p>}
           </div>
@@ -368,6 +375,7 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
           {playing ? <Pause className="h-4 w-4 fill-current" aria-hidden /> : <Play className="h-4 w-4 fill-current" aria-hidden />}
           {playing ? "Pause" : "Play"}
         </button>
+        <CountInToggle on={countIn} onChange={setCountIn} />
       </section>
 
       <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
@@ -431,7 +439,10 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
           {mode === "voice"
             ? "“One” starts the takeaway, “Two” is the top, “Hit!” is impact."
             : "Low tone starts the takeaway, middle tone is the top (orange mark), high tone is impact."}{" "}
-          {resetSec}s pause between reps to address the ball. No sound? Turn your volume up, and on older iPhones switch off silent mode.
+          {countIn
+            ? "With the count-in, red and amber tick one backswing apart: start the takeaway on green."
+            : `${resetSec}s pause between reps to address the ball.`}{" "}
+          No sound? Turn your volume up, and on older iPhones switch off silent mode.
         </p>
       </section>
     </div>

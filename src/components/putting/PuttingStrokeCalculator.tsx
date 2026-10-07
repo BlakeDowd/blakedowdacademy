@@ -4,6 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { releaseAudio, unlockAudio } from "@/lib/unlockAudio";
 import {
+  COUNT_IN_BEATS,
+  countInTimes,
+  countLightAt,
+  createLoudOutput,
+  playTone,
+  type CountedRep,
+  type CountLight,
+} from "@/lib/tempoSound";
+import { CountInLights, CountInToggle } from "@/components/tempo/CountInLights";
+import {
   ChevronDown,
   Gauge,
   Maximize2,
@@ -14,6 +24,8 @@ import {
   Ruler,
   SlidersHorizontal,
   Timer,
+  TrendingDown,
+  TrendingUp,
   Volume2,
   VolumeX,
   X,
@@ -36,6 +48,28 @@ const M_PRESETS = [1.5, 3, 4.5, 6, 9, 12];
 const STIMP_SPEEDS = [8, 9, 10, 11, 12, 13];
 const FOLLOW_THROUGH_RATIO: Record<Ratio, number> = { balanced: 1, accelerating: 1.15 };
 
+type SlopeDirection = "uphill" | "downhill";
+const SLOPE_PRESETS = [0, 1, 2, 3, 4, 5];
+const MAX_SLOPE = 6;
+const GRAVITY_FT_S2 = 32.174;
+/** Speed the Stimpmeter ramp releases the ball at; with the reading, this gives how hard the green slows the ball. */
+const STIMP_RELEASE_FT_S = 6;
+/** A rolling ball feels 5/7 of the slope's pull (the rest goes into its spin). */
+const ROLLING_SHARE = 5 / 7;
+/** Below this the ball wouldn't stop on its own: the slope pulls harder than the green slows it. */
+const MIN_PLAYS_LIKE = 0.05;
+
+/**
+ * How many times longer (uphill) or shorter (downhill) the putt plays than its real distance.
+ * Uphill the slope adds to the green's friction, downhill it works against it. Null = the ball won't stop.
+ */
+export function slopeMultiplier(stimp: number, slopePct: number, direction: SlopeDirection): number | null {
+  const pull = ROLLING_SHARE * GRAVITY_FT_S2 * Math.sin(Math.atan(slopePct / 100));
+  const friction = (STIMP_RELEASE_FT_S * STIMP_RELEASE_FT_S) / (2 * stimp);
+  const multiplier = 1 + ((direction === "uphill" ? 1 : -1) * pull) / friction;
+  return multiplier >= MIN_PLAYS_LIKE ? multiplier : null;
+}
+
 /** Time in the backswing vs the downswing to impact. */
 const RHYTHMS: { id: RhythmId; label: string; ratio: number; hint: string }[] = [
   { id: "tour", label: "Tour Standard", ratio: 2.0, hint: "Smooth, balanced tour baseline." },
@@ -55,9 +89,10 @@ const SCHEDULE_AHEAD_SEC = 0.12;
 const BEAT_LIGHT_SEC = 0.15;
 /** One rep lasts this many stroke cycles: the stroke, follow-through, a hold at the finish, then the reset to the ball. */
 const REP_CYCLES = 3;
-const BEEP_HZ: Record<Beat, number> = { takeaway: 440, apex: 587, impact: 880 };
+/** Quiet gap after the putter is back at the ball before the next count-in starts. */
+const SETTLE_CYCLES = 0.2;
 
-type Rep = { start: number; back: number; down: number; cycle: number };
+type Rep = CountedRep & { cycle: number };
 
 /** Total cycle = 60 / BPM, split by the backswing-to-downswing ratio. Times in seconds. */
 export function tempoSplit(bpm: number, ratio: number) {
@@ -111,21 +146,6 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 /** Left offset (%) of a point `cm` from the ball (positive = towards the target). */
 const trackPercent = (cm: number, halfCm = TRACK_HALF_CM, targetLeft = false) => 50 + ((targetLeft ? -cm : cm) / halfCm) * 50;
 const tickStepFor = (unit: LengthUnit) => (unit === "cm" ? 10 : 5 * CM_PER_IN);
-
-function playBeep(ctx: AudioContext, output: AudioNode, at: number, beat: Beat) {
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  const crisp = beat === "impact";
-  const length = crisp ? 0.045 : 0.09;
-  osc.type = crisp ? "triangle" : "sine";
-  osc.frequency.value = BEEP_HZ[beat];
-  gain.gain.setValueAtTime(0.0001, at);
-  gain.gain.exponentialRampToValueAtTime(crisp ? 0.7 : 0.45, at + 0.003);
-  gain.gain.exponentialRampToValueAtTime(0.0001, at + length);
-  osc.connect(gain).connect(output);
-  osc.start(at);
-  osc.stop(at + length + 0.01);
-}
 
 function Segmented<T extends string>({
   value,
@@ -331,11 +351,15 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>("ft");
   const [distanceFt, setDistanceFt] = useState(10);
   const [stimp, setStimp] = useState(10);
+  const [slopePct, setSlopePct] = useState(0);
+  const [slopeDirection, setSlopeDirection] = useState<SlopeDirection>("uphill");
   const [ratio, setRatio] = useState<Ratio>("balanced");
   const [lengthUnit, setLengthUnit] = useState<LengthUnit>("cm");
   const [playing, setPlaying] = useState(false);
   const [sound, setSound] = useState(true);
   const [beat, setBeat] = useState<Beat | null>(null);
+  const [countIn, setCountIn] = useState(true);
+  const [light, setLight] = useState<CountLight | null>(null);
   const [rhythmId, setRhythmId] = useState<RhythmId>("tour");
   const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -347,9 +371,19 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
   const tempo = tempoSplit(bpm, rhythm.ratio);
   const ms = (sec: number) => Math.round(sec * 1000);
 
-  const back = backswingCm(distanceFt, stimp);
+  const multiplier = slopePct > 0 ? slopeMultiplier(stimp, slopePct, slopeDirection) : 1;
+  const wontStop = multiplier === null;
+  const playsLikeFt = distanceFt * (multiplier ?? MIN_PLAYS_LIKE);
+  const back = backswingCm(playsLikeFt, stimp);
   const through = back * FOLLOW_THROUGH_RATIO[ratio];
   const toDisplay = (cm: number) => (lengthUnit === "cm" ? cm : cm / CM_PER_IN);
+  const formatDistance = (ft: number) =>
+    distanceUnit === "ft" ? `${round1(ft)} ft` : `${(ft / FT_PER_M).toFixed(1)} m`;
+  const slopeLabel = slopePct > 0 ? `${slopePct}% ${slopeDirection}` : "Flat";
+  const trackHalfCm = Math.max(
+    TRACK_HALF_CM,
+    Math.ceil((Math.max(back, through) * 1.08) / tickStepFor(lengthUnit)) * tickStepFor(lengthUnit),
+  );
 
   const distanceValue = distanceUnit === "ft" ? round1(distanceFt) : round1(distanceFt / FT_PER_M);
   const presets = distanceUnit === "ft" ? FT_PRESETS : M_PRESETS;
@@ -361,7 +395,7 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
   const ctxRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
   const repsRef = useRef<Rep[]>([]);
-  const nextRepStartRef = useRef(0);
+  const nextRepRef = useRef({ start: 0, lead: 0 });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rafRef = useRef<number | null>(null);
   const markerRef = useRef<HTMLDivElement | null>(null);
@@ -370,6 +404,12 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
   const extentsRef = useRef({ back, through });
   const tempoRef = useRef({ bpm, ratio: rhythm.ratio });
   const beatRef = useRef<Beat | null>(null);
+  const lightRef = useRef<CountLight | null>(null);
+  const countInRef = useRef(countIn);
+
+  useEffect(() => {
+    countInRef.current = countIn;
+  }, [countIn]);
 
   useEffect(() => {
     soundRef.current = sound;
@@ -386,10 +426,10 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
 
   // Full screen zooms the track to just fit this stroke, so the putter's movement is as big as possible.
   const fullHalfCm = Math.ceil((Math.max(back, through) * 1.12) / tickStepFor(lengthUnit)) * tickStepFor(lengthUnit);
-  const trackScaleRef = useRef({ fullHalfCm, targetLeft });
+  const trackScaleRef = useRef({ fullHalfCm, trackHalfCm, targetLeft });
   useEffect(() => {
-    trackScaleRef.current = { fullHalfCm, targetLeft };
-  }, [fullHalfCm, targetLeft]);
+    trackScaleRef.current = { fullHalfCm, trackHalfCm, targetLeft };
+  }, [fullHalfCm, trackHalfCm, targetLeft]);
 
   const openFullScreen = () => {
     setFullScreen(true);
@@ -449,12 +489,14 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
     timerRef.current = null;
     rafRef.current = null;
     beatRef.current = null;
+    lightRef.current = null;
     masterGainRef.current?.disconnect();
     masterGainRef.current = null;
     repsRef.current = [];
     if (markerRef.current) markerRef.current.style.left = "50%";
     if (fullMarkerRef.current) fullMarkerRef.current.style.left = "50%";
     setBeat(null);
+    setLight(null);
     setPlaying(false);
   }, []);
 
@@ -463,24 +505,41 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
     if (!ctx) return;
     ctxRef.current = ctx;
 
-    const master = ctx.createGain();
+    const master = createLoudOutput(ctx);
     master.gain.value = soundRef.current ? 1 : 0;
-    master.connect(ctx.destination);
     masterGainRef.current = master;
     repsRef.current = [];
-    nextRepStartRef.current = ctx.currentTime + 0.4;
+    const leadFor = () =>
+      countInRef.current ? tempoSplit(tempoRef.current.bpm, tempoRef.current.ratio).back : 0;
+    let primed = false;
+    let clockSeen = -1;
 
     // Tempo changes take effect from the next rep, so a stroke is never cut short mid-swing.
     const schedule = () => {
-      while (nextRepStartRef.current < ctx.currentTime + SCHEDULE_AHEAD_SEC) {
+      if (!primed) {
+        // The audio clock can stall while the output starts up, which would bunch up the first count-in.
+        const ticking = ctx.state === "running" && clockSeen >= 0 && ctx.currentTime > clockSeen;
+        clockSeen = ctx.currentTime;
+        if (!ticking) return;
+        primed = true;
+        const firstLead = leadFor();
+        nextRepRef.current = { start: ctx.currentTime + 0.5 + firstLead * COUNT_IN_BEATS, lead: firstLead };
+      }
+      while (nextRepRef.current.start - nextRepRef.current.lead * COUNT_IN_BEATS < ctx.currentTime + SCHEDULE_AHEAD_SEC) {
         const { bpm: repBpm, ratio: repRatio } = tempoRef.current;
         const split = tempoSplit(repBpm, repRatio);
-        const rep: Rep = { start: nextRepStartRef.current, ...split };
-        playBeep(ctx, master, rep.start, "takeaway");
-        playBeep(ctx, master, rep.start + rep.back, "apex");
-        playBeep(ctx, master, rep.start + rep.back + rep.down, "impact");
+        const rep: Rep = { ...nextRepRef.current, ...split };
+        for (const at of countInTimes(rep)) {
+          if (at >= ctx.currentTime) playTone(ctx, master, at, "count");
+        }
+        playTone(ctx, master, rep.start, "takeaway");
+        playTone(ctx, master, rep.start + rep.back, "apex");
+        playTone(ctx, master, rep.start + rep.back + rep.down, "impact");
         repsRef.current = [...repsRef.current.slice(-1), rep];
-        nextRepStartRef.current += rep.cycle * REP_CYCLES;
+        // The count-in starts once the putter is back at the ball (2.6 cycles into the rep).
+        const lead = leadFor();
+        const gap = Math.max(rep.cycle * REP_CYCLES, rep.cycle * (2.6 + SETTLE_CYCLES) + lead * COUNT_IN_BEATS);
+        nextRepRef.current = { start: rep.start + gap, lead };
       }
     };
     schedule();
@@ -494,7 +553,7 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
       const { back: b, through: th } = extentsRef.current;
       const cm = rep ? strokePositionCm(t, rep, b, th) : 0;
       const scale = trackScaleRef.current;
-      if (markerRef.current) markerRef.current.style.left = `${trackPercent(cm, TRACK_HALF_CM, scale.targetLeft)}%`;
+      if (markerRef.current) markerRef.current.style.left = `${trackPercent(cm, scale.trackHalfCm, scale.targetLeft)}%`;
       if (fullMarkerRef.current) {
         fullMarkerRef.current.style.left = `${trackPercent(cm, scale.fullHalfCm, scale.targetLeft)}%`;
       }
@@ -503,6 +562,11 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
       if (lit !== beatRef.current) {
         beatRef.current = lit;
         setBeat(lit);
+      }
+      const go = countLightAt(now, reps);
+      if (go !== lightRef.current) {
+        lightRef.current = go;
+        setLight(go);
       }
       rafRef.current = requestAnimationFrame(frame);
     };
@@ -619,6 +683,75 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
         </div>
       </section>
 
+      <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {slopeDirection === "uphill" ? (
+              <TrendingUp className="h-4 w-4 text-[#014421]" aria-hidden />
+            ) : (
+              <TrendingDown className="h-4 w-4 text-[#014421]" aria-hidden />
+            )}
+            <h3 className="text-sm font-bold text-gray-900">Slope</h3>
+          </div>
+          <Segmented
+            label="Slope direction"
+            value={slopeDirection}
+            onChange={setSlopeDirection}
+            options={[
+              { id: "uphill", label: "Uphill" },
+              { id: "downhill", label: "Downhill" },
+            ]}
+          />
+        </div>
+        <p className="mt-3 text-3xl font-extrabold tabular-nums text-[#014421]">
+          {slopePct}
+          <span className="ml-1 text-base font-semibold text-gray-500">% {slopePct > 0 ? slopeDirection : "flat"}</span>
+        </p>
+        <input
+          type="range"
+          min={0}
+          max={MAX_SLOPE}
+          step={0.5}
+          value={slopePct}
+          onChange={(e) => setSlopePct(Number(e.target.value))}
+          className={`mt-3 ${RANGE_CLASS}`}
+          style={{ background: rangeFill((slopePct / MAX_SLOPE) * 100) }}
+          aria-label="Slope in percent"
+        />
+        <div className="mt-3 flex flex-wrap gap-2">
+          {SLOPE_PRESETS.map((p) => (
+            <Chip key={p} active={slopePct === p} onClick={() => setSlopePct(p)}>
+              {p === 0 ? "Flat" : `${p}%`}
+            </Chip>
+          ))}
+        </div>
+
+        {slopePct > 0 &&
+          (wontStop ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+              <p className="text-sm font-bold text-amber-900">The ball won&apos;t stop on this slope</p>
+              <p className="mt-0.5 text-xs text-amber-900">
+                At Stimp {stimp}, a {slopePct}% downhill pulls harder than the green slows the ball. Just set it rolling;
+                the stroke below is the smallest touch.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-3 rounded-xl bg-green-50 px-3 py-2.5">
+              <p className="text-sm text-gray-700">
+                Plays like <span className="font-extrabold text-[#014421]">{formatDistance(playsLikeFt)}</span>
+              </p>
+              <p className="mt-0.5 text-xs font-semibold text-gray-600">
+                {playsLikeFt >= distanceFt ? "Add " : "Take off "}
+                {formatDistance(Math.abs(playsLikeFt - distanceFt))} ({Math.round(Math.abs((multiplier ?? 1) - 1) * 100)}%{" "}
+                {playsLikeFt >= distanceFt ? "longer" : "shorter"}). The stroke below already includes it.
+              </p>
+            </div>
+          ))}
+        <p className="mt-2 text-[11px] text-gray-400">
+          Slope is the rise or fall along the putt&apos;s line, start to hole. The faster the green, the more slope changes it.
+        </p>
+      </section>
+
       <div className="grid grid-cols-3 gap-2">
         <StatCard label="Backswing" value={toDisplay(back)} unit={lengthUnit} accent="bg-[#FFA500]" />
         <StatCard label="Follow-through" value={toDisplay(through)} unit={lengthUnit} accent="bg-[#014421]" />
@@ -637,6 +770,11 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
             Full screen
           </button>
         </div>
+        {countIn && playing && (
+          <div className="mt-3 flex justify-center">
+            <CountInLights light={light} size="sm" />
+          </div>
+        )}
         <div
           role="button"
           tabIndex={0}
@@ -653,7 +791,7 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
           <StrokeTrack
             back={back}
             through={through}
-            halfCm={TRACK_HALF_CM}
+            halfCm={trackHalfCm}
             lengthUnit={lengthUnit}
             markerRef={markerRef}
             targetLeft={targetLeft}
@@ -724,10 +862,12 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
             {playing ? <Pause className="h-4 w-4" aria-hidden /> : <Play className="h-4 w-4 fill-current" aria-hidden />}
             {playing ? "Stop" : "Start tempo"}
           </button>
-          <BeatLights beat={beat} />
+          {!countIn && <BeatLights beat={beat} />}
         </div>
+        <CountInToggle on={countIn} onChange={setCountIn} />
         <p className="mt-3 text-[11px] text-gray-400">
-          Low beep: start the takeaway. Middle beep: top of the backswing. High click: strike the ball. The putter on the stroke
+          {countIn ? "Red and amber tick one backswing apart; start the takeaway on green. " : ""}
+          Low beep: start the takeaway. Middle beep: top of the backswing. High beep: strike the ball. The putter on the stroke
           track moves at your exact timings. No sound? Turn your volume up, and on older iPhones switch off silent mode.
         </p>
       </section>
@@ -845,9 +985,12 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-gray-900">Stroke track</p>
                   <p className="truncate text-xs text-gray-500">
-                    {distanceLabel} · Stimp {stimp} · {rhythm.label} {formatRatio(rhythm.ratio)}
+                    {distanceLabel}
+                    {slopePct > 0 ? ` · ${slopeLabel} (plays ${wontStop ? "very fast" : formatDistance(playsLikeFt)})` : ""} · Stimp{" "}
+                    {stimp} · {rhythm.label} {formatRatio(rhythm.ratio)}
                   </p>
                 </div>
+                {countIn && <CountInLights light={light} size="lg" />}
                 <div className="flex shrink-0 items-center gap-2">
                   <Segmented label="Handedness" value={handedness} onChange={setHandedness} options={HANDEDNESS_OPTIONS} />
                   <button

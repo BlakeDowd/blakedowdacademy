@@ -15,6 +15,7 @@ import { CoachingActivity } from "@/components/coaching/CoachingActivity";
 import { CoachingUsage } from "@/components/coaching/CoachingUsage";
 import { AssignedOverview, AssignmentsPanel } from "@/components/coaching/CoachingAssignments";
 import { NewSpaceSheet, PendingInviteBanner } from "@/components/coaching/CoachingInvites";
+import { PlayerEmail } from "@/components/coaching/PlayerEmail";
 
 type View = "spaces" | "feed" | "activity" | "assigned" | "usage";
 
@@ -163,6 +164,7 @@ export default function CoachingTab({
             <p className="text-xs text-stone-500">
               {pending?.pending ? "Invited · hasn't joined yet" : "Golf · private space with this student"}
             </p>
+            {!pending?.pending && <PlayerEmail key={open.id} playerId={open.id} playerName={open.name} />}
           </div>
         </div>
         {pending?.pending && (
