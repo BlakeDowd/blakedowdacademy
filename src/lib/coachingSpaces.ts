@@ -57,20 +57,26 @@ async function fetchSpaceRecords(supabase: SupabaseClient): Promise<CoachingSpac
   return (data ?? []) as CoachingSpaceRecord[];
 }
 
+type ProfileRow = { id: string; full_name: string | null; role?: string | null };
+
+async function fetchProfiles(supabase: SupabaseClient): Promise<ProfileRow[]> {
+  const withRole = await supabase.from("profiles").select("id, full_name, role");
+  const res = withRole.error ? await supabase.from("profiles").select("id, full_name") : withRole;
+  if (res.error) console.warn("[coachingSpaces] profiles:", res.error.message);
+  return (res.data ?? []) as ProfileRow[];
+}
+
+const isCoachProfile = (p: ProfileRow) => (p.role ?? "").trim().toLowerCase() === "coach";
+
 /** Before the invites migration: every player in the app, as the Spaces screen used to work. */
 async function fetchEveryPlayerSpace(supabase: SupabaseClient, coachId: string): Promise<CoachingSpaceSummary[]> {
-  const [inbox, withRole] = await Promise.all([
-    fetchCoachInbox(supabase, coachId),
-    supabase.from("profiles").select("id, full_name, role"),
-  ]);
-  const profilesRes = withRole.error ? await supabase.from("profiles").select("id, full_name") : withRole;
+  const [inbox, profiles] = await Promise.all([fetchCoachInbox(supabase, coachId), fetchProfiles(supabase)]);
   const byId = new Map(inbox.map((t) => [t.studentId, t] as const));
   const spaces: CoachingSpaceSummary[] = [];
-  for (const p of (profilesRes.data ?? []) as { id: string; full_name: string | null; role?: string | null }[]) {
-    const isCoachProfile = (p.role ?? "").trim().toLowerCase() === "coach";
+  for (const p of profiles) {
     const thread = byId.get(p.id);
     if (p.id === coachId && !thread) continue;
-    if (isCoachProfile && !thread) continue;
+    if (isCoachProfile(p) && !thread) continue;
     spaces.push({
       studentId: p.id,
       name: p.full_name?.trim() || "Golfer",
@@ -83,10 +89,15 @@ async function fetchEveryPlayerSpace(supabase: SupabaseClient, coachId: string):
 
 /**
  * The coach's Spaces screen: spaces they created or invited, players who already have posts,
- * and invites still waiting for the player to join.
+ * invites still waiting for the player to join, then every other player on the app (no activity,
+ * so the grid tucks them under "no posts yet").
  */
 export async function fetchSpaces(supabase: SupabaseClient, coachId: string): Promise<CoachingSpaceSummary[]> {
-  const [inbox, records] = await Promise.all([fetchCoachInbox(supabase, coachId), fetchSpaceRecords(supabase)]);
+  const [inbox, records, profiles] = await Promise.all([
+    fetchCoachInbox(supabase, coachId),
+    fetchSpaceRecords(supabase),
+    fetchProfiles(supabase),
+  ]);
   if (!records) return fetchEveryPlayerSpace(supabase, coachId);
 
   const threads = new Map(inbox.map((t) => [t.studentId, t] as const));
@@ -121,6 +132,11 @@ export async function fetchSpaces(supabase: SupabaseClient, coachId: string): Pr
       lastActivityAt: t.latest?.created_at ?? null,
       unread: t.unread,
     });
+  }
+
+  for (const p of profiles) {
+    if (byKey.has(p.id) || p.id === coachId || isCoachProfile(p) || otherCoaches.has(p.id)) continue;
+    byKey.set(p.id, { studentId: p.id, name: p.full_name?.trim() || "Golfer", lastActivityAt: null, unread: false });
   }
   return [...byKey.values()];
 }

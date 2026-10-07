@@ -13,6 +13,7 @@ import { GuidedPracticeSession, type GuidedSessionDrill } from "@/components/Gui
 import { WeekDayStrip } from "@/components/WeekDayStrip";
 import { NutritionPlannerPanel } from "@/components/NutritionPlannerPanel";
 import { getBenchmarkGoals } from "@/lib/benchmarkGoals";
+import { trackScreen } from "@/lib/appUsage";
 import {
   fetchDrillsCatalogRows,
   fetchDrillRowById,
@@ -94,6 +95,8 @@ interface Drill {
   drill_levels?: any;
   levels?: Array<{ id: string; name: string; completed?: boolean }>;
   goal?: string;
+  /** `drills.score_type` override, e.g. "makes/10" or "strokes: putts". */
+  score_type?: string;
   isCombine?: boolean;
   combineHref?: string;
   combineLogType?: string;
@@ -607,6 +610,11 @@ export default function PracticePage() {
   const [totalPracticeMinutes, setTotalPracticeMinutes] = useState<number>(0);
   const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(true); // Weekly schedule expanded state
   const [openTool, setOpenTool] = useState<"planner" | "insights" | "library" | "combine" | "fuel" | null>(null);
+  useEffect(() => {
+    if (openTool) trackScreen(`practice-${openTool}`);
+  }, [openTool]);
+  /** `?plan=library&drill=KEY` (coach assignment links) opens that drill in the Drill Library. */
+  const [libraryDrillKey, setLibraryDrillKey] = useState<string | null>(null);
   const weeklyScheduleRef = useRef<HTMLDivElement>(null);
   const combineTestsRef = useRef<HTMLDivElement>(null);
   const drillLibraryRef = useRef<HTMLDivElement>(null);
@@ -654,6 +662,16 @@ export default function PracticePage() {
     () => COMBINE_TEST_CARDS.filter((c) => c.category === combineCategoryTab),
     [combineCategoryTab]
   );
+
+  const scoringByDrillKey = useMemo(() => {
+    const out = new Map<string, { scoreType: string | null; focus: string | null }>();
+    for (const d of drills) {
+      const entry = { scoreType: d.score_type ?? null, focus: d.focus || null };
+      out.set(d.id, entry);
+      if (d.drill_id) out.set(d.drill_id, entry);
+    }
+    return out;
+  }, [drills]);
 
   const combineBestByPlannerDrillId = useMemo(() => {
     const out = new Map<string, string>();
@@ -742,6 +760,7 @@ export default function PracticePage() {
 
     if (plan === "library") {
       setOpenTool("library");
+      setLibraryDrillKey(params.get("drill"));
       scrollTimer = window.setTimeout(() => {
         drillLibraryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 200);
@@ -1274,6 +1293,7 @@ export default function PracticePage() {
               String((db as { goal_reps?: string }).goal_reps).trim()
                 ? String((db as { goal_reps?: string }).goal_reps).trim()
                 : undefined,
+            score_type: (db as { score_type?: string } | undefined)?.score_type?.trim() || d.score_type || undefined,
           };
         });
 
@@ -1302,6 +1322,7 @@ export default function PracticePage() {
           goal: (d.goal_reps && String(d.goal_reps).trim()) || d.goal || '',
           goal_reps:
             d.goal_reps != null && String(d.goal_reps).trim() ? String(d.goal_reps).trim() : undefined,
+          score_type: d.score_type != null && String(d.score_type).trim() ? String(d.score_type).trim() : undefined,
         }));
 
         const fetchedDrills = [...merged, ...dbOnlyMapped];
@@ -3587,6 +3608,7 @@ export default function PracticePage() {
                             defaultExpanded={isExpanded}
                             userId={user?.id ?? null}
                             combineBestText={drill.isCombine ? (combineBestByPlannerDrillId.get(drill.id) ?? null) : null}
+                            catalogScoring={scoringByDrillKey.get(drill.drill_id ?? drill.id) ?? scoringByDrillKey.get(drill.id)}
                           />
                         );
                       })}
@@ -3653,6 +3675,7 @@ export default function PracticePage() {
                                   defaultExpanded={isExpanded}
                                   userId={user?.id ?? null}
                                   combineBestText={drill.isCombine ? (combineBestByPlannerDrillId.get(drill.id) ?? null) : null}
+                                  catalogScoring={scoringByDrillKey.get(drill.drill_id ?? drill.id) ?? scoringByDrillKey.get(drill.id)}
                                   compact
                                 />
                               );
@@ -3867,7 +3890,7 @@ export default function PracticePage() {
               </button>
               {openTool === "library" && (
                 <div className="border-t border-gray-200 px-3 pb-3 pt-3">
-                  <DrillLibrary onAssignToDay={addDrillToDay} showHeader={false} />
+                  <DrillLibrary onAssignToDay={addDrillToDay} showHeader={false} initialDrillKey={libraryDrillKey} />
                 </div>
               )}
             </div>

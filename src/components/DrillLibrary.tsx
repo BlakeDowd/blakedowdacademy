@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { ChevronDown, ChevronUp, X, UserPlus, FileText, Youtube } from "lucide-react";
 import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
@@ -266,12 +266,31 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
 interface DrillLibraryProps {
   onAssignToDay?: (drill: DrillRecord, dayIndex: number) => void;
   showHeader?: boolean;
+  /** Opens this drill (by drill_id or id) once the catalog has loaded, e.g. from a coach assignment link. */
+  initialDrillKey?: string | null;
 }
 
-export function DrillLibrary({ onAssignToDay, showHeader = true }: DrillLibraryProps) {
+export function DrillLibrary({ onAssignToDay, showHeader = true, initialDrillKey = null }: DrillLibraryProps) {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [selectedDrill, setSelectedDrill] = useState<DrillRecord | null>(null);
   const [drills, setDrills] = useState<DrillRecord[]>(OFFICIAL_DRILLS);
+  const [dismissedInitialKey, setDismissedInitialKey] = useState<string | null>(null);
+  const initialKey = initialDrillKey?.trim().toLowerCase() || null;
+  const initialDrill = useMemo(() => {
+    if (!initialKey) return null;
+    return (
+      drills.find(
+        (d) =>
+          String(d.drill_id ?? "").trim().toLowerCase() === initialKey ||
+          String(d.id).trim().toLowerCase() === initialKey,
+      ) ?? null
+    );
+  }, [initialKey, drills]);
+  const shownDrill = selectedDrill ?? (initialKey !== dismissedInitialKey ? initialDrill : null);
+  const closeDrill = () => {
+    setSelectedDrill(null);
+    setDismissedInitialKey(initialKey);
+  };
 
   const loadDrillsFromDb = useCallback(async () => {
     try {
@@ -414,7 +433,7 @@ export function DrillLibrary({ onAssignToDay, showHeader = true }: DrillLibraryP
 
   const handleAssignToDay = (drill: DrillRecord, dayIndex: number) => {
     onAssignToDay?.(drill, dayIndex);
-    setSelectedDrill(null);
+    closeDrill();
   };
 
   return (
@@ -488,8 +507,8 @@ export function DrillLibrary({ onAssignToDay, showHeader = true }: DrillLibraryP
       </div>
 
       <DrillDetailModal
-        drill={selectedDrill}
-        onClose={() => setSelectedDrill(null)}
+        drill={shownDrill}
+        onClose={closeDrill}
         onAssignToDay={handleAssignToDay}
       />
     </div>

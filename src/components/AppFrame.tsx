@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import ConditionalNavbar from "./ConditionalNavbar";
+import ScreenTracker from "./ScreenTracker";
 
 export default function AppFrame({
   children,
@@ -16,6 +17,7 @@ export default function AppFrame({
       className="app-frame-outer h-screen w-full flex justify-center bg-gray-100 overflow-hidden"
       style={{ overflowX: "clip" }}
     >
+      <ScreenTracker />
       <div
         className="app-frame-inner h-full w-full max-w-md flex flex-col bg-gray-50 shadow-2xl relative border-x border-gray-200 transition-all"
       >

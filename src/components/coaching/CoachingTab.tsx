@@ -12,9 +12,11 @@ import { Avatar, rememberNames } from "@/components/coaching/coachingUi";
 import { CoachingFeedList } from "@/components/coaching/CoachingFeedList";
 import { CoachingSpacesGrid } from "@/components/coaching/CoachingSpacesGrid";
 import { CoachingActivity } from "@/components/coaching/CoachingActivity";
+import { CoachingUsage } from "@/components/coaching/CoachingUsage";
+import { AssignedOverview, AssignmentsPanel } from "@/components/coaching/CoachingAssignments";
 import { NewSpaceSheet, PendingInviteBanner } from "@/components/coaching/CoachingInvites";
 
-type View = "spaces" | "feed" | "activity";
+type View = "spaces" | "feed" | "activity" | "assigned" | "usage";
 
 function SubTabs({
   tabs,
@@ -64,6 +66,7 @@ export default function CoachingTab({
   const [spacesLoading, setSpacesLoading] = useState(isCoach);
   const [spacesError, setSpacesError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [feedVersion, setFeedVersion] = useState(0);
   const closeCreating = useCallback(() => setCreating(false), []);
 
   const loadSpaces = useCallback(async () => {
@@ -101,6 +104,7 @@ export default function CoachingTab({
             <p className="text-xs text-stone-500">Only you and your coach can see this.</p>
           </div>
         </div>
+        <AssignmentsPanel studentId={user.id} viewerId={user.id} viewerIsCoach={false} />
         <SubTabs
           tabs={[
             { id: "feed", label: "Feed" },
@@ -173,8 +177,16 @@ export default function CoachingTab({
             }}
           />
         )}
+        <AssignmentsPanel
+          key={`assign-${open.id}`}
+          studentId={open.id}
+          studentName={open.name}
+          viewerId={user.id}
+          viewerIsCoach
+          onAssigned={() => setFeedVersion((v) => v + 1)}
+        />
         <CoachingFeedList
-          key={open.id}
+          key={`${open.id}-${feedVersion}`}
           studentId={open.id}
           studentName={open.name}
           viewerId={user.id}
@@ -196,6 +208,8 @@ export default function CoachingTab({
           { id: "spaces", label: "Spaces", badge: unreadSpaces },
           { id: "feed", label: "Feed" },
           { id: "activity", label: "Activity", badge: unreadCount },
+          { id: "assigned", label: "Assigned" },
+          { id: "usage", label: "Usage" },
         ]}
         value={view}
         onChange={(v) => {
@@ -220,6 +234,10 @@ export default function CoachingTab({
           spaces={spaces}
           onOpenSpace={openSpace}
         />
+      ) : view === "assigned" ? (
+        <AssignedOverview viewerId={user.id} spaces={spaces} onOpenSpace={openSpace} />
+      ) : view === "usage" ? (
+        <CoachingUsage viewerId={user.id} spaces={spaces} onOpenSpace={openSpace} />
       ) : (
         <CoachingActivity
           viewerId={user.id}

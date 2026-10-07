@@ -73,7 +73,27 @@ export type DrillScoreLog = {
   id: string;
   score: number;
   created_at: string;
+  /** Attempts that session (balls hit, putts taken...), when the player entered it. */
+  reps?: number | null;
 };
+
+type DrillScoreLogRow = { id: string; score: number | string; created_at: string; reps?: number | string | null };
+
+function toDrillScoreLog(row: DrillScoreLogRow): DrillScoreLog {
+  const reps = row.reps == null ? null : Number(row.reps);
+  return {
+    id: row.id,
+    score: Number(row.score),
+    created_at: row.created_at,
+    reps: reps != null && Number.isFinite(reps) ? reps : null,
+  };
+}
+
+/** True when the optional `reps` column hasn't been added yet (20261007100000_drill_score_reps.sql). */
+function isMissingRepsColumn(message: string | null | undefined): boolean {
+  const m = (message || "").toLowerCase();
+  return m.includes("reps") && (m.includes("column") || m.includes("schema cache") || m.includes("pgrst204"));
+}
 
 export type DrillScoreSettings = {
   unit: string;
@@ -114,21 +134,28 @@ export async function fetchDrillProgress(
 ): Promise<DrillProgressData> {
   const settings: DrillScoreSettings = { unit: "", lowerIsBetter: false, goalScore: null, legacyText: "" };
 
-  const [pbRes, logsRes] = await Promise.all([
+  const fetchLogs = (columns: string) =>
+    supabase
+      .from("drill_score_logs")
+      .select(columns)
+      .eq("user_id", userId)
+      .eq("drill_key", drillKey)
+      .order("created_at", { ascending: false })
+      .limit(DRILL_SCORE_HISTORY_LIMIT);
+
+  const [pbRes, firstLogsRes] = await Promise.all([
     supabase
       .from("drill_personal_bests")
       .select("achievement, score_unit, lower_is_better, goal_score")
       .eq("user_id", userId)
       .eq("drill_key", drillKey)
       .maybeSingle(),
-    supabase
-      .from("drill_score_logs")
-      .select("id, score, created_at")
-      .eq("user_id", userId)
-      .eq("drill_key", drillKey)
-      .order("created_at", { ascending: false })
-      .limit(DRILL_SCORE_HISTORY_LIMIT),
+    fetchLogs("id, score, reps, created_at"),
   ]);
+  const logsRes =
+    firstLogsRes.error && isMissingRepsColumn(firstLogsRes.error.message)
+      ? await fetchLogs("id, score, created_at")
+      : firstLogsRes;
 
   if (pbRes.error) {
     const legacy = await fetchDrillPersonalBest(supabase, userId, drillKey);
@@ -154,8 +181,8 @@ export async function fetchDrillProgress(
     return { settings, logs: [], available: !isMissingSchemaError(logsRes.error.message) };
   }
 
-  const logs = ((logsRes.data ?? []) as { id: string; score: number | string; created_at: string }[])
-    .map((r) => ({ id: r.id, score: Number(r.score), created_at: r.created_at }))
+  const logs = ((logsRes.data ?? []) as unknown as DrillScoreLogRow[])
+    .map(toDrillScoreLog)
     .filter((r) => Number.isFinite(r.score));
 
   return { settings, logs, available: true };
@@ -166,15 +193,22 @@ export async function insertDrillScore(
   userId: string,
   drillKey: string,
   score: number,
+  reps: number | null = null,
 ): Promise<{ log: DrillScoreLog | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from("drill_score_logs")
-    .insert({ user_id: userId, drill_key: drillKey, score })
-    .select("id, score, created_at")
-    .single();
-  if (error) return { log: null, error: userFacingDrillScoreError(error.message) };
-  const row = data as { id: string; score: number | string; created_at: string };
-  return { log: { id: row.id, score: Number(row.score), created_at: row.created_at }, error: null };
+  const insert = (withReps: boolean) =>
+    supabase
+      .from("drill_score_logs")
+      .insert({ user_id: userId, drill_key: drillKey, score, ...(withReps ? { reps } : {}) })
+      .select(withReps ? "id, score, reps, created_at" : "id, score, created_at")
+      .single();
+
+  let res = await insert(reps != null);
+  if (res.error && reps != null && isMissingRepsColumn(res.error.message)) {
+    console.warn("[drillPersonalBests] reps column missing; saved the score without attempts.");
+    res = await insert(false);
+  }
+  if (res.error) return { log: null, error: userFacingDrillScoreError(res.error.message) };
+  return { log: toDrillScoreLog(res.data as unknown as DrillScoreLogRow), error: null };
 }
 
 export async function deleteDrillScore(

@@ -24,6 +24,8 @@ export interface ParsedDrillRow {
   goal: string;
   xp: number;
   equipment: string;
+  /** Optional "Score Type" column (e.g. makes/10). Undefined when the CSV has no such column. */
+  scoreType?: string;
 }
 
 export interface DrillUpsertPayload {
@@ -43,6 +45,7 @@ export interface DrillUpsertPayload {
   xp_value: number;
   drill_levels: string | null;
   created_at: string;
+  score_type?: string | null;
 }
 
 export interface UploadResult {
@@ -166,6 +169,7 @@ export function parseDrillCSV(csvText: string): ParsedDrillRow[] {
   if (rows.length < 2) return [];
 
   const drills: ParsedDrillRow[] = [];
+  const scoreTypeCol = (rows[0] ?? []).findIndex((h) => /^\s*score\s*type\s*$/i.test(h ?? ""));
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
@@ -192,6 +196,7 @@ export function parseDrillCSV(csvText: string): ParsedDrillRow[] {
       goal: (row[CSV_COLS.GOAL_REPS] || "").trim(),
       xp,
       equipment: (row[CSV_COLS.EQUIPMENT] || "").trim(),
+      ...(scoreTypeCol >= 0 ? { scoreType: (row[scoreTypeCol] || "").trim() } : {}),
     });
   }
 
@@ -229,6 +234,7 @@ function toSupabasePayload(
     xp_value: row.xp,
     drill_levels: drillLevels,
     created_at: new Date().toISOString(),
+    ...(row.scoreType !== undefined ? { score_type: row.scoreType || null } : {}),
   };
 }
 
@@ -306,6 +312,7 @@ function filterDrillPayloadForSchema(
   }
   if (colSet.has("drill_levels")) out.drill_levels = p.drill_levels;
   if (colSet.has("created_at")) out.created_at = p.created_at;
+  if (colSet.has("score_type") && p.score_type !== undefined) out.score_type = p.score_type;
   return out;
 }
 
@@ -337,6 +344,12 @@ export async function upsertDrillsFromCSV({
     sampleRows && sampleRows.length > 0
       ? new Set([...Object.keys(sampleRows[0] as object), ...Array.from(DRILL_COLUMNS_WHEN_EMPTY)])
       : DRILL_COLUMNS_WHEN_EMPTY;
+
+  if (!colSet.has("score_type") && parsed.some((r) => r.scoreType)) {
+    throw new Error(
+      "The CSV has a Score Type column but the drills table doesn't yet. Run supabase/migrations/20261007090000_drill_score_type.sql in Supabase, then import again.",
+    );
+  }
 
   const nameSelectFields = ["drill_name", "title"].filter((f) => colSet.has(f));
   const selectExisting =

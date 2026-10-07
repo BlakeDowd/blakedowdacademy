@@ -13,6 +13,7 @@ import { DESCRIPTION_BY_DRILL_ID, DESCRIPTION_BY_ID } from "@/data/official_dril
 import { useKeepInViewAfterOwnTap } from "@/hooks/useKeepInView";
 import { useDrillProgress } from "@/hooks/useDrillProgress";
 import DrillProgressTracker from "@/components/DrillProgressTracker";
+import { resolveDrillScoring } from "@/lib/drillScoring";
 import {
   effectiveGoalRepsString,
   getTieredGoalItems,
@@ -106,6 +107,8 @@ interface DrillCardProps {
   userId?: string | null;
   /** Read-only PB text for combine tasks sourced from saved combine results. */
   combineBestText?: string | null;
+  /** Catalog fields that decide how the drill is scored (Score Type override, focus). */
+  catalogScoring?: { scoreType?: string | null; focus?: string | null } | null;
 }
 
 export default function DrillCard({
@@ -126,6 +129,7 @@ export default function DrillCard({
   compact = false,
   userId = null,
   combineBestText = null,
+  catalogScoring = null,
 }: DrillCardProps) {
   // FIX THE TOGGLE: Default to collapsed
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
@@ -138,16 +142,27 @@ export default function DrillCard({
   );
   const catalogXp =
     typeof drill.xp_value === "number" && Number.isFinite(drill.xp_value) ? drill.xp_value : undefined;
-  const { coachGoal, goalOptions, coachGoalText } = parseCoachGoals(goalRepsForUi);
-  const progress = useDrillProgress(userId, drillKey, !drill.isCombine, coachGoal);
+  const { coachGoal, goalOptions, coachGoalText } = useMemo(() => parseCoachGoals(goalRepsForUi), [goalRepsForUi]);
+  const scoreTypeOverride = catalogScoring?.scoreType ?? null;
+  const focus = catalogScoring?.focus ?? null;
+  const scoring = useMemo(
+    () => resolveDrillScoring({ override: scoreTypeOverride, goalText: goalRepsForUi, focus, title: drill.title }),
+    [scoreTypeOverride, goalRepsForUi, focus, drill.title],
+  );
+  const progress = useDrillProgress(userId, drillKey, scoring, !drill.isCombine, coachGoal, goalOptions);
   const combineBest = drill.isCombine ? (combineBestText ?? "").trim() : "";
-  const collapsedHint = progress.summary
-    ? `${isCompleted ? "Best" : "Beat"} ${formatDrillScore(progress.summary.best, progress.unit)}`
-    : combineBest || progress.settings.legacyText
-      ? `Best ${combineBest || progress.settings.legacyText}`
-      : progress.goal != null
-        ? `Goal ${formatDrillScore(progress.goal, progress.unit)}`
-        : "";
+  const collapsedHint =
+    scoring.type === "completion" && progress.logs.length > 0
+      ? `Done ${progress.logs.length}×`
+      : !isCompleted && progress.target.next != null
+        ? `Today ${formatDrillScore(progress.target.next, progress.unit)}`
+        : progress.summary
+          ? `Best ${formatDrillScore(progress.summary.best, progress.unit)}`
+          : combineBest || progress.settings.legacyText
+            ? `Best ${combineBest || progress.settings.legacyText}`
+            : progress.goal != null
+              ? `Goal ${formatDrillScore(progress.goal, progress.unit)}`
+              : "";
   const prevExpandedRef = useRef<boolean | null>(null);
 
   const shouldShowContent = isExpanded || justSwapped;

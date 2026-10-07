@@ -13,6 +13,8 @@ export interface DrillRecord {
   youtube_url?: string;
   video_url?: string;
   goal: string;
+  /** Default scoring when the drills table has no `score_type` (see drillScoring.parseScoreTypeOverride). */
+  score_type?: string;
   estimatedMinutes: number;
   xpValue: number;
   contentType: 'video' | 'pdf' | 'text';
@@ -469,6 +471,7 @@ export const OFFICIAL_DRILLS: DrillRecord[] = [
     "focus": "FIR %",
     "description": "Hitting drives of varying tee heights. From off the ground to very high. You will obtain skills in hitting the centre.",
     "goal": "",
+    "score_type": "streak",
     "estimatedMinutes": 15,
     "xpValue": 10,
     "contentType": "text"

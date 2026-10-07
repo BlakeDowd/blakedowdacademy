@@ -5,5 +5,5 @@
 -- Leaderboard: best complete 10-hole session per user (see src/lib/puttingTestLeaderboard.ts).
 --
 -- Relational alias for reporting / SQL clients:
-CREATE OR REPLACE VIEW public."PuttingTest8to20" AS
+CREATE OR REPLACE VIEW public."PuttingTest8to20" WITH (security_invoker = true) AS
   SELECT * FROM public.practice p WHERE p.type = 'PuttingTest8to20';
