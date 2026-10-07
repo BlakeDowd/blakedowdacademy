@@ -20,6 +20,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Golf App",
   description: "Your personal golf training companion",
+  appleWebApp: { title: "Blake Dowd" },
 };
 
 export const viewport: Viewport = {

@@ -1,7 +1,7 @@
 import { formatDrillScore, summarizeDrillProgress, type DrillScoreLog } from "@/lib/drillPersonalBests";
 import { getTieredGoalItems, tierLineDisplayBody } from "@/lib/parseTieredGoal";
 
-/** How a drill is scored. Decides the input on the card and how "Today's target" moves. */
+/** How a drill is scored. Decides the input on the card and which way counts as beating your best. */
 export type DrillScoreType = "streak" | "makes" | "count" | "strokes" | "time" | "completion";
 
 export type DrillScoring = {
@@ -33,11 +33,6 @@ const LOWER_IS_BETTER: Record<DrillScoreType, boolean> = {
 };
 
 const DEFAULT_MAKES_OUT_OF = 10;
-
-/** Misses in a row before today's target eases back one step. */
-export const MISSES_BEFORE_EASING = 3;
-
-const TIME_STEP = 0.97;
 
 function scoring(type: DrillScoreType, unit: string, source: DrillScoring["source"], max: number | null = null): DrillScoring {
   return { type, unit: type === "makes" ? `/${max ?? DEFAULT_MAKES_OUT_OF}` : unit, lowerIsBetter: LOWER_IS_BETTER[type], max, source };
@@ -84,6 +79,32 @@ export function parseScoreTypeOverride(text: string | null | undefined): DrillSc
   return scoring(type, (m[3] ?? "").trim().slice(0, 24) || DEFAULT_UNITS[type], "coach", max);
 }
 
+/** The saved form of a scoring method, readable by `parseScoreTypeOverride`. */
+export function scoreTypeText(s: Pick<DrillScoring, "type" | "unit" | "max">): string {
+  if (s.type === "makes") return `makes/${s.max ?? DEFAULT_MAKES_OUT_OF}`;
+  if (s.type === "streak" || s.type === "completion") return s.type;
+  const unit = s.unit.trim().slice(0, 24) || DEFAULT_UNITS[s.type];
+  return unit ? `${s.type}: ${unit}` : s.type;
+}
+
+/** Plain-English description, e.g. "Out of 10" or "Lower is better (putts)". */
+export function describeScoring(s: DrillScoring): string {
+  switch (s.type) {
+    case "makes":
+      return `Out of ${s.max ?? DEFAULT_MAKES_OUT_OF}`;
+    case "streak":
+      return "Streak (in a row)";
+    case "count":
+      return s.unit ? `Count (${s.unit})` : "Count";
+    case "strokes":
+      return `Lower is better (${s.unit || "strokes"})`;
+    case "time":
+      return `Fastest time (${s.unit || "sec"})`;
+    case "completion":
+      return "Just done, no score";
+  }
+}
+
 function guessFromGoalText(text: string): DrillScoring | null {
   const t = text.trim().toLowerCase();
   if (!t) return null;
@@ -125,60 +146,9 @@ export function resolveDrillScoring(input: {
 const better = (s: DrillScoring, a: number, b: number) => (s.lowerIsBetter ? a < b : a > b);
 const meets = (s: DrillScoring, score: number, target: number) => score === target || better(s, score, target);
 
-function clamp(s: DrillScoring, value: number): number {
-  let v = s.type === "time" ? Math.round(value * 10) / 10 : Math.round(value);
-  if (s.max != null) v = Math.min(v, s.max);
-  return Math.max(s.lowerIsBetter ? 0 : 1, v);
-}
-
-function advance(s: DrillScoring, target: number): number {
-  if (s.type === "time") return clamp(s, target * TIME_STEP);
-  return clamp(s, s.lowerIsBetter ? target - 1 : target + 1);
-}
-
-function ease(s: DrillScoring, target: number): number {
-  if (s.type === "time") return clamp(s, target / TIME_STEP);
-  return clamp(s, s.lowerIsBetter ? target + 1 : target - 1);
-}
-
-export type DrillTarget = {
-  /** Target for the next session, or null before the first score. */
-  next: number | null;
-  /** The target the most recent score was measured against. */
-  previous: number | null;
-  lastResult: "first" | "hit" | "miss" | "eased" | null;
-  missesInARow: number;
-};
-
-/**
- * Replays the score history: the first score sets the bar, a hit moves it one step (or up to the
- * score, if it beat the target by more), and it eases back one step after repeated misses.
- */
-export function computeDrillTarget(logsNewestFirst: DrillScoreLog[], s: DrillScoring): DrillTarget {
-  const result: DrillTarget = { next: null, previous: null, lastResult: null, missesInARow: 0 };
-  if (s.type === "completion") return result;
-  for (let i = logsNewestFirst.length - 1; i >= 0; i--) {
-    const score = logsNewestFirst[i].score;
-    const target = result.next;
-    result.previous = target;
-    if (target == null) {
-      result.next = advance(s, score);
-      result.lastResult = "first";
-    } else if (meets(s, score, target)) {
-      const stepped = advance(s, target);
-      result.next = better(s, score, stepped) ? clamp(s, score) : stepped;
-      result.missesInARow = 0;
-      result.lastResult = "hit";
-    } else if (result.missesInARow + 1 >= MISSES_BEFORE_EASING) {
-      result.next = ease(s, target);
-      result.missesInARow = 0;
-      result.lastResult = "eased";
-    } else {
-      result.missesInARow += 1;
-      result.lastResult = "miss";
-    }
-  }
-  return result;
+/** True when the best can't be beaten any more (e.g. 10/10), only matched. */
+export function isPerfectScore(score: number, s: DrillScoring): boolean {
+  return s.max != null && !s.lowerIsBetter && score >= s.max;
 }
 
 export type DrillMilestone = { label: string; score: number };
@@ -188,7 +158,6 @@ export function describeDrillLog(
   score: number,
   previous: DrillScoreLog[],
   s: DrillScoring,
-  goal: number | null,
   milestones: DrillMilestone[] = [],
 ): { text: string; tone: "pb" | "up" | "even" | "down" } {
   const fmt = (n: number) => formatDrillScore(n, s.unit);
@@ -196,34 +165,25 @@ export function describeDrillLog(
     return { text: `Session ${previous.length + 1} done. Nice work.`, tone: "up" };
   }
   const prevBest = summarizeDrillProgress(previous, s.lowerIsBetter)?.best ?? null;
-  const firstToReach = (target: number) =>
-    meets(s, score, target) && (prevBest == null || !meets(s, prevBest, target));
+  if (prevBest == null) {
+    return isPerfectScore(score, s)
+      ? { text: "Perfect score first time! Match it again next time.", tone: "pb" }
+      : { text: `That's your first best: ${fmt(score)}. Beat it next time.`, tone: "up" };
+  }
 
-  const reached = [...milestones].reverse().find((m) => firstToReach(m.score));
-  const headline = reached
-    ? `${reached.label} level reached!`
-    : goal != null && firstToReach(goal)
-      ? "Goal reached!"
-      : prevBest != null && better(s, score, prevBest)
-        ? "New personal best!"
-        : null;
-
-  const after = computeDrillTarget([{ id: "new", score, created_at: new Date().toISOString() }, ...previous], s);
-  const next = after.next != null ? fmt(after.next) : "";
-  const targetLine =
-    after.lastResult === "first"
-      ? `That's your starting point. Next target: ${next}.`
-      : after.lastResult === "hit"
-        ? `Target hit! Next time: ${next}.`
-        : after.lastResult === "eased"
-          ? `Tough few sessions, so the target eases to ${next}.`
-          : `Target stays at ${next}. You'll get it.`;
-
-  const tone = headline ? "pb" : after.lastResult === "hit" || after.lastResult === "first" ? "up" : "even";
-  return { text: headline ? `${headline} ${targetLine}` : targetLine, tone };
-}
-
-export function suggestNextGoal(goal: number, s: DrillScoring): number {
-  const raw = s.lowerIsBetter ? Math.min(goal - 1, Math.floor(goal * 0.9)) : Math.max(goal + 1, Math.ceil(goal * 1.2));
-  return clamp(s, raw);
+  const reached = [...milestones]
+    .reverse()
+    .find((m) => meets(s, score, m.score) && !meets(s, prevBest, m.score));
+  if (better(s, score, prevBest)) {
+    const headline = reached ? `${reached.label} level reached! New personal best` : "New personal best";
+    return isPerfectScore(score, s)
+      ? { text: `${headline}: a perfect ${fmt(score)}!`, tone: "pb" }
+      : { text: `${headline}: ${fmt(score)}! Now beat that.`, tone: "pb" };
+  }
+  if (score === prevBest) {
+    return isPerfectScore(score, s)
+      ? { text: "Perfect again. Keep owning this drill.", tone: "up" }
+      : { text: `Matched your best of ${fmt(prevBest)}. So close, beat it next time.`, tone: "up" };
+  }
+  return { text: `Your best is ${fmt(prevBest)}. Keep going, you'll beat it.`, tone: "even" };
 }

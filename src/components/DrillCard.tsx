@@ -13,7 +13,9 @@ import { DESCRIPTION_BY_DRILL_ID, DESCRIPTION_BY_ID } from "@/data/official_dril
 import { useKeepInViewAfterOwnTap } from "@/hooks/useKeepInView";
 import { useDrillProgress } from "@/hooks/useDrillProgress";
 import DrillProgressTracker from "@/components/DrillProgressTracker";
-import { resolveDrillScoring } from "@/lib/drillScoring";
+import DrillScoringPicker from "@/components/DrillScoringPicker";
+import { isPerfectScore, resolveDrillScoring } from "@/lib/drillScoring";
+import { drillScoringOverride, useDrillScoringOverrides } from "@/lib/drillScoringOverrides";
 import {
   effectiveGoalRepsString,
   getTieredGoalItems,
@@ -42,9 +44,9 @@ function tierBadgeLabel(tier: TierLabel): string {
   }
 }
 
+/** Tiered catalog goals become level milestones; text that isn't a number is shown to the player as-is. */
 function parseCoachGoals(goalReps: string): {
-  coachGoal: DrillGoalTarget | null;
-  goalOptions: { label: string; score: number }[];
+  milestones: { label: string; score: number }[];
   coachGoalText: string;
 } {
   const tiered = goalReps ? getTieredGoalItems(goalReps) : null;
@@ -53,16 +55,11 @@ function parseCoachGoals(goalReps: string): {
       .map((item) => ({ label: tierBadgeLabel(item.tier), target: parseDrillGoalTarget(tierLineDisplayBody(item.line)) }))
       .filter((o): o is { label: string; target: DrillGoalTarget } => o.target != null);
     if (parsed.length > 0) {
-      return {
-        coachGoal: parsed[0].target,
-        goalOptions: parsed.map((o) => ({ label: o.label, score: o.target.score })),
-        coachGoalText: "",
-      };
+      return { milestones: parsed.map((o) => ({ label: o.label, score: o.target.score })), coachGoalText: "" };
     }
-    return { coachGoal: null, goalOptions: [], coachGoalText: goalReps };
+    return { milestones: [], coachGoalText: goalReps };
   }
-  const target = parseDrillGoalTarget(goalReps);
-  return { coachGoal: target, goalOptions: [], coachGoalText: target ? "" : goalReps };
+  return { milestones: [], coachGoalText: parseDrillGoalTarget(goalReps) ? "" : goalReps };
 }
 
 interface DrillCardProps {
@@ -142,27 +139,24 @@ export default function DrillCard({
   );
   const catalogXp =
     typeof drill.xp_value === "number" && Number.isFinite(drill.xp_value) ? drill.xp_value : undefined;
-  const { coachGoal, goalOptions, coachGoalText } = useMemo(() => parseCoachGoals(goalRepsForUi), [goalRepsForUi]);
-  const scoreTypeOverride = catalogScoring?.scoreType ?? null;
+  const { milestones, coachGoalText } = useMemo(() => parseCoachGoals(goalRepsForUi), [goalRepsForUi]);
+  const coachScoreType = drillScoringOverride(useDrillScoringOverrides(), drillKey);
+  const scoreTypeOverride = coachScoreType ?? catalogScoring?.scoreType ?? null;
   const focus = catalogScoring?.focus ?? null;
   const scoring = useMemo(
     () => resolveDrillScoring({ override: scoreTypeOverride, goalText: goalRepsForUi, focus, title: drill.title }),
     [scoreTypeOverride, goalRepsForUi, focus, drill.title],
   );
-  const progress = useDrillProgress(userId, drillKey, scoring, !drill.isCombine, coachGoal, goalOptions);
+  const progress = useDrillProgress(userId, drillKey, scoring, !drill.isCombine, milestones);
   const combineBest = drill.isCombine ? (combineBestText ?? "").trim() : "";
   const collapsedHint =
     scoring.type === "completion" && progress.logs.length > 0
       ? `Done ${progress.logs.length}×`
-      : !isCompleted && progress.target.next != null
-        ? `Today ${formatDrillScore(progress.target.next, progress.unit)}`
-        : progress.summary
-          ? `Best ${formatDrillScore(progress.summary.best, progress.unit)}`
-          : combineBest || progress.settings.legacyText
-            ? `Best ${combineBest || progress.settings.legacyText}`
-            : progress.goal != null
-              ? `Goal ${formatDrillScore(progress.goal, progress.unit)}`
-              : "";
+      : progress.summary
+        ? `${isCompleted || isPerfectScore(progress.summary.best, scoring) ? "Best" : "Beat"} ${formatDrillScore(progress.summary.best, progress.unit)}`
+        : combineBest || progress.settings.legacyText
+          ? `Best ${combineBest || progress.settings.legacyText}`
+          : "";
   const prevExpandedRef = useRef<boolean | null>(null);
 
   const shouldShowContent = isExpanded || justSwapped;
@@ -373,8 +367,11 @@ export default function DrillCard({
               );
             })()}
 
+            {!drill.isCombine && (
+              <DrillScoringPicker drillKey={drillKey} scoring={scoring} hasOverride={coachScoreType != null} />
+            )}
             {userId && !drill.isCombine ? (
-              <DrillProgressTracker progress={progress} coachGoalText={coachGoalText} goalOptions={goalOptions} />
+              <DrillProgressTracker progress={progress} coachGoalText={coachGoalText} />
             ) : goalRepsForUi ? (
               <p className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">
                 <span className="font-semibold text-gray-900">Goal: </span>

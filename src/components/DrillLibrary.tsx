@@ -6,6 +6,10 @@ import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/da
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 import { keepElementInView } from "@/hooks/useKeepInView";
 import { SHOW_PDFS } from "@/lib/drillResources";
+import DrillScoringPicker from "@/components/DrillScoringPicker";
+import { stableDrillKey } from "@/lib/drillPersonalBests";
+import { resolveDrillScoring } from "@/lib/drillScoring";
+import { drillScoringOverride, useDrillScoringOverrides } from "@/lib/drillScoringOverrides";
 
 const LIBRARY_CATEGORIES = [
   "Driving",
@@ -122,7 +126,8 @@ function dbToDrillRecord(db: Record<string, unknown>): DrillRecord {
     category: normalizeLibraryCategory(db.category),
     focus: String(db.focus || ""),
     description: (typeof desc === "string" && desc.trim()) ? desc : "",
-    goal: String(db.goal || ""),
+    goal: String(db.goal_reps || db.goal || ""),
+    score_type: String(db.score_type ?? "").trim() || undefined,
     pdf_url: pdfUrl,
     video_url: videoUrl,
     estimatedMinutes: Number(db.estimated_minutes ?? (db as any).estimatedMinutes ?? 10),
@@ -137,6 +142,22 @@ interface DrillDetailModalProps {
   drill: DrillRecord | null;
   onClose: () => void;
   onAssignToDay: (drill: DrillRecord, dayIndex: number) => void;
+}
+
+function DrillScoringRow({ drill }: { drill: DrillRecord }) {
+  const drillKey = stableDrillKey(drill);
+  const coachScoreType = drillScoringOverride(useDrillScoringOverrides(), drillKey);
+  const scoring = resolveDrillScoring({
+    override: coachScoreType ?? drill.score_type,
+    goalText: drill.goal,
+    focus: drill.focus,
+    title: drill.drill_name ?? drill.title,
+  });
+  return (
+    <div className="mt-3">
+      <DrillScoringPicker drillKey={drillKey} scoring={scoring} hasOverride={coachScoreType != null} />
+    </div>
+  );
 }
 
 function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalProps) {
@@ -193,6 +214,7 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
           <p className="mt-1 text-sm text-gray-500">
             ~{drill.estimatedMinutes} min · {drill.category}
           </p>
+          <DrillScoringRow drill={drill} />
 
           {(((SHOW_PDFS && drill.pdf_url) || drill.video_url || (drill as any).youtube_url)) && (
             <div className="mt-4 flex flex-wrap gap-3">
@@ -316,8 +338,16 @@ export function DrillLibrary({ onAssignToDay, showHeader = true, initialDrillKey
             (rawCode ? officialByDrillCode.get(rawCode) : undefined) ??
             (nameKey ? officialByName.get(nameKey) : undefined) ??
             officialById.get(r.id);
-          if (officialMatch?.category) {
-            r = { ...r, category: officialMatch.category };
+          if (officialMatch) {
+            // Keep the official code so scores and coach scoring line up with the practice planner's drill cards.
+            r = {
+              ...r,
+              category: officialMatch.category || r.category,
+              drill_id: rawCode ? r.drill_id : officialMatch.drill_id || r.drill_id,
+              focus: r.focus || officialMatch.focus,
+              goal: r.goal || officialMatch.goal,
+              score_type: r.score_type ?? officialMatch.score_type,
+            };
           }
           return r;
         });

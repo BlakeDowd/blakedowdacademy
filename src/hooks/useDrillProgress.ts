@@ -7,16 +7,10 @@ import {
   insertDrillScore,
   saveDrillScoreSettings,
   summarizeDrillProgress,
-  type DrillGoalTarget,
   type DrillScoreLog,
   type DrillScoreSettings,
 } from "@/lib/drillPersonalBests";
-import {
-  computeDrillTarget,
-  describeDrillLog,
-  type DrillMilestone,
-  type DrillScoring,
-} from "@/lib/drillScoring";
+import { describeDrillLog, type DrillMilestone, type DrillScoring } from "@/lib/drillScoring";
 
 export type DrillScoreFeedback = {
   text: string;
@@ -64,7 +58,6 @@ export function useDrillProgress(
   drillKey: string,
   scoring: DrillScoring,
   enabled = true,
-  coachGoal: DrillGoalTarget | null = null,
   milestones: DrillMilestone[] = [],
 ) {
   const [settings, setSettings] = useState<DrillScoreSettings>(EMPTY_SETTINGS);
@@ -101,12 +94,7 @@ export function useDrillProgress(
   }, [userId, drillKey, enabled]);
 
   const { unit, lowerIsBetter } = scoring;
-  const coachScore = coachGoal?.score ?? null;
-  const goal = settings.goalScore ?? coachScore;
-  const goalSource: "you" | "coach" | null = settings.goalScore != null ? "you" : coachScore != null ? "coach" : null;
-
   const summary = useMemo(() => summarizeDrillProgress(logs, lowerIsBetter), [logs, lowerIsBetter]);
-  const target = useMemo(() => computeDrillTarget(logs, scoring), [logs, scoring]);
   const repsSummary = useMemo(() => summarizeReps(logs), [logs]);
 
   /** Logs the current draft (or a session, for completion drills). True when nothing was pending or the save worked. */
@@ -135,7 +123,7 @@ export function useDrillProgress(
         setFeedback({ text: error ?? "Could not save. Try again.", tone: "error" });
         return false;
       }
-      const reaction = describeDrillLog(score, logs, scoring, goal, milestones);
+      const reaction = describeDrillLog(score, logs, scoring, milestones);
       setLogs((prev) => [log, ...prev]);
       setDraft("");
       setRepsDraft("");
@@ -148,7 +136,7 @@ export function useDrillProgress(
     } finally {
       setSaving(false);
     }
-  }, [userId, drillKey, draft, repsDraft, logs, scoring, goal, milestones, settings, unit, lowerIsBetter]);
+  }, [userId, drillKey, draft, repsDraft, logs, scoring, milestones, settings, unit, lowerIsBetter]);
 
   const undoLog = useCallback(async (logId: string) => {
     const supabase = await getSupabase();
@@ -160,25 +148,6 @@ export function useDrillProgress(
     setLogs((prev) => prev.filter((l) => l.id !== logId));
     setFeedback(null);
   }, []);
-
-  /** Saves the player's own long-term goal (null falls back to the coach's goal). */
-  const updateGoal = useCallback(
-    async (goalScore: number | null) => {
-      if (!userId) return;
-      const prev = settings;
-      setSettings((s) => ({ ...s, goalScore, unit, lowerIsBetter }));
-      const { error } = await saveDrillScoreSettings(await getSupabase(), userId, drillKey, {
-        unit,
-        lowerIsBetter,
-        goalScore,
-      });
-      if (error) {
-        setSettings(prev);
-        setFeedback({ text: error, tone: "error" });
-      }
-    },
-    [userId, drillKey, settings, unit, lowerIsBetter],
-  );
 
   const updateDraft = useCallback((v: string) => {
     setDraft(v);
@@ -194,11 +163,8 @@ export function useDrillProgress(
     scoring,
     settings,
     unit,
-    goal,
-    goalSource,
     logs,
     summary,
-    target,
     available,
     loading,
     saving,
@@ -211,7 +177,6 @@ export function useDrillProgress(
     clearFeedback,
     logDraft,
     undoLog,
-    updateGoal,
   };
 }
 

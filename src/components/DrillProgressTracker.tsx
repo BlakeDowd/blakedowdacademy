@@ -1,16 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowDown, ArrowUp, Flag, Minus, Plus, Target, TrendingUp, Trophy } from "lucide-react";
-import { formatDrillScore, type DrillScoreLog } from "@/lib/drillPersonalBests";
-import {
-  DRILL_SCORE_TYPE_LABELS,
-  MISSES_BEFORE_EASING,
-  suggestNextGoal,
-  type DrillMilestone,
-  type DrillScoring,
-  type DrillTarget,
-} from "@/lib/drillScoring";
+import { ArrowDown, ArrowUp, Minus, Plus, Target, TrendingUp, Trophy } from "lucide-react";
+import { formatDrillScore, type DrillProgressSummary, type DrillScoreLog } from "@/lib/drillPersonalBests";
+import { DRILL_SCORE_TYPE_LABELS, isPerfectScore, type DrillScoring } from "@/lib/drillScoring";
 import { parseDrillScoreInput, type DrillProgressState } from "@/hooks/useDrillProgress";
 
 const SPARK_POINTS = 12;
@@ -69,43 +61,32 @@ function Sparkline({ logs, lowerIsBetter, best }: { logs: DrillScoreLog[]; lower
   );
 }
 
-function targetNote(target: DrillTarget, scoring: DrillScoring): string {
-  const fmt = (n: number) => formatDrillScore(n, scoring.unit);
-  switch (target.lastResult) {
-    case "first":
-      return "One step on from your first score.";
-    case "hit":
-      return target.previous != null ? `Up from ${fmt(target.previous)} after you hit it last time.` : "";
-    case "eased":
-      return "Eased a little after a few tough sessions.";
-    case "miss": {
-      const left = MISSES_BEFORE_EASING - target.missesInARow;
-      return `Same as last time. Eases after ${left} more ${left === 1 ? "miss" : "misses"}.`;
-    }
-    default:
-      return "";
-  }
-}
-
-function TodayTarget({ target, scoring }: { target: DrillTarget; scoring: DrillScoring }) {
-  if (target.next == null) {
+function BeatYourBest({ summary, scoring }: { summary: DrillProgressSummary | null; scoring: DrillScoring }) {
+  if (!summary) {
     return (
       <p className="rounded-lg bg-white px-2.5 py-2 text-xs leading-snug text-gray-600">
         <Target className="mr-1 inline h-3.5 w-3.5 text-[#FFA500]" aria-hidden />
-        Log your first score and we&apos;ll set a target that moves up a little every time you hit it.
+        Log your first score. That becomes your best, then try to beat it every time.
       </p>
     );
   }
-  const atMax = scoring.max != null && target.next >= scoring.max;
+  const fmt = (n: number) => formatDrillScore(n, scoring.unit);
+  const perfect = isPerfectScore(summary.best, scoring);
   return (
     <div className="rounded-lg bg-[#014421] px-3 py-2.5 text-white">
       <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-white/70">
-        <Target className="h-3.5 w-3.5 text-[#FFA500]" aria-hidden />
-        Today&apos;s target
+        <Trophy className="h-3.5 w-3.5 text-[#FFA500]" aria-hidden />
+        {perfect ? "Your best" : "Beat your best"}
       </p>
-      <p className="mt-0.5 text-xl font-bold tabular-nums">{formatDrillScore(target.next, scoring.unit)}</p>
+      <p className="mt-0.5 text-xl font-bold tabular-nums">{fmt(summary.best)}</p>
       <p className="text-[11px] leading-snug text-white/75">
-        {atMax ? "Top score. Keep it there to own this drill." : targetNote(target, scoring)}
+        {perfect
+          ? "Perfect score. Match it again to own this drill."
+          : summary.count === 1
+            ? "Your first score. Go again and beat it."
+            : summary.last === summary.best
+              ? "You hit your best last time. Go one better."
+              : `Last time: ${fmt(summary.last)}.`}
       </p>
     </div>
   );
@@ -207,9 +188,6 @@ const FEEDBACK_STYLES: Record<string, string> = {
   error: "bg-red-50 text-red-700",
 };
 
-const INPUT_CLASS =
-  "min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 focus:border-[#014421] focus:outline-none focus:ring-1 focus:ring-[#014421]/30";
-
 const FIELD_LABEL = "mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400";
 
 function scoreFieldLabel(s: DrillScoring): string {
@@ -228,22 +206,17 @@ function scoringLabel(s: DrillScoring): string {
 export default function DrillProgressTracker({
   progress,
   coachGoalText = "",
-  goalOptions = [],
 }: {
   progress: DrillProgressState;
   /** Catalog Goal/Reps text that couldn't be read as a number; shown as-is. */
   coachGoalText?: string;
-  goalOptions?: DrillMilestone[];
 }) {
   const {
     scoring,
     settings,
     unit,
-    goal,
-    goalSource,
     logs,
     summary,
-    target,
     loading,
     saving,
     draft,
@@ -254,10 +227,8 @@ export default function DrillProgressTracker({
     feedback,
     logDraft,
     undoLog,
-    updateGoal,
   } = progress;
-  const [editingGoal, setEditingGoal] = useState(false);
-  const [goalDraft, setGoalDraft] = useState("");
+  const best = summary?.best ?? null;
   const lowerIsBetter = scoring.lowerIsBetter;
   const isCompletion = scoring.type === "completion";
   const isMakes = scoring.type === "makes" && scoring.max != null && scoring.max <= MAX_SCORE_CHIPS;
@@ -276,32 +247,6 @@ export default function DrillProgressTracker({
     </label>
   );
   const tileScore = (n: number) => (unit.length > LONG_UNIT_CHARS ? formatDrillScore(n, "") : formatDrillScore(n, unit));
-
-  const openGoalEditor = () => {
-    setGoalDraft(goal != null ? String(goal) : "");
-    setEditingGoal(true);
-  };
-
-  const saveGoal = () => {
-    const parsed = parseDrillScoreInput(goalDraft);
-    void updateGoal(parsed != null && parsed >= 0 ? parsed : null);
-    setEditingGoal(false);
-  };
-
-  const goalReached =
-    goal != null && summary != null && (lowerIsBetter ? summary.best <= goal : summary.best >= goal);
-  const goalPct =
-    goal == null || summary == null
-      ? 0
-      : goalReached
-        ? 100
-        : lowerIsBetter
-          ? Math.max(0, Math.min(100, (goal / summary.best) * 100))
-          : goal > 0
-            ? Math.max(0, Math.min(100, (summary.best / goal) * 100))
-            : 0;
-  const toGo = goal != null && summary != null ? Math.round(Math.abs(goal - summary.best) * 100) / 100 : null;
-  const nextGoal = goal != null ? suggestNextGoal(goal, scoring) : null;
 
   return (
     <div className="space-y-2.5 rounded-xl bg-gray-50 p-3" onClick={(e) => e.stopPropagation()}>
@@ -338,7 +283,7 @@ export default function DrillProgressTracker({
         </div>
       ) : (
         <>
-          <TodayTarget target={target} scoring={scoring} />
+          <BeatYourBest summary={summary} scoring={scoring} />
           {logs.length === 0 && settings.legacyText && (
             <p className="text-[11px] text-gray-400">Your old note: {settings.legacyText}</p>
           )}
@@ -355,7 +300,7 @@ export default function DrillProgressTracker({
                 scoring={scoring}
                 draft={draft}
                 setDraft={setDraft}
-                target={target.next}
+                target={best}
                 hasLogs={logs.length > 0}
               />
             ) : (
@@ -366,7 +311,7 @@ export default function DrillProgressTracker({
                     scoring={scoring}
                     draft={draft}
                     setDraft={setDraft}
-                    target={target.next}
+                    target={best}
                     hasLogs={logs.length > 0}
                   />
                 </div>
@@ -407,11 +352,7 @@ export default function DrillProgressTracker({
 
       {!loading && !isCompletion && summary && (
         <>
-          <div className="grid grid-cols-3 gap-1.5 text-center">
-            <div className="rounded-lg bg-white px-1 py-1.5">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Best</p>
-              <p className="text-sm font-bold tabular-nums text-[#FFA500]">{tileScore(summary.best)}</p>
-            </div>
+          <div className="grid grid-cols-2 gap-1.5 text-center">
             <div className="rounded-lg bg-white px-1 py-1.5">
               <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Last</p>
               <p className="inline-flex items-center gap-0.5 text-sm font-bold tabular-nums text-gray-900">
@@ -447,120 +388,6 @@ export default function DrillProgressTracker({
         </p>
       )}
 
-      {!loading && !isCompletion && editingGoal ? (
-        <div className="space-y-2 rounded-lg bg-white p-2.5 ring-1 ring-gray-200">
-          <label className="flex items-center gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Long-term goal</span>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={goalDraft}
-              onChange={(e) => setGoalDraft(e.target.value)}
-              placeholder="e.g. 10"
-              className={`${INPUT_CLASS} w-20`}
-            />
-            {unit && <span className="truncate text-xs text-gray-400">{unit}</span>}
-          </label>
-          {goalOptions.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {goalOptions.map((o) => (
-                <button
-                  key={o.label}
-                  type="button"
-                  onClick={() => setGoalDraft(String(o.score))}
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 transition-colors ${
-                    parseDrillScoreInput(goalDraft) === o.score
-                      ? "bg-[#014421] text-white ring-[#014421]"
-                      : "bg-white text-gray-700 ring-gray-200 hover:ring-[#014421]/40"
-                  }`}
-                >
-                  {o.label} · {formatDrillScore(o.score, "")}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="flex items-center justify-between gap-2">
-            {settings.goalScore != null && goalSource === "you" ? (
-              <button
-                type="button"
-                onClick={() => {
-                  void updateGoal(null);
-                  setEditingGoal(false);
-                }}
-                className="text-[11px] font-medium text-gray-500 underline underline-offset-2 hover:text-gray-700"
-              >
-                Use coach&apos;s goal
-              </button>
-            ) : (
-              <span />
-            )}
-            <button
-              type="button"
-              onClick={saveGoal}
-              className="rounded-lg bg-[#014421] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#014421]/90"
-            >
-              Done
-            </button>
-          </div>
-        </div>
-      ) : !loading && !isCompletion && goal != null ? (
-        <div className="rounded-lg bg-white px-2.5 py-2">
-          <div className="flex items-center justify-between gap-2 text-xs">
-            <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold text-gray-900">
-              <Flag className="h-3.5 w-3.5 shrink-0 text-[#FFA500]" aria-hidden />
-              <span className="truncate">Long-term goal: {formatDrillScore(goal, unit)}</span>
-            </span>
-            {summary && (
-              <span className="shrink-0 tabular-nums text-gray-500">
-                {formatDrillScore(summary.best, "")} / {formatDrillScore(goal, "")}
-              </span>
-            )}
-          </div>
-          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-100">
-            <div
-              className={`h-full rounded-full transition-all ${goalReached ? "bg-[#FFA500]" : "bg-[#014421]"}`}
-              style={{ width: `${goalPct}%` }}
-            />
-          </div>
-          <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-gray-500">
-            <span>
-              {goalReached
-                ? "Goal reached!"
-                : toGo != null
-                  ? `${formatDrillScore(toGo, "")} to go`
-                  : "Log a score to start"}
-              {" · "}
-              {goalSource === "coach" ? "Coach's goal" : "Your goal"}
-            </span>
-            {goalReached && nextGoal != null && nextGoal !== goal ? (
-              <button
-                type="button"
-                onClick={() => void updateGoal(nextGoal)}
-                className="shrink-0 font-semibold text-[#014421] underline underline-offset-2"
-              >
-                Raise to {formatDrillScore(nextGoal, "")}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={openGoalEditor}
-                className="shrink-0 font-medium underline underline-offset-2 hover:text-[#014421]"
-              >
-                Change
-              </button>
-            )}
-          </div>
-        </div>
-      ) : !loading && !isCompletion ? (
-        <button
-          type="button"
-          onClick={openGoalEditor}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#014421] hover:underline"
-        >
-          <Flag className="h-3.5 w-3.5 text-[#FFA500]" aria-hidden />
-          Set a long-term goal
-        </button>
-      ) : null}
     </div>
   );
 }
