@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Mail, Lock, User, LogIn, UserPlus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import IconPicker from "@/components/IconPicker";
+import ForgotPasswordPanel from "@/components/ForgotPasswordPanel";
 import { pendingInviteName, postLoginPath } from "@/lib/coachingSpaces";
 
 export default function LoginPage() {
@@ -20,7 +21,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showRetry, setShowRetry] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false);
 
   // Show success message when returning from password reset
   useEffect(() => {
@@ -169,29 +169,6 @@ export default function LoginPage() {
     }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    if (!email.trim()) {
-      setError("Please enter your email address");
-      return;
-    }
-    setLoading(true);
-    try {
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/reset-password`,
-      });
-      if (resetError) throw resetError;
-      setForgotPasswordSuccess(true);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to send reset email. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div 
       className="min-h-screen flex items-center justify-center px-4 py-12"
@@ -218,69 +195,10 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
           {/* Forgot Password View */}
           {showForgotPassword ? (
-            <>
-              {forgotPasswordSuccess ? (
-                <div className="space-y-4">
-                  <div 
-                    className="p-4 rounded-lg"
-                    style={{ backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }}
-                  >
-                    <p className="text-sm" style={{ color: '#166534' }}>
-                      Check your email for a password reset link. If you don&apos;t see it, check your spam folder.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { setShowForgotPassword(false); setForgotPasswordSuccess(false); setError(""); }}
-                    className="w-full py-3 rounded-lg font-semibold text-white transition-all"
-                    style={{ backgroundColor: '#054d2b' }}
-                  >
-                    Back to Login
-                  </button>
-                </div>
-              ) : (
-                <form onSubmit={handleForgotPassword} className="space-y-4">
-                  <p className="text-sm text-gray-600">
-                    Enter your email and we&apos;ll send you a link to reset your password.
-                  </p>
-                  <div>
-                    <label htmlFor="forgot-email" className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                      <input
-                        id="forgot-email"
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#054d2b] focus:border-[#054d2b] outline-none"
-                        placeholder="your@email.com"
-                        required
-                      />
-                    </div>
-                  </div>
-                  {error && (
-                    <div className="p-3 rounded-lg bg-red-50 border border-red-200">
-                      <p className="text-sm text-red-600">{error}</p>
-                    </div>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-3.5 rounded-lg font-semibold text-white transition-all hover:shadow-lg disabled:opacity-50"
-                    style={{ backgroundColor: '#054d2b' }}
-                  >
-                    {loading ? "Sending..." : "Send reset link"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setShowForgotPassword(false); setError(""); }}
-                    className="w-full py-2 text-sm text-gray-500 hover:text-gray-700"
-                  >
-                    Back to Login
-                  </button>
-                </form>
-              )}
-            </>
+            <ForgotPasswordPanel
+              initialEmail={email}
+              onBack={() => { setShowForgotPassword(false); setError(""); }}
+            />
           ) : (
           <>
           {/* Toggle between Login and Sign Up */}

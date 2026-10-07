@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
 import { type EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import ForgotPasswordPanel from "@/components/ForgotPasswordPanel";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -15,11 +16,15 @@ export default function ResetPasswordPage() {
   const [success, setSuccess] = useState(false);
   const [hasSession, setHasSession] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const [linkProblem, setLinkProblem] = useState<string | null>(null);
 
   useEffect(() => {
     const establishSession = async () => {
       const supabase = createClient();
       const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+      const hash = new URLSearchParams(typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "");
+      const errorCode = params.get("error_code") ?? hash.get("error_code") ?? params.get("error") ?? hash.get("error");
+      const hadLink = Boolean(errorCode || params.get("code") || params.get("token_hash") || hash.get("access_token"));
 
       // Handle token_hash + type (password recovery - works cross-device)
       const token_hash = params.get("token_hash");
@@ -56,14 +61,39 @@ export default function ResetPasswordPage() {
         const { data: { session: retrySession } } = await supabase.auth.getSession();
         if (retrySession) {
           setHasSession(true);
-        } else {
+        } else if (!hadLink) {
           router.replace("/login");
+        } else {
+          window.history.replaceState({}, "", "/reset-password");
+          setLinkProblem(
+            /expired|otp|access_denied/i.test(errorCode ?? "")
+              ? "That reset link has expired or was already used. Send yourself a new one below."
+              : "That reset link couldn't be opened here. This happens when the email opens in a different app or browser. Send a new email below and type the code from it instead.",
+          );
         }
       }
       setAuthChecked(true);
     };
     establishSession();
   }, [router]);
+
+  if (linkProblem) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 py-12" style={{ backgroundColor: "#ffffff" }}>
+        <div className="w-full max-w-md px-4">
+          <div className="text-center mb-8">
+            <img src="/logo.png" alt="Blake Dowd Golf" className="w-48 mx-auto object-contain mb-4" />
+            <h1 className="text-xl font-bold" style={{ color: "#054d2b" }}>
+              Reset your password
+            </h1>
+          </div>
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
+            <ForgotPasswordPanel notice={linkProblem} onBack={() => router.replace("/login")} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!authChecked || !hasSession) {
     return (

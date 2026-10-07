@@ -927,6 +927,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       !loading &&
       !isAuthenticated &&
       pathname !== "/login" &&
+      pathname !== "/reset-password" &&
       !pathname.startsWith("/auth/callback") &&
       !pathname.startsWith("/join/")
     ) {
