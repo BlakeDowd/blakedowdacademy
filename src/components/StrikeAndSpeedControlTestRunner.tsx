@@ -7,9 +7,9 @@ import {
   averageMatrixScore,
   performanceDiagnosis,
   cleanStrikeRate,
+  distanceWeightForTargetFt,
   meanAbsDistanceCm,
   gateSideCounts,
-  gateSideImprovementMessage,
   matrixScoreForPutt,
 } from "@/lib/strikeAndSpeedControlScoring";
 import {
@@ -36,6 +36,7 @@ import {
   type GateOption,
   type TrackItem,
 } from "@/components/combine/PuttingCombineUi";
+import { BreakdownBar, BreakdownCard, EveryShotList, FocusCard, RateRow, ValueRow } from "@/components/combine/CombineBreakdown";
 
 type PuttRecord = {
   putt: number;
@@ -121,6 +122,77 @@ const STRIKES: GateOption<StrikeQuality>[] = [
   { key: "clean", title: "Clean", hint: "Through the gate", hit: null },
   { key: "hit_gate_right", title: "Hit right", hint: "Score x2", hit: "right" },
 ];
+
+const STRIKE_LABEL: Record<StrikeQuality, string> = {
+  clean: "Clean",
+  hit_gate_left: "Hit left tee",
+  hit_gate_right: "Hit right tee",
+  hit_gate: "Hit the gate",
+};
+
+const fmtScore = (s: number) => (Number.isInteger(s) ? String(s) : s.toFixed(1));
+
+/** Everything the results screen shows beyond the headline numbers, including the "focus next" tip. */
+function strikeSpeedBreakdown(putts: PuttRecord[]) {
+  const n = putts.length || 1;
+  const scores = putts.map((p) => matrixScoreForPutt(p.distance_cm, p.targetFt, p.strike));
+  const distancePart = putts.reduce((s, p) => s + Math.abs(p.distance_cm) * distanceWeightForTargetFt(p.targetFt), 0) / n;
+  const gatePart = scores.reduce((s, x) => s + x, 0) / n - distancePart;
+  const sides = gateSideCounts(putts);
+  const clean = putts.length - sides.totalGateHits;
+
+  const byDistance = DISTANCES_FT.map((ft) => {
+    const at = putts.filter((p) => p.targetFt === ft);
+    const meanCm = meanAbsDistanceCm(at.map((p) => ({ cm: p.distance_cm })));
+    return {
+      ft,
+      n: at.length,
+      meanCm,
+      weighted: meanCm * distanceWeightForTargetFt(ft),
+      clean: at.filter((p) => p.strike === "clean").length,
+    };
+  }).filter((d) => d.n > 0);
+  const worst = [...byDistance].sort((a, b) => b.weighted - a.weighted)[0];
+  const worstFt = worst && worst.meanCm > 0 ? worst.ft : null;
+
+  const track: TrackItem[] = scores.map((s, i) => ({
+    label: String(Math.round(s)),
+    tone: scoreTone(s),
+    ariaLabel: `Putt ${i + 1}: score ${s.toFixed(1)}`,
+  }));
+
+  const hitsText = `${sides.totalGateHits} of ${putts.length} putts touched the gate, adding ${gatePart.toFixed(1)} to your score.`;
+  let focus: { title: string; lines: string[] };
+  if (sides.totalGateHits === 0 && putts.every((p) => p.distance_cm === 0)) {
+    focus = { title: "Perfect round", lines: ["Every strike clean and every putt on the target. Narrow the gate next time."] };
+  } else if (sides.totalGateHits >= 3 || (sides.totalGateHits > 0 && gatePart >= distancePart * 0.5)) {
+    const sideTip =
+      sides.left > sides.right
+        ? `Most of them clipped the left tee (${sides.left} vs ${sides.right}), so the putter is drifting left through the ball.`
+        : sides.right > sides.left
+          ? `Most of them clipped the right tee (${sides.right} vs ${sides.left}), so the putter is drifting right through the ball.`
+          : "They went both ways, so work on a steady stroke rather than your aim.";
+    focus = {
+      title: "Focus next: a clean strike",
+      lines: [hitsText, sideTip, "Keep your head and hips still and swing the putter straight back and straight through the gate."],
+    };
+  } else if (worst && worstFt != null) {
+    focus = {
+      title: `Focus next: pace from ${worstFt} ft`,
+      lines: [
+        `From ${worstFt} ft you finished ${worst.meanCm.toFixed(0)} cm from the target on average.`,
+        worstFt <= 10
+          ? "On short putts, pick a spot just past the target and roll it firmly to that spot."
+          : "Look at the target during your practice swings and let the length of your backswing set the pace.",
+      ],
+    };
+    if (sides.totalGateHits > 0) focus.lines.push(hitsText);
+  } else {
+    focus = { title: "Focus next: a clean strike", lines: [hitsText] };
+  }
+
+  return { distancePart, gatePart, sides, clean, byDistance, worstFt, scores, track, focus };
+}
 
 export function StrikeAndSpeedControlTestRunner() {
   const user = useCombineUser();
@@ -226,11 +298,7 @@ export function StrikeAndSpeedControlTestRunner() {
       cleanPct: cleanStrikeRate(completedPutts.map((p) => ({ strike: p.strike }))) * 100,
       meanCm: meanAbsDistanceCm(completedPutts.map((p) => ({ cm: p.distance_cm }))),
       gateSides: gateSideCounts(completedPutts.map((p) => ({ strike: p.strike }))),
-      gateSideMessage: gateSideImprovementMessage(completedPutts.map((p) => ({ strike: p.strike }))),
-      byDistance: DISTANCES_FT.map((ft) => {
-        const at = completedPutts.filter((p) => p.targetFt === ft);
-        return { ft, meanCm: meanAbsDistanceCm(at.map((p) => ({ cm: p.distance_cm }))) };
-      }),
+      ...strikeSpeedBreakdown(completedPutts),
     };
   }, [completedPutts, total]);
 
@@ -275,24 +343,73 @@ export function StrikeAndSpeedControlTestRunner() {
           ]}
         />
 
-        <div className="rounded-2xl border border-gray-100 p-3">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Average miss by distance</p>
-          <div className="grid grid-cols-4 gap-2 text-center">
+        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+
+        <BreakdownCard title="Where your score came from" aside={`Avg ${summary.matrixAverage.toFixed(1)}`}>
+          <BreakdownBar
+            segments={[
+              { label: "Distance from target", value: Number(summary.distancePart.toFixed(1)), tone: "bg-[#FFA500]" },
+              { label: "Gate hits", value: Number(summary.gatePart.toFixed(1)), tone: "bg-red-400" },
+            ]}
+          />
+          <p className="mt-2 text-[11px] text-gray-400">Average per putt. Gate hits double that putt&apos;s score.</p>
+        </BreakdownCard>
+
+        <BreakdownCard title="Putt by putt" aside="Lower is better">
+          <ProgressTrack items={summary.track} current={-1} />
+        </BreakdownCard>
+
+        <BreakdownCard title="Pace by distance" aside="Avg miss">
+          <div className="space-y-3">
             {summary.byDistance.map((d) => (
-              <div key={d.ft} className="rounded-xl bg-gray-50 py-2">
-                <p className="text-[10px] font-semibold text-gray-400">{d.ft} ft</p>
-                <p className="text-base font-extrabold tabular-nums text-gray-900">
-                  {d.meanCm.toFixed(0)}
-                  <span className="text-[10px] font-semibold text-gray-400"> cm</span>
-                </p>
-              </div>
+              <ValueRow
+                key={d.ft}
+                label={`${d.ft} ft`}
+                value={d.meanCm}
+                max={Math.max(30, ...summary.byDistance.map((x) => x.meanCm))}
+                display={`${d.meanCm.toFixed(0)} cm`}
+                lowerIsBetter
+                flag={d.ft === summary.worstFt ? "Work on" : null}
+              />
             ))}
           </div>
-        </div>
+        </BreakdownCard>
 
-        {summary.gateSideMessage && (
-          <p className="rounded-2xl bg-amber-50 px-3 py-2.5 text-sm text-amber-900">{summary.gateSideMessage}</p>
-        )}
+        <BreakdownCard title="Strike" aside={`${summary.clean}/${total} clean`}>
+          <BreakdownBar
+            segments={[
+              { label: "Hit left", value: summary.sides.left, tone: "bg-violet-400" },
+              { label: "Clean", value: summary.clean, tone: "bg-[#014421]" },
+              { label: "Hit right", value: summary.sides.right, tone: "bg-sky-400" },
+              ...(summary.sides.legacy > 0 ? [{ label: "Hit gate", value: summary.sides.legacy, tone: "bg-red-400" }] : []),
+            ]}
+          />
+          <div className="mt-3 space-y-3">
+            {summary.byDistance.map((d) => (
+              <RateRow key={d.ft} label={`Clean from ${d.ft} ft`} made={d.clean} total={d.n} />
+            ))}
+          </div>
+        </BreakdownCard>
+
+        <EveryShotList title="Every putt">
+          {completedPutts.map((p, i) => {
+            const s = summary.scores[i]!;
+            return (
+              <li key={p.putt} className="flex items-center gap-3 py-2">
+                <span className="w-9 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">{p.putt}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-800">
+                    {p.targetFt} ft · {STRIKE_LABEL[p.strike]}
+                  </span>
+                  <span className="block text-xs text-gray-500">
+                    {p.distance_cm === 0 ? "Holed" : `${Math.abs(p.distance_cm)} cm from the target`}
+                  </span>
+                </span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${scoreTone(s)}`}>{fmtScore(s)}</span>
+              </li>
+            );
+          })}
+        </EveryShotList>
 
         <SaveStatus saved={saved} error={saveError} onRetry={userId ? () => void retryPersist() : undefined} />
         <PlayAgainButton onClick={startTest} />

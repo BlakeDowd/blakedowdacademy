@@ -1,30 +1,35 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { DoorOpen, Hammer, Spline } from "lucide-react";
 import { useCombineUser } from "@/hooks/useCombineUser";
 import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
+import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
+import {
+  CombineHero,
+  IntroSteps,
+  PlayAgainButton,
+  PrimaryButton,
+  ProgressTrack,
+  ResultHero,
+  SaveStatus,
+  ScoreRing,
+  ScoringGuide,
+  StatTiles,
+  type TrackItem,
+} from "@/components/combine/PuttingCombineUi";
+import { IronHeroArt, IronShotDiagram, ToggleCard } from "@/components/combine/IronCombineUi";
+import { BreakdownBar, BreakdownCard, FocusCard, RateRow } from "@/components/combine/CombineBreakdown";
 
-export type IronFaceShot = {
+type IronFaceShot = {
   gate: boolean;
   curve: boolean;
   solid: boolean;
 };
 
-export type IronFaceControlMetadata = {
-  version: 1;
-  shots: IronFaceShot[];
-  total_out_of_100: number;
-};
-
-function emptyShots(): IronFaceShot[] {
-  return Array.from({ length: ironFaceControlConfig.shotCount }, () => ({
-    gate: false,
-    curve: false,
-    solid: false,
-  }));
-}
+const EMPTY_SHOT: IronFaceShot = { gate: false, curve: false, solid: false };
 
 function shotPoints(s: IronFaceShot): number {
   return (
@@ -38,11 +43,80 @@ function sessionTotal(shots: IronFaceShot[]): number {
   return shots.reduce((acc, s) => acc + shotPoints(s), 0);
 }
 
-async function persistIronFaceSession(
-  userId: string,
-  shots: IronFaceShot[],
-  total: number,
-): Promise<string | null> {
+function pointsTone(points: number): string {
+  if (points >= ironFaceControlConfig.maxShotPoints) return "bg-[#014421] text-white";
+  if (points >= 6) return "bg-green-200 text-[#014421]";
+  if (points > 0) return "bg-amber-200 text-amber-900";
+  return "bg-red-500 text-white";
+}
+
+const SKILLS = [
+  {
+    key: "gate",
+    label: "Through the gate",
+    short: "gate",
+    pts: ironFaceControlConfig.ptsGate,
+    tone: "bg-[#FFA500]",
+    tip: "Start line comes from the face. Pick a spot just past the gate and square the face to it.",
+  },
+  {
+    key: "curve",
+    label: "Curved as called",
+    short: "curve",
+    pts: ironFaceControlConfig.ptsCurve,
+    tone: "bg-sky-400",
+    tip: "Shape comes from path versus face. Keep the face on your start line and swing more out to in (fade) or in to out (draw).",
+  },
+  {
+    key: "solid",
+    label: "Solid strike",
+    short: "strike",
+    pts: ironFaceControlConfig.ptsSolid,
+    tone: "bg-red-400",
+    tip: "Shaping can cost strike. Slow down to 80% until the contact is back.",
+  },
+] as const;
+
+function breakdown(shots: IronFaceShot[]) {
+  const n = shots.length;
+  const skills = SKILLS.map((s) => {
+    const made = shots.filter((x) => x[s.key]).length;
+    return { ...s, made, lost: (n - made) * s.pts };
+  });
+  const leakSkill = [...skills].sort((a, b) => b.lost - a.lost || a.made - b.made)[0]!;
+  const leak = leakSkill.lost > 0 ? leakSkill.key : null;
+
+  let bestStreak = 0;
+  let run = 0;
+  for (const s of shots) {
+    run = shotPoints(s) >= 7 ? run + 1 : 0;
+    bestStreak = Math.max(bestStreak, run);
+  }
+
+  const track: TrackItem[] = shots.map((s, i) => {
+    const p = shotPoints(s);
+    return { label: String(p), tone: pointsTone(p), ariaLabel: `Shot ${i + 1}: ${p} points` };
+  });
+
+  const focus = leak
+    ? {
+        title: `Focus next: ${leakSkill.label.toLowerCase()}`,
+        lines: [`You made it on ${leakSkill.made} of ${n} shots, which cost you ${leakSkill.lost} pts.`, leakSkill.tip],
+      }
+    : { title: "Perfect round", lines: ["Every shot through the gate, shaped and solid. Narrow the gate next time."] };
+
+  return {
+    total: sessionTotal(shots),
+    perfect: shots.filter((s) => shotPoints(s) === ironFaceControlConfig.maxShotPoints).length,
+    bestStreak,
+    skills,
+    leak,
+    track,
+    focus,
+  };
+}
+
+async function persistIronFaceSession(userId: string, total: number): Promise<string | null> {
   try {
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
@@ -68,194 +142,212 @@ async function persistIronFaceSession(
   }
 }
 
-function GateMark({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 48 40"
-      className={className}
-      aria-hidden
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <rect x="14" y="4" width="5" height="32" rx="1" fill="currentColor" />
-      <rect x="29" y="4" width="5" height="32" rx="1" fill="currentColor" />
-    </svg>
-  );
-}
-
-const toggleBase =
-  "min-h-[44px] flex-1 rounded-lg border-2 px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide transition-colors sm:text-sm";
-const toggleOff = "border-gray-200 bg-white text-gray-600 hover:border-gray-300";
-const toggleOn = "border-[#014421] bg-[#014421] text-white";
-
 export function IronFaceControlRunner() {
   const user = useCombineUser();
-  const [shots, setShots] = useState<IronFaceShot[]>(() => emptyShots());
+  const userId = user?.id ?? null;
+  const total = ironFaceControlConfig.shotCount;
+  const [status, setStatus] = useState<"intro" | "active" | "complete">("intro");
+  const [shots, setShots] = useState<IronFaceShot[]>([]);
+  const [current, setCurrent] = useState<IronFaceShot>(EMPTY_SHOT);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const persistAttemptedRef = useRef(false);
 
-  const total = useMemo(() => sessionTotal(shots), [shots]);
-
-  const flip = useCallback((index: number, key: keyof IronFaceShot) => {
-    setSaved(false);
-    setSaveError(null);
-    setShots((prev) => {
-      const next = [...prev];
-      const row = { ...next[index], [key]: !next[index][key] };
-      next[index] = row;
-      return next;
-    });
-  }, []);
-
-  const clearRound = useCallback(() => {
-    setShots(emptyShots());
+  const startTest = useCallback(() => {
+    setStatus("active");
+    setShots([]);
+    setCurrent(EMPTY_SHOT);
     setSaveError(null);
     setSaved(false);
+    persistAttemptedRef.current = false;
   }, []);
 
-  const saveRound = useCallback(async () => {
-    if (!user?.id) {
-      setSaveError("Sign in to submit your score to the practice log.");
-      return;
+  const save = useCallback(
+    async (all: IronFaceShot[]) => {
+      if (!userId) {
+        setSaveError("Sign in to save this session.");
+        return;
+      }
+      persistAttemptedRef.current = true;
+      setSaveError(null);
+      const err = await persistIronFaceSession(userId, sessionTotal(all));
+      setSaved(err == null);
+      if (err) {
+        setSaveError(err);
+        persistAttemptedRef.current = false;
+      }
+    },
+    [userId],
+  );
+
+  const recordShot = useCallback(async () => {
+    if (status !== "active") return;
+    const next = [...shots, current];
+    setShots(next);
+    setCurrent(EMPTY_SHOT);
+    if (next.length >= total) {
+      setStatus("complete");
+      if (!persistAttemptedRef.current) await save(next);
     }
-    setIsSaving(true);
-    setSaveError(null);
-    const err = await persistIronFaceSession(user.id, shots, total);
-    setIsSaving(false);
-    if (err) setSaveError(err);
-    else setSaved(true);
-  }, [user?.id, shots, total]);
+  }, [status, shots, current, total, save]);
+
+  const undoLastShot = useCallback(() => {
+    if (status !== "active" || shots.length === 0) return;
+    setCurrent(shots[shots.length - 1]!);
+    setShots((s) => s.slice(0, -1));
+  }, [status, shots]);
+
+  const summary = useMemo(() => (status === "complete" ? breakdown(shots) : null), [status, shots]);
+
+  if (status === "intro") {
+    return (
+      <div className="space-y-4">
+        <CombineHero
+          title={ironFaceControlConfig.testName}
+          kicker="Iron combine"
+          art={<IronHeroArt curve="draw" />}
+          chips={[`${total} shots`, "Any iron", "~10 min", "Highest score wins"]}
+        />
+        <IntroSteps
+          steps={[
+            { icon: <DoorOpen className="h-5 w-5" aria-hidden />, title: "Set a gate 2 m in front", hint: "Two alignment sticks on your start line" },
+            { icon: <Spline className="h-5 w-5" aria-hidden />, title: "Call the shape before each shot", hint: "Draw or fade, it's your choice" },
+            { icon: <Hammer className="h-5 w-5" aria-hidden />, title: "Tap what you pulled off", hint: "Through the gate, curved as planned, struck solid" },
+          ]}
+        />
+        <ScoringGuide title="How points work">
+          <ul className="space-y-1.5">
+            <li>Started through the gate: +{ironFaceControlConfig.ptsGate}</li>
+            <li>Curved the way you called it: +{ironFaceControlConfig.ptsCurve}</li>
+            <li>Solid strike: +{ironFaceControlConfig.ptsSolid}</li>
+            <li className="font-semibold text-gray-900">
+              Up to {ironFaceControlConfig.maxShotPoints} per shot, {ironFaceControlConfig.maxSessionPoints} in total. Higher is better.
+            </li>
+          </ul>
+        </ScoringGuide>
+        <PrimaryButton onClick={startTest}>Start the test</PrimaryButton>
+      </div>
+    );
+  }
+
+  if (status === "complete" && summary) {
+    return (
+      <div className="space-y-4">
+        <ResultHero>
+          <ScoreRing
+            pct={summary.total / ironFaceControlConfig.maxSessionPoints}
+            value={summary.total}
+            caption={`of ${ironFaceControlConfig.maxSessionPoints} points`}
+          />
+          <p className="mt-2 text-xs text-white/70">
+            {summary.perfect} perfect shot{summary.perfect === 1 ? "" : "s"} · higher is better
+          </p>
+        </ResultHero>
+        <StatTiles
+          stats={[
+            { label: "Avg per shot", value: (summary.total / total).toFixed(1) },
+            { label: "Perfect shots", value: summary.perfect },
+            { label: "Best streak", value: summary.bestStreak, sub: "7+ pt shots" },
+          ]}
+        />
+
+        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+
+        <BreakdownCard title="Shot by shot">
+          <ProgressTrack items={summary.track} current={-1} name="Shot" />
+        </BreakdownCard>
+
+        <BreakdownCard title="Skills" aside="Made / shots">
+          <div className="space-y-3">
+            {summary.skills.map((s) => (
+              <RateRow key={s.key} label={s.label} made={s.made} total={total} flag={s.key === summary.leak ? "Biggest leak" : null} />
+            ))}
+          </div>
+        </BreakdownCard>
+
+        <BreakdownCard title="Where your points went" aside={`${summary.total} of ${ironFaceControlConfig.maxSessionPoints}`}>
+          <BreakdownBar
+            segments={[
+              { label: "Scored", value: summary.total, tone: "bg-[#014421]" },
+              ...summary.skills.map((s) => ({ label: `Lost: ${s.short}`, value: s.lost, tone: s.tone })),
+            ]}
+          />
+        </BreakdownCard>
+
+        <SaveStatus saved={saved} error={saveError} onRetry={userId ? () => void save(shots) : undefined} />
+        <PlayAgainButton onClick={startTest} />
+      </div>
+    );
+  }
+
+  const shotNumber = shots.length + 1;
+  const runningTotal = sessionTotal(shots);
+  const track: TrackItem[] = Array.from({ length: total }, (_, i) => {
+    const s = shots[i];
+    if (!s) return null;
+    const p = shotPoints(s);
+    return { label: String(p), tone: pointsTone(p), ariaLabel: `Shot ${i + 1}: ${p} points` };
+  });
 
   return (
-    <div className="mt-6 space-y-5">
-      <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-gray-200 bg-white px-4 py-4 shadow-sm">
-        <div className="flex items-center gap-3 text-[#014421]" aria-hidden>
-          <GateMark className="h-10 w-12 shrink-0" />
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-              Session total
-            </p>
-            <p className="text-3xl font-bold tabular-nums leading-none">
-              {total}{" "}
-              <span className="text-lg font-semibold text-gray-500">
-                / {ironFaceControlConfig.maxSessionPoints}
-              </span>
-            </p>
-          </div>
-        </div>
-        <div className="ml-auto flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={clearRound}
-            className="rounded-xl border-2 border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            disabled={isSaving}
-            onClick={() => void saveRound()}
-            className="rounded-xl bg-[#014421] px-5 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {isSaving ? "Submitting…" : "Submit score"}
-          </button>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="rounded-full bg-[#014421] px-3 py-1 text-xs font-bold tabular-nums text-white">{runningTotal} pts</span>
+        <span className="text-xs font-semibold text-gray-500">Higher is better</span>
+      </div>
+
+      <ProgressTrack items={track} current={shots.length} name="Shot" />
+
+      <div className="flex items-stretch gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+        <IronShotDiagram curve={shotNumber % 2 === 0 ? "fade" : "draw"} className="h-28 w-[5.5rem] shrink-0" />
+        <div className="flex min-w-0 flex-col justify-center">
+          <p className="text-xs font-bold uppercase tracking-wider text-gray-400">
+            Shot {shotNumber} of {total}
+          </p>
+          <p className="text-5xl font-extrabold tabular-nums leading-none text-gray-900">
+            {shotPoints(current)}
+            <span className="ml-1 text-xl font-bold text-gray-400">pts</span>
+          </p>
+          <p className="mt-1.5 text-sm font-semibold text-[#014421]">Call your shape, then hit</p>
         </div>
       </div>
 
-      {!user?.id && (
-        <p className="text-center text-xs text-amber-800">Sign in to submit your score.</p>
-      )}
-      {saveError && <p className="text-center text-sm text-red-600">{saveError}</p>}
-      {saved && user?.id && (
-        <p className="text-center text-sm font-medium text-[#014421]">
-          Score submitted to practice log.
-        </p>
-      )}
+      {shots.length > 0 && <CombineFlowBackControl onBack={undoLastShot} label="Undo last shot" />}
 
-      <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <table className="w-full min-w-[340px] border-collapse text-left text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-              <th className="w-10 px-2 py-2 text-center sm:px-3">#</th>
-              <th className="px-1 py-2 text-center">
-                Gate
-                <span className="block font-normal normal-case text-gray-400">
-                  +{ironFaceControlConfig.ptsGate}
-                </span>
-              </th>
-              <th className="px-1 py-2 text-center">
-                Curve
-                <span className="block font-normal normal-case text-gray-400">
-                  +{ironFaceControlConfig.ptsCurve}
-                </span>
-              </th>
-              <th className="px-1 py-2 text-center">
-                Solid
-                <span className="block font-normal normal-case text-gray-400">
-                  +{ironFaceControlConfig.ptsSolid}
-                </span>
-              </th>
-              <th className="w-14 px-2 py-2 text-center sm:w-16">Pts</th>
-            </tr>
-          </thead>
-          <tbody>
-            {shots.map((s, i) => {
-              const p = shotPoints(s);
-              return (
-                <tr key={i} className="border-b border-gray-100 last:border-0">
-                  <td className="px-2 py-1.5 text-center text-xs font-bold text-gray-500 sm:px-3">
-                    {i + 1}
-                  </td>
-                  <td className="p-1">
-                    <button
-                      type="button"
-                      aria-pressed={s.gate}
-                      aria-label={`Shot ${i + 1} gate`}
-                      onClick={() => flip(i, "gate")}
-                      className={`${toggleBase} w-full ${s.gate ? toggleOn : toggleOff}`}
-                    >
-                      Gate
-                    </button>
-                  </td>
-                  <td className="p-1">
-                    <button
-                      type="button"
-                      aria-pressed={s.curve}
-                      aria-label={`Shot ${i + 1} curve`}
-                      onClick={() => flip(i, "curve")}
-                      className={`${toggleBase} w-full ${s.curve ? toggleOn : toggleOff}`}
-                    >
-                      Curve
-                    </button>
-                  </td>
-                  <td className="p-1">
-                    <button
-                      type="button"
-                      aria-pressed={s.solid}
-                      aria-label={`Shot ${i + 1} solid strike`}
-                      onClick={() => flip(i, "solid")}
-                      className={`${toggleBase} w-full ${s.solid ? toggleOn : toggleOff}`}
-                    >
-                      Solid
-                    </button>
-                  </td>
-                  <td className="px-2 py-1.5 text-center">
-                    <span className="inline-block min-w-[2rem] text-base font-bold tabular-nums text-gray-900">
-                      {p}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="space-y-2">
+        <p className="text-base font-bold text-gray-900">What did you pull off?</p>
+        <ToggleCard
+          icon={<DoorOpen className="h-5 w-5" aria-hidden />}
+          title="Through the gate"
+          hint="Started on your line"
+          points={ironFaceControlConfig.ptsGate}
+          on={current.gate}
+          onChange={(on) => setCurrent((c) => ({ ...c, gate: on }))}
+        />
+        <ToggleCard
+          icon={<Spline className="h-5 w-5" aria-hidden />}
+          title="Curved as called"
+          hint="Drew or faded the way you planned"
+          points={ironFaceControlConfig.ptsCurve}
+          on={current.curve}
+          onChange={(on) => setCurrent((c) => ({ ...c, curve: on }))}
+        />
+        <ToggleCard
+          icon={<Hammer className="h-5 w-5" aria-hidden />}
+          title="Solid strike"
+          hint="Ball first, out of the middle"
+          points={ironFaceControlConfig.ptsSolid}
+          on={current.solid}
+          onChange={(on) => setCurrent((c) => ({ ...c, solid: on }))}
+        />
       </div>
 
-      <p className="text-center text-[11px] text-gray-500">
-        Tap toggles after each shot — total updates live. Gate + Curve + Solid = max{" "}
-        {ironFaceControlConfig.maxShotPoints} pts per shot.
-      </p>
+      <PrimaryButton onClick={() => void recordShot()}>
+        {shotNumber >= total ? "Finish the test" : "Next shot"}
+        <span className="block text-xs font-semibold text-white/70">
+          {shotPoints(current) === 0 ? "Nothing ticked scores 0" : `This shot scores ${shotPoints(current)}`}
+        </span>
+      </PrimaryButton>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import type { CoachingSpaceSummary } from "@/lib/coachingFeed";
 import {
   describeUsage,
   featureOf,
+  fetchDrillTitles,
   fetchUsageEvents,
   itemOf,
   type DrillTitles,
@@ -93,17 +94,7 @@ export function CoachingUsage({
     setLoading(true);
     try {
       const since = new Date(Date.now() - TREND_WEEKS * 7 * DAY_MS);
-      const [list, { OFFICIAL_DRILLS }] = await Promise.all([
-        fetchUsageEvents(createClient(), since),
-        import("@/data/official_drills"),
-      ]);
-      const titles: DrillTitles = new Map();
-      for (const d of OFFICIAL_DRILLS) {
-        const title = (d.drill_name ?? d.title ?? "").trim();
-        if (!title) continue;
-        titles.set(d.id, title);
-        if (d.drill_id) titles.set(d.drill_id, title);
-      }
+      const [list, titles] = await Promise.all([fetchUsageEvents(createClient(), since), fetchDrillTitles()]);
       setDrills(titles);
       setEvents(list.filter((e) => e.user_id !== viewerId));
       setError(null);

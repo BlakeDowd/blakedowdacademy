@@ -25,6 +25,13 @@ async function getSupabase() {
   return createClient();
 }
 
+/** Logging or undoing a drill score changes the player's XP and drill count on the leaderboards. */
+function announceDrillActivity() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("drillsUpdated"));
+  window.dispatchEvent(new Event("xpUpdated"));
+}
+
 export function parseDrillScoreInput(raw: string): number | null {
   const trimmed = raw.trim().replace(",", ".");
   if (!trimmed) return null;
@@ -128,6 +135,7 @@ export function useDrillProgress(
       setDraft("");
       setRepsDraft("");
       setFeedback({ ...reaction, undoLogId: log.id });
+      announceDrillActivity();
       if (settings.unit !== unit || settings.lowerIsBetter !== lowerIsBetter) {
         setSettings((s) => ({ ...s, unit, lowerIsBetter }));
         void saveDrillScoreSettings(supabase, userId, drillKey, { unit, lowerIsBetter, goalScore: settings.goalScore });
@@ -147,6 +155,7 @@ export function useDrillProgress(
     }
     setLogs((prev) => prev.filter((l) => l.id !== logId));
     setFeedback(null);
+    announceDrillActivity();
   }, []);
 
   const updateDraft = useCallback((v: string) => {

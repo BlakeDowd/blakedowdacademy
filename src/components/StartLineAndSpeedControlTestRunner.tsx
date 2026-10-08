@@ -8,13 +8,12 @@ import {
   gateSuccessRatePct,
   HIT_GATE_PRECISION_SCORE,
   precisionScoreForPutt,
-  startLineVarianceMessage,
 } from "@/lib/startLineSpeedControlScoring";
 import {
   startLineAndSpeedControlTestConfig,
   type StartLineGate,
 } from "@/lib/startLineAndSpeedControlTestConfig";
-import { meanAbsDistanceCm } from "@/lib/strikeAndSpeedControlScoring";
+import { distanceWeightForTargetFt, meanAbsDistanceCm } from "@/lib/strikeAndSpeedControlScoring";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
@@ -35,6 +34,7 @@ import {
   type GateOption,
   type TrackItem,
 } from "@/components/combine/PuttingCombineUi";
+import { BreakdownBar, BreakdownCard, EveryShotList, FocusCard, RateRow, ValueRow } from "@/components/combine/CombineBreakdown";
 
 type PuttRecord = {
   putt: number;
@@ -125,6 +125,80 @@ function scoreTone(score: number): string {
   if (score <= 25) return "bg-green-200 text-[#014421]";
   if (score <= 50) return "bg-amber-200 text-amber-900";
   return "bg-red-500 text-white";
+}
+
+const GATE_LABEL: Record<StartLineGate, string> = {
+  through_gate: "Through the gate",
+  hit_gate_left: "Hit left tee",
+  hit_gate_right: "Hit right tee",
+  hit_gate: "Hit the gate",
+};
+
+const fmtScore = (s: number) => (Number.isInteger(s) ? String(s) : s.toFixed(1));
+
+/** Everything the results screen shows beyond the headline numbers, including the "focus next" tip. */
+function startLineBreakdown(putts: PuttRecord[], sequence: readonly number[]) {
+  const n = putts.length || 1;
+  const scores = putts.map((p) => precisionScoreForPutt(p.distance_cm, p.targetFt, p.gate));
+  const average = scores.reduce((s, x) => s + x, 0) / n;
+  const through = putts.filter((p) => !isGateHit(p.gate));
+  const distancePart = through.reduce((s, p) => s + Math.abs(p.distance_cm) * distanceWeightForTargetFt(p.targetFt), 0) / n;
+  const gatePart = average - distancePart;
+  const left = putts.filter((p) => p.gate === "hit_gate_left").length;
+  const right = putts.filter((p) => p.gate === "hit_gate_right").length;
+  const legacy = putts.filter((p) => p.gate === "hit_gate").length;
+  const hits = left + right + legacy;
+
+  const byDistance = [...new Set(sequence)].map((ft) => {
+    const at = putts.filter((p) => p.targetFt === ft);
+    const thru = at.filter((p) => !isGateHit(p.gate));
+    const meanCm = meanAbsDistanceCm(thru.map((p) => ({ cm: p.distance_cm })));
+    return { ft, n: at.length, through: thru.length, meanCm, weighted: meanCm * distanceWeightForTargetFt(ft) };
+  });
+  const gateRanked = [...byDistance].filter((d) => d.n > 0).sort((a, b) => a.through / a.n - b.through / b.n);
+  const worstGate =
+    gateRanked.length > 1 && gateRanked[0]!.through / gateRanked[0]!.n < gateRanked[gateRanked.length - 1]!.through / gateRanked[gateRanked.length - 1]!.n
+      ? gateRanked[0]!
+      : null;
+  const paced = byDistance.filter((d) => d.through > 0);
+  const worstPace = [...paced].sort((a, b) => b.weighted - a.weighted)[0];
+  const worstPaceFt = worstPace && worstPace.meanCm > 0 ? worstPace.ft : null;
+
+  const track: TrackItem[] = putts.map((p, i) =>
+    isGateHit(p.gate)
+      ? { label: "Gate", tone: "bg-red-500 text-white", ariaLabel: `Putt ${i + 1}: hit the gate` }
+      : { label: String(Math.round(scores[i]!)), tone: scoreTone(scores[i]!), ariaLabel: `Putt ${i + 1}: score ${scores[i]!.toFixed(1)}` },
+  );
+
+  const hitsText = `${hits} of ${putts.length} putts hit the gate, which is ${gatePart.toFixed(1)} of your ${average.toFixed(1)} score.`;
+  let focus: { title: string; lines: string[] };
+  if (hits === 0 && putts.every((p) => p.distance_cm === 0)) {
+    focus = { title: "Perfect round", lines: ["Every putt through the gate and on the target. Narrow the gate next time."] };
+  } else if (hits > 0 && gatePart >= distancePart) {
+    const sideTip =
+      left > right
+        ? `Most hit the left tee (${left} vs ${right}), so you're pulling it or closing the face. Check the face is square to your line at address.`
+        : right > left
+          ? `Most hit the right tee (${right} vs ${left}), so you're pushing it or leaving the face open. Check the face is square to your line at address.`
+          : "They went both ways, so work on a square face at impact rather than your aim.";
+    focus = { title: "Focus next: start line", lines: [hitsText, sideTip] };
+    if (worstGate) focus.lines.push(`Most trouble from ${worstGate.ft} ft, where ${worstGate.through} of ${worstGate.n} got through.`);
+  } else if (worstPace && worstPaceFt != null) {
+    focus = {
+      title: `Focus next: pace from ${worstPaceFt} ft`,
+      lines: [
+        `From ${worstPaceFt} ft your putts through the gate finished ${worstPace.meanCm.toFixed(0)} cm from the target on average.`,
+        worstPaceFt <= 10
+          ? "On short putts, pick a spot just past the target and roll it firmly to that spot."
+          : "Look at the target during your practice swings and let the length of your backswing set the pace.",
+      ],
+    };
+    if (hits > 0) focus.lines.push(hitsText);
+  } else {
+    focus = { title: "Focus next: start line", lines: [hitsText] };
+  }
+
+  return { average, distancePart, gatePart, left, right, legacy, hits, byDistance, paced, worstGateFt: worstGate?.ft ?? null, worstPaceFt, scores, track, focus };
 }
 
 export function StartLineAndSpeedControlTestRunner() {
@@ -228,12 +302,10 @@ export function StartLineAndSpeedControlTestRunner() {
     return {
       scoreAverage: avg,
       gateSuccessPct: gateSuccessRatePct(completedPutts.map((p) => ({ gate: p.gate }))),
-      varianceMsg: startLineVarianceMessage(completedPutts.map((p) => ({ gate: p.gate }))),
       meanCm: meanAbsDistanceCm(through.map((p) => ({ cm: p.distance_cm }))),
-      left: completedPutts.filter((p) => p.gate === "hit_gate_left").length,
-      right: completedPutts.filter((p) => p.gate === "hit_gate_right").length,
+      ...startLineBreakdown(completedPutts, sequence),
     };
-  }, [completedPutts, total]);
+  }, [completedPutts, total, sequence]);
 
   if (status === "intro") {
     return (
@@ -271,13 +343,88 @@ export function StartLineAndSpeedControlTestRunner() {
           stats={[
             { label: "Through gate", value: `${summary.gateSuccessPct.toFixed(0)}%` },
             { label: "Avg miss", value: `${summary.meanCm.toFixed(0)} cm`, sub: "Gate putts only" },
-            { label: "Gate hits", value: summary.left + summary.right, sub: `L ${summary.left} · R ${summary.right}` },
+            { label: "Gate hits", value: summary.hits, sub: `L ${summary.left} · R ${summary.right}` },
           ]}
         />
 
-        {summary.varianceMsg && (
-          <p className="rounded-2xl bg-amber-50 px-3 py-2.5 text-sm text-amber-900">{summary.varianceMsg}</p>
+        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+
+        <BreakdownCard title="Where your score came from" aside={`Avg ${summary.scoreAverage.toFixed(1)}`}>
+          <BreakdownBar
+            segments={[
+              { label: "Gate hits", value: Number(summary.gatePart.toFixed(1)), tone: "bg-red-400" },
+              { label: "Distance from target", value: Number(summary.distancePart.toFixed(1)), tone: "bg-[#FFA500]" },
+            ]}
+          />
+          <p className="mt-2 text-[11px] text-gray-400">Average per putt. A gate hit scores {HIT_GATE_PRECISION_SCORE}.</p>
+        </BreakdownCard>
+
+        <BreakdownCard title="Putt by putt" aside="Lower is better">
+          <ProgressTrack items={summary.track} current={-1} />
+        </BreakdownCard>
+
+        <BreakdownCard title="Start line" aside={`${completedPutts.length - summary.hits}/${total} through`}>
+          <BreakdownBar
+            segments={[
+              { label: "Hit left", value: summary.left, tone: "bg-violet-400" },
+              { label: "Through", value: completedPutts.length - summary.hits, tone: "bg-[#014421]" },
+              { label: "Hit right", value: summary.right, tone: "bg-sky-400" },
+              ...(summary.legacy > 0 ? [{ label: "Hit gate", value: summary.legacy, tone: "bg-red-400" }] : []),
+            ]}
+          />
+          <div className="mt-3 space-y-3">
+            {summary.byDistance.map((d) => (
+              <RateRow
+                key={d.ft}
+                label={`Through from ${d.ft} ft`}
+                made={d.through}
+                total={d.n}
+                flag={d.ft === summary.worstGateFt ? "Work on" : null}
+              />
+            ))}
+          </div>
+        </BreakdownCard>
+
+        {summary.paced.length > 0 && (
+          <BreakdownCard title="Pace by distance" aside="Putts through the gate">
+            <div className="space-y-3">
+              {summary.paced.map((d) => (
+                <ValueRow
+                  key={d.ft}
+                  label={`${d.ft} ft`}
+                  value={d.meanCm}
+                  max={Math.max(30, ...summary.paced.map((x) => x.meanCm))}
+                  display={`${d.meanCm.toFixed(0)} cm`}
+                  lowerIsBetter
+                  flag={d.ft === summary.worstPaceFt ? "Work on" : null}
+                />
+              ))}
+            </div>
+          </BreakdownCard>
         )}
+
+        <EveryShotList title="Every putt">
+          {completedPutts.map((p, i) => {
+            const s = summary.scores[i]!;
+            const hit = isGateHit(p.gate);
+            return (
+              <li key={p.putt} className="flex items-center gap-3 py-2">
+                <span className="w-9 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">{p.putt}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-800">
+                    {p.targetFt} ft · {GATE_LABEL[p.gate]}
+                  </span>
+                  <span className="block text-xs text-gray-500">
+                    {hit ? "No distance scored" : p.distance_cm === 0 ? "Holed" : `${Math.abs(p.distance_cm)} cm from the target`}
+                  </span>
+                </span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${hit ? "bg-red-500 text-white" : scoreTone(s)}`}>
+                  {fmtScore(s)}
+                </span>
+              </li>
+            );
+          })}
+        </EveryShotList>
 
         <SaveStatus saved={saved} error={saveError} onRetry={userId ? () => void retryPersist() : undefined} />
         <PlayAgainButton onClick={startTest} />

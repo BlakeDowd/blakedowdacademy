@@ -167,6 +167,19 @@ export function screenLabel(screen: string): string {
 
 export type DrillTitles = Map<string, string>;
 
+/** Drill id and code → drill name, for naming planner drills and drill score logs. */
+export async function fetchDrillTitles(): Promise<DrillTitles> {
+  const { OFFICIAL_DRILLS } = await import("@/data/official_drills");
+  const titles: DrillTitles = new Map();
+  for (const d of OFFICIAL_DRILLS) {
+    const title = (d.drill_name ?? d.title ?? "").trim();
+    if (!title) continue;
+    titles.set(d.id, title);
+    if (d.drill_id) titles.set(d.drill_id, title);
+  }
+  return titles;
+}
+
 /** The feature an action belongs to, for the totals list. */
 export function featureOf(e: UsageEvent): string {
   switch (e.source) {

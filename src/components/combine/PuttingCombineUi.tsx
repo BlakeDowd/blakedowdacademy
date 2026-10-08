@@ -97,12 +97,24 @@ export function HoleTrack({ results, current }: { results: HoleResult[]; current
   return <ProgressTrack items={items} current={current} name="Hole" />;
 }
 
-/** Green intro banner shared by every putting combine. */
-export function CombineHero({ title, chips, shape = "Left-to-Right" }: { title: string; chips: string[]; shape?: PuttShape }) {
+/** Green intro banner shared by every combine. `art` replaces the putting-line diagram. */
+export function CombineHero({
+  title,
+  chips,
+  shape = "Left-to-Right",
+  kicker = "Putting combine",
+  art,
+}: {
+  title: string;
+  chips: string[];
+  shape?: PuttShape;
+  kicker?: string;
+  art?: ReactNode;
+}) {
   return (
     <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#014421] to-[#0b6b3a] p-5 text-white shadow-md">
-      <PuttLineDiagram shape={shape} className="absolute -right-3 -top-2 h-40 w-32 opacity-25" />
-      <p className="text-xs font-semibold uppercase tracking-wider text-[#FFA500]">Putting combine</p>
+      {art ?? <PuttLineDiagram shape={shape} className="absolute -right-3 -top-2 h-40 w-32 opacity-25" />}
+      <p className="text-xs font-semibold uppercase tracking-wider text-[#FFA500]">{kicker}</p>
       <h2 className="mt-1 pr-16 text-2xl font-extrabold leading-tight">{title}</h2>
       <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
         {chips.map((c) => (

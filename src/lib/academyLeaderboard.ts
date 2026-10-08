@@ -357,6 +357,28 @@ function accumulateRoundXpByUserForTimeFilter(
   return out;
 }
 
+/** XP from logged drill days (`drill_xp_awards`) in the window; allTime counts every row. */
+type DrillSessionLike = { user_id?: string; first_logged_at?: string; xp?: number | string };
+
+function accumulateDrillSessionXpByUser(
+  timeFilter: "week" | "month" | "year" | "allTime",
+  drillSessions: DrillSessionLike[],
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const row of drillSessions || []) {
+    const uid = row?.user_id;
+    if (!uid) continue;
+    if (timeFilter !== "allTime") {
+      const ms = parseLeaderboardEventMs(row.first_logged_at) ?? NaN;
+      if (!eventMsMatchesLeaderboardTimeFilter(ms, timeFilter)) continue;
+    }
+    const add = Number(row.xp) || 0;
+    if (add <= 0) continue;
+    out.set(uid, (out.get(uid) || 0) + add);
+  }
+  return out;
+}
+
 function mergePeriodXpMaps(a: Map<string, number>, b: Map<string, number>): Map<string, number> {
   const out = new Map(a);
   for (const [uid, v] of b) {
@@ -373,8 +395,9 @@ function mergePeriodXpMaps(a: Map<string, number>, b: Map<string, number>): Map<
 function accumulateLifetimeActivityXpByUser(
   practiceSessions: any[],
   communityRounds: any[],
+  drillSessions: DrillSessionLike[] = [],
 ): Map<string, number> {
-  const out = new Map<string, number>();
+  const out = accumulateDrillSessionXpByUser("allTime", drillSessions);
   for (const session of practiceSessions || []) {
     const uid = session?.user_id;
     if (!uid) continue;
@@ -821,6 +844,7 @@ function getMockLeaderboard(
   drills?: any[],
   practiceSessions?: any[],
   libraryCompletions: { user_id?: string; lesson_id?: string; completed_at?: string }[] = [],
+  drillSessions: DrillSessionLike[] = [],
 ) {
   let userValue: number;
 
@@ -880,6 +904,14 @@ function getMockLeaderboard(
         session.user_id,
         (drillCountByUser.get(session.user_id) || 0) + 1,
       );
+    });
+    (drillSessions || []).forEach((row) => {
+      if (!row?.user_id) return;
+      if (timeFilter !== "allTime") {
+        const ms = parseLeaderboardEventMs(row.first_logged_at) ?? NaN;
+        if (!eventMsMatchesLeaderboardTimeFilter(ms, timeFilter)) return;
+      }
+      drillCountByUser.set(row.user_id, (drillCountByUser.get(row.user_id) || 0) + 1);
     });
 
     const allEntries: any[] = [];
@@ -1409,6 +1441,7 @@ function getLeaderboardData(
   practiceSessions?: any[],
   drills?: any[],
   practiceLogs: any[] = [],
+  drillSessions: DrillSessionLike[] = [],
 ) {
   if (metric === "puttingCombine") {
     const allPractice = practiceSessions || [];
@@ -2965,6 +2998,7 @@ function getLeaderboardData(
     const lifetimeActivityXpByUser = accumulateLifetimeActivityXpByUser(
       practiceSessions || [],
       rounds,
+      drillSessions,
     );
 
     const periodXpPractice =
@@ -2982,8 +3016,8 @@ function getLeaderboardData(
       timeFilter === "allTime"
         ? null
         : mergePeriodXpMaps(
-            periodXpPractice || new Map(),
-            periodXpRounds || new Map(),
+            mergePeriodXpMaps(periodXpPractice || new Map(), periodXpRounds || new Map()),
+            accumulateDrillSessionXpByUser(timeFilter, drillSessions),
           );
 
     if (userProfiles && userProfiles.size > 0) {

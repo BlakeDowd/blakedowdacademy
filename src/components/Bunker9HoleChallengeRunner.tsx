@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { CircleDot, MapPin, Ruler } from "lucide-react";
 import { useCombineUser } from "@/hooks/useCombineUser";
 import { bunker9HoleChallengeConfig } from "@/lib/bunker9HoleChallengeConfig";
 import type { ChipResultLabel } from "@/lib/chippingCombine9Analytics";
@@ -10,32 +11,98 @@ import {
   averageBunkerProximityCm,
   buildBunkerAggregates,
   bunkerPointsFromProximityCm,
-  bunkerScrambleRate,
   bunkerSessionTotalPoints,
   bunkerZoneFromProximityCm,
   bunkerMissDiagnosisText,
-  bunkerProximityRating,
   totalBunkerChipPoints,
   MAX_SESSION_POINTS,
   MAX_BUNKER_SESSION_CHIP,
 } from "@/lib/bunker9HoleChallengeAnalytics";
-import {
-  PRIMARY_MISS_LABELS,
-  type PrimaryMissReason,
-} from "@/lib/puttingTestMissDiagnostics";
-import {
-  type PuttingTestMissCategory,
-  PUTTING_TEST_MISS_CATEGORY_LABELS,
-} from "@/lib/puttingTestMissScoring";
+import { PRIMARY_MISS_LABELS, type PrimaryMissReason } from "@/lib/puttingTestMissDiagnostics";
+import { type PuttingTestMissCategory, PUTTING_TEST_MISS_CATEGORY_LABELS } from "@/lib/puttingTestMissScoring";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
+import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
+import {
+  CombineHero,
+  IntroSteps,
+  NumberChips,
+  PlayAgainButton,
+  PrimaryButton,
+  ProgressTrack,
+  ResultHero,
+  SaveStatus,
+  ScoreRing,
+  ScoringGuide,
+  StatTiles,
+  type TrackItem,
+} from "@/components/combine/PuttingCombineUi";
+import { Segmented } from "@/components/combine/IronCombineUi";
+import {
+  BreakdownBar,
+  BreakdownCard,
+  EveryShotList,
+  FocusCard,
+  RateRow,
+  ValueRow,
+} from "@/components/combine/CombineBreakdown";
+import { BunkerShotDiagram, CARD_ART_CLASS, HERO_ART_CLASS } from "@/components/combine/CombineArt";
+
+const PUTT_BONUS = bunker9HoleChallengeConfig.scramblePuttBonus;
+const START_CHIPS_M = [5, 8, 10, 12, 15, 18, 20, 25, 30] as const;
+const FINISH_CHIPS_CM = [0, 20, 40, 60, 90, 120, 150, 200, 300] as const;
+
+type MissQuadrant = Exclude<PuttingTestMissCategory, "lipOut">;
+type PuttAnswer = "made" | "missed" | "";
+
+type HoleForm = {
+  distance: string;
+  strike: BunkerVerticalStrike;
+  proximity: string;
+  putt: PuttAnswer;
+  quadrant: MissQuadrant | null;
+  reason: PrimaryMissReason | null;
+};
+
+const EMPTY_FORM: HoleForm = { distance: "", strike: "solid", proximity: "", putt: "", quadrant: null, reason: null };
+
+const ZONE_LABEL: Record<ChipResultLabel, string> = {
+  Holed: "Holed it",
+  "Inside Club Length": "Inside a club length",
+  "Inside 6ft": "Inside 6 ft",
+  "Safety Zone": "Inside 3 m",
+  "Missed Zone": "Outside 3 m",
+  "Outside Zone": "Outside 3 m",
+};
+
+const STRIKE_LABEL: Record<BunkerVerticalStrike, string> = { thin: "Thin", solid: "Solid", fat: "Fat" };
+
+const QUADRANTS: { key: MissQuadrant; title: string; hint: string }[] = [
+  { key: "highLong", title: "Past · high side", hint: "Ran by above the hole" },
+  { key: "lowLong", title: "Past · low side", hint: "Ran by below the hole" },
+  { key: "highShort", title: "Short · high side", hint: "Stopped above the hole" },
+  { key: "lowShort", title: "Short · low side", hint: "Stopped below the hole" },
+];
+
+const REASON_TIP: Record<PrimaryMissReason, string> = {
+  read: "Most misses were the read. Check the putt from the low side before you hit it.",
+  speed: "Most misses were speed. Try to roll every putt 30 cm past the hole.",
+  startLine: "Most misses started off line. Practise short putts through a gate of two tees.",
+};
+
+const DISTANCE_BANDS = [
+  { label: "Under 10 m", test: (m: number) => m < 10 },
+  { label: "10 to 20 m", test: (m: number) => m >= 10 && m < 20 },
+  { label: "20 m and over", test: (m: number) => m >= 20 },
+] as const;
 
 function parseProximityCm(raw: string): number | null {
-  const t = raw.trim();
+  const t = raw.trim().replace(",", ".");
   if (t === "") return null;
   const n = Number(t);
   if (!Number.isFinite(n) || n < 0) return null;
-  return n;
+  // Whole cm only: the zone bands are integer ranges, so 90.5 would otherwise fall between them and score 0.
+  return Math.round(n);
 }
 
 function parseDistanceM(raw: string): number | null {
@@ -46,20 +113,226 @@ function parseDistanceM(raw: string): number | null {
   return n;
 }
 
-const ZONE_OPTIONS: { label: ChipResultLabel; hint: string }[] = [
-  { label: "Holed", hint: "0 cm → 20 pts" },
-  { label: "Inside Club Length", hint: "1–90 cm → 15–11 pts (linear)" },
-  { label: "Inside 6ft", hint: "91–183 cm → 10–6 pts (linear)" },
-  { label: "Safety Zone", hint: "184–300 cm → 5–1 pts (linear)" },
-  { label: "Missed Zone", hint: ">300 cm → 0 pts" },
-];
+function fmt(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
 
-type Phase = "distance" | "proximity" | "strike" | "putt" | "audit-quadrant" | "audit-primary";
+function fmtCm(cm: number): string {
+  return cm < 100 ? `${Math.round(cm)} cm` : `${(cm / 100).toFixed(1)} m`;
+}
 
-async function persistSession(userId: string, holes: BunkerHoleLog[], aggregates: Record<string, unknown>) {
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+function holePoints(h: BunkerHoleLog): number {
+  return Math.round((h.bunker_chip_points + h.putt_points) * 10) / 10;
+}
+
+function holeTone(h: BunkerHoleLog): string {
+  if (h.holed) return "bg-[#014421] text-white";
+  if (h.putt_made) return "bg-green-200 text-[#014421]";
+  if (h.bunker_chip_points > 0) return "bg-amber-200 text-amber-900";
+  return "bg-red-500 text-white";
+}
+
+function holeTrackItem(h: BunkerHoleLog): NonNullable<TrackItem> {
+  const p = holePoints(h);
+  return { label: String(Math.round(p)), tone: holeTone(h), ariaLabel: `Hole ${h.hole}: ${fmt(p)} points` };
+}
+
+/** The finished hole, or null while something required is still missing. */
+function buildHole(form: HoleForm, hole: number): BunkerHoleLog | null {
+  const distance = parseDistanceM(form.distance);
+  const cm = parseProximityCm(form.proximity);
+  if (distance === null || cm === null) return null;
+  const base = {
+    hole,
+    distance_m: distance,
+    proximity_cm: cm,
+    zone: bunkerZoneFromProximityCm(cm),
+    bunker_chip_points: bunkerPointsFromProximityCm(cm),
+    strike_vertical: form.strike,
+  };
+  if (cm === 0) return { ...base, holed: true, putt_points: 0 };
+  if (form.putt === "made") return { ...base, holed: false, putt_made: true, putt_points: PUTT_BONUS };
+  if (form.putt !== "missed" || !form.quadrant || !form.reason) return null;
+  return {
+    ...base,
+    holed: false,
+    putt_made: false,
+    putt_points: 0,
+    first_putt_miss_quadrant: form.quadrant,
+    putt_miss_primary_reason: form.reason,
+    miss_category: `${PUTTING_TEST_MISS_CATEGORY_LABELS[form.quadrant]} · ${PRIMARY_MISS_LABELS[form.reason]}`,
+  };
+}
+
+function formFromHole(h: BunkerHoleLog): HoleForm {
+  const quadrant = h.first_putt_miss_quadrant;
+  return {
+    distance: String(h.distance_m),
+    strike: h.strike_vertical,
+    proximity: String(h.proximity_cm),
+    putt: h.holed ? "" : h.putt_made ? "made" : "missed",
+    quadrant: quadrant && quadrant !== "lipOut" ? quadrant : null,
+    reason: h.putt_miss_primary_reason ?? null,
+  };
+}
+
+/** Everything the results screen shows, including the "focus next" tip. */
+function breakdown(holes: BunkerHoleLog[]) {
+  const n = holes.length;
+  const total = bunkerSessionTotalPoints(holes);
+  const chipPts = totalBunkerChipPoints(holes);
+  const puttPts = holes.reduce((s, h) => s + h.putt_points, 0);
+  const holed = holes.filter((h) => h.holed).length;
+  const needPutt = holes.filter((h) => !h.holed);
+  const puttsMade = needPutt.filter((h) => h.putt_made).length;
+  const puttsMissed = needPutt.length - puttsMade;
+  const saves = holed + puttsMade;
+  const avgCm = averageBunkerProximityCm(holes) ?? 0;
+
+  const zones: Record<ChipResultLabel, number> = {
+    Holed: 0,
+    "Inside Club Length": 0,
+    "Inside 6ft": 0,
+    "Safety Zone": 0,
+    "Missed Zone": 0,
+    "Outside Zone": 0,
+  };
+  const strikes: Record<BunkerVerticalStrike, number> = { solid: 0, fat: 0, thin: 0 };
+  const reasons: Record<PrimaryMissReason, number> = { read: 0, speed: 0, startLine: 0 };
+  for (const h of holes) {
+    zones[h.zone]++;
+    strikes[h.strike_vertical]++;
+    if (!h.holed && !h.putt_made && h.putt_miss_primary_reason) reasons[h.putt_miss_primary_reason]++;
+  }
+  const insideClub = zones.Holed + zones["Inside Club Length"];
+  const inside6ft = insideClub + zones["Inside 6ft"];
+  const outside3m = zones["Missed Zone"] + zones["Outside Zone"];
+
+  const avgOf = (hs: BunkerHoleLog[]) => (hs.length ? hs.reduce((s, h) => s + h.proximity_cm, 0) / hs.length : null);
+  const byBand: { label: string; n: number; avgCm: number }[] = [];
+  for (const b of DISTANCE_BANDS) {
+    const at = holes.filter((h) => b.test(h.distance_m));
+    const avgCm = avgOf(at);
+    if (avgCm !== null) byBand.push({ label: b.label, n: at.length, avgCm });
+  }
+  const rankedBands = [...byBand].sort((a, b) => b.avgCm - a.avgCm);
+  const worstBand = rankedBands.length > 1 && rankedBands[0]!.avgCm > rankedBands[rankedBands.length - 1]!.avgCm ? rankedBands[0]!.label : null;
+
+  const solidAvgCm = avgOf(holes.filter((h) => h.strike_vertical === "solid"));
+  const missHitAvgCm = avgOf(holes.filter((h) => h.strike_vertical !== "solid"));
+
+  const topReason = (Object.keys(reasons) as PrimaryMissReason[]).sort((a, b) => reasons[b] - reasons[a])[0]!;
+  const strikeMiss = strikes.fat >= strikes.thin ? "fat" : "thin";
+  const strikeMissCount = strikes[strikeMiss];
+  const strikeTip =
+    strikeMissCount === 0
+      ? null
+      : strikeMiss === "fat"
+        ? `${plural(strikeMissCount, "shot")} came out fat. Keep your weight on your lead side and hit the sand just behind the ball.`
+        : `${plural(strikeMissCount, "shot")} came out thin. Open the face and let the bounce splash the sand before the ball.`;
+
+  // Proximity is measured against finishing inside a club length (15 pts), which is a realistic target.
+  const proximityLoss = needPutt.reduce((s, h) => s + Math.max(0, 15 - h.bunker_chip_points), 0);
+  const puttLoss = puttsMissed * PUTT_BONUS;
+
+  let focus: { title: string; lines: string[] };
+  if (saves === n) {
+    focus = {
+      title: "Every hole up and down",
+      lines: [`${plural(holed, "hole")} holed from the sand and ${plural(puttsMade, "putt")} made.`, "Try tougher lies or longer shots next time."],
+    };
+  } else if (outside3m >= 2) {
+    focus = {
+      title: "Focus next: getting it on the green",
+      lines: [
+        `${outside3m} of ${n} bunker shots finished more than 3 m away and scored nothing.`,
+        strikeTip ?? "Hit the sand 3 cm behind the ball with an open face and keep the club moving to a full finish.",
+      ],
+    };
+  } else if (puttLoss > proximityLoss) {
+    focus = {
+      title: "Focus next: holing the putt",
+      lines: [
+        `You made ${puttsMade} of ${needPutt.length} putts after the bunker shot. The misses cost you ${puttLoss} pts.`,
+        reasons[topReason] > 0 ? REASON_TIP[topReason] : "Spend 10 minutes on 1 to 2 m putts before your next session.",
+      ],
+    };
+  } else {
+    focus = {
+      title: "Focus next: getting it closer",
+      lines: [`Your average finish was ${fmtCm(avgCm)}, and ${insideClub} of ${n} finished inside a club length.`],
+    };
+    if (worstBand) {
+      const w = byBand.find((b) => b.label === worstBand)!;
+      focus.lines.push(`${worstBand} was your weakest range at ${fmtCm(w.avgCm)} on average.`);
+    }
+    focus.lines.push("Pick a landing spot and keep the same swing speed. Change the length of the swing, not the speed.");
+  }
+  if (strikeTip && strikeMissCount >= 3 && outside3m < 2 && saves < n) {
+    focus.lines.push(`Also: ${strikeTip.charAt(0).toLowerCase()}${strikeTip.slice(1)}`);
+  }
+
+  return {
+    total,
+    chipPts,
+    puttPts,
+    holed,
+    needPutt: needPutt.length,
+    puttsMade,
+    puttsMissed,
+    puttLoss,
+    saves,
+    avgCm,
+    zones,
+    insideClub,
+    inside6ft,
+    outside3m,
+    byBand,
+    worstBand,
+    strikes,
+    solidAvgCm,
+    missHitAvgCm,
+    reasons,
+    diagnosis: bunkerMissDiagnosisText(holes),
+    focus,
+  };
+}
+
+/** Two-by-two picker for where the missed putt finished, past the hole on top. */
+function QuadrantPicker({ value, onChange }: { value: MissQuadrant | null; onChange: (q: MissQuadrant) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {QUADRANTS.map((q) => {
+        const active = value === q.key;
+        return (
+          <button
+            key={q.key}
+            type="button"
+            onClick={() => onChange(q.key)}
+            aria-pressed={active}
+            className={`rounded-2xl border-2 px-3 py-3 text-left transition-all active:scale-[0.97] ${
+              active ? "border-[#014421] bg-[#014421] text-white" : "border-gray-100 bg-white text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            <span className="block text-sm font-bold">{q.title}</span>
+            <span className={`block text-[11px] ${active ? "text-white/70" : "text-gray-400"}`}>{q.hint}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** @returns null on success, or a user-visible error string */
+async function persistSession(userId: string, holes: BunkerHoleLog[]): Promise<string | null> {
   try {
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
+    const aggregates = buildBunkerAggregates(holes);
     const proximityScores = holes.map((h) => ({
       hole: h.hole,
       zone: h.zone,
@@ -102,606 +375,351 @@ async function persistSession(userId: string, holes: BunkerHoleLog[], aggregates
       }),
     });
     if (error) {
-      console.warn("[Bunker9HoleChallenge] practice insert:", error.message);
-      return false;
+      console.warn("[Bunker9HoleChallenge] practice insert:", formatSupabaseWriteError(error));
+      return formatSupabaseWriteError(error);
     }
     await awardCombineCompletionXp(userId);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("practiceSessionsUpdated"));
     }
-    return true;
+    return null;
   } catch (e) {
-    console.warn("[Bunker9HoleChallenge] practice insert failed", e);
-    return false;
+    console.warn("[Bunker9HoleChallenge] practice insert failed", formatSupabaseWriteError(e));
+    return formatSupabaseWriteError(e);
   }
 }
 
 export function Bunker9HoleChallengeRunner() {
   const user = useCombineUser();
+  const userId = user?.id ?? null;
+  const total = bunker9HoleChallengeConfig.holeCount;
   const [status, setStatus] = useState<"intro" | "active" | "complete">("intro");
-  const [holeIndex, setHoleIndex] = useState(0);
-  const [phase, setPhase] = useState<Phase>("distance");
   const [holes, setHoles] = useState<BunkerHoleLog[]>([]);
-  const [distanceInput, setDistanceInput] = useState("");
-  const [proximityInput, setProximityInput] = useState("");
-  const [lockedCm, setLockedCm] = useState<number | null>(null);
-  const [lockedZone, setLockedZone] = useState<ChipResultLabel | null>(null);
-  const [strike, setStrike] = useState<BunkerVerticalStrike | null>(null);
-  const [pendingMissQuadrant, setPendingMissQuadrant] = useState<PuttingTestMissCategory | null>(null);
-  const [chipError, setChipError] = useState<string | null>(null);
-  const [distanceError, setDistanceError] = useState<string | null>(null);
+  const [form, setForm] = useState<HoleForm>(EMPTY_FORM);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const persistAttemptedRef = useRef(false);
 
-  const total = bunker9HoleChallengeConfig.holeCount;
-  const displayHole = holeIndex + 1;
+  const holeNumber = holes.length + 1;
+  const entry = status === "active" ? buildHole(form, holeNumber) : null;
 
-  const proximityCmParsed = useMemo(() => parseProximityCm(proximityInput), [proximityInput]);
-  const suggestedZone = useMemo(() => {
-    if (proximityCmParsed === null) return null;
-    return bunkerZoneFromProximityCm(proximityCmParsed);
-  }, [proximityCmParsed]);
-  const calculatedChipPts = useMemo(() => {
-    if (proximityCmParsed === null) return null;
-    return bunkerPointsFromProximityCm(proximityCmParsed);
-  }, [proximityCmParsed]);
   const startTest = useCallback(() => {
-    setHoleIndex(0);
-    setPhase("distance");
+    setStatus("active");
     setHoles([]);
-    setDistanceInput("");
-    setProximityInput("");
-    setLockedCm(null);
-    setLockedZone(null);
-    setStrike(null);
-    setPendingMissQuadrant(null);
-    setChipError(null);
-    setDistanceError(null);
+    setForm(EMPTY_FORM);
     setSaveError(null);
     setSaved(false);
     persistAttemptedRef.current = false;
-    setStatus("active");
   }, []);
 
-  const finishHole = useCallback(
-    async (entry: BunkerHoleLog) => {
-      const next = [...holes, entry];
-      setHoles(next);
-      setDistanceInput("");
-      setProximityInput("");
-      setLockedCm(null);
-      setLockedZone(null);
-      setStrike(null);
-      setPendingMissQuadrant(null);
-      setChipError(null);
-      setDistanceError(null);
-      setPhase("distance");
-
-      if (next.length >= total) {
-        setStatus("complete");
-        const aggregates = buildBunkerAggregates(next);
-        if (!user?.id) {
-          setSaveError("Sign in to save this session.");
-          setSaved(false);
-        } else if (!persistAttemptedRef.current) {
-          persistAttemptedRef.current = true;
-          setSaveError(null);
-          const ok = await persistSession(user.id, next, aggregates);
-          setSaved(ok);
-          if (!ok) {
-            setSaveError(
-              "Could not save. Apply the latest database migration or check your connection.",
-            );
-            persistAttemptedRef.current = false;
-          }
-        }
-      } else {
-        setHoleIndex((i) => i + 1);
+  const save = useCallback(
+    async (all: BunkerHoleLog[]) => {
+      if (!userId) {
+        setSaveError("Sign in to save this session.");
+        setSaved(false);
+        return;
+      }
+      persistAttemptedRef.current = true;
+      setSaveError(null);
+      const err = await persistSession(userId, all);
+      setSaved(err == null);
+      if (err) {
+        setSaveError(err);
+        persistAttemptedRef.current = false;
       }
     },
-    [holes, total, user?.id],
+    [userId],
   );
 
-  const onContinueDistance = useCallback(() => {
-    const d = parseDistanceM(distanceInput);
-    if (d === null) {
-      setDistanceError("Enter a valid start distance (1–400 m).");
-      return;
+  const recordHole = useCallback(async () => {
+    if (status !== "active" || !entry) return;
+    const next = [...holes, entry];
+    setHoles(next);
+    setForm(EMPTY_FORM);
+    if (next.length >= total) {
+      setStatus("complete");
+      if (!persistAttemptedRef.current) await save(next);
     }
-    setDistanceError(null);
-    setPhase("proximity");
-  }, [distanceInput]);
+  }, [status, entry, holes, total, save]);
 
-  const confirmProximityZone = useCallback(() => {
-    const cm = parseProximityCm(proximityInput);
-    if (cm === null) {
-      setChipError("Enter distance from hole (cm) first.");
-      return;
-    }
-    setChipError(null);
-    setLockedCm(cm);
-    setLockedZone(bunkerZoneFromProximityCm(cm));
-    setPhase("strike");
-  }, [proximityInput]);
+  const undoLastHole = useCallback(() => {
+    if (status !== "active" || holes.length === 0) return;
+    setForm(formFromHole(holes[holes.length - 1]!));
+    setHoles((h) => h.slice(0, -1));
+  }, [status, holes]);
 
-  const onContinueStrike = useCallback(() => {
-    if (!strike || lockedCm === null || lockedZone === null) return;
-    const holed = lockedZone === "Holed";
-    const chipPts = bunkerPointsFromProximityCm(lockedCm);
-    const d = parseDistanceM(distanceInput);
-    if (d === null) return;
-
-    if (holed) {
-      void finishHole({
-        hole: displayHole,
-        distance_m: d,
-        proximity_cm: lockedCm,
-        zone: lockedZone,
-        bunker_chip_points: chipPts,
-        strike_vertical: strike,
-        holed: true,
-        putt_points: 0,
-      });
-      return;
-    }
-    setPhase("putt");
-  }, [strike, lockedCm, lockedZone, distanceInput, displayHole, finishHole]);
-
-  const onPuttMade = useCallback(() => {
-    if (phase !== "putt" || lockedCm === null || lockedZone === null || !strike) return;
-    const d = parseDistanceM(distanceInput);
-    if (d === null) return;
-    const chipPts = bunkerPointsFromProximityCm(lockedCm);
-    void finishHole({
-      hole: displayHole,
-      distance_m: d,
-      proximity_cm: lockedCm,
-      zone: lockedZone,
-      bunker_chip_points: chipPts,
-      strike_vertical: strike,
-      holed: false,
-      putt_made: true,
-      putt_points: bunker9HoleChallengeConfig.scramblePuttBonus,
-    });
-  }, [phase, lockedCm, lockedZone, strike, distanceInput, displayHole, finishHole]);
-
-  const onPuttMissed = useCallback(() => {
-    if (phase !== "putt") return;
-    setPendingMissQuadrant(null);
-    setPhase("audit-quadrant");
-  }, [phase]);
-
-  const onPickFirstPuttMissQuadrant = useCallback((quadrant: PuttingTestMissCategory) => {
-    if (phase !== "audit-quadrant") return;
-    setPendingMissQuadrant(quadrant);
-    setPhase("audit-primary");
-  }, [phase]);
-
-  const onPickPrimaryMissReason = useCallback(
-    (reason: PrimaryMissReason) => {
-      if (
-        phase !== "audit-primary" ||
-        lockedCm === null ||
-        lockedZone === null ||
-        !strike ||
-        pendingMissQuadrant === null
-      )
-        return;
-      const d = parseDistanceM(distanceInput);
-      if (d === null) return;
-      const chipPts = bunkerPointsFromProximityCm(lockedCm);
-      const quadLabel = PUTTING_TEST_MISS_CATEGORY_LABELS[pendingMissQuadrant];
-      const reasonLabel = PRIMARY_MISS_LABELS[reason];
-      void finishHole({
-        hole: displayHole,
-        distance_m: d,
-        proximity_cm: lockedCm,
-        zone: lockedZone,
-        bunker_chip_points: chipPts,
-        strike_vertical: strike,
-        holed: false,
-        putt_made: false,
-        putt_points: 0,
-        first_putt_miss_quadrant: pendingMissQuadrant,
-        putt_miss_primary_reason: reason,
-        miss_category: `${quadLabel} · ${reasonLabel}`,
-      });
-    },
-    [phase, lockedCm, lockedZone, strike, pendingMissQuadrant, distanceInput, displayHole, finishHole],
-  );
-
-  const goBackPhase = useCallback(() => {
-    if (phase === "proximity") {
-      setPhase("distance");
-      return;
-    }
-    if (phase === "strike") {
-      setPhase("proximity");
-      setLockedCm(null);
-      setLockedZone(null);
-      return;
-    }
-    if (phase === "putt") {
-      setPhase("strike");
-      setPendingMissQuadrant(null);
-      return;
-    }
-    if (phase === "audit-quadrant") {
-      setPhase("putt");
-      setPendingMissQuadrant(null);
-      return;
-    }
-    if (phase === "audit-primary") {
-      setPhase("audit-quadrant");
-      setPendingMissQuadrant(null);
-    }
-  }, [phase]);
-
-  const retryPersist = useCallback(async () => {
-    if (!user?.id || holes.length < total) return;
-    setSaveError(null);
-    const aggregates = buildBunkerAggregates(holes);
-    persistAttemptedRef.current = true;
-    const ok = await persistSession(user.id, holes, aggregates);
-    setSaved(ok);
-    if (!ok) {
-      setSaveError(
-        "Could not save. Apply the latest database migration or check your connection.",
-      );
-      persistAttemptedRef.current = false;
-    }
-  }, [user?.id, holes, total]);
-
-  const summary = useMemo(() => {
-    if (holes.length < total) return null;
-    return {
-      scramblePct: bunkerScrambleRate(holes) * 100,
-      proximityPct: bunkerProximityRating(holes) * 100,
-      chipPts: totalBunkerChipPoints(holes),
-      diagnosis: bunkerMissDiagnosisText(holes),
-      totalPts: bunkerSessionTotalPoints(holes),
-      avgProximityCm: averageBunkerProximityCm(holes),
-    };
-  }, [holes, total]);
-
-  const choiceBtn =
-    "w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-3 text-sm font-semibold text-gray-900 transition-colors hover:border-[#014421] hover:bg-[#014421]/5 text-left";
-  const choiceBtnActive = "border-[#014421] bg-[#014421]/10 ring-2 ring-[#014421]/20";
-  const choiceBtnDisabled = "opacity-40 cursor-not-allowed hover:border-gray-200 hover:bg-white";
+  const summary = useMemo(() => (status === "complete" && holes.length >= total ? breakdown(holes) : null), [status, holes, total]);
 
   if (status === "intro") {
     return (
-      <div className="mt-6 space-y-4">
-        <p className="text-sm text-gray-600 leading-relaxed">
-          Nine bunker shots. For each hole, enter your start distance (m), then proximity to the hole in
-          centimeters (large keypad). Your zone and chip points are set automatically from cm. Log
-          vertical strike only (thin / solid / fat). If you do not hole the sand shot, say whether the
-          putt was made (+{bunker9HoleChallengeConfig.scramblePuttBonus} pts) or missed, then complete
-          the miss audit (quadrant + read / speed / start line).
-        </p>
-        <button
-          type="button"
-          onClick={startTest}
-          className="w-full py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity"
-        >
-          Start challenge
-        </button>
+      <div className="space-y-4">
+        <CombineHero
+          title={bunker9HoleChallengeConfig.testName}
+          kicker="Bunker combine"
+          art={<BunkerShotDiagram className={HERO_ART_CLASS} />}
+          chips={[`${total} holes`, "5 to 30 m", "~20 min", "Highest score wins"]}
+        />
+        <IntroSteps
+          steps={[
+            { icon: <MapPin className="h-5 w-5" aria-hidden />, title: "Pick a new lie each hole", hint: "Mix it up, from short splashes to 30 m" },
+            { icon: <Ruler className="h-5 w-5" aria-hidden />, title: "Measure where it finishes", hint: "In cm, from the ball to the hole" },
+            { icon: <CircleDot className="h-5 w-5" aria-hidden />, title: "Putt it out", hint: `Hole the putt for a sand save and +${PUTT_BONUS}` },
+          ]}
+        />
+        <ScoringGuide title="How points work">
+          <ul className="space-y-1.5">
+            <li>Holed from the sand: 20 pts</li>
+            <li>Inside a club length (90 cm): 15 to 11 pts, closer scores more</li>
+            <li>Inside 6 ft (183 cm): 10 to 6 pts · inside 3 m: 5 to 1 pts</li>
+            <li>Further than 3 m: 0 pts</li>
+            <li>Didn&apos;t hole it? Make the putt for +{PUTT_BONUS}.</li>
+            <li className="font-semibold text-gray-900">Scored out of {MAX_SESSION_POINTS}. Higher is better.</li>
+          </ul>
+        </ScoringGuide>
+        <PrimaryButton onClick={startTest}>Start the test</PrimaryButton>
       </div>
     );
   }
 
   if (status === "complete" && summary) {
     return (
-      <div className="mt-6 space-y-5">
-        <div className="space-y-1">
-          <p className="text-sm font-semibold text-gray-900">{bunker9HoleChallengeConfig.testName}</p>
-          <h2 className="text-base font-medium text-gray-600">Session complete</h2>
-        </div>
+      <div className="space-y-4">
+        <ResultHero>
+          <ScoreRing pct={summary.total / MAX_SESSION_POINTS} value={fmt(summary.total)} caption={`of ${MAX_SESSION_POINTS} points`} />
+          <p className="mt-2 text-xs text-white/70">
+            {summary.saves} of {total} up and down · higher is better
+          </p>
+        </ResultHero>
 
-        <div className="rounded-2xl border-2 border-gray-200 bg-white p-5 shadow-sm space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Scramble rate</p>
-              <p className="text-2xl font-bold text-gray-900 tabular-nums">
-                {summary.scramblePct.toFixed(0)}%
-              </p>
-              <p className="text-xs text-gray-500 mt-1">Made putts when a putt was required.</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Proximity rating</p>
-              <p className="text-2xl font-bold text-gray-900 tabular-nums">
-                {summary.proximityPct.toFixed(0)}%
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                Bunker chip points {summary.chipPts.toFixed(1)} / {MAX_BUNKER_SESSION_CHIP} max.
-              </p>
-            </div>
-          </div>
-          <div className="border-t border-gray-100 pt-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-1">Miss distribution</p>
-            <p className="text-sm font-medium text-gray-900">{summary.diagnosis}</p>
-          </div>
-          <div className="border-t border-gray-100 pt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-xs text-gray-500">Total points (chip + scramble putts)</p>
-              <p className="text-lg font-semibold text-gray-900 tabular-nums">
-                {summary.totalPts.toFixed(1)} / {MAX_SESSION_POINTS}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Average proximity</p>
-              <p className="text-lg font-semibold text-gray-900 tabular-nums">
-                {summary.avgProximityCm !== null ? `${summary.avgProximityCm.toFixed(1)} cm` : "—"}
-              </p>
-            </div>
-          </div>
-        </div>
+        <StatTiles
+          stats={[
+            { label: "Sand saves", value: `${summary.saves}/${total}`, sub: summary.holed > 0 ? `${summary.holed} holed out` : null },
+            { label: "Avg finish", value: fmtCm(summary.avgCm) },
+            {
+              label: "Putts made",
+              value: summary.needPutt > 0 ? `${summary.puttsMade}/${summary.needPutt}` : "—",
+              sub: summary.needPutt === 0 ? "No putts needed" : null,
+            },
+          ]}
+        />
 
-        {saveError && (
-          <div className="space-y-2">
-            <p className="text-sm text-red-600">{saveError}</p>
-            {user?.id && (
-              <button
-                type="button"
-                onClick={() => void retryPersist()}
-                className="w-full py-3 rounded-xl border-2 border-[#014421] text-[#014421] font-semibold hover:bg-[#014421]/5 transition-colors"
-              >
-                Retry save
-              </button>
+        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+
+        <BreakdownCard title="Where your points went" aside={`${fmt(summary.total)} pts`}>
+          <BreakdownBar
+            segments={[
+              { label: "Bunker shots", value: summary.chipPts, tone: "bg-[#014421]" },
+              { label: "Putts", value: summary.puttPts, tone: "bg-[#FFA500]" },
+              { label: "Lost: missed putts", value: summary.puttLoss, tone: "bg-red-400" },
+              { label: "Lost: proximity", value: Math.round((MAX_BUNKER_SESSION_CHIP - summary.chipPts) * 10) / 10, tone: "bg-amber-300" },
+            ]}
+          />
+        </BreakdownCard>
+
+        <BreakdownCard title="Bunker shots" aside={`Avg ${fmtCm(summary.avgCm)}`}>
+          <BreakdownBar
+            segments={[
+              { label: "Holed", value: summary.zones.Holed, tone: "bg-[#014421]" },
+              { label: "Club length", value: summary.zones["Inside Club Length"], tone: "bg-green-400" },
+              { label: "6 ft", value: summary.zones["Inside 6ft"], tone: "bg-amber-300" },
+              { label: "3 m", value: summary.zones["Safety Zone"], tone: "bg-orange-400" },
+              { label: "Further", value: summary.outside3m, tone: "bg-red-400" },
+            ]}
+          />
+          <div className="mt-3 space-y-3">
+            <RateRow label="Inside 6 ft" made={summary.inside6ft} total={total} />
+            {summary.byBand.map((b) => (
+              <ValueRow
+                key={b.label}
+                label={b.label}
+                value={b.avgCm}
+                max={300}
+                lowerIsBetter
+                display={`${fmtCm(b.avgCm)} · ${plural(b.n, "shot")}`}
+                flag={b.label === summary.worstBand ? "Work on" : null}
+              />
+            ))}
+          </div>
+        </BreakdownCard>
+
+        <BreakdownCard title="Up and down" aside={`${summary.saves}/${total}`}>
+          <div className="space-y-3">
+            <RateRow label="Sand saves" made={summary.saves} total={total} />
+            {summary.needPutt > 0 && <RateRow label="Putts made" made={summary.puttsMade} total={summary.needPutt} />}
+            {summary.puttsMissed > 0 && (
+              <>
+                <BreakdownBar
+                  label="Why putts missed"
+                  segments={[
+                    { label: "Read", value: summary.reasons.read, tone: "bg-sky-400" },
+                    { label: "Speed", value: summary.reasons.speed, tone: "bg-[#FFA500]" },
+                    { label: "Start line", value: summary.reasons.startLine, tone: "bg-violet-400" },
+                  ]}
+                />
+                <p className="text-xs text-gray-600">{summary.diagnosis}</p>
+              </>
             )}
           </div>
-        )}
-        {saved && !saveError && <p className="text-sm text-green-700 font-medium">Session saved.</p>}
+        </BreakdownCard>
 
-        <button
-          type="button"
-          onClick={startTest}
-          className="w-full py-3 rounded-xl border-2 border-[#014421] text-[#014421] font-semibold hover:bg-[#014421]/5 transition-colors"
-        >
-          Run again
-        </button>
+        <BreakdownCard title="Sand contact">
+          <BreakdownBar
+            segments={[
+              { label: "Solid", value: summary.strikes.solid, tone: "bg-[#014421]" },
+              { label: "Fat", value: summary.strikes.fat, tone: "bg-amber-500" },
+              { label: "Thin", value: summary.strikes.thin, tone: "bg-sky-400" },
+            ]}
+          />
+          {summary.solidAvgCm !== null && summary.missHitAvgCm !== null && (
+            <p className="mt-2 text-xs text-gray-600">
+              Solid shots finished {fmtCm(summary.solidAvgCm)} away on average, fat and thin ones {fmtCm(summary.missHitAvgCm)}.
+            </p>
+          )}
+        </BreakdownCard>
+
+        <EveryShotList title="Every hole">
+          {holes.map((h) => (
+            <li key={h.hole} className="flex items-center gap-3 py-2 text-sm">
+              <span className="w-9 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">H{h.hole}</span>
+              <span className="min-w-0 flex-1 truncate text-gray-600">
+                {fmt(h.distance_m)} m · {h.holed ? "Holed" : fmtCm(h.proximity_cm)} · {STRIKE_LABEL[h.strike_vertical]}
+                {h.holed ? "" : h.putt_made ? " · Putt made" : " · Putt missed"}
+              </span>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${holeTone(h)}`}>{fmt(holePoints(h))}</span>
+            </li>
+          ))}
+        </EveryShotList>
+
+        <SaveStatus saved={saved} error={saveError} onRetry={userId ? () => void save(holes) : undefined} />
+        <PlayAgainButton onClick={startTest} />
       </div>
     );
   }
 
+  const distance = parseDistanceM(form.distance);
+  const cm = parseProximityCm(form.proximity);
+  const holedOut = cm === 0;
+  const chipPts = cm !== null ? bunkerPointsFromProximityCm(cm) : null;
+  const runningTotal = bunkerSessionTotalPoints(holes);
+  const track: TrackItem[] = Array.from({ length: total }, (_, i) => (holes[i] ? holeTrackItem(holes[i]!) : null));
+  const hint =
+    distance === null
+      ? "Drop a ball somewhere new"
+      : cm === null
+        ? "Splash it close"
+        : holedOut
+          ? "Holed from the sand!"
+          : "Now putt it out";
+
   return (
-    <div className="mt-6 space-y-6">
-      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-        <p className="text-sm font-medium text-gray-900">
-          Hole {displayHole} of {total}
-        </p>
-        <p className="text-xs text-gray-600 mt-1">Enter your start distance, then proximity and strike.</p>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="rounded-full bg-[#014421] px-3 py-1 text-xs font-bold tabular-nums text-white">{fmt(runningTotal)} pts</span>
+        <span className="text-xs font-semibold text-gray-500">Higher is better</span>
       </div>
 
-      {phase !== "distance" && <CombineFlowBackControl onBack={goBackPhase} />}
+      <ProgressTrack items={track} current={holes.length} name="Hole" />
 
-      {phase === "distance" && (
-        <div className="space-y-3">
-          <label htmlFor="bunker-start-m" className="text-sm font-medium text-gray-800 block">
-            Start distance (m)
-          </label>
-          <input
-            id="bunker-start-m"
-            type="text"
-            inputMode="decimal"
-            autoComplete="off"
-            enterKeyHint="done"
-            value={distanceInput}
-            onChange={(e) => {
-              setDistanceInput(e.target.value);
-              if (distanceError) setDistanceError(null);
-            }}
-            placeholder="e.g. 15"
-            className="w-full min-h-[48px] rounded-xl border-2 border-gray-200 bg-white px-4 py-3.5 text-lg font-semibold tabular-nums text-gray-900 focus:border-[#014421] focus:outline-none focus:ring-2 focus:ring-[#014421]/20"
+      <div className="flex items-stretch gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+        <BunkerShotDiagram className={CARD_ART_CLASS} />
+        <div className="flex min-w-0 flex-col justify-center">
+          <p className="text-xs font-bold uppercase tracking-wider text-gray-400">
+            Hole {holeNumber} of {total}
+          </p>
+          {distance !== null ? (
+            <p className="text-5xl font-extrabold tabular-nums leading-none text-gray-900">
+              {fmt(distance)}
+              <span className="ml-1 text-xl font-bold text-gray-400">m</span>
+            </p>
+          ) : (
+            <p className="text-2xl font-extrabold leading-tight text-gray-300">Pick a distance</p>
+          )}
+          <p className="mt-1.5 text-sm font-semibold text-[#014421]">{hint}</p>
+        </div>
+      </div>
+
+      {holes.length > 0 && <CombineFlowBackControl onBack={undoLastHole} label="Undo last hole" />}
+
+      <div className="space-y-2">
+        <p className="text-base font-bold text-gray-900">How far to the flag?</p>
+        <NumberChips
+          values={START_CHIPS_M}
+          value={form.distance}
+          onChange={(v) => setForm((f) => ({ ...f, distance: v }))}
+          unit="m"
+          ariaLabel="Distance to the flag in metres"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-base font-bold text-gray-900">How was the strike?</p>
+        <Segmented
+          options={[
+            { key: "fat", label: "Fat", hint: "Too much sand" },
+            { key: "solid", label: "Solid", hint: "Clean splash" },
+            { key: "thin", label: "Thin", hint: "Ball first" },
+          ]}
+          value={form.strike}
+          onChange={(strike) => setForm((f) => ({ ...f, strike }))}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-base font-bold text-gray-900">How close did it finish?</p>
+        <NumberChips
+          values={FINISH_CHIPS_CM}
+          value={form.proximity}
+          onChange={(v) => setForm((f) => ({ ...f, proximity: v }))}
+          unit="cm"
+          formatChip={(v) => (v === 0 ? "Holed" : null)}
+          ariaLabel="Distance from the hole in cm"
+        />
+        {cm !== null && chipPts !== null && (
+          <p className="text-sm text-gray-600">
+            <span className="font-semibold text-gray-900">{ZONE_LABEL[bunkerZoneFromProximityCm(cm)]}</span> · {fmt(chipPts)} pts
+          </p>
+        )}
+      </div>
+
+      {cm !== null && !holedOut && (
+        <div className="space-y-2">
+          <p className="text-base font-bold text-gray-900">Did you hole the putt?</p>
+          <Segmented<PuttAnswer>
+            options={[
+              { key: "made", label: "Made it", hint: `+${PUTT_BONUS} pts` },
+              { key: "missed", label: "Missed", hint: "Tell us how" },
+            ]}
+            value={form.putt}
+            onChange={(putt) => setForm((f) => ({ ...f, putt }))}
           />
-          {distanceError && <p className="text-sm text-red-600">{distanceError}</p>}
-          <button
-            type="button"
-            onClick={onContinueDistance}
-            className="w-full py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity"
-          >
-            Continue
-          </button>
         </div>
       )}
 
-      {phase === "proximity" && (
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <label htmlFor="bunker-proximity-cm" className="text-sm font-medium text-gray-800">
-              Proximity (cm)
-            </label>
-            <input
-              id="bunker-proximity-cm"
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              autoComplete="off"
-              enterKeyHint="done"
-              value={proximityInput}
-              onChange={(e) => {
-                setProximityInput(e.target.value);
-                if (chipError) setChipError(null);
-              }}
-              onFocus={(e) => {
-                const el = e.currentTarget;
-                if (el.value.length === 0) return;
-                requestAnimationFrame(() => el.select());
-              }}
-              placeholder="e.g. 45"
-              className="w-full min-h-[52px] rounded-xl border-2 border-gray-200 bg-white px-4 py-4 text-2xl font-semibold tabular-nums text-gray-900 focus:border-[#014421] focus:outline-none focus:ring-2 focus:ring-[#014421]/20"
-            />
-            {calculatedChipPts !== null && (
-              <p className="text-sm text-gray-800 pt-1">
-                Calculated bunker chip points:{" "}
-                <span className="font-semibold text-[#014421] tabular-nums">
-                  {calculatedChipPts.toFixed(1)} pts
-                </span>
-              </p>
-            )}
-            {chipError && <p className="text-sm text-red-600">{chipError}</p>}
-          </div>
-
+      {cm !== null && !holedOut && form.putt === "missed" && (
+        <>
           <div className="space-y-2">
-            <p className="text-sm font-medium text-gray-800">Proximity zone (auto from cm)</p>
-            {!suggestedZone && (
-              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                Enter a valid distance (cm) to highlight your zone.
-              </p>
-            )}
-            <div className="space-y-2">
-              {ZONE_OPTIONS.map((o) => {
-                const isMatch = suggestedZone !== null && suggestedZone === o.label;
-                const isDisabled = suggestedZone !== null && !isMatch;
-                return (
-                  <button
-                    key={o.label}
-                    type="button"
-                    disabled={isDisabled}
-                    onClick={() => {
-                      if (isMatch) confirmProximityZone();
-                    }}
-                    className={`${choiceBtn} ${isMatch ? choiceBtnActive : ""} ${isDisabled ? choiceBtnDisabled : ""}`}
-                  >
-                    <span className="block">
-                      {o.label === "Inside Club Length"
-                        ? "Inside Club Length (1–90 cm)"
-                        : o.label === "Inside 6ft"
-                          ? "Inside 6ft (91–183 cm)"
-                          : o.label === "Safety Zone"
-                            ? "Safety Zone (184–300 cm)"
-                            : o.label === "Missed Zone"
-                              ? "Missed Zone (>300 cm)"
-                              : o.label}
-                    </span>
-                    <span className="text-xs font-normal text-gray-500">{o.hint}</span>
-                  </button>
-                );
-              })}
-            </div>
-            {suggestedZone && (
-              <button
-                type="button"
-                onClick={confirmProximityZone}
-                className="w-full py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity"
-              >
-                Confirm zone & continue
-              </button>
-            )}
+            <p className="text-base font-bold text-gray-900">Where did the putt finish?</p>
+            <QuadrantPicker value={form.quadrant} onChange={(quadrant) => setForm((f) => ({ ...f, quadrant }))} />
           </div>
-        </div>
+          <div className="space-y-2">
+            <p className="text-base font-bold text-gray-900">Why did it miss?</p>
+            <Segmented<PrimaryMissReason | "">
+              options={[
+                { key: "read", label: "Read", hint: "Wrong break" },
+                { key: "speed", label: "Speed", hint: "Too firm or soft" },
+                { key: "startLine", label: "Start line", hint: "Pushed or pulled" },
+              ]}
+              value={form.reason ?? ""}
+              onChange={(reason) => setForm((f) => ({ ...f, reason: reason || null }))}
+            />
+          </div>
+        </>
       )}
 
-      {phase === "strike" && lockedZone && lockedCm !== null && (
-        <div className="space-y-4">
-          <p className="text-sm text-gray-600">
-            Zone: <span className="font-semibold text-gray-900">{lockedZone}</span> (
-            {bunkerPointsFromProximityCm(lockedCm).toFixed(1)} pts)
-          </p>
-          <p className="text-sm font-medium text-gray-800">Vertical strike</p>
-          <div className="grid grid-cols-3 gap-2">
-            {(["thin", "solid", "fat"] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setStrike(s)}
-                className={`rounded-xl border-2 px-2 py-2.5 text-sm font-semibold capitalize transition-colors ${
-                  strike === s
-                    ? "border-[#014421] bg-[#014421]/10 text-[#014421] ring-2 ring-[#014421]/20"
-                    : "border-gray-200 bg-white text-gray-800 hover:border-gray-300"
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            disabled={!strike}
-            onClick={onContinueStrike}
-            className="w-full py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {lockedZone === "Holed" ? "Log hole" : "Continue to putt"}
-          </button>
-        </div>
-      )}
-
-      {phase === "putt" && lockedZone && lockedCm !== null && strike && (
-        <div className="space-y-3">
-          <p className="text-sm text-gray-600">
-            Bunker shot: <span className="font-semibold text-gray-900">{lockedZone}</span> (
-            {bunkerPointsFromProximityCm(lockedCm).toFixed(1)} pts) · Strike:{" "}
-            <span className="font-semibold capitalize">{strike}</span>
-          </p>
-          <p className="text-sm font-medium text-gray-800">Putt made?</p>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={onPuttMade} className={`${choiceBtn} text-center`}>
-              Yes
-              <span className="block text-xs font-normal text-gray-500">
-                +{bunker9HoleChallengeConfig.scramblePuttBonus} pts
-              </span>
-            </button>
-            <button type="button" onClick={onPuttMissed} className={`${choiceBtn} text-center`}>
-              No
-            </button>
-          </div>
-        </div>
-      )}
-
-      {phase === "audit-quadrant" && (
-        <div className="space-y-3">
-          <p className="text-sm text-gray-600">First putt miss — pick category</p>
-          <div className="grid grid-cols-2 gap-2">
-            {(
-              [
-                ["highLong", "High / Long"],
-                ["highShort", "High / Short"],
-                ["lowLong", "Low / Long"],
-                ["lowShort", "Low / Short"],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => onPickFirstPuttMissQuadrant(key)}
-                className="py-2.5 px-3 rounded-lg border-2 border-gray-200 text-sm font-medium text-gray-800 hover:border-[#014421] hover:bg-[#014421]/5 transition-colors"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {phase === "audit-primary" && pendingMissQuadrant !== null && (
-        <div className="space-y-3">
-          <p className="text-sm text-gray-600">
-            Primary reason for the miss
-            <span className="block text-xs font-normal text-gray-500 mt-1">
-              Quadrant: {PUTTING_TEST_MISS_CATEGORY_LABELS[pendingMissQuadrant]}
-            </span>
-          </p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {(
-              [
-                ["read", "Read"],
-                ["speed", "Speed"],
-                ["startLine", "Start Line"],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => onPickPrimaryMissReason(key as PrimaryMissReason)}
-                className="py-2.5 px-3 rounded-lg border-2 border-gray-200 text-sm font-medium text-gray-800 hover:border-[#014421] hover:bg-[#014421]/5 transition-colors"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      <PrimaryButton onClick={() => void recordHole()} disabled={!entry}>
+        {holeNumber >= total ? "Finish the test" : "Next hole"}
+        {entry && <span className="block text-xs font-semibold text-white/70">This hole scores {fmt(holePoints(entry))}</span>}
+      </PrimaryButton>
     </div>
   );
 }

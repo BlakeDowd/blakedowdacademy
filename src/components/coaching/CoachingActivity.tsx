@@ -1,7 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, ImageIcon, Loader2, Play } from "lucide-react";
+import { Award, Bell, BookOpen, ClipboardCheck, Clock, Flag, ImageIcon, Loader2, Play, Target } from "lucide-react";
+import {
+  describeUsage,
+  featureOf,
+  fetchDrillTitles,
+  fetchUsageEvents,
+  type DrillTitles,
+  type UsageEvent,
+  type UsageSource,
+} from "@/lib/appUsage";
 import { APP_VIDEO_COACH_NAME, buildBunnyThumbnailUrl } from "@/lib/bunnyStream";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -15,7 +24,37 @@ import {
 import { Avatar, timeAgo, useProfileNames } from "@/components/coaching/coachingUi";
 import { useSignedPhoto } from "@/components/coaching/CoachingPostCard";
 
-type Filter = "all" | "coaches" | "athletes";
+type Filter = "all" | "coaches" | "athletes" | "training";
+
+type Row =
+  | { kind: "post"; at: number; item: ActivityItem }
+  | { kind: "training"; at: number; event: UsageEvent };
+
+/** Player actions from the usage log shown alongside posts (not screens opened or coaching posts). */
+const TRAINING_SOURCES = new Set<UsageSource>(["practice", "skills_log", "drill_score", "round", "lesson", "trophy"]);
+const TRAINING_DAYS = 14;
+const ROWS_PAGE = 60;
+
+function TrainingIcon({ event }: { event: UsageEvent }) {
+  const feature = featureOf(event);
+  const [Icon, tone] =
+    event.source === "drill_score"
+      ? [Target, "bg-[#FFA500]/15 text-[#b36b00]"]
+      : feature === "Combines & tests"
+        ? [ClipboardCheck, "bg-[#014421]/10 text-[#014421]"]
+        : event.source === "round"
+          ? [Flag, "bg-[#014421]/10 text-[#014421]"]
+          : event.source === "lesson"
+            ? [BookOpen, "bg-sky-100 text-sky-700"]
+            : event.source === "trophy"
+              ? [Award, "bg-amber-100 text-amber-700"]
+              : [Clock, "bg-[#014421]/10 text-[#014421]"];
+  return (
+    <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${tone}`} title={feature}>
+      <Icon className="h-4 w-4" aria-hidden />
+    </span>
+  );
+}
 
 function startOfToday(): number {
   const d = new Date();
@@ -98,31 +137,67 @@ export function CoachingActivity({
     void load();
   }, [load]);
 
-  const names = useProfileNames(items.flatMap((i) => [i.author_id, i.student_id]));
+  const [training, setTraining] = useState<UsageEvent[]>([]);
+  const [drillTitles, setDrillTitles] = useState<DrillTitles>(new Map());
+  const [rowLimit, setRowLimit] = useState(ROWS_PAGE);
+
+  useEffect(() => {
+    if (!viewerIsCoach) return;
+    let cancelled = false;
+    const since = new Date(Date.now() - TRAINING_DAYS * 86400000);
+    void Promise.all([fetchUsageEvents(createClient(), since), fetchDrillTitles()])
+      .then(([events, titles]) => {
+        if (cancelled) return;
+        setTraining(events.filter((e) => e.user_id !== viewerId && TRAINING_SOURCES.has(e.source)));
+        setDrillTitles(titles);
+      })
+      .catch((err) => {
+        if (!cancelled) console.warn("[CoachingActivity] training:", err instanceof Error ? err.message : err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerId, viewerIsCoach]);
+
+  const names = useProfileNames([
+    ...items.flatMap((i) => [i.author_id, i.student_id]),
+    ...training.map((e) => e.user_id),
+  ]);
   const spaceNames = useMemo(() => new Map(spaces.map((s) => [s.studentId, s.name] as const)), [spaces]);
   const studentName = (id: string) => spaceNames.get(id) ?? names.get(id) ?? "Golfer";
   const authorName = (i: ActivityItem) =>
     isCoachPost(i) ? (i.author_id && names.get(i.author_id)) || APP_VIDEO_COACH_NAME : studentName(i.student_id);
 
-  const visible = items.filter((i) =>
-    filter === "all" ? true : filter === "coaches" ? isCoachPost(i) : !isCoachPost(i),
-  );
   const unreadCount = items.filter((i) => i.unread).length;
+
+  const rows = useMemo(() => {
+    const out: Row[] = [];
+    if (filter !== "training") {
+      for (const item of items) {
+        if (filter === "coaches" && !isCoachPost(item)) continue;
+        if (filter === "athletes" && isCoachPost(item)) continue;
+        out.push({ kind: "post", at: Date.parse(item.created_at), item });
+      }
+    }
+    if (filter === "all" || filter === "training") {
+      for (const event of training) out.push({ kind: "training", at: Date.parse(event.at), event });
+    }
+    return out.sort((a, b) => b.at - a.at);
+  }, [items, training, filter]);
 
   const groups = useMemo(() => {
     const today = startOfToday();
     const weekAgo = today - 6 * 86400000;
-    const out: { label: string; items: ActivityItem[] }[] = [
-      { label: "Today", items: [] },
-      { label: "This week", items: [] },
-      { label: "Earlier", items: [] },
+    const out: { label: string; rows: Row[] }[] = [
+      { label: "Today", rows: [] },
+      { label: "This week", rows: [] },
+      { label: "Earlier", rows: [] },
     ];
-    for (const i of visible) {
-      const at = Date.parse(i.created_at);
-      out[at >= today ? 0 : at >= weekAgo ? 1 : 2]!.items.push(i);
+    for (const row of rows.slice(0, rowLimit)) {
+      out[row.at >= today ? 0 : row.at >= weekAgo ? 1 : 2]!.rows.push(row);
     }
-    return out.filter((g) => g.items.length);
-  }, [visible]);
+    return out.filter((g) => g.rows.length);
+  }, [rows, rowLimit]);
 
   const readAll = async () => {
     setMarking(true);
@@ -178,10 +253,11 @@ export function CoachingActivity({
       </div>
 
       {viewerIsCoach && (
-        <div className="flex gap-2 px-4 pt-3">
+        <div className="flex flex-wrap gap-2 px-4 pt-3">
           {(
             [
               ["all", "All"],
+              ["training", "Training"],
               ["coaches", "By coaches"],
               ["athletes", "By athletes"],
             ] as const
@@ -189,7 +265,10 @@ export function CoachingActivity({
             <button
               key={id}
               type="button"
-              onClick={() => setFilter(id)}
+              onClick={() => {
+                setFilter(id);
+                setRowLimit(ROWS_PAGE);
+              }}
               className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                 filter === id ? "bg-[#014421] text-white" : "bg-stone-100 text-stone-600 hover:bg-stone-200"
               }`}
@@ -211,7 +290,11 @@ export function CoachingActivity({
         <div className="px-6 py-10 text-center">
           <Bell className="mx-auto h-8 w-8 text-stone-300" aria-hidden />
           <p className="mt-2 text-sm font-semibold text-stone-800">You&apos;re all caught up</p>
-          <p className="mt-1 text-xs text-stone-500">New posts and replies will show up here.</p>
+          <p className="mt-1 text-xs text-stone-500">
+            {filter === "training"
+              ? "Drills, practice, combines and rounds from the last two weeks will show up here."
+              : "New posts and replies will show up here."}
+          </p>
         </div>
       ) : (
         <div className="pb-2">
@@ -219,7 +302,40 @@ export function CoachingActivity({
             <section key={g.label}>
               <h4 className="px-4 pb-1 pt-4 text-sm font-bold text-stone-900">{g.label}</h4>
               <ul>
-                {g.items.map((i) => {
+                {g.rows.map((row, idx) => {
+                  if (row.kind === "training") {
+                    const e = row.event;
+                    const name = studentName(e.user_id);
+                    const hasSpace = spaceNames.has(e.user_id);
+                    const body = (
+                      <>
+                        <Avatar name={name} userId={e.user_id} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm leading-snug text-stone-700">
+                            <span className="font-bold text-stone-900">{name}</span> {describeUsage(e, drillTitles)}
+                          </span>
+                          <span className="mt-0.5 block text-xs text-stone-500">{timeAgo(e.at)}</span>
+                        </span>
+                        <TrainingIcon event={e} />
+                      </>
+                    );
+                    return (
+                      <li key={`t-${e.user_id}-${e.source}-${e.detail ?? ""}-${e.at}-${idx}`}>
+                        {hasSpace ? (
+                          <button
+                            type="button"
+                            onClick={() => onOpenSpace(e.user_id, name)}
+                            className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-stone-50"
+                          >
+                            {body}
+                          </button>
+                        ) : (
+                          <div className="flex w-full items-start gap-3 px-4 py-3">{body}</div>
+                        )}
+                      </li>
+                    );
+                  }
+                  const i = row.item;
                   const name = authorName(i);
                   const { verb, text } = describe(i);
                   const space = studentName(i.student_id);
@@ -262,6 +378,17 @@ export function CoachingActivity({
               </ul>
             </section>
           ))}
+          {rows.length > rowLimit && (
+            <div className="px-4 pt-2">
+              <button
+                type="button"
+                onClick={() => setRowLimit((n) => n + ROWS_PAGE)}
+                className="w-full rounded-xl bg-stone-100 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-200"
+              >
+                Show more
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

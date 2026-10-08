@@ -58,6 +58,15 @@ interface DrillData {
   created_at?: string;
 }
 
+/** One row per player, drill and day they logged a drill score (`drill_xp_awards`). */
+export interface DrillSessionRow {
+  user_id: string;
+  drill_key: string;
+  day: string;
+  first_logged_at: string;
+  xp: number;
+}
+
 interface PracticeSessionData {
   id: string;
   user_id: string;
@@ -92,6 +101,7 @@ interface StatsContextType {
   /** True after the first community (all-users) rounds fetch attempt has finished. */
   communityRoundsHydrated: boolean;
   drills: DrillData[];
+  drillSessions: DrillSessionRow[];
   practiceSessions: PracticeSessionData[];
   practiceLogs: PracticeLogRow[];
   loading: boolean;
@@ -159,6 +169,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   const [communityRoundsHydrated, setCommunityRoundsHydrated] = useState(false);
   // Check Fetch Logic: Add state for drills and practice_sessions
   const [drills, setDrills] = useState<DrillData[]>([]);
+  const [drillSessions, setDrillSessions] = useState<DrillSessionRow[]>([]);
   const [practiceSessions, setPracticeSessions] = useState<PracticeSessionData[]>([]);
   const [practiceLogs, setPracticeLogs] = useState<PracticeLogRow[]>([]);
   // Set loading to true initially
@@ -324,9 +335,32 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   // Check the Fetch: Ensure loadDrills is definitely fetching from drill_scores
   // Global Fetch: Ensure the loadDrills function fetches all records from the drill_scores table without a user_id filter
   // Table Verification: The SQL policy already exists, so the table is ready - fetch from drill_scores
+  const loadDrillSessions = async () => {
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const { data, error } = await createClient()
+        .from("drill_xp_awards")
+        .select("user_id, drill_key, day, first_logged_at, xp")
+        .order("first_logged_at", { ascending: false })
+        .limit(20000);
+      if (error) {
+        if (!/drill_xp_awards/.test(error.message ?? "")) {
+          console.warn("StatsContext: drill_xp_awards:", error.message);
+        }
+        setDrillSessions([]);
+        return;
+      }
+      setDrillSessions((data ?? []) as DrillSessionRow[]);
+    } catch (error) {
+      console.warn("StatsContext: drill_xp_awards:", error);
+      setDrillSessions([]);
+    }
+  };
+
   const loadDrills = async () => {
     if (drillsFetched.current) return;
-    
+    void loadDrillSessions();
+
     try {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
@@ -842,6 +876,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         communityRounds,
         communityRoundsHydrated,
         drills,
+        drillSessions,
         practiceSessions,
         practiceLogs,
         loading,
@@ -869,6 +904,7 @@ export function useStats() {
       communityRounds: [],
       communityRoundsHydrated: false,
       drills: [], 
+      drillSessions: [],
       practiceSessions: [], 
       practiceLogs: [],
       loading: false, 

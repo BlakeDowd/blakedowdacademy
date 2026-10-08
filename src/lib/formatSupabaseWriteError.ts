@@ -2,7 +2,16 @@
  * Turn a Supabase PostgREST / auth error into a short string for UI / logs.
  * Helps diagnose RLS, missing columns, and constraint failures in production.
  */
+export const NETWORK_ERROR_MESSAGE = "Couldn't reach the server. Check your connection, then try saving again.";
+
+/** Browser fetch failures: Chrome says "Failed to fetch", Safari "Load failed", Firefox "NetworkError". */
+function isNetworkFailure(err: unknown): boolean {
+  const msg = typeof err === "object" && err != null ? (err as { message?: unknown }).message : null;
+  return typeof msg === "string" && /failed to fetch|load failed|networkerror|network request failed/i.test(msg);
+}
+
 export function formatSupabaseWriteError(err: unknown): string {
+  if (isNetworkFailure(err)) return NETWORK_ERROR_MESSAGE;
   if (err == null) return "Unknown error (null).";
   if (typeof err === "string") return err.trim() || "Unknown error (empty string).";
   if (typeof err === "number" || typeof err === "boolean") return String(err);

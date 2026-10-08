@@ -120,7 +120,7 @@ function HallOfFameLeaderboardInner(
   ref: React.ForwardedRef<HTMLDivElement>,
 ) {
   const showCompact = compact && !expanded;
-  const { communityRounds, drills, practiceSessions, practiceLogs } = useStats();
+  const { communityRounds, drills, drillSessions, practiceSessions, practiceLogs } = useStats();
   const { user } = useAuth();
 
   const practiceLogsIdentity = useMemo(() => {
@@ -169,6 +169,7 @@ function HallOfFameLeaderboardInner(
         practiceSessions || [],
         practiceLogs || [],
         libraryCompletions,
+        drillSessions,
       );
 
       if (uniqueUserIds.length === 0) return;
@@ -184,6 +185,7 @@ function HallOfFameLeaderboardInner(
     practiceSessions?.length ?? 0,
     practiceLogsIdentity,
     libraryCompletions,
+    drillSessions?.length ?? 0,
   ]);
 
   useEffect(() => {
@@ -195,6 +197,7 @@ function HallOfFameLeaderboardInner(
           practiceSessions || [],
           practiceLogs || [],
           libraryCompletions,
+          drillSessions,
         );
 
         if (uniqueUserIds.length > 0) {
@@ -215,6 +218,7 @@ function HallOfFameLeaderboardInner(
     practiceSessions?.length ?? 0,
     practiceLogsIdentity,
     libraryCompletions,
+    drillSessions?.length ?? 0,
   ]);
 
   useEffect(() => {
@@ -246,6 +250,7 @@ function HallOfFameLeaderboardInner(
           practiceSessions,
           drills,
           practiceLogs || [],
+          drillSessions,
         );
       });
 
@@ -309,6 +314,7 @@ function HallOfFameLeaderboardInner(
           practiceSessions,
           drills,
           practiceLogs || [],
+          drillSessions,
         );
       }
       return { top3: [], all: [], userRank: 0, userValue: 0 };
@@ -332,6 +338,7 @@ function HallOfFameLeaderboardInner(
           drills,
           practiceSessions,
           libraryCompletions,
+          drillSessions,
         );
       default:
         return emptyFour;
@@ -348,6 +355,7 @@ function HallOfFameLeaderboardInner(
     drills,
     practiceLogs,
     libraryCompletions,
+    drillSessions,
   ]);
 
   return (
@@ -444,6 +452,7 @@ function HallOfFameLeaderboardInner(
                       practiceSessions || [],
                       drills || [],
                       practiceLogs || [],
+                      drillSessions,
                     )
                   : currentLeaderboard;
 

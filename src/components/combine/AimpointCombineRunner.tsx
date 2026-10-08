@@ -16,9 +16,11 @@ import {
   SaveStatus,
   ScoreRing,
   ScoringGuide,
+  StatTiles,
   StepDots,
   type TrackItem,
 } from "@/components/combine/PuttingCombineUi";
+import { BreakdownBar, BreakdownCard, EveryShotList, FocusCard, ValueRow } from "@/components/combine/CombineBreakdown";
 
 export type AimpointMark = "33" | "50" | "66";
 export type MarkReading = { guess: number; actual: number };
@@ -63,6 +65,142 @@ function rowPoints(readings: MarkReadings, marks: AimpointMark[]): number {
 }
 
 const signedPct = (n: number) => `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
+
+/** Reads scoring 8+ are within 0.2% of the measured slope. */
+const CLOSE_POINTS = 8;
+
+const MARK_TIPS: Record<AimpointMark, string> = {
+  "33": "Near the ball: stand on the line a third of the way along and feel the slope through your feet before you put a number on it.",
+  "50": "Halfway is where long putts change the most. Take a proper read there rather than guessing from the two ends.",
+  "66": "Near the hole the ball is slow and breaks the most. Take your time with this read instead of rushing to putt.",
+};
+
+type DistanceBand = { label: string; min: number; max: number };
+
+/** Splits distances into bands with roughly equal putt counts, never splitting one distance across two bands. */
+function distanceBands(distances: number[], groups: number): DistanceBand[] {
+  const sorted = [...distances].sort((a, b) => a - b);
+  const unique = [...new Set(sorted)];
+  if (unique.length <= groups) return unique.map((d) => ({ label: `${d} ft`, min: d, max: d }));
+  const bands: DistanceBand[] = [];
+  let start = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    const cut = (sorted.length * (bands.length + 1)) / groups;
+    const last = i === sorted.length - 1;
+    if (last || (i + 1 >= cut && sorted[i + 1] !== sorted[i] && bands.length < groups - 1)) {
+      const min = sorted[start]!;
+      const max = sorted[i]!;
+      bands.push({ label: min === max ? `${min} ft` : `${min}–${max} ft`, min, max });
+      start = i + 1;
+    }
+  }
+  return bands;
+}
+
+/** Everything the AimPoint results screen shows, including the "focus next" tip. */
+function aimpointBreakdown(rows: MarkReadings[], marks: AimpointMark[], distances: number[], maxPerPutt: number) {
+  const reads = rows.flatMap((r, putt) =>
+    marks.flatMap((mark) => {
+      const x = r[mark];
+      if (!x) return [];
+      const err = x.guess - x.actual;
+      return [{ putt, mark, err, pts: pointsForAbsoluteError(Math.abs(err)) }];
+    }),
+  );
+  const n = reads.length;
+  const avgAbsErr = n > 0 ? reads.reduce((s, x) => s + Math.abs(x.err), 0) / n : 0;
+  const close = reads.filter((x) => x.pts >= CLOSE_POINTS).length;
+  const over = reads.filter((x) => x.pts < CLOSE_POINTS && x.err > 0).length;
+  const under = reads.filter((x) => x.pts < CLOSE_POINTS && x.err < 0).length;
+  const off = over + under;
+  const wayOut = reads.filter((x) => x.pts === 0).length;
+
+  const byMark = marks.map((mark) => {
+    const at = reads.filter((x) => x.mark === mark);
+    const k = at.length || 1;
+    return {
+      mark,
+      avg: at.reduce((s, x) => s + x.pts, 0) / k,
+      avgAbsErr: at.reduce((s, x) => s + Math.abs(x.err), 0) / k,
+    };
+  });
+  const rankedMarks = [...byMark].sort((a, b) => a.avg - b.avg);
+  const markSpread = rankedMarks.length > 1 && rankedMarks[0]!.avg < rankedMarks[rankedMarks.length - 1]!.avg;
+  const weakMark = markSpread ? rankedMarks[0]! : null;
+  const bestMark = markSpread ? rankedMarks[rankedMarks.length - 1]! : null;
+
+  const puttPoints = rows.map((r) => rowPoints(r, marks));
+  const bands = distanceBands(distances.slice(0, rows.length), 3).map((b) => {
+    const idx = puttPoints.map((_, i) => i).filter((i) => distances[i]! >= b.min && distances[i]! <= b.max);
+    return { ...b, n: idx.length, avg: idx.reduce((s, i) => s + puttPoints[i]!, 0) / (idx.length || 1) };
+  });
+  const rankedBands = [...bands].sort((a, b) => a.avg - b.avg);
+  const weakBand =
+    rankedBands.length > 1 && rankedBands[0]!.avg < rankedBands[rankedBands.length - 1]!.avg ? rankedBands[0]! : null;
+
+  const track: TrackItem[] = puttPoints.map((pts, i) => ({
+    label: String(pts),
+    tone: pointsTone(pts / maxPerPutt),
+    ariaLabel: `Putt ${i + 1}: ${pts} points`,
+  }));
+
+  let focus: { title: string; lines: string[] };
+  const leanShare = off > 0 ? Math.max(over, under) / off : 0;
+  if (n > 0 && reads.every((x) => x.pts === 10)) {
+    focus = { title: "Perfect reads", lines: ["Every read matched the slope. Try longer or trickier putts next time."] };
+  } else if (off >= 3 && leanShare >= 0.7) {
+    focus =
+      over > under
+        ? {
+            title: "Focus next: reading less slope",
+            lines: [
+              `${over} of your ${off} bigger misses read more slope than was there.`,
+              "Feel the slope through your feet before you look, and go with the smaller number when you're unsure.",
+            ],
+          }
+        : {
+            title: "Focus next: seeing all the slope",
+            lines: [
+              `${under} of your ${off} bigger misses read less slope than was there.`,
+              "Stand still a little longer and feel which foot takes more weight. When you're unsure, go one step higher.",
+            ],
+          };
+    if (weakMark) focus.lines.push(`Your ${weakMark.mark}% read was the weakest at ${weakMark.avg.toFixed(1)} pts a read.`);
+  } else if (weakMark && bestMark) {
+    focus = {
+      title: `Focus next: the ${weakMark.mark}% mark`,
+      lines: [
+        `You averaged ${weakMark.avg.toFixed(1)} pts a read there, against ${bestMark.avg.toFixed(1)} at the ${bestMark.mark}% mark.`,
+        MARK_TIPS[weakMark.mark],
+      ],
+    };
+  } else {
+    focus = {
+      title: "Focus next: tighter reads",
+      lines: [
+        `${close} of your ${n} reads were within 0.2% of the real slope.`,
+        "Get the slope right to the nearest 0.5% first, then fine-tune it.",
+      ],
+    };
+  }
+  if (weakBand) focus.lines.push(`Toughest length: ${weakBand.label}, at ${weakBand.avg.toFixed(1)} pts a putt.`);
+
+  return {
+    reads: n,
+    avgAbsErr,
+    close,
+    over,
+    under,
+    wayOut,
+    byMark,
+    weakMark: weakMark?.mark ?? null,
+    bands,
+    weakBand: weakBand?.label ?? null,
+    puttPoints,
+    track,
+    focus,
+  };
+}
 
 /** Bird's-eye putt with the read marks laid out from ball to hole. */
 function MarksDiagram({ marks, className = "" }: { marks: AimpointMark[]; className?: string }) {
@@ -212,12 +350,8 @@ export function AimpointCombineRunner<R>({ format }: { format: AimpointFormat<R>
   const summary = useMemo(() => {
     if (log.length < total) return null;
     const rows = log.map(format.fromRow);
-    const byMark = marks.map((m) => ({
-      mark: m,
-      avg: rows.reduce((s, r) => s + (r[m] ? pointsForAbsoluteError(Math.abs(r[m]!.guess - r[m]!.actual)) : 0), 0) / rows.length,
-    }));
-    return { ...format.summarize(log), byMark };
-  }, [log, total, format, marks]);
+    return { ...format.summarize(log), ...aimpointBreakdown(rows, marks, distances, maxPerPutt), rows };
+  }, [log, total, format, marks, distances, maxPerPutt]);
 
   if (status === "intro") {
     const markList = marks.map((m) => `${m}%`).join(", ").replace(/, ([^,]*)$/, " and $1");
@@ -276,22 +410,89 @@ export function AimpointCombineRunner<R>({ format }: { format: AimpointFormat<R>
           </p>
         </ResultHero>
 
-        <div className="rounded-2xl border border-gray-100 p-3">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Average points by mark</p>
-          <div className="space-y-2">
+        <StatTiles
+          stats={[
+            { label: "Avg read error", value: `${summary.avgAbsErr.toFixed(2)}%` },
+            { label: "Within 0.2%", value: `${summary.close}/${summary.reads}` },
+            { label: "Over 1% out", value: summary.wayOut },
+          ]}
+        />
+
+        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+
+        <BreakdownCard title="Putt by putt" aside={`Points out of ${maxPerPutt}`}>
+          <ProgressTrack items={summary.track} current={-1} />
+        </BreakdownCard>
+
+        <BreakdownCard title="By mark" aside="Avg points a read">
+          <div className="space-y-3">
             {summary.byMark.map((b) => (
-              <div key={b.mark} className="flex items-center gap-3">
-                <span className="w-10 text-sm font-bold tabular-nums text-gray-700">{b.mark}%</span>
-                <div className="h-3 flex-1 overflow-hidden rounded-full bg-gray-100">
-                  <div className="h-full rounded-full bg-[#014421]" style={{ width: `${(b.avg / 10) * 100}%` }} />
-                </div>
-                <span className="w-12 text-right text-sm font-bold tabular-nums text-gray-900">{b.avg.toFixed(1)}</span>
-              </div>
+              <ValueRow
+                key={b.mark}
+                label={`${b.mark}% mark`}
+                value={b.avg}
+                max={10}
+                display={
+                  <>
+                    {b.avg.toFixed(1)}
+                    <span className="ml-1.5 text-xs font-semibold text-gray-400">±{b.avgAbsErr.toFixed(2)}%</span>
+                  </>
+                }
+                flag={b.mark === summary.weakMark ? "Work on" : null}
+              />
             ))}
           </div>
-        </div>
+        </BreakdownCard>
 
-        {summary.message && <p className="rounded-2xl bg-amber-50 px-3 py-2.5 text-sm text-amber-900">{summary.message}</p>}
+        <BreakdownCard title="Read bias" aside={`Avg ${signedPct(summary.bias)}`}>
+          <BreakdownBar
+            segments={[
+              { label: "Too little slope", value: summary.under, tone: "bg-amber-500" },
+              { label: "Within 0.2%", value: summary.close, tone: "bg-[#014421]" },
+              { label: "Too much slope", value: summary.over, tone: "bg-sky-400" },
+            ]}
+          />
+        </BreakdownCard>
+
+        {summary.bands.length > 1 && (
+          <BreakdownCard title="By distance" aside="Avg points a putt">
+            <div className="space-y-3">
+              {summary.bands.map((b) => (
+                <ValueRow
+                  key={b.label}
+                  label={b.label}
+                  value={b.avg}
+                  max={maxPerPutt}
+                  display={b.avg.toFixed(1)}
+                  flag={b.label === summary.weakBand ? "Work on" : null}
+                />
+              ))}
+            </div>
+          </BreakdownCard>
+        )}
+
+        <EveryShotList title="Every putt">
+          {summary.rows.map((r, i) => {
+            const pts = summary.puttPoints[i]!;
+            return (
+              <li key={i} className="flex items-center gap-3 py-2">
+                <span className="w-9 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">{i + 1}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-800">{distances[i]} ft</span>
+                  <span className="block text-xs text-gray-500">
+                    {marks
+                      .filter((m) => r[m])
+                      .map((m) => `${m}%: read ${r[m]!.guess}, was ${r[m]!.actual}`)
+                      .join(" · ")}
+                  </span>
+                </span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${pointsTone(pts / maxPerPutt)}`}>
+                  {pts}
+                </span>
+              </li>
+            );
+          })}
+        </EveryShotList>
 
         <SaveStatus saved={saved} error={saveError} onRetry={userId ? () => void save(log) : undefined} />
         <PlayAgainButton onClick={startTest} />
