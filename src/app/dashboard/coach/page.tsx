@@ -19,6 +19,21 @@ interface PlayerProfile {
   starting_handicap: number;
 }
 
+function nameKey(name: string | null | undefined): string {
+  return (name || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function playerMeta(player: PlayerProfile): string {
+  const parts = [`${(Number(player.total_xp) || 0).toLocaleString()} XP`];
+  if (player.last_login_date) {
+    const d = new Date(player.last_login_date);
+    if (!Number.isNaN(d.getTime())) {
+      parts.push(`Active ${d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`);
+    }
+  }
+  return parts.join(" · ");
+}
+
 export default function CoachesDashboard() {
   const router = useRouter();
   const { user, loading, profileLoading } = useAuth();
@@ -86,7 +101,12 @@ export default function CoachesDashboard() {
 
   const userEmail = (user?.email || "").toLowerCase().trim();
 
-  console.log("DEBUG: Player Object:", players[0]);
+  const nameCounts = new Map<string, number>();
+  for (const p of players) {
+    const key = nameKey(p.full_name);
+    if (key) nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+  }
+  const duplicateNames = new Set([...nameCounts].filter(([, n]) => n > 1).map(([k]) => k));
 
   return (
     <div className="w-full max-w-md mx-auto min-w-0 flex flex-col bg-gray-50 overflow-x-hidden">
@@ -143,6 +163,14 @@ export default function CoachesDashboard() {
                     {player.email && (
                       <span className="text-sm text-gray-500 truncate min-w-0">
                         {player.email}
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-500 truncate min-w-0">
+                      {playerMeta(player)}
+                    </span>
+                    {duplicateNames.has(nameKey(player.full_name)) && (
+                      <span className="mt-1 w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                        Same name as another account
                       </span>
                     )}
                   </div>

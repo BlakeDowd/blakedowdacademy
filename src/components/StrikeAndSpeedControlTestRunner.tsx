@@ -19,6 +19,7 @@ import {
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
+import { saveCombineProfile } from "@/lib/saveCombineProfile";
 import {
   CombineHero,
   GatePicker,
@@ -96,10 +97,7 @@ async function persistSession(
       ...prev,
       strike_speed_index: matrixAvg,
     };
-    const { error: profileUpdateError } = await supabase
-      .from("profiles")
-      .update({ combine_profile: nextCombine })
-      .eq("id", userId);
+    const profileUpdateError = await saveCombineProfile(supabase, userId, nextCombine);
     if (profileUpdateError) {
       console.warn("[StrikeSpeedControl] profiles update:", profileUpdateError.message);
     }

@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useCombineUser } from "@/hooks/useCombineUser";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
+import { saveCombineProfile } from "@/lib/saveCombineProfile";
 import {
   clampProgressionLevel,
   generateIronSkillsChallenge,
@@ -292,10 +293,7 @@ export default function IronSkillsChallengePage() {
             profileRow?.combine_profile as Record<string, unknown> | null | undefined,
             { current_level: playedLevel + 1 },
           );
-          const { error: upErr } = await supabase
-            .from("profiles")
-            .update({ combine_profile: nextCombine })
-            .eq("id", user.id);
+          const upErr = await saveCombineProfile(supabase, user.id, nextCombine);
           if (upErr) {
             console.warn("[IronSkills] profile update:", upErr.message);
             setSubmitError(

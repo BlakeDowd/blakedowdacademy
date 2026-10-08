@@ -18,6 +18,7 @@ import { meanAbsDistanceCm } from "@/lib/strikeAndSpeedControlScoring";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
+import { saveCombineProfile } from "@/lib/saveCombineProfile";
 import {
   CombineHero,
   GatePicker,
@@ -103,10 +104,7 @@ async function persistSession(
       start_line_speed_index: matrixAvg,
       start_line_gate_success_rate: gateSuccessPct,
     };
-    const { error: profileUpdateError } = await supabase
-      .from("profiles")
-      .update({ combine_profile: nextCombine })
-      .eq("id", userId);
+    const profileUpdateError = await saveCombineProfile(supabase, userId, nextCombine);
     if (profileUpdateError) {
       console.warn("[StartLineSpeedControl] profiles update:", profileUpdateError.message);
     }

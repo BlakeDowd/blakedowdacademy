@@ -39,6 +39,7 @@ import type { AcademyTrophyDbRow } from "@/components/AcademyTrophyCasePanel";
 import { AdvancedApproachStatsPanel } from "@/components/stats/AdvancedApproachStatsPanel";
 import { CoachDeepDiveProfilePanels } from "@/components/coach/CoachDeepDiveProfilePanels";
 import { TestPlayerButton } from "@/components/coaching/TestPlayerButton";
+import { PlayerEmail } from "@/components/coaching/PlayerEmail";
 import { CoachDeepDiveRoundTrendCharts } from "@/components/coach/CoachDeepDiveRoundTrendCharts";
 import { PracticeVsGoalsSection } from "@/components/stats/PracticeVsGoalsSection";
 import type { PracticeVsGoalsRow } from "@/lib/practiceVsGoalsModel";
@@ -619,6 +620,9 @@ export default function PlayerDeepDivePage() {
           {playerName || "Player"}
         </h1>
         <p className="text-xs text-white/80 font-medium">Coach deep dive · Player profile & performance</p>
+        <div className="mt-2 w-fit max-w-full rounded-xl bg-white px-3 py-1.5 empty:hidden">
+          <PlayerEmail key={playerId} playerId={playerId} playerName={playerName || "Player"} />
+        </div>
         <TestPlayerButton playerId={playerId} playerName={playerName || "Player"} className="mt-3" />
         <div className="flex flex-col gap-3 w-full max-w-sm mt-3">
           <div className="flex flex-wrap items-center gap-2 text-xs">

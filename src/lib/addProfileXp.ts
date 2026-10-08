@@ -20,6 +20,25 @@ export async function addProfileXp(userId: string, delta: number): Promise<void>
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
 
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.user?.id && session.user.id !== userId) {
+      // Coach saving a test for a player: RLS only lets players update their own profile.
+      const { error: rpcError } = await supabase.rpc("coach_award_player_xp", {
+        p_player: userId,
+        p_delta: Math.round(delta),
+      });
+      if (rpcError) {
+        console.error("addProfileXp: coach XP award failed:", rpcError);
+        return;
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("xpUpdated"));
+      }
+      return;
+    }
+
     const { data: currentProfile, error: fetchError } = await supabase
       .from("profiles")
       .select("total_xp")

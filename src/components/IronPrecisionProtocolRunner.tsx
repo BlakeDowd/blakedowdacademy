@@ -23,6 +23,7 @@ import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { refreshAuthSessionIfPossible } from "@/lib/supabasePersistSession";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
+import { saveCombineProfile } from "@/lib/saveCombineProfile";
 
 const FINGER_OPTIONS: IronFingerMiss[] = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
 
@@ -130,10 +131,7 @@ async function persistSession(
         iron_precision_protocol_last_wall_pct: safeWall,
         iron_precision_protocol_last_zero_point_pct: safeZero,
       };
-      const { error: profileUpdateError } = await supabase
-        .from("profiles")
-        .update({ combine_profile: nextCombine })
-        .eq("id", userId);
+      const profileUpdateError = await saveCombineProfile(supabase, userId, nextCombine);
       if (profileUpdateError) {
         console.warn("[IronPrecision] profiles update:", profileUpdateError.message);
       }

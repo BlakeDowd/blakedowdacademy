@@ -17,6 +17,7 @@ import { AssignedOverview, AssignmentsPanel } from "@/components/coaching/Coachi
 import { NewSpaceSheet, PendingInviteBanner } from "@/components/coaching/CoachingInvites";
 import { PlayerEmail } from "@/components/coaching/PlayerEmail";
 import { TestPlayerButton } from "@/components/coaching/TestPlayerButton";
+import { PlayerCombineScores } from "@/components/coaching/PlayerCombineScores";
 import { CoachingFamilies } from "@/components/coaching/CoachingFamilies";
 
 type View = "spaces" | "feed" | "activity" | "assigned" | "usage" | "families";
@@ -202,6 +203,7 @@ export default function CoachingTab({
           </div>
         </div>
         {!pending?.pending && <TestPlayerButton playerId={open.id} playerName={open.name} className="w-full" />}
+        {!pending?.pending && <PlayerCombineScores key={`scores-${open.id}`} playerId={open.id} playerName={open.name} />}
         {pending?.pending && (
           <PendingInviteBanner
             spaceId={pending.id}
