@@ -113,7 +113,7 @@ function avg(xs: number[]): number {
 
 function shotLine(s: ChipShot): string {
   const where = s.finish === "holed" ? "Holed" : `${fmtMetres(s.metres)} ${FINISH_LABEL[s.finish].toLowerCase()}`;
-  return `${where} Â· ${STRIKE_LABEL[s.strike]}`;
+  return `${where} · ${STRIKE_LABEL[s.strike]}`;
 }
 
 /** Everything the results screen shows, including the "focus next" tip. */
@@ -369,7 +369,7 @@ export function LowChipCombineRunner() {
             <CombinePerformanceGradeBadge gradeId={grade.id} label={grade.label} />
           </div>
           <p className="mt-2 text-xs text-white/70">
-            {holed} holed Â· higher is better
+            {holed} holed · higher is better
           </p>
         </ResultHero>
 
@@ -404,7 +404,7 @@ export function LowChipCombineRunner() {
                 label={`${s.station} m`}
                 value={s.avgPoints}
                 max={10}
-                display={`${fmtPts(s.avgPoints)} pts Â· ${fmtMetres(s.avgMiss)} away`}
+                display={`${fmtPts(s.avgPoints)} pts · ${fmtMetres(s.avgMiss)} away`}
                 flag={s.station === summary.leakStation ? "Biggest leak" : null}
               />
             ))}
@@ -437,7 +437,7 @@ export function LowChipCombineRunner() {
             {summary.strikeAvg
               .filter((s) => s.n > 0)
               .map((s) => `${STRIKE_LABEL[s.key]} ${fmtPts(s.avg)}`)
-              .join(" Â· ")}
+              .join(" · ")}
           </p>
         </BreakdownCard>
 

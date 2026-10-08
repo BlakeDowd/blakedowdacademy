@@ -2,7 +2,7 @@ import { formatDrillScore, summarizeDrillProgress, type DrillScoreLog } from "@/
 import { getTieredGoalItems, tierLineDisplayBody } from "@/lib/parseTieredGoal";
 
 /** How a drill is scored. Decides the input on the card and which way counts as beating your best. */
-export type DrillScoreType = "streak" | "makes" | "count" | "strokes" | "time" | "completion";
+export type DrillScoreType = "streak" | "makes" | "count" | "strokes" | "time" | "speed" | "completion";
 
 export type DrillScoring = {
   type: DrillScoreType;
@@ -12,6 +12,8 @@ export type DrillScoring = {
   max: number | null;
   /** "coach" when set in the drill catalog's Score Type column, otherwise the app's guess. */
   source: "coach" | "guess";
+  /** Coach turned on the drill timer (saved as a `+timer` suffix on the score type). */
+  timer: boolean;
 };
 
 export const DRILL_SCORE_TYPE_LABELS: Record<DrillScoreType, string> = {
@@ -20,6 +22,7 @@ export const DRILL_SCORE_TYPE_LABELS: Record<DrillScoreType, string> = {
   count: "Count",
   strokes: "Lower is better",
   time: "Fastest time",
+  speed: "Top speed",
   completion: "Sessions",
 };
 
@@ -29,14 +32,24 @@ const LOWER_IS_BETTER: Record<DrillScoreType, boolean> = {
   count: false,
   strokes: true,
   time: true,
+  speed: false,
   completion: false,
 };
 
 const DEFAULT_MAKES_OUT_OF = 10;
 
 function scoring(type: DrillScoreType, unit: string, source: DrillScoring["source"], max: number | null = null): DrillScoring {
-  return { type, unit: type === "makes" ? `/${max ?? DEFAULT_MAKES_OUT_OF}` : unit, lowerIsBetter: LOWER_IS_BETTER[type], max, source };
+  return {
+    type,
+    unit: type === "makes" ? `/${max ?? DEFAULT_MAKES_OUT_OF}` : unit,
+    lowerIsBetter: LOWER_IS_BETTER[type],
+    max,
+    source,
+    timer: false,
+  };
 }
+
+const TIMER_SUFFIX = /\s*\+\s*timer\s*$/i;
 
 const OVERRIDE_TYPES: Record<string, DrillScoreType> = {
   streak: "streak",
@@ -50,6 +63,8 @@ const OVERRIDE_TYPES: Record<string, DrillScoreType> = {
   putts: "strokes",
   time: "time",
   seconds: "time",
+  speed: "speed",
+  mph: "speed",
   completion: "completion",
   done: "completion",
 };
@@ -60,31 +75,38 @@ const DEFAULT_UNITS: Record<DrillScoreType, string> = {
   count: "",
   strokes: "strokes",
   time: "sec",
+  speed: "mph",
   completion: "",
 };
 
 /**
  * Reads the catalog's Score Type column: `streak`, `makes/10`, `count: chip ins`, `strokes: putts`,
- * `time: sec` or `completion`.
+ * `time: sec`, `speed: mph` or `completion`. Any of them can end in `+timer` to show the drill timer.
  */
 export function parseScoreTypeOverride(text: string | null | undefined): DrillScoring | null {
-  const m = String(text ?? "")
-    .trim()
+  const raw = String(text ?? "").trim();
+  const timer = TIMER_SUFFIX.test(raw);
+  const m = raw
+    .replace(TIMER_SUFFIX, "")
     .toLowerCase()
     .match(/^([a-z ]+?)\s*(?:\/\s*(\d+))?\s*(?::\s*(.+))?$/);
   if (!m) return null;
   const type = OVERRIDE_TYPES[m[1].trim()];
   if (!type) return null;
   const max = type === "makes" ? Math.max(1, Number(m[2] ?? DEFAULT_MAKES_OUT_OF)) : null;
-  return scoring(type, (m[3] ?? "").trim().slice(0, 24) || DEFAULT_UNITS[type], "coach", max);
+  return { ...scoring(type, (m[3] ?? "").trim().slice(0, 24) || DEFAULT_UNITS[type], "coach", max), timer };
 }
 
-/** The saved form of a scoring method, readable by `parseScoreTypeOverride`. */
-export function scoreTypeText(s: Pick<DrillScoring, "type" | "unit" | "max">): string {
+function baseScoreTypeText(s: Pick<DrillScoring, "type" | "unit" | "max">): string {
   if (s.type === "makes") return `makes/${s.max ?? DEFAULT_MAKES_OUT_OF}`;
   if (s.type === "streak" || s.type === "completion") return s.type;
   const unit = s.unit.trim().slice(0, 24) || DEFAULT_UNITS[s.type];
   return unit ? `${s.type}: ${unit}` : s.type;
+}
+
+/** The saved form of a scoring method, readable by `parseScoreTypeOverride`. */
+export function scoreTypeText(s: Pick<DrillScoring, "type" | "unit" | "max"> & { timer?: boolean }): string {
+  return s.timer ? `${baseScoreTypeText(s)} +timer` : baseScoreTypeText(s);
 }
 
 /** Plain-English description, e.g. "Out of 10" or "Lower is better (putts)". */
@@ -100,6 +122,8 @@ export function describeScoring(s: DrillScoring): string {
       return `Lower is better (${s.unit || "strokes"})`;
     case "time":
       return `Fastest time (${s.unit || "sec"})`;
+    case "speed":
+      return `Top speed (${s.unit || "mph"})`;
     case "completion":
       return "Just done, no score";
   }
@@ -108,6 +132,8 @@ export function describeScoring(s: DrillScoring): string {
 function guessFromGoalText(text: string): DrillScoring | null {
   const t = text.trim().toLowerCase();
   if (!t) return null;
+  const speed = t.match(/\b(mph|km\/h|kph)\b/);
+  if (speed) return scoring("speed", speed[1] === "mph" ? "mph" : "km/h", "guess");
   if (/in a row|consecutive|straight/.test(t)) return scoring("streak", "in a row", "guess");
   const outOf = t.match(/(\d+)\s*(?:\/|out of)\s*(\d+)/);
   if (outOf) return scoring("makes", "", "guess", Number(outOf[2]));
@@ -122,7 +148,11 @@ function guessFromGoalText(text: string): DrillScoring | null {
 
 function guessFromDrill(focus: string, title: string): DrillScoring {
   const f = focus.toLowerCase();
-  if (/consecutive|in a row/.test(title.toLowerCase())) return scoring("streak", "in a row", "guess");
+  const t = title.toLowerCase();
+  if (/speed training|swing speed|club ?head speed|ball speed|over ?speed|speed sticks?/.test(t)) {
+    return scoring("speed", "mph", "guess");
+  }
+  if (/consecutive|in a row/.test(t)) return scoring("streak", "in a row", "guess");
   if (/make %|make%/.test(f)) return scoring("streak", "in a row", "guess");
   if (/total putts/.test(f)) return scoring("strokes", "putts", "guess");
   if (/gross score|score/.test(f)) return scoring("strokes", "strokes", "guess");

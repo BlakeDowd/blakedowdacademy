@@ -140,7 +140,7 @@ function ScoreInput({
     );
   }
 
-  const stepper = scoring.type !== "time";
+  const stepper = scoring.type !== "time" && scoring.type !== "speed";
   const nudge = (delta: number) => {
     const base = value ?? (target != null ? target - delta : 0);
     setDraft(String(Math.max(0, base + delta)));
@@ -193,6 +193,7 @@ const FIELD_LABEL = "mb-1 text-[10px] font-semibold uppercase tracking-wide text
 function scoreFieldLabel(s: DrillScoring): string {
   if (s.type === "streak") return "Consecutive";
   if (s.type === "time") return "Time";
+  if (s.type === "speed") return "Top speed";
   if ((s.type === "strokes" || s.type === "count") && s.unit) return s.unit;
   return "Score";
 }
@@ -232,16 +233,17 @@ export default function DrillProgressTracker({
   const lowerIsBetter = scoring.lowerIsBetter;
   const isCompletion = scoring.type === "completion";
   const isMakes = scoring.type === "makes" && scoring.max != null && scoring.max <= MAX_SCORE_CHIPS;
+  const attemptsLabel = scoring.type === "speed" ? "Swings" : "Attempts";
   const attemptsField = (
     <label className="w-20 shrink-0">
-      <span className={`block ${FIELD_LABEL}`}>Attempts</span>
+      <span className={`block ${FIELD_LABEL}`}>{attemptsLabel}</span>
       <input
         type="text"
         inputMode="numeric"
         value={repsDraft}
         onChange={(e) => setRepsDraft(e.target.value)}
         placeholder={repsSummary ? String(repsSummary.last) : "Optional"}
-        aria-label="Attempts (optional)"
+        aria-label={`${attemptsLabel} (optional)`}
         className="w-full rounded-lg border border-gray-200 bg-white py-2 text-center text-sm font-semibold tabular-nums text-gray-900 placeholder:text-xs placeholder:font-normal placeholder:text-gray-300 focus:border-[#014421] focus:outline-none focus:ring-1 focus:ring-[#014421]/30"
       />
     </label>
@@ -377,7 +379,7 @@ export default function DrillProgressTracker({
 
       {!loading && repsSummary && (
         <p className="text-[11px] text-gray-500">
-          Attempts: <span className="font-semibold text-gray-900 tabular-nums">{repsSummary.last}</span> last time
+          {attemptsLabel}: <span className="font-semibold text-gray-900 tabular-nums">{repsSummary.last}</span> last time
           {repsSummary.sessions > 1 && (
             <>
               {" · "}

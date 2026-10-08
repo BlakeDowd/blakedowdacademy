@@ -7,6 +7,7 @@ import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 import { keepElementInView } from "@/hooks/useKeepInView";
 import { SHOW_PDFS } from "@/lib/drillResources";
 import DrillScoringPicker from "@/components/DrillScoringPicker";
+import { DrillGuide, DrillHero, DrillSteps } from "@/components/drills/DrillIntro";
 import { stableDrillKey } from "@/lib/drillPersonalBests";
 import { resolveDrillScoring } from "@/lib/drillScoring";
 import { drillScoringOverride, useDrillScoringOverrides } from "@/lib/drillScoringOverrides";
@@ -181,63 +182,66 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col"
+        className="bg-white rounded-3xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">{drill.drill_name ?? drill.title ?? "Untitled"}</h3>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5 text-gray-600" />
-          </button>
-        </div>
-        <div className="p-4 overflow-y-auto flex-1">
-          <div className="text-sm text-gray-700 whitespace-pre-wrap">
-            {(drill.description && String(drill.description).trim()) ||
-              (() => {
-                const parts: string[] = [];
-                if (drill.focus?.trim()) parts.push(`Focus: ${drill.focus.trim()}`);
-                if (drill.goal?.trim()) parts.push(`Goal: ${drill.goal.trim()}`);
-                return parts.length
-                  ? parts.join(" · ")
-                  : "No description available.";
-              })()}
-          </div>
-          {drill.goal && drill.description?.trim() && (
-            <p className="mt-3 text-sm text-gray-600">
-              <span className="font-medium">Goal:</span> {drill.goal}
-            </p>
+        <div className="flex-1 space-y-3 overflow-y-auto p-3">
+          <DrillHero
+            title={drill.drill_name ?? drill.title ?? "Untitled"}
+            kicker={`${drill.category} drill`}
+            chips={[
+              `${drill.estimatedMinutes} min`,
+              ...(drill.xpValue ? [`${drill.xpValue} XP`] : []),
+              ...(drill.focus?.trim() ? [drill.focus.trim()] : []),
+            ]}
+            category={drill.category}
+            action={
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full bg-white/15 p-1.5 text-white transition-colors hover:bg-white/25"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            }
+          />
+
+          {drill.description?.trim() ? (
+            <DrillSteps description={drill.description} />
+          ) : (
+            <p className="rounded-2xl bg-gray-50 p-3 text-sm text-gray-500">No description available.</p>
           )}
-          <p className="mt-1 text-sm text-gray-500">
-            ~{drill.estimatedMinutes} min · {drill.category}
-          </p>
+
+          {drill.goal?.trim() && (
+            <DrillGuide title="Goal" defaultOpen>
+              {drill.goal}
+            </DrillGuide>
+          )}
           <DrillScoringRow drill={drill} />
 
           {(((SHOW_PDFS && drill.pdf_url) || drill.video_url || (drill as any).youtube_url)) && (
-            <div className="mt-4 flex flex-wrap gap-3">
-              {SHOW_PDFS && drill.pdf_url && (
-                <a
-                  href={drill.pdf_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-sm font-medium text-[#054d2b] hover:underline"
-                >
-                  <FileText className="w-4 h-4" />
-                  View PDF
-                </a>
-              )}
+            <div className="flex flex-wrap gap-2">
               {(drill.video_url || (drill as any).youtube_url) && (
                 <a
                   href={drill.video_url || (drill as any).youtube_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-sm font-medium text-[#054d2b] hover:underline"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50"
                 >
-                  <Youtube className="w-4 h-4" />
-                  Watch Video
+                  <Youtube className="h-5 w-5 text-red-600" />
+                  Watch video
+                </a>
+              )}
+              {SHOW_PDFS && drill.pdf_url && (
+                <a
+                  href={drill.pdf_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50"
+                >
+                  <FileText className="h-5 w-5" />
+                  View PDF
                 </a>
               )}
             </div>
@@ -265,7 +269,7 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
           {!showDayPicker ? (
             <button
               onClick={() => setShowDayPicker(true)}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold text-white transition-colors"
+              className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl text-base font-bold text-white shadow-md transition-colors"
               style={{ backgroundColor: "#014421" }}
             >
               <UserPlus className="w-5 h-5" />
