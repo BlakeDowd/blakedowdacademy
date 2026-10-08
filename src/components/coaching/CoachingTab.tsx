@@ -17,8 +17,9 @@ import { AssignedOverview, AssignmentsPanel } from "@/components/coaching/Coachi
 import { NewSpaceSheet, PendingInviteBanner } from "@/components/coaching/CoachingInvites";
 import { PlayerEmail } from "@/components/coaching/PlayerEmail";
 import { TestPlayerButton } from "@/components/coaching/TestPlayerButton";
+import { CoachingFamilies } from "@/components/coaching/CoachingFamilies";
 
-type View = "spaces" | "feed" | "activity" | "assigned" | "usage";
+type View = "spaces" | "feed" | "activity" | "assigned" | "usage" | "families";
 
 const OPEN_SPACE_KEY = "coaching:open-space";
 
@@ -50,14 +51,17 @@ function SubTabs({
   onChange: (v: View) => void;
 }) {
   return (
-    <nav className="flex gap-6 border-b border-stone-200 px-1" aria-label="Coaching sections">
+    <nav
+      className={`flex border-b border-stone-200 px-1 ${tabs.length > 4 ? "justify-between gap-2" : "gap-6"}`}
+      aria-label="Coaching sections"
+    >
       {tabs.map((t) => (
         <button
           key={t.id}
           type="button"
           onClick={() => onChange(t.id)}
           aria-current={value === t.id ? "page" : undefined}
-          className={`-mb-px flex items-center gap-1.5 border-b-2 pb-2.5 pt-1 text-sm font-semibold transition ${
+          className={`-mb-px flex items-center gap-1.5 whitespace-nowrap border-b-2 pb-2.5 pt-1 text-sm font-semibold transition ${
             value === t.id ? "border-[#014421] text-[#014421]" : "border-transparent text-stone-500 hover:text-stone-800"
           }`}
         >
@@ -243,6 +247,7 @@ export default function CoachingTab({
           { id: "activity", label: "Activity", badge: unreadCount },
           { id: "assigned", label: "Assigned" },
           { id: "usage", label: "Usage" },
+          { id: "families", label: "Families" },
         ]}
         value={view}
         onChange={(v) => {
@@ -271,6 +276,12 @@ export default function CoachingTab({
         <AssignedOverview viewerId={user.id} spaces={spaces} onOpenSpace={openSpace} />
       ) : view === "usage" ? (
         <CoachingUsage viewerId={user.id} spaces={spaces} onOpenSpace={openSpace} />
+      ) : view === "families" ? (
+        <CoachingFamilies
+          coachName={viewerName}
+          onOpenSpace={openSpace}
+          onChanged={() => void loadSpaces()}
+        />
       ) : (
         <CoachingActivity
           viewerId={user.id}

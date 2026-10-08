@@ -9,6 +9,7 @@ import {
   Loader2,
   MessageSquareText,
   MoreHorizontal,
+  PenLine,
   Play,
   Target,
   Trash2,
@@ -28,6 +29,11 @@ import {
 } from "@/lib/coachingFeed";
 import { Avatar, timeAgo } from "@/components/coaching/coachingUi";
 import { ReplyComposer, type ToastState } from "@/components/coaching/CoachingComposer";
+import {
+  CoachingVideoAnalyzer,
+  useHasVideoAnnotations,
+  videoAnnotationKey,
+} from "@/components/coaching/CoachingVideoAnalyzer";
 
 export function postAuthorName(post: CoachingPost, names: Map<string, string>, studentName: string): string {
   if (!isCoachPost(post)) return studentName;
@@ -42,12 +48,55 @@ export function PostVideo({
   video,
   compact,
   createdAt,
+  studentId,
 }: {
   video: CoachingPostVideo;
   compact?: boolean;
   createdAt?: string;
+  studentId?: string | null;
+}) {
+  const [analyzing, setAnalyzing] = useState(false);
+  const [drawingsVersion, setDrawingsVersion] = useState(0);
+  const hasDrawings = useHasVideoAnnotations(videoAnnotationKey(video), drawingsVersion);
+  return (
+    <div className="relative">
+      <PostVideoPlayer video={video} compact={compact} createdAt={createdAt} paused={analyzing} />
+      <button
+        type="button"
+        onClick={() => setAnalyzing(true)}
+        className={`absolute left-2 top-2 z-10 inline-flex items-center gap-1 rounded-full font-bold text-white shadow ${
+          hasDrawings ? "bg-[#FFA500]/95 text-[#3d2600]" : "bg-black/60"
+        } ${compact ? "p-1.5" : "px-2.5 py-1 text-[11px]"}`}
+        aria-label={hasDrawings ? "Open coach drawings" : "Analyse swing"}
+      >
+        <PenLine className="h-3.5 w-3.5" aria-hidden />
+        {!compact && (hasDrawings ? "Coach drawings" : "Analyse")}
+      </button>
+      {analyzing && (
+        <CoachingVideoAnalyzer
+          video={video}
+          studentId={studentId}
+          onClose={() => setAnalyzing(false)}
+          onSaved={() => setDrawingsVersion((n) => n + 1)}
+        />
+      )}
+    </div>
+  );
+}
+
+function PostVideoPlayer({
+  video,
+  compact,
+  createdAt,
+  paused,
+}: {
+  video: CoachingPostVideo;
+  compact?: boolean;
+  createdAt?: string;
+  paused?: boolean;
 }) {
   const [playing, setPlaying] = useState(false);
+  if (paused && playing) setPlaying(false);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [thumbFailed, setThumbFailed] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -158,23 +207,25 @@ export function PostVideos({
   videos,
   compact,
   createdAt,
+  studentId,
 }: {
   videos: CoachingPostVideo[];
   compact?: boolean;
   createdAt?: string;
+  studentId?: string | null;
 }) {
   const [index, setIndex] = useState(0);
   const trackRef = useRef<HTMLDivElement | null>(null);
 
   if (!videos.length) return null;
-  if (videos.length === 1) return <PostVideo video={videos[0]!} compact={compact} createdAt={createdAt} />;
+  if (videos.length === 1) return <PostVideo video={videos[0]!} compact={compact} createdAt={createdAt} studentId={studentId} />;
 
   if (compact) {
     return (
       <div className="flex gap-2 overflow-x-auto pb-1">
         {videos.map((v, i) => (
           <div key={`${v.bunny_video_id ?? v.storage_path}-${i}`} className="shrink-0">
-            <PostVideo video={v} compact createdAt={createdAt} />
+            <PostVideo video={v} compact createdAt={createdAt} studentId={studentId} />
           </div>
         ))}
       </div>
@@ -200,7 +251,7 @@ export function PostVideos({
       >
         {videos.map((v, i) => (
           <div key={`${v.bunny_video_id ?? v.storage_path}-${i}`} className="w-full shrink-0 snap-center">
-            <PostVideo video={v} createdAt={createdAt} />
+            <PostVideo video={v} createdAt={createdAt} studentId={studentId} />
           </div>
         ))}
       </div>
@@ -483,7 +534,7 @@ export function Reply({
           )}
           {replyVideos.length > 0 && (
             <div className="mt-2">
-              <PostVideos videos={replyVideos} compact createdAt={reply.created_at} />
+              <PostVideos videos={replyVideos} compact createdAt={reply.created_at} studentId={reply.student_id} />
             </div>
           )}
           {(reply.key_issues || reply.contact_info || reply.directional_misses) && (
@@ -579,7 +630,7 @@ export function CoachingPostCard({
       )}
       {videos.length > 0 && (
         <div className={post.image_path ? "mt-1" : "mt-3"}>
-          <PostVideos videos={videos} createdAt={post.created_at} />
+          <PostVideos videos={videos} createdAt={post.created_at} studentId={post.student_id} />
         </div>
       )}
 

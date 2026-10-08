@@ -6,6 +6,7 @@ import { CombineForParamSync } from "@/hooks/useCombineUser";
 import ConditionalNavbar from "./ConditionalNavbar";
 import ScreenTracker from "./ScreenTracker";
 import { CoachTestingBanner } from "./combine/CoachTestingBanner";
+import { FamilySwitcher } from "./family/FamilySwitcher";
 
 export default function AppFrame({
   children,
@@ -28,6 +29,7 @@ export default function AppFrame({
           <CombineForParamSync />
         </Suspense>
         <CoachTestingBanner />
+        <FamilySwitcher />
         <main
           className="app-frame-main flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-clip pb-36"
           style={{ overflowX: "clip" }}
