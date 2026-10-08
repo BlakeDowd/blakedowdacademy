@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import { survival20Config } from "@/lib/survival20Config";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
@@ -75,7 +75,7 @@ async function persistSurvivalSession(userId: string, streakShots: number): Prom
 }
 
 export function Survival20Runner() {
-  const { user } = useAuth();
+  const user = useCombineUser();
   const [phase, setPhase] = useState<"intro" | "playing" | "ended">("intro");
   const [bufferM, setBufferM] = useState<number>(survival20Config.initialBufferM);
   const [streak, setStreak] = useState(0);

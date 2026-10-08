@@ -2,7 +2,7 @@ import { distanceWeightForTargetFt } from "@/lib/strikeAndSpeedControlScoring";
 import type { StartLineGate } from "@/lib/startLineAndSpeedControlTestConfig";
 
 /** Fixed putt score when the ball hits the gate (fail grade). */
-export const HIT_GATE_PRECISION_SCORE = 0;
+export const HIT_GATE_PRECISION_SCORE = 100;
 
 function isGateHit(gate: StartLineGate): boolean {
   return gate === "hit_gate" || gate === "hit_gate_left" || gate === "hit_gate_right";

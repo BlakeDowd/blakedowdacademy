@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import {
   averagePointsPerShot,
   dominantDirectionalBiasWarning,
@@ -58,10 +58,6 @@ async function persistSession(
     if (!session?.user?.id) {
       return "Your sign-in session expired. Please sign in again, then tap “Retry save” below.";
     }
-    if (session.user.id !== userId) {
-      return "You must be signed in as the player who completed this session to save it.";
-    }
-
     const strike_payload = shots.map(({ shot, club, direction, fingers, strike, contact, points }) => ({
       shot,
       club,
@@ -156,7 +152,7 @@ async function persistSession(
 }
 
 export function IronPrecisionProtocolRunner() {
-  const { user } = useAuth();
+  const user = useCombineUser();
   const [status, setStatus] = useState<"intro" | "active" | "complete">("intro");
   const [shotIndex, setShotIndex] = useState(0);
   const [direction, setDirection] = useState<IronMissDirection>("straight");

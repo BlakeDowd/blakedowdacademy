@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useMemo, useRef, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import { teeShotDispersionCombineConfig } from "@/lib/teeShotDispersionCombineConfig";
 import {
   type FaceCol,
@@ -83,7 +83,7 @@ async function persistSession(
 }
 
 export function TeeShotDispersionCombineRunner() {
-  const { user } = useAuth();
+  const user = useCombineUser();
   const [status, setStatus] = useState<"intro" | "active" | "complete">("intro");
   const [shotIndex, setShotIndex] = useState(0);
   const [carryInput, setCarryInput] = useState("");

@@ -17,13 +17,8 @@ import { puttingTest9Config } from "@/lib/puttingTest9Config";
 import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
 import { puttingTest8To20Config } from "@/lib/puttingTest8To20Config";
 import { puttingTest20To40Config } from "@/lib/puttingTest20To40Config";
-import { gauntletPrecisionProtocolConfig } from "@/lib/gauntletPrecisionProtocolConfig";
 import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
-import {
-  buildGauntletBlackLabelLeaderboard,
-  computeBestGauntletSessionForUser,
-} from "@/lib/gauntletLeaderboard";
 import {
   buildAcademyCombinesLeaderboard,
   isLeaderboardDrivenCombineId,
@@ -1309,7 +1304,6 @@ function formatLeaderboardValue(
     | "puttingTest3To6ft"
     | "puttingTest8To20"
     | "puttingTest20To40"
-    | "gauntletBlackLabel"
     | "rounds"
     | "drills"
     | "lowGross"
@@ -1348,10 +1342,6 @@ function formatLeaderboardValue(
       return `${Math.round(value)} Test Pts`;
     case "puttingTest20To40":
       return `${Math.round(value)} Test Pts`;
-    case "gauntletBlackLabel": {
-      const n = Math.round(value);
-      return `${n} Perfect Putt${n === 1 ? "" : "s"}`;
-    }
     case "rounds":
       return `${value} Round${value !== 1 ? "s" : ""}`;
     case "drills":
@@ -1394,7 +1384,6 @@ function getLeaderboardData(
     | "puttingTest3To6ft"
     | "puttingTest8To20"
     | "puttingTest20To40"
-    | "gauntletBlackLabel"
     | "rounds"
     | "drills"
     | "lowGross"
@@ -1906,64 +1895,6 @@ function getLeaderboardData(
 
     const userEntryInRanks = withPinned.find((entry) => entry.isCurrentUser);
     const finalUserValue = userEntryInRanks?.value ?? 0;
-    const withRanks = withPinned.map((entry, index) => ({
-      ...entry,
-      rank: index + 1,
-      rankChange: 0,
-      movedUp: false,
-      movedDown: false,
-      previousRank: undefined,
-      lowRound: undefined,
-      lowNett: undefined,
-      birdieCount: 0,
-      eagleCount: 0,
-    }));
-
-    return {
-      top3: withRanks.slice(0, 3),
-      all: withRanks,
-      userRank: userEntryInRanks
-        ? withRanks.findIndex((entry) => entry.isCurrentUser) + 1
-        : 0,
-      userValue: finalUserValue,
-    };
-  }
-
-  if (metric === "gauntletBlackLabel") {
-    const built = buildGauntletBlackLabelLeaderboard(
-      practiceLogs,
-      timeFilter,
-      userProfiles,
-      user?.id,
-    );
-    let meBest = 0;
-    if (user?.id) {
-      const st = computeBestGauntletSessionForUser(
-        practiceLogs,
-        user.id,
-        timeFilter,
-      );
-      meBest = st?.perfect ?? 0;
-    }
-    const withPinned = ensureCurrentUserOnLeaderboard(
-      built.all,
-      user,
-      userProfiles,
-      meBest,
-    );
-    withPinned.sort((a, b) => b.value - a.value);
-
-    if (withPinned.length === 0) {
-      return {
-        top3: [],
-        all: [],
-        userRank: 0,
-        userValue: 0,
-      };
-    }
-
-    const userEntryInRanks = withPinned.find((entry) => entry.isCurrentUser);
-    const finalUserValue = userEntryInRanks?.value ?? meBest;
     const withRanks = withPinned.map((entry, index) => ({
       ...entry,
       rank: index + 1,

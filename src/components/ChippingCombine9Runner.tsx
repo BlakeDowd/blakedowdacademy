@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { CombinePerformanceGradeBadge } from "@/components/CombinePerformanceGradeBadge";
 import { performanceGradeFromSessionTotal } from "@/lib/combinePerformanceGrade";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import { chippingCombine9Config } from "@/lib/chippingCombine9Config";
 import {
   type ChipResultLabel,
@@ -127,7 +127,7 @@ const CHIP_OPTIONS: { label: ChipResultLabel; hint: string }[] = [
 type Phase = "chip" | "putt" | "audit-quadrant" | "audit-primary";
 
 export function ChippingCombine9Runner() {
-  const { user } = useAuth();
+  const user = useCombineUser();
   const [status, setStatus] = useState<"intro" | "active" | "complete">("intro");
   const [distancesM, setDistancesM] = useState<number[]>([]);
   const [holeIndex, setHoleIndex] = useState(0);

@@ -2,7 +2,6 @@ import type { CombineHighlightDefinition } from "@/lib/combinePageLeaderboard";
 import { aimpoint6ftCombineConfig } from "@/lib/aimpoint6ftCombineConfig";
 import { aimpointLongRange2040Config } from "@/lib/aimpointLongRange2040Config";
 import { chippingCombine9Config } from "@/lib/chippingCombine9Config";
-import { gauntletPrecisionProtocolConfig } from "@/lib/gauntletPrecisionProtocolConfig";
 import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
 import { midRangeSlopeSensingConfig } from "@/lib/midRangeSlopeSensingConfig";
 import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
@@ -98,14 +97,6 @@ export const combineHighlightPutting2040: CombineHighlightDefinition = {
   lastHoleIndex: puttingTest20To40Config.holeCount - 1,
   higherIsBetter: true,
   improvementUnit: "points",
-};
-
-export const combineHighlightGauntlet: CombineHighlightDefinition = {
-  kind: "practice_logs",
-  logType: gauntletPrecisionProtocolConfig.practiceLogType,
-  higherIsBetter: false,
-  scoreMode: "matrix_average",
-  improvementUnit: "index",
 };
 
 export const combineHighlightIronPrecision: CombineHighlightDefinition = {

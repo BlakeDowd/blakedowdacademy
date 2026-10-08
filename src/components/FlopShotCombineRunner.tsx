@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import { flopShotCombineConfig } from "@/lib/flopShotCombineConfig";
 import {
   FLOP_SHOT_MAX_TOTAL_POINTS,
@@ -81,7 +81,7 @@ async function persistFlopSession(
 }
 
 export function FlopShotCombineRunner() {
-  const { user } = useAuth();
+  const user = useCombineUser();
   const [values, setValues] = useState<Record<DistM, string[]>>(() => {
     const blank = Array.from({ length: flopShotCombineConfig.shotsPerDistance }, () => "");
     return {

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { DoorOpen, Ruler, Target } from "lucide-react";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import {
   averageMatrixScore,
   performanceDiagnosis,
@@ -9,6 +10,7 @@ import {
   meanAbsDistanceCm,
   gateSideCounts,
   gateSideImprovementMessage,
+  matrixScoreForPutt,
 } from "@/lib/strikeAndSpeedControlScoring";
 import {
   strikeAndSpeedControlTestConfig,
@@ -17,6 +19,22 @@ import {
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
+import {
+  CombineHero,
+  GatePicker,
+  IntroSteps,
+  NumberChips,
+  PlayAgainButton,
+  PrimaryButton,
+  ProgressTrack,
+  PuttLineDiagram,
+  ResultHero,
+  SaveStatus,
+  ScoringGuide,
+  StatTiles,
+  type GateOption,
+  type TrackItem,
+} from "@/components/combine/PuttingCombineUi";
 
 type PuttRecord = {
   putt: number;
@@ -26,6 +44,9 @@ type PuttRecord = {
 };
 
 type CombineProfile = Record<string, unknown>;
+
+const DISTANCE_CHIPS_CM = [0, 5, 10, 15, 20, 30, 45, 60, 90] as const;
+const DISTANCES_FT = [5, 10, 20, 30] as const;
 
 /** @returns null on success, or a user-visible error string */
 async function persistSession(
@@ -90,8 +111,21 @@ async function persistSession(
   return null;
 }
 
+function scoreTone(score: number): string {
+  if (score <= 10) return "bg-[#014421] text-white";
+  if (score <= 25) return "bg-green-200 text-[#014421]";
+  if (score <= 50) return "bg-amber-200 text-amber-900";
+  return "bg-red-500 text-white";
+}
+
+const STRIKES: GateOption<StrikeQuality>[] = [
+  { key: "hit_gate_left", title: "Hit left", hint: "Score x2", hit: "left" },
+  { key: "clean", title: "Clean", hint: "Through the gate", hit: null },
+  { key: "hit_gate_right", title: "Hit right", hint: "Score x2", hit: "right" },
+];
+
 export function StrikeAndSpeedControlTestRunner() {
-  const { user } = useAuth();
+  const user = useCombineUser();
   const [status, setStatus] = useState<"intro" | "active" | "complete">("intro");
   const [currentPuttIndex, setCurrentPuttIndex] = useState(0);
   const [strike, setStrike] = useState<StrikeQuality>("clean");
@@ -101,6 +135,7 @@ export function StrikeAndSpeedControlTestRunner() {
   const [saved, setSaved] = useState(false);
   const persistAttemptedRef = useRef(false);
 
+  const userId = user?.id;
   const sequence = strikeAndSpeedControlTestConfig.targetFeetSequence;
   const total = strikeAndSpeedControlTestConfig.puttCount;
   const currentTargetFt = sequence[currentPuttIndex];
@@ -122,7 +157,7 @@ export function StrikeAndSpeedControlTestRunner() {
   }, []);
 
   const recordPutt = useCallback(async () => {
-    if (status !== "active" || !distanceValid) return;
+    if (status !== "active" || !distanceValid || currentTargetFt == null) return;
     const record: PuttRecord = {
       putt: puttNumber,
       targetFt: currentTargetFt,
@@ -136,20 +171,16 @@ export function StrikeAndSpeedControlTestRunner() {
     if (puttNumber >= total) {
       setCompletedPutts(nextLog);
       setStatus("complete");
-      if (!user?.id) {
+      if (!userId) {
         setSaveError("Sign in to save this session to practice logs.");
         setSaved(false);
       } else if (!persistAttemptedRef.current) {
         persistAttemptedRef.current = true;
         setSaveError(null);
         const avg = averageMatrixScore(
-          nextLog.map((p) => ({
-            targetFt: p.targetFt,
-            cm: p.distance_cm,
-            strike: p.strike,
-          })),
+          nextLog.map((p) => ({ targetFt: p.targetFt, cm: p.distance_cm, strike: p.strike })),
         );
-        const saveErr = await persistSession(user.id, nextLog, avg);
+        const saveErr = await persistSession(userId, nextLog, avg);
         setSaved(saveErr == null);
         if (saveErr) {
           setSaveError(saveErr);
@@ -160,21 +191,11 @@ export function StrikeAndSpeedControlTestRunner() {
       setCompletedPutts(nextLog);
       setCurrentPuttIndex((i) => i + 1);
     }
-  }, [
-    status,
-    distanceValid,
-    puttNumber,
-    currentTargetFt,
-    strike,
-    distanceCm,
-    completedPutts,
-    total,
-    user?.id,
-  ]);
+  }, [status, distanceValid, puttNumber, currentTargetFt, strike, distanceCm, completedPutts, total, userId]);
 
   const undoLastPutt = useCallback(() => {
     if (status !== "active" || completedPutts.length === 0) return;
-    const last = completedPutts[completedPutts.length - 1];
+    const last = completedPutts[completedPutts.length - 1]!;
     setCompletedPutts((s) => s.slice(0, -1));
     setCurrentPuttIndex((i) => Math.max(0, i - 1));
     setStrike(last.strike);
@@ -182,223 +203,166 @@ export function StrikeAndSpeedControlTestRunner() {
   }, [status, completedPutts]);
 
   const retryPersist = useCallback(async () => {
-    if (!user?.id || completedPutts.length < total) return;
+    if (!userId || completedPutts.length < total) return;
     setSaveError(null);
     const avg = averageMatrixScore(
-      completedPutts.map((p) => ({
-        targetFt: p.targetFt,
-        cm: p.distance_cm,
-        strike: p.strike,
-      })),
+      completedPutts.map((p) => ({ targetFt: p.targetFt, cm: p.distance_cm, strike: p.strike })),
     );
     persistAttemptedRef.current = true;
-    const saveErr = await persistSession(user.id, completedPutts, avg);
+    const saveErr = await persistSession(userId, completedPutts, avg);
     setSaved(saveErr == null);
     if (saveErr) {
       setSaveError(saveErr);
       persistAttemptedRef.current = false;
     }
-  }, [user?.id, completedPutts, total]);
+  }, [userId, completedPutts, total]);
 
   const summary = useMemo(() => {
     if (completedPutts.length < total) return null;
     const avg = averageMatrixScore(
-      completedPutts.map((p) => ({
-        targetFt: p.targetFt,
-        cm: p.distance_cm,
-        strike: p.strike,
-      })),
+      completedPutts.map((p) => ({ targetFt: p.targetFt, cm: p.distance_cm, strike: p.strike })),
     );
     return {
       matrixAverage: avg,
-      diagnosis: performanceDiagnosis(
-        completedPutts.map((p) => ({ strike: p.strike, cm: p.distance_cm })),
-      ),
+      diagnosis: performanceDiagnosis(completedPutts.map((p) => ({ strike: p.strike, cm: p.distance_cm }))),
       cleanPct: cleanStrikeRate(completedPutts.map((p) => ({ strike: p.strike }))) * 100,
       meanCm: meanAbsDistanceCm(completedPutts.map((p) => ({ cm: p.distance_cm }))),
       gateSides: gateSideCounts(completedPutts.map((p) => ({ strike: p.strike }))),
       gateSideMessage: gateSideImprovementMessage(completedPutts.map((p) => ({ strike: p.strike }))),
+      byDistance: DISTANCES_FT.map((ft) => {
+        const at = completedPutts.filter((p) => p.targetFt === ft);
+        return { ft, meanCm: meanAbsDistanceCm(at.map((p) => ({ cm: p.distance_cm }))) };
+      }),
     };
   }, [completedPutts, total]);
 
   if (status === "intro") {
     return (
-      <div className="mt-6 space-y-4">
-        <h2 className="text-lg font-semibold leading-snug text-gray-900">
-          Strike And Speed Control Test
-        </h2>
-        <p className="text-sm text-gray-600">
-          Twelve putts from 5, 10, 20, and 30 feet (three at each distance). Log strike quality and
-          distance from the hole using the center of the ball. Your matrix score averages weighted
-          distance error; lower is better.
-        </p>
-        <button
-          type="button"
-          onClick={startTest}
-          className="w-full py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity"
-        >
-          Start test
-        </button>
+      <div className="space-y-4">
+        <CombineHero title="Strike & Speed Control" shape="Straight" chips={[`${total} putts`, "5 to 30 ft", "~15 min", "Lowest score wins"]} />
+        <IntroSteps
+          steps={[
+            { icon: <DoorOpen className="h-5 w-5" aria-hidden />, title: "Set up a strike gate", hint: "Two tees just wider than your putter head" },
+            { icon: <Target className="h-5 w-5" aria-hidden />, title: "3 putts from each distance", hint: "5, 10, 20, then 30 ft" },
+            { icon: <Ruler className="h-5 w-5" aria-hidden />, title: "Log the strike and the finish", hint: "Measure in cm to the centre of the ball" },
+          ]}
+        />
+        <ScoringGuide title="How scoring works">
+          <ul className="space-y-1.5">
+            <li>Each putt scores the cm it finished from the target.</li>
+            <li>Short putts count more: 5 ft ×1.5, 10 ft ×1, 20 and 30 ft ×0.8.</li>
+            <li>Touching the gate doubles that putt&apos;s score.</li>
+            <li className="font-semibold text-gray-900">Your score is the average. Lower is better.</li>
+          </ul>
+        </ScoringGuide>
+        <PrimaryButton onClick={startTest}>Start the test</PrimaryButton>
       </div>
     );
   }
 
   if (status === "complete" && summary) {
     return (
-      <div className="mt-6 space-y-5">
-        <div className="space-y-1">
-          <p className="text-sm font-semibold text-gray-900">Strike And Speed Control Test</p>
-          <h2 className="text-base font-medium text-gray-600">Test complete</h2>
-        </div>
+      <div className="space-y-4">
+        <ResultHero>
+          <p className="mt-3 text-6xl font-extrabold tabular-nums leading-none">{summary.matrixAverage.toFixed(1)}</p>
+          <p className="mt-1 text-xs text-white/70">Strike & speed score · lower is better</p>
+          <p className="mx-auto mt-3 max-w-xs rounded-2xl bg-white/10 px-3 py-2 text-sm font-semibold">{summary.diagnosis}</p>
+        </ResultHero>
 
-        <div className="rounded-2xl border-2 border-gray-200 bg-white p-5 shadow-sm space-y-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-              Strike Speed Index
-            </p>
-            <p className="text-3xl font-bold text-gray-900 tabular-nums">
-              {summary.matrixAverage.toFixed(2)}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">Lower is better (matrix score average).</p>
-          </div>
-          <div className="flex flex-wrap gap-4 text-sm text-gray-600">
-            <span>
-              Clean strikes:{" "}
-              <span className="font-semibold text-gray-900">{summary.cleanPct.toFixed(0)}%</span>
-            </span>
-            <span>
-              Avg |distance|:{" "}
-              <span className="font-semibold text-gray-900">{summary.meanCm.toFixed(1)} cm</span>
-            </span>
-            <span>
-              Gate L/R:{" "}
-              <span className="font-semibold text-gray-900">
-                {summary.gateSides.left}/{summary.gateSides.right}
-              </span>
-            </span>
-          </div>
-          <div className="border-t border-gray-100 pt-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-2">
-              Performance Diagnosis
-            </p>
-            <p className="text-sm font-medium text-gray-800 leading-relaxed">{summary.diagnosis}</p>
-            <p className="mt-2 text-sm text-gray-700 leading-relaxed">{summary.gateSideMessage}</p>
+        <StatTiles
+          stats={[
+            { label: "Clean strikes", value: `${summary.cleanPct.toFixed(0)}%` },
+            { label: "Avg miss", value: `${summary.meanCm.toFixed(0)} cm` },
+            { label: "Gate hits", value: summary.gateSides.totalGateHits, sub: `L ${summary.gateSides.left} · R ${summary.gateSides.right}` },
+          ]}
+        />
+
+        <div className="rounded-2xl border border-gray-100 p-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Average miss by distance</p>
+          <div className="grid grid-cols-4 gap-2 text-center">
+            {summary.byDistance.map((d) => (
+              <div key={d.ft} className="rounded-xl bg-gray-50 py-2">
+                <p className="text-[10px] font-semibold text-gray-400">{d.ft} ft</p>
+                <p className="text-base font-extrabold tabular-nums text-gray-900">
+                  {d.meanCm.toFixed(0)}
+                  <span className="text-[10px] font-semibold text-gray-400"> cm</span>
+                </p>
+              </div>
+            ))}
           </div>
         </div>
 
-        {saveError && (
-          <div className="space-y-2">
-            <p className="text-sm text-red-600">{saveError}</p>
-            {user?.id && (
-              <button
-                type="button"
-                onClick={() => void retryPersist()}
-                className="w-full py-3 rounded-xl border-2 border-[#014421] text-[#014421] font-semibold hover:bg-[#014421]/5 transition-colors"
-              >
-                Retry save
-              </button>
-            )}
-          </div>
-        )}
-        {saved && !saveError && (
-          <p className="text-sm text-green-700 font-medium">Session saved to practice logs.</p>
+        {summary.gateSideMessage && (
+          <p className="rounded-2xl bg-amber-50 px-3 py-2.5 text-sm text-amber-900">{summary.gateSideMessage}</p>
         )}
 
-        <button
-          type="button"
-          onClick={startTest}
-          className="w-full py-3 rounded-xl border-2 border-[#014421] text-[#014421] font-semibold hover:bg-[#014421]/5 transition-colors"
-        >
-          Run again
-        </button>
+        <SaveStatus saved={saved} error={saveError} onRetry={userId ? () => void retryPersist() : undefined} />
+        <PlayAgainButton onClick={startTest} />
       </div>
     );
   }
 
+  const track: TrackItem[] = sequence.map((_, i) => {
+    const p = completedPutts[i];
+    if (!p) return null;
+    const s = matrixScoreForPutt(p.distance_cm, p.targetFt, p.strike);
+    return { label: String(Math.round(s)), tone: scoreTone(s), ariaLabel: `Putt ${i + 1}: score ${s.toFixed(1)}` };
+  });
+  const liveScore = distanceValid && currentTargetFt != null ? matrixScoreForPutt(distanceCm, currentTargetFt, strike) : null;
+  const ofThisDistance = (currentPuttIndex % 3) + 1;
+  const runningAvg =
+    completedPutts.length > 0
+      ? averageMatrixScore(completedPutts.map((p) => ({ targetFt: p.targetFt, cm: p.distance_cm, strike: p.strike })))
+      : null;
+
   return (
-    <div className="mt-6 space-y-6">
-      <div className="rounded-xl border border-gray-200 bg-white px-3 py-3 sm:px-4">
-        <h2 className="text-center text-base font-semibold text-gray-900 sm:text-left">
-          Strike And Speed Control Test
-        </h2>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="rounded-full bg-[#014421] px-3 py-1 text-xs font-bold tabular-nums text-white">
+          {runningAvg == null ? "No score yet" : `Avg ${runningAvg.toFixed(1)}`}
+        </span>
+        <span className="text-xs font-semibold text-gray-500">Lower is better</span>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2">
-        <p className="text-sm font-medium text-gray-900">
-          Putt {puttNumber} Of {total}
-        </p>
-        <p className="text-sm text-gray-700">
-          Target: {currentTargetFt} Feet
-        </p>
-      </div>
+      <ProgressTrack items={track} current={currentPuttIndex} />
 
-      {completedPutts.length > 0 && (
-        <CombineFlowBackControl onBack={undoLastPutt} label="Undo last putt" />
-      )}
-
-      <div className="space-y-2">
-        <p className="text-sm font-medium text-gray-800">Strike</p>
-        <div className="grid grid-cols-3 rounded-xl border-2 border-gray-200 overflow-hidden p-0.5 bg-gray-100">
-          <button
-            type="button"
-            onClick={() => setStrike("clean")}
-            className={`py-3 text-sm font-semibold rounded-lg transition-colors ${
-              strike === "clean"
-                ? "bg-white text-[#014421] shadow-sm"
-                : "text-gray-600 hover:text-gray-900"
-            }`}
-          >
-            Clean Strike
-          </button>
-          <button
-            type="button"
-            onClick={() => setStrike("hit_gate_left")}
-            className={`py-3 text-sm font-semibold rounded-lg transition-colors ${
-              strike === "hit_gate_left"
-                ? "bg-white text-[#014421] shadow-sm"
-                : "text-gray-600 hover:text-gray-900"
-            }`}
-          >
-            Hit Gate (Left)
-          </button>
-          <button
-            type="button"
-            onClick={() => setStrike("hit_gate_right")}
-            className={`py-3 text-sm font-semibold rounded-lg transition-colors ${
-              strike === "hit_gate_right"
-                ? "bg-white text-[#014421] shadow-sm"
-                : "text-gray-600 hover:text-gray-900"
-            }`}
-          >
-            Hit Gate (Right)
-          </button>
+      <div className="flex items-stretch gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+        <PuttLineDiagram shape="Straight" className="h-28 w-[5.5rem] shrink-0" />
+        <div className="flex min-w-0 flex-col justify-center">
+          <p className="text-xs font-bold uppercase tracking-wider text-gray-400">
+            Putt {puttNumber} of {total}
+          </p>
+          <p className="text-5xl font-extrabold tabular-nums leading-none text-gray-900">
+            {currentTargetFt}
+            <span className="ml-1 text-xl font-bold text-gray-400">ft</span>
+          </p>
+          <p className="mt-1.5 text-sm font-semibold text-[#014421]">Ball {ofThisDistance} of 3 from here</p>
         </div>
       </div>
 
-      <div>
-        <label htmlFor="strike-speed-dist-cm" className="block text-sm font-medium text-gray-800 mb-1">
-          Distance From Target (cm)
-        </label>
-        <input
-          id="strike-speed-dist-cm"
-          type="text"
-          inputMode="decimal"
-          placeholder="e.g. 12"
-          value={distanceInput}
-          onChange={(e) => setDistanceInput(e.target.value)}
-          className="w-full max-w-[160px] rounded-lg border-2 border-gray-200 px-3 py-2 text-sm focus:border-[#014421] focus:outline-none focus:ring-2 focus:ring-[#014421]/30"
-        />
-        <p className="text-xs text-gray-500 mt-1.5">Measure from the center of the ball to the target.</p>
+      {completedPutts.length > 0 && <CombineFlowBackControl onBack={undoLastPutt} label="Undo last putt" />}
+
+      <div className="space-y-2">
+        <p className="text-base font-bold text-gray-900">How was the strike?</p>
+        <GatePicker options={STRIKES} value={strike} onChange={setStrike} />
       </div>
 
-      <button
-        type="button"
-        disabled={!distanceValid}
-        onClick={() => void recordPutt()}
-        className="w-full py-3 rounded-xl bg-[#014421] text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        {puttNumber >= total ? "Finish last putt" : "Next putt"}
-      </button>
+      <div className="space-y-2">
+        <p className="text-base font-bold text-gray-900">How far from the target?</p>
+        <NumberChips
+          values={DISTANCE_CHIPS_CM}
+          value={distanceInput}
+          onChange={setDistanceInput}
+          unit="cm"
+          formatChip={(v) => (v === 0 ? "Holed" : null)}
+          ariaLabel="Distance from target in cm"
+        />
+      </div>
+
+      <PrimaryButton onClick={() => void recordPutt()} disabled={!distanceValid}>
+        {puttNumber >= total ? "Finish the test" : "Next putt"}
+        {liveScore != null && <span className="block text-xs font-semibold text-white/70">This putt scores {liveScore.toFixed(1)}</span>}
+      </PrimaryButton>
     </div>
   );
 }

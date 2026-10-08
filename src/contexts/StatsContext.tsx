@@ -526,7 +526,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         data: { session },
       } = await supabase.auth.getSession();
       // AuthContext can have `user` before the Supabase client session is hydrated; retry briefly
-      // so practice_logs (iron / gauntlet leaderboards) do not stay empty after login.
+      // so practice_logs (iron leaderboards) do not stay empty after login.
       if (!session?.user?.id) {
         await new Promise((r) => setTimeout(r, 200));
         ({

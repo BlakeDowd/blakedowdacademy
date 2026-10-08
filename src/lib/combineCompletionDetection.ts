@@ -2,7 +2,6 @@ import { aimpoint6ftCombineConfig } from "@/lib/aimpoint6ftCombineConfig";
 import { aimpointLongRange2040Config } from "@/lib/aimpointLongRange2040Config";
 import { bunker9HoleChallengeConfig } from "@/lib/bunker9HoleChallengeConfig";
 import { chippingCombine9Config } from "@/lib/chippingCombine9Config";
-import { gauntletPrecisionProtocolConfig } from "@/lib/gauntletPrecisionProtocolConfig";
 import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
 import { midRangeSlopeSensingConfig } from "@/lib/midRangeSlopeSensingConfig";
 import { startLineAndSpeedControlTestConfig } from "@/lib/startLineAndSpeedControlTestConfig";
@@ -16,7 +15,8 @@ import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
 
 /** `log_type` values written to `practice_logs` by combine protocol runners (leaderboard + completion stats). */
 export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
-  gauntletPrecisionProtocolConfig.practiceLogType,
+  // Retired combine; old sessions still count as completions.
+  "gauntlet_protocol_session",
   ironPrecisionProtocolConfig.practiceLogType,
   // Legacy iron protocol identifier kept for backward compatibility.
   "ironPrecisionProtocol",
@@ -45,7 +45,7 @@ const COMBINE_PRACTICE_TEST_TYPES = new Set<string>([
 
 /** User-facing labels for success history (avoid raw DB identifiers in UI). */
 const COMBINE_LOG_TYPE_LABELS: Record<string, string> = {
-  [gauntletPrecisionProtocolConfig.practiceLogType]: gauntletPrecisionProtocolConfig.testName,
+  gauntlet_protocol_session: "The Gauntlet Precision Protocol",
   [ironPrecisionProtocolConfig.practiceLogType]: ironPrecisionProtocolConfig.testName,
   ironPrecisionProtocol: ironPrecisionProtocolConfig.testName,
   [startLineAndSpeedControlTestConfig.practiceLogType]: startLineAndSpeedControlTestConfig.testName,

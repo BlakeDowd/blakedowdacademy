@@ -4,7 +4,6 @@ import {
   isLeaderboardDrivenCombineId,
   type CombineLeaderboardTestId,
 } from "@/lib/academyCombinesLeaderboard";
-import { computeBestGauntletSessionForUser } from "@/lib/gauntletLeaderboard";
 import { puttingTest9Config } from "@/lib/puttingTest9Config";
 import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
 import { puttingTest8To20Config } from "@/lib/puttingTest8To20Config";
@@ -31,10 +30,6 @@ export type CoachCombineSnapshotRow = {
 };
 
 function formatDrivenScore(id: CombineLeaderboardTestId, value: number): string {
-  if (id === "gauntletBlackLabel") {
-    const n = Math.round(value);
-    return `${n} perfect putt${n === 1 ? "" : "s"}`;
-  }
   if (
     id === "puttingCombine" ||
     id === "puttingTest9Holes" ||
@@ -48,7 +43,6 @@ function formatDrivenScore(id: CombineLeaderboardTestId, value: number): string 
 }
 
 function puttingDrivenBest(id: CombineLeaderboardTestId, sessions: any[]): number | null {
-  if (id === "gauntletBlackLabel") return null;
   const collect = (parse: (s: any) => ParsedPuttingHole | null, filter: (s: any) => boolean): ParsedPuttingHole[] => {
     const holes: ParsedPuttingHole[] = [];
     for (const s of sessions) {
@@ -118,17 +112,6 @@ export function buildCoachPlayerCombineSnapshot(
   const rows: CoachCombineSnapshotRow[] = [];
 
   for (const opt of COMBINE_LEADERBOARD_OPTIONS) {
-    if (opt.id === "gauntletBlackLabel") {
-      const st = computeBestGauntletSessionForUser(logs, playerId, "allTime");
-      rows.push({
-        id: opt.id,
-        label: opt.label,
-        scoreDisplay:
-          st && st.perfect > 0 ? formatDrivenScore("gauntletBlackLabel", st.perfect) : null,
-      });
-      continue;
-    }
-
     if (isLeaderboardDrivenCombineId(opt.id)) {
       const raw = puttingDrivenBest(opt.id, sessions);
       rows.push({

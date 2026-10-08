@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import { bunker9HoleChallengeConfig } from "@/lib/bunker9HoleChallengeConfig";
 import type { ChipResultLabel } from "@/lib/chippingCombine9Analytics";
 import {
@@ -117,7 +117,7 @@ async function persistSession(userId: string, holes: BunkerHoleLog[], aggregates
 }
 
 export function Bunker9HoleChallengeRunner() {
-  const { user } = useAuth();
+  const user = useCombineUser();
   const [status, setStatus] = useState<"intro" | "active" | "complete">("intro");
   const [holeIndex, setHoleIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>("distance");

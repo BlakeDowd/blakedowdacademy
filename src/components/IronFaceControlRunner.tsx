@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
@@ -89,7 +89,7 @@ const toggleOff = "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
 const toggleOn = "border-[#014421] bg-[#014421] text-white";
 
 export function IronFaceControlRunner() {
-  const { user } = useAuth();
+  const user = useCombineUser();
   const [shots, setShots] = useState<IronFaceShot[]>(() => emptyShots());
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);

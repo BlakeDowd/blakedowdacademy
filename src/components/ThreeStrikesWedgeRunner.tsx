@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
@@ -63,7 +63,7 @@ async function persistThreeStrikesSession(userId: string, hits: number): Promise
 }
 
 export function ThreeStrikesWedgeRunner() {
-  const { user } = useAuth();
+  const user = useCombineUser();
   const [phase, setPhase] = useState<"intro" | "playing" | "ended">("intro");
   const [targetM, setTargetM] = useState<number>(randomTargetDistanceM());
   const [actualInput, setActualInput] = useState("");

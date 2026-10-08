@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import { standardChippingCombineConfig } from "@/lib/standardChippingCombineConfig";
 import {
   STANDARD_CHIPPING_MAX_TOTAL_POINTS,
@@ -92,7 +92,7 @@ async function persistStandardChippingSession(
 }
 
 export function StandardChippingCombineRunner() {
-  const { user } = useAuth();
+  const user = useCombineUser();
   const [values, setValues] = useState<Record<StationM, string[]>>(() => {
     const blank = Array.from({ length: standardChippingCombineConfig.shotsPerDistance }, () => "");
     return {

@@ -1,25 +1,17 @@
-import Link from "next/link";
+"use client";
+
 import { PuttingTest8To20Runner } from "@/components/PuttingTest8To20Runner";
 import { CombineCommunityHighlights } from "@/components/CombineCommunityHighlights";
+import { CombinePageShell } from "@/components/combine/CombinePageShell";
 import { combineHighlightPutting820 } from "@/lib/combineHighlightDefinitions";
-import { puttingTest8To20Config } from "@/lib/puttingTest8To20Config";
 
 export default function PuttingTest8To20Page() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="mx-auto max-w-lg px-4 py-6 pb-24">
-        <Link
-          href="/practice"
-          className="inline-flex items-center text-sm font-medium text-[#014421] hover:underline mb-4"
-        >
-          ← Back to Practice
-        </Link>
-        <header className="mb-2">
-          <h1 className="text-2xl font-bold text-gray-900">{puttingTest8To20Config.testName}</h1>
-        </header>
-        <PuttingTest8To20Runner />
-        <CombineCommunityHighlights definition={combineHighlightPutting820} />
-      </div>
-    </div>
+    <CombinePageShell
+      label="8–20 ft Putting Test"
+      footer={<CombineCommunityHighlights definition={combineHighlightPutting820} />}
+    >
+      <PuttingTest8To20Runner />
+    </CombinePageShell>
   );
 }

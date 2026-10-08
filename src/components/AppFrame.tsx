@@ -1,8 +1,11 @@
 "use client";
 
+import { Suspense } from "react";
 import { usePathname } from "next/navigation";
+import { CombineForParamSync } from "@/hooks/useCombineUser";
 import ConditionalNavbar from "./ConditionalNavbar";
 import ScreenTracker from "./ScreenTracker";
+import { CoachTestingBanner } from "./combine/CoachTestingBanner";
 
 export default function AppFrame({
   children,
@@ -21,6 +24,10 @@ export default function AppFrame({
       <div
         className="app-frame-inner h-full w-full max-w-md flex flex-col bg-gray-50 shadow-2xl relative border-x border-gray-200 transition-all"
       >
+        <Suspense fallback={null}>
+          <CombineForParamSync />
+        </Suspense>
+        <CoachTestingBanner />
         <main
           className="app-frame-main flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-clip pb-36"
           style={{ overflowX: "clip" }}

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, BookOpen, Apple, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus } from "lucide-react";
@@ -19,10 +18,10 @@ import {
   fetchDrillRowById,
 } from "@/lib/fetchDrillsCatalog";
 import {
-  COMBINE_CATEGORY_IDS,
   COMBINE_TEST_CARDS,
   type CombineCategoryId,
 } from "@/lib/combineTestsCatalog";
+import { PracticeCombinePicker } from "@/components/combine/TestingForSelect";
 import {
   buildAcademyCombinesLeaderboard,
   type CombineLeaderboardTestId,
@@ -474,7 +473,6 @@ const COMBINE_CATEGORY_TO_PLANNER_CATEGORY: Record<CombineCategoryId, string> = 
 };
 
 const COMBINE_HREF_TO_LOG_TYPE: Record<string, string> = {
-  "/practice/gauntlet-precision-protocol": "gauntlet_protocol_session",
   "/practice/strike-and-speed-control-test": "strike_speed_control",
   "/practice/start-line-and-speed-control-test": "start_line_speed_test",
   "/practice/flop-shot-combine": "flop_shot",
@@ -488,7 +486,6 @@ const COMBINE_HREF_TO_LOG_TYPE: Record<string, string> = {
 };
 
 const COMBINE_HREF_TO_LEADERBOARD_TEST: Partial<Record<string, CombineLeaderboardTestId>> = {
-  "/practice/gauntlet-precision-protocol": "gauntlet",
   "/practice/iron-precision-protocol": "ironPrecisionProtocol",
   "/practice/6ft-aimpoint-combine": "aimpoint_6ft_combine",
   "/practice/8-20ft-aimpoint-combine": "slope_mid_20ft",
@@ -509,7 +506,6 @@ const COMBINE_HREF_TO_LEADERBOARD_TEST: Partial<Record<string, CombineLeaderboar
 };
 
 const COMBINE_HREF_TO_EST_MINUTES: Record<string, number> = {
-  "/practice/gauntlet-precision-protocol": 20,
   "/practice/putting-test": 30,
   "/practice/putting-test-9": 20,
   "/practice/putting-test-3-6ft": 20,
@@ -572,7 +568,6 @@ async function updateUserXP(userId: string, points: number): Promise<void> {
 }
 
 export default function PracticePage() {
-  const router = useRouter();
   const { rounds, refreshPracticeSessions, refreshDrills, practiceLogs, practiceSessions, loading: statsLoading } = useStats();
   const { user, refreshUser } = useAuth();
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({});
@@ -658,10 +653,6 @@ export default function PracticePage() {
   const [expandedWeeklyDrill, setExpandedWeeklyDrill] = useState<{ dayIndex: number; drillIndex: number } | null>(null); // Track expanded drill in weekly view
   const [youtubeModal, setYoutubeModal] = useState<{ open: boolean; url: string }>({ open: false, url: '' }); // YouTube modal state
   const [combineCategoryTab, setCombineCategoryTab] = useState<CombineCategoryId>("Putting");
-  const combineCardsForTab = useMemo(
-    () => COMBINE_TEST_CARDS.filter((c) => c.category === combineCategoryTab),
-    [combineCategoryTab]
-  );
 
   const scoringByDrillKey = useMemo(() => {
     const out = new Map<string, { scoreType: string | null; focus: string | null }>();
@@ -3916,58 +3907,7 @@ export default function PracticePage() {
               </button>
               {openTool === "combine" && (
                 <div className="border-t border-gray-200 px-3 pb-3 pt-3">
-                  <div
-                    className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1 scroll-smooth [scrollbar-width:thin]"
-                    role="tablist"
-                    aria-label="Combine test categories"
-                  >
-                    {COMBINE_CATEGORY_IDS.map((cat) => {
-                      const active = combineCategoryTab === cat;
-                      return (
-                        <button
-                          key={cat}
-                          type="button"
-                          role="tab"
-                          aria-selected={active}
-                          onClick={() => setCombineCategoryTab(cat)}
-                          className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                            active ? "bg-[#014421] text-white" : "bg-white text-gray-700 ring-1 ring-gray-200"
-                          }`}
-                        >
-                          {cat}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {combineCardsForTab.length === 0 ? (
-                      <p className="col-span-2 px-2 py-8 text-center text-sm text-gray-500 sm:col-span-3">
-                        Coming Soon To Online Academy.
-                      </p>
-                    ) : (
-                      combineCardsForTab.map((card) => {
-                        const isGauntlet = card.visualVariant === "gauntlet";
-                        return (
-                          <button
-                            key={card.id}
-                            type="button"
-                            onClick={() => router.push(card.href)}
-                            className={`flex min-h-[4.75rem] flex-col items-center justify-center gap-1 rounded-xl px-2 py-3 transition-colors ${
-                              isGauntlet
-                                ? "bg-[#014421] text-white hover:bg-[#014421]/90"
-                                : "bg-white text-gray-700 ring-1 ring-gray-200 hover:ring-[#FFA500]"
-                            }`}
-                          >
-                            <Target className={`h-5 w-5 shrink-0 ${isGauntlet ? "text-[#FFA500]" : "text-gray-500"}`} aria-hidden />
-                            <span className="max-w-full text-center text-[11px] font-medium leading-tight sm:text-xs">
-                              {card.label}
-                            </span>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
+                  <PracticeCombinePicker category={combineCategoryTab} onCategoryChange={setCombineCategoryTab} />
                 </div>
               )}
             </div>

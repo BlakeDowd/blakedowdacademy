@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import {
   buildWedgeLateral9Aggregates,
   wedgeLateral9ShotPoints,
@@ -73,7 +73,7 @@ async function persistSession(userId: string, targetsM: number[], shots: WedgeLa
 }
 
 export function WedgeLateral9Runner() {
-  const { user } = useAuth();
+  const user = useCombineUser();
   const [status, setStatus] = useState<"intro" | "active" | "complete">("intro");
   const [targetsM, setTargetsM] = useState<number[]>([]);
   const [shotIndex, setShotIndex] = useState(0);

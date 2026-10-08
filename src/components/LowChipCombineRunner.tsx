@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import { lowChipCombineConfig } from "@/lib/lowChipCombineConfig";
 import {
   LOW_CHIP_MAX_TOTAL_POINTS,
@@ -91,7 +91,7 @@ async function persistLowChipSession(
 }
 
 export function LowChipCombineRunner() {
-  const { user } = useAuth();
+  const user = useCombineUser();
   const [values, setValues] = useState<Record<StationM, string[]>>(() => {
     const blank = Array.from({ length: lowChipCombineConfig.shotsPerDistance }, () => "");
     return {

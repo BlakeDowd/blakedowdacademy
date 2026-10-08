@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
@@ -94,7 +94,7 @@ async function persistSession(userId: string, shots: ShotLog[], totalScore: numb
 }
 
 export function BunkerProximityProtocolRunner() {
-  const { user } = useAuth();
+  const user = useCombineUser();
   const [values, setValues] = useState<Record<DistM, ShotCell[]>>(() => {
     const blank = Array.from({ length: bunkerProximityProtocolConfig.shotsPerStation }, () => ({
       distance: "",

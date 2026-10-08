@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { APP_VIDEO_COACH_NAME } from "@/lib/bunnyStream";
@@ -16,8 +16,29 @@ import { CoachingUsage } from "@/components/coaching/CoachingUsage";
 import { AssignedOverview, AssignmentsPanel } from "@/components/coaching/CoachingAssignments";
 import { NewSpaceSheet, PendingInviteBanner } from "@/components/coaching/CoachingInvites";
 import { PlayerEmail } from "@/components/coaching/PlayerEmail";
+import { TestPlayerButton } from "@/components/coaching/TestPlayerButton";
 
 type View = "spaces" | "feed" | "activity" | "assigned" | "usage";
+
+const OPEN_SPACE_KEY = "coaching:open-space";
+
+function readOpenSpace(): { id: string; name: string } | null {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(OPEN_SPACE_KEY) ?? "null");
+    return parsed && typeof parsed.id === "string" && typeof parsed.name === "string" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeOpenSpace(space: { id: string; name: string } | null) {
+  try {
+    if (space) sessionStorage.setItem(OPEN_SPACE_KEY, JSON.stringify(space));
+    else sessionStorage.removeItem(OPEN_SPACE_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 function SubTabs({
   tabs,
@@ -70,12 +91,19 @@ export default function CoachingTab({
   const [feedVersion, setFeedVersion] = useState(0);
   const closeCreating = useCallback(() => setCreating(false), []);
 
+  const restoredOpenRef = useRef(false);
+
   const loadSpaces = useCallback(async () => {
     if (!user?.id || !isCoach) return;
     try {
       const list = await fetchSpaces(createClient(), user.id);
       rememberNames(list.map((s) => [s.studentId, s.name] as [string, string]));
       setSpaces(list);
+      if (!restoredOpenRef.current) {
+        restoredOpenRef.current = true;
+        const last = readOpenSpace();
+        if (last && list.some((s) => s.studentId === last.id)) setOpen(last);
+      }
       setSpacesError(null);
     } catch (err) {
       setSpacesError(err instanceof Error ? err.message : "Couldn't load spaces.");
@@ -139,6 +167,7 @@ export default function CoachingTab({
 
   const openSpace = (id: string, name: string) => {
     setOpen({ id, name });
+    writeOpenSpace({ id, name });
     document.querySelector("main.app-frame-main")?.scrollTo({ top: 0 });
   };
 
@@ -151,6 +180,7 @@ export default function CoachingTab({
             type="button"
             onClick={() => {
               setOpen(null);
+              writeOpenSpace(null);
               void loadSpaces();
             }}
             className="rounded-full p-2 text-stone-600 hover:bg-stone-200"
@@ -167,6 +197,7 @@ export default function CoachingTab({
             {!pending?.pending && <PlayerEmail key={open.id} playerId={open.id} playerName={open.name} />}
           </div>
         </div>
+        {!pending?.pending && <TestPlayerButton playerId={open.id} playerName={open.name} className="w-full" />}
         {pending?.pending && (
           <PendingInviteBanner
             spaceId={pending.id}

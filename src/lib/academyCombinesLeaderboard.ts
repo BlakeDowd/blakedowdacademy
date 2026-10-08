@@ -1,4 +1,3 @@
-import { gauntletPrecisionProtocolConfig } from "@/lib/gauntletPrecisionProtocolConfig";
 import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
 import { totalPointsFromWedgeShotsJson } from "@/lib/wedgeLateral9Analytics";
@@ -19,7 +18,6 @@ import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
 import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
 
 export type CombineLeaderboardTestId =
-  | "gauntlet"
   | "ironPrecisionProtocol"
   | "aimpoint_6ft_combine"
   | "slope_mid_20ft"
@@ -31,7 +29,6 @@ export type CombineLeaderboardTestId =
   | "puttingTest3To6ft"
   | "puttingTest8To20"
   | "puttingTest20To40"
-  | "gauntletBlackLabel"
   | "flop_shot"
   | "chipping"
   | "survival_20"
@@ -46,7 +43,6 @@ const LEADERBOARD_DRIVEN_COMBINE_IDS: CombineLeaderboardTestId[] = [
   "puttingTest3To6ft",
   "puttingTest8To20",
   "puttingTest20To40",
-  "gauntletBlackLabel",
 ];
 
 export function isLeaderboardDrivenCombineId(id: CombineLeaderboardTestId): boolean {
@@ -65,13 +61,6 @@ export type CombineLeaderboardTestOption = {
 };
 
 export const COMBINE_LEADERBOARD_OPTIONS: CombineLeaderboardTestOption[] = [
-  {
-    id: "gauntlet",
-    label: `${gauntletPrecisionProtocolConfig.testName} (Session Points)`,
-    source: "practice_logs",
-    higherIsBetter: false,
-    scoreHeader: "Points",
-  },
   {
     id: "ironPrecisionProtocol",
     label: ironPrecisionProtocolConfig.testName,
@@ -148,13 +137,6 @@ export const COMBINE_LEADERBOARD_OPTIONS: CombineLeaderboardTestOption[] = [
     source: "practice",
     higherIsBetter: true,
     scoreHeader: "Test Pts",
-  },
-  {
-    id: "gauntletBlackLabel",
-    label: `${gauntletPrecisionProtocolConfig.blackLabelLeaderboardTitle} — Perfect Putts`,
-    source: "practice_logs",
-    higherIsBetter: true,
-    scoreHeader: "Perfect Putts",
   },
   {
     id: "flop_shot",
@@ -261,14 +243,12 @@ function num(v: unknown): number | null {
 
 type PracticeMetadataCombineId = Exclude<
   CombineLeaderboardTestId,
-  | "gauntlet"
   | "ironPrecisionProtocol"
   | "puttingCombine"
   | "puttingTest9Holes"
   | "puttingTest3To6ft"
   | "puttingTest8To20"
   | "puttingTest20To40"
-  | "gauntletBlackLabel"
   | "flop_shot"
   | "chipping"
   | "survival_20"
@@ -340,31 +320,7 @@ export function buildAcademyCombinesLeaderboard(
     return [];
   }
 
-  if (testId === "gauntlet") {
-    const rows = (practiceLogs || []).filter(
-      (r) => String(r?.log_type ?? "") === gauntletPrecisionProtocolConfig.practiceLogType,
-    );
-    for (const row of rows) {
-      if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
-      const uid = row.user_id;
-      if (!uid) continue;
-      const pts = num(row.matrix_score_average);
-      if (pts == null) continue;
-      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
-      const prev = bestByUser.get(uid);
-      const better =
-        !prev ||
-        pts < prev.sortValue ||
-        (pts === prev.sortValue && dateMs > prev.dateMs);
-      if (better) {
-        bestByUser.set(uid, {
-          sortValue: pts,
-          display: `${pts.toFixed(1)} Pts`,
-          dateMs,
-        });
-      }
-    }
-  } else if (testId === "ironPrecisionProtocol") {
+  if (testId === "ironPrecisionProtocol") {
     const accepted = new Set(
       [
         ironPrecisionProtocolConfig.practiceLogType,
@@ -639,13 +595,8 @@ export function buildAcademyCombinesLeaderboard(
     });
   });
 
-  const higher = testId !== "gauntlet";
   out.sort((a, b) => {
-    if (higher) {
-      if (b.sortValue !== a.sortValue) return b.sortValue - a.sortValue;
-    } else {
-      if (a.sortValue !== b.sortValue) return a.sortValue - b.sortValue;
-    }
+    if (b.sortValue !== a.sortValue) return b.sortValue - a.sortValue;
     if (b.dateMs !== a.dateMs) return b.dateMs - a.dateMs;
     return a.name.localeCompare(b.name);
   });

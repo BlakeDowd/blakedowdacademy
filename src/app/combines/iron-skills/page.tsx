@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, Crosshair } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCombineUser } from "@/hooks/useCombineUser";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
 import {
@@ -114,7 +115,8 @@ function IronSkillsConfetti({ show }: { show: boolean }) {
 }
 
 export default function IronSkillsChallengePage() {
-  const { user, refreshUser } = useAuth();
+  const { refreshUser } = useAuth();
+  const user = useCombineUser();
   const [progressionLevel, setProgressionLevel] = useState(defaultIronSkillsLevel);
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [shuffling, setShuffling] = useState(false);
