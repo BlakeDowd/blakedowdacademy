@@ -19,6 +19,7 @@ import { PlayerEmail } from "@/components/coaching/PlayerEmail";
 import { TestPlayerButton } from "@/components/coaching/TestPlayerButton";
 import { PlayerCombineScores } from "@/components/coaching/PlayerCombineScores";
 import { CoachingFamilies } from "@/components/coaching/CoachingFamilies";
+import { GamePlanCard } from "@/components/coaching/GamePlanCard";
 
 type View = "spaces" | "feed" | "activity" | "assigned" | "usage" | "families";
 
@@ -138,6 +139,7 @@ export default function CoachingTab({
             <p className="text-xs text-stone-500">Only you and your coach can see this.</p>
           </div>
         </div>
+        <GamePlanCard studentId={user.id} studentName={user.fullName || "You"} viewerId={user.id} viewerIsCoach={false} />
         <AssignmentsPanel studentId={user.id} viewerId={user.id} viewerIsCoach={false} />
         <SubTabs
           tabs={[
@@ -202,6 +204,16 @@ export default function CoachingTab({
             {!pending?.pending && <PlayerEmail key={open.id} playerId={open.id} playerName={open.name} />}
           </div>
         </div>
+        {!pending?.pending && (
+          <GamePlanCard
+            key={`plan-${open.id}`}
+            studentId={open.id}
+            studentName={open.name}
+            viewerId={user.id}
+            viewerIsCoach
+            onPosted={() => setFeedVersion((v) => v + 1)}
+          />
+        )}
         {!pending?.pending && <TestPlayerButton playerId={open.id} playerName={open.name} className="w-full" />}
         {!pending?.pending && <PlayerCombineScores key={`scores-${open.id}`} playerId={open.id} playerName={open.name} />}
         {pending?.pending && (

@@ -5,8 +5,9 @@ import { CheckCircle2, ChevronDown, ImageIcon, Loader2, Paperclip, Send, Video, 
 import { createClient } from "@/lib/supabase/client";
 import {
   MAX_COACHING_PHOTO_BYTES,
-  MAX_COACHING_VIDEO_BYTES,
   MAX_VIDEOS_PER_POST,
+  formatVideoLimit,
+  maxVideoBytes,
   ANNOUNCEMENT_PHOTO_FOLDER,
   createAnnouncement,
   createPost,
@@ -50,7 +51,7 @@ type SubmitInput = Omit<MediaInput, "photoFolder" | "videoTitle"> & {
 type SubmitResult = { post: CoachingPost | null; failed: File[]; firstError: unknown };
 
 /** Stops the phone screen sleeping (which pauses uploads) while videos are sending. */
-async function holdScreenAwake(): Promise<() => void> {
+export async function holdScreenAwake(): Promise<() => void> {
   try {
     const nav = navigator as Navigator & {
       wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> };
@@ -171,9 +172,10 @@ function failureMessage(result: { post?: unknown; announcement?: unknown; failed
 }
 
 /** One optional photo and up to MAX_VIDEOS_PER_POST videos per post. */
-function useAttachments(onToast: (t: ToastState) => void) {
+function useAttachments(onToast: (t: ToastState) => void, isCoach: boolean) {
   const [videos, setVideos] = useState<File[]>([]);
   const [photo, setPhoto] = useState<File | null>(null);
+  const videoLimit = maxVideoBytes(isCoach);
 
   const pick = (picked: File[]) => {
     const nextVideos: File[] = [];
@@ -188,7 +190,7 @@ function useAttachments(onToast: (t: ToastState) => void) {
         }
       } else if (!isLikelyVideoFile(file)) {
         skippedOther++;
-      } else if (file.size > MAX_COACHING_VIDEO_BYTES) {
+      } else if (file.size > videoLimit) {
         skippedLarge++;
       } else {
         nextVideos.push(file);
@@ -197,7 +199,7 @@ function useAttachments(onToast: (t: ToastState) => void) {
     if (skippedOther) onToast({ message: "Choose photos or videos (JPG, PNG, MP4 or MOV).", type: "warning" });
     if (skippedLarge) {
       onToast({
-        message: `${skippedLarge} video${skippedLarge === 1 ? " is" : "s are"} over 200 MB. Trim ${skippedLarge === 1 ? "it" : "them"} or export shorter clips.`,
+        message: `${skippedLarge} video${skippedLarge === 1 ? " is" : "s are"} over ${formatVideoLimit(videoLimit)}. Trim ${skippedLarge === 1 ? "it" : "them"} or export shorter clips.`,
         type: "warning",
       });
     }
@@ -463,7 +465,7 @@ export function PostComposer({
   const [notes, setNotes] = useState({ keyIssues: "", contact: "", directional: "" });
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState<Progress>(null);
-  const files = useAttachments(onToast);
+  const files = useAttachments(onToast, viewerIsCoach);
 
   const toAll = !studentId && targetId === ALL_PLAYERS && Boolean(onAnnounced);
   const target = studentId
@@ -776,7 +778,7 @@ export function ReplyComposer({
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState<Progress>(null);
-  const files = useAttachments(onToast);
+  const files = useAttachments(onToast, viewerIsCoach);
   const canSend = !sending && (body.trim().length > 0 || files.hasAny);
 
   const send = async () => {

@@ -40,6 +40,7 @@ import { AdvancedApproachStatsPanel } from "@/components/stats/AdvancedApproachS
 import { CoachDeepDiveProfilePanels } from "@/components/coach/CoachDeepDiveProfilePanels";
 import { TestPlayerButton } from "@/components/coaching/TestPlayerButton";
 import { PlayerEmail } from "@/components/coaching/PlayerEmail";
+import { GamePlanCard } from "@/components/coaching/GamePlanCard";
 import { CoachDeepDiveRoundTrendCharts } from "@/components/coach/CoachDeepDiveRoundTrendCharts";
 import { PracticeVsGoalsSection } from "@/components/stats/PracticeVsGoalsSection";
 import type { PracticeVsGoalsRow } from "@/lib/practiceVsGoalsModel";
@@ -711,6 +712,18 @@ export default function PlayerDeepDivePage() {
             </div>
           </div>
         </div>
+
+        {user?.id && (
+          <div className="mb-6">
+            <GamePlanCard
+              key={`plan-${playerId}`}
+              studentId={playerId}
+              studentName={playerName || "Player"}
+              viewerId={user.id}
+              viewerIsCoach
+            />
+          </div>
+        )}
 
         {/* Core scoring metrics (last 5 rounds aggregate) */}
         {bigSix && (

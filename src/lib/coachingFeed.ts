@@ -29,7 +29,7 @@ export type CoachingPostVideo = {
   storage_path: string | null;
 };
 
-export const MAX_VIDEOS_PER_POST = 5;
+export const MAX_VIDEOS_PER_POST = 20;
 
 /** Every video on a post, in order: the main one first, then any extras. */
 export function postVideos(post: CoachingPost): CoachingPostVideo[] {
@@ -166,6 +166,16 @@ export const FEED_PAGE_SIZE = 20;
 export const isCoachPost = (p: Pick<CoachingPost, "author_id" | "student_id">) => p.author_id !== p.student_id;
 
 export const MAX_COACHING_VIDEO_BYTES = 200 * 1024 * 1024;
+/** Coach uploads go straight to Bunny (no raw copy in Supabase storage), so long lesson videos fit. */
+export const MAX_COACH_VIDEO_BYTES = 5 * 1024 * 1024 * 1024;
+
+export function maxVideoBytes(isCoach: boolean): number {
+  return isCoach ? MAX_COACH_VIDEO_BYTES : MAX_COACHING_VIDEO_BYTES;
+}
+
+export function formatVideoLimit(bytes: number): string {
+  return bytes >= 1024 * 1024 * 1024 ? `${Math.round(bytes / 1024 / 1024 / 1024)} GB` : `${Math.round(bytes / 1024 / 1024)} MB`;
+}
 
 export class CoachingSetupError extends Error {}
 
@@ -175,6 +185,11 @@ function rethrow(error: { message?: string; code?: string } | null): void {
   if (/announcement/.test(msg)) {
     throw new CoachingSetupError(
       `Announcements need a database update. Run supabase/migrations/20261006010000_coaching_announcements.sql in Supabase. (${msg})`,
+    );
+  }
+  if (/is_game_plan|extra_videos_shape/.test(msg)) {
+    throw new CoachingSetupError(
+      `This needs a database update. Run supabase/migrations/20261009120000_coaching_more_videos_and_game_plan.sql in Supabase. (${msg})`,
     );
   }
   if (/extra_videos/.test(msg)) {
@@ -418,6 +433,8 @@ export type NewCoachingPost = {
   keyIssues?: string;
   contactInfo?: string;
   directionalMisses?: string;
+  /** End-of-lesson "what to work on" video, pinned on the player's profile. Coaches only. */
+  isGamePlan?: boolean;
 };
 
 export async function createPost(supabase: SupabaseClient, input: NewCoachingPost): Promise<CoachingPost> {
@@ -439,11 +456,30 @@ export async function createPost(supabase: SupabaseClient, input: NewCoachingPos
       key_issues: clean(input.keyIssues),
       contact_info: clean(input.contactInfo),
       directional_misses: clean(input.directionalMisses),
+      ...(input.isGamePlan ? { is_game_plan: true } : {}),
     })
     .select(POST_COLUMNS)
     .single();
   rethrow(error);
   return data as CoachingPost;
+}
+
+/** A player's game plans, newest first. */
+export async function fetchGamePlans(
+  supabase: SupabaseClient,
+  studentId: string,
+  limit = 6,
+): Promise<CoachingPost[]> {
+  const { data, error } = await supabase
+    .from("coaching_posts")
+    .select(POST_COLUMNS)
+    .eq("student_id", studentId)
+    .eq("is_game_plan", true)
+    .is("parent_id", null)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  rethrow(error);
+  return (data ?? []) as CoachingPost[];
 }
 
 export async function authJsonHeaders(): Promise<Record<string, string>> {
