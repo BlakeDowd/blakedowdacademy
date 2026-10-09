@@ -27,6 +27,16 @@ import {
   practiceSessionMinutesFromRow,
   practiceSessionsForUser,
 } from "@/lib/practiceSessionDuration";
+import { listUserCombineCompletionEvents } from "@/lib/combineCompletionDetection";
+import { XP_AWARD_COMBINE_SESSION } from "@/lib/combineXp";
+import { parsePuttingHoleRow } from "@/lib/combinePageLeaderboard";
+import {
+  combineHighlightPutting18,
+  combineHighlightPutting9,
+  combineHighlightPutting36,
+  combineHighlightPutting820,
+  combineHighlightPutting2040,
+} from "@/lib/combineHighlightDefinitions";
 
 const XP_PER_ROUND = 500;
 
@@ -375,6 +385,45 @@ function accumulateDrillSessionXpByUser(
     const add = Number(row.xp) || 0;
     if (add <= 0) continue;
     out.set(uid, (out.get(uid) || 0) + add);
+  }
+  return out;
+}
+
+const PUTTING_COMBINE_LAST_HOLE = new Map<string, number>(
+  [
+    combineHighlightPutting18,
+    combineHighlightPutting9,
+    combineHighlightPutting36,
+    combineHighlightPutting820,
+    combineHighlightPutting2040,
+  ].flatMap((d) =>
+    d.kind === "putting_practice" ? [[d.practiceType, d.lastHoleIndex] as [string, number]] : [],
+  ),
+);
+
+/** XP from finished combines (`XP_AWARD_COMBINE_SESSION` each); a putting run counts on its last hole. */
+function accumulateCombineXpByUser(
+  timeFilter: "week" | "month" | "year" | "allTime",
+  practiceSessions: { type?: unknown; user_id?: unknown; created_at?: unknown; notes?: unknown }[],
+  practiceLogs: { user_id?: unknown; log_type?: unknown; created_at?: unknown }[],
+): Map<string, number> {
+  const out = new Map<string, number>();
+  const add = (uid: string | undefined, at: unknown) => {
+    if (!uid) return;
+    if (timeFilter !== "allTime") {
+      const ms = parseLeaderboardEventMs(at) ?? NaN;
+      if (!eventMsMatchesLeaderboardTimeFilter(ms, timeFilter)) return;
+    }
+    out.set(uid, (out.get(uid) || 0) + XP_AWARD_COMBINE_SESSION);
+  };
+  for (const e of listUserCombineCompletionEvents({ practiceSessions, practiceLogs })) {
+    add(e.userId, e.at);
+  }
+  for (const row of practiceSessions || []) {
+    const last = PUTTING_COMBINE_LAST_HOLE.get(String(row?.type ?? ""));
+    if (last == null) continue;
+    const hole = parsePuttingHoleRow(row);
+    if (hole?.holeIndex === last) add(hole.user_id, hole.created_at);
   }
   return out;
 }
@@ -759,8 +808,9 @@ async function fetchUserProfiles(
       return profileMap;
     }
 
-    // Prevent Crashes: Initialize as empty array if undefined
-    const safeData = data || [];
+    // Every profile goes in the map (not just users with loaded activity rows) so XP from
+    // sources the leaderboard doesn't load — library, coach awards, bonuses — still ranks.
+    const safeData = [...safeAllProfiles, ...(data || [])];
 
     // Debug Log: Add console.log('Available Profiles:', profiles) to the load function
     console.log("Available Profiles:", safeData);
@@ -2995,10 +3045,9 @@ function getLeaderboardData(
   if (metric === "xp") {
     const allEntries: any[] = [];
 
-    const lifetimeActivityXpByUser = accumulateLifetimeActivityXpByUser(
-      practiceSessions || [],
-      rounds,
-      drillSessions,
+    const lifetimeActivityXpByUser = mergePeriodXpMaps(
+      accumulateLifetimeActivityXpByUser(practiceSessions || [], rounds, drillSessions),
+      accumulateCombineXpByUser("allTime", practiceSessions || [], practiceLogs),
     );
 
     const periodXpPractice =
@@ -3015,10 +3064,11 @@ function getLeaderboardData(
     const periodXpByUser =
       timeFilter === "allTime"
         ? null
-        : mergePeriodXpMaps(
-            mergePeriodXpMaps(periodXpPractice || new Map(), periodXpRounds || new Map()),
+        : [
+            periodXpRounds || new Map<string, number>(),
             accumulateDrillSessionXpByUser(timeFilter, drillSessions),
-          );
+            accumulateCombineXpByUser(timeFilter, practiceSessions || [], practiceLogs),
+          ].reduce(mergePeriodXpMaps, periodXpPractice || new Map<string, number>());
 
     if (userProfiles && userProfiles.size > 0) {
       userProfiles.forEach((profile, userId) => {

@@ -44,6 +44,10 @@ export function postAuthorName(post: CoachingPost, names: Map<string, string>, s
 const PROCESSING_WINDOW_MS = 30 * 60 * 1000;
 const PROCESSING_RETRY_MS = 5000;
 
+/** Portrait iPhone footage; used until the real shape is known from the thumbnail. */
+const PHONE_VIDEO_ASPECT = 9 / 16;
+const VIDEO_STAGE_HEIGHT = "h-[min(110vw,460px)]";
+
 export function PostVideo({
   video,
   compact,
@@ -57,10 +61,19 @@ export function PostVideo({
 }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [drawingsVersion, setDrawingsVersion] = useState(0);
+  const [aspect, setAspect] = useState(PHONE_VIDEO_ASPECT);
   const hasDrawings = useHasVideoAnnotations(videoAnnotationKey(video), drawingsVersion);
-  return (
-    <div className="relative">
-      <PostVideoPlayer video={video} compact={compact} createdAt={createdAt} paused={analyzing} />
+  const content = (
+    <>
+      <PostVideoPlayer
+        video={video}
+        compact={compact}
+        createdAt={createdAt}
+        paused={analyzing}
+        onAspect={(w, h) => {
+          if (w > 0 && h > 0) setAspect(w / h);
+        }}
+      />
       <button
         type="button"
         onClick={() => setAnalyzing(true)}
@@ -80,6 +93,19 @@ export function PostVideo({
           onSaved={() => setDrawingsVersion((n) => n + 1)}
         />
       )}
+    </>
+  );
+  if (compact) return <div className="relative">{content}</div>;
+  // Fixed stage height so every slide (thumbnail or playing) is the same size; the frame
+  // matches the video's own shape so the player never letterboxes it in black.
+  return (
+    <div className={`flex ${VIDEO_STAGE_HEIGHT} w-full items-center justify-center bg-stone-100`}>
+      <div
+        className="relative"
+        style={{ aspectRatio: aspect, width: `min(100%, calc(min(110vw, 460px) * ${aspect}))` }}
+      >
+        {content}
+      </div>
     </div>
   );
 }
@@ -89,11 +115,13 @@ function PostVideoPlayer({
   compact,
   createdAt,
   paused,
+  onAspect,
 }: {
   video: CoachingPostVideo;
   compact?: boolean;
   createdAt?: string;
   paused?: boolean;
+  onAspect?: (width: number, height: number) => void;
 }) {
   const [playing, setPlaying] = useState(false);
   if (paused && playing) setPlaying(false);
@@ -139,17 +167,14 @@ function PostVideoPlayer({
 
   const frame = compact
     ? "relative aspect-[9/16] w-36 overflow-hidden rounded-2xl"
-    : "relative flex h-[min(110vw,460px)] w-full items-center justify-center overflow-hidden";
-  const previewFrame = compact
-    ? frame
-    : "relative flex h-[min(70vw,300px)] w-full items-center justify-center overflow-hidden";
+    : "relative flex h-full w-full items-center justify-center overflow-hidden";
 
   if (!playing) {
     return (
       <button
         type="button"
         onClick={() => void start()}
-        className={`${previewFrame} group ${compact ? "bg-stone-900" : "bg-stone-200"}`}
+        className={`${frame} group ${compact ? "bg-stone-900" : "bg-stone-200"}`}
         aria-label="Play video"
       >
         {thumb ? (
@@ -157,10 +182,11 @@ function PostVideoPlayer({
           <img
             src={thumb}
             alt=""
-            className={`${compact ? "absolute inset-0 h-full w-full object-cover" : "h-full w-auto max-w-full object-contain"} ${
-              processing ? "invisible" : ""
-            }`}
-            onLoad={() => setProcessing(false)}
+            className={`absolute inset-0 h-full w-full object-cover ${processing ? "invisible" : ""}`}
+            onLoad={(e) => {
+              setProcessing(false);
+              onAspect?.(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight);
+            }}
             onError={onThumbError}
           />
         ) : (
@@ -192,7 +218,14 @@ function PostVideoPlayer({
       {video.bunny_video_id ? (
         <BunnyVideoPlayer videoId={video.bunny_video_id} fill autoplay />
       ) : fileUrl ? (
-        <video src={fileUrl} controls autoPlay playsInline className="absolute inset-0 h-full w-full object-contain" />
+        <video
+          src={fileUrl}
+          controls
+          autoPlay
+          playsInline
+          onLoadedMetadata={(e) => onAspect?.(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
+          className="absolute inset-0 h-full w-full object-contain"
+        />
       ) : (
         <span className="text-xs text-stone-300">
           {error ?? <Loader2 className="h-5 w-5 animate-spin" aria-hidden />}
@@ -247,10 +280,10 @@ export function PostVideos({
           const next = Math.round(el.scrollLeft / Math.max(1, el.clientWidth));
           if (next !== index) setIndex(next);
         }}
-        className="flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {videos.map((v, i) => (
-          <div key={`${v.bunny_video_id ?? v.storage_path}-${i}`} className="w-full shrink-0 snap-center">
+          <div key={`${v.bunny_video_id ?? v.storage_path}-${i}`} className="w-full shrink-0 snap-center snap-always">
             <PostVideo video={v} createdAt={createdAt} studentId={studentId} />
           </div>
         ))}

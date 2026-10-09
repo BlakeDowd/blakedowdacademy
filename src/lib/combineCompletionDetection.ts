@@ -85,9 +85,10 @@ function rowForUser(row: { user_id?: string | null }, uid: string | undefined): 
 export function listUserCombineCompletionEvents(stats: CombineCompletionStats): {
   at: string;
   label: string;
+  userId?: string;
 }[] {
   const uid = stats.userId;
-  const out: { at: string; label: string }[] = [];
+  const out: { at: string; label: string; userId?: string }[] = [];
 
   for (const row of stats.practiceLogs || []) {
     if (!row || typeof row !== "object") continue;
@@ -98,6 +99,7 @@ export function listUserCombineCompletionEvents(stats: CombineCompletionStats): 
       out.push({
         at,
         label: COMBINE_LOG_TYPE_LABELS[lt] ?? "Combine session",
+        userId: (row as { user_id?: string }).user_id,
       });
     }
   }
@@ -112,6 +114,7 @@ export function listUserCombineCompletionEvents(stats: CombineCompletionStats): 
       out.push({
         at,
         label: COMBINE_TEST_TYPE_LABELS[tt] ?? "Combine session",
+        userId: (row as { user_id?: string }).user_id,
       });
     }
   }
