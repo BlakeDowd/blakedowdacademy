@@ -13,6 +13,10 @@ import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
 import { IronPrecisionReport, parseIronPrecisionShots } from "@/components/IronPrecisionProtocolRunner";
 import { IronFaceControlReport, parseIronFaceShots } from "@/components/IronFaceControlRunner";
+import { IronSafeSideReport, parseSafeSideShots } from "@/components/IronSafeSideRunner";
+import { ironSafeSideConfig } from "@/lib/ironSafeSideConfig";
+import { IronFadeDrawReport, parseFadeDrawShots } from "@/components/IronFadeDrawRunner";
+import { ironFadeDrawConfig } from "@/lib/ironFadeDrawConfig";
 import { ThreeStrikesReport, parseThreeStrikesShots } from "@/components/ThreeStrikesWedgeRunner";
 import { WedgeLateral9Report, parseWedgeLateral9Shots } from "@/components/WedgeLateral9Runner";
 
@@ -57,6 +61,20 @@ const LOADERS: Partial<Record<CombineLeaderboardTestId, Loader>> = {
     return rows.map((r) => {
       const shots = parseIronFaceShots(r.strike_data);
       return { id: r.id, at: r.created_at, score: points(r.total_points), report: shots && <IronFaceControlReport shots={shots} /> };
+    });
+  },
+  iron_safe_side: async (supabase, playerId) => {
+    const rows = await practiceLogs(supabase, playerId, [ironSafeSideConfig.practiceLogType], "strike_data");
+    return rows.map((r) => {
+      const shots = parseSafeSideShots(r.strike_data);
+      return { id: r.id, at: r.created_at, score: points(r.total_points), report: shots && <IronSafeSideReport shots={shots} /> };
+    });
+  },
+  iron_fade_draw: async (supabase, playerId) => {
+    const rows = await practiceLogs(supabase, playerId, [ironFadeDrawConfig.practiceLogType], "strike_data");
+    return rows.map((r) => {
+      const shots = parseFadeDrawShots(r.strike_data);
+      return { id: r.id, at: r.created_at, score: points(r.total_points), report: shots && <IronFadeDrawReport shots={shots} /> };
     });
   },
   three_strikes: async (supabase, playerId) => {

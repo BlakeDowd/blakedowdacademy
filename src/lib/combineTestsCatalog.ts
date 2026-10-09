@@ -18,6 +18,8 @@ import { standardChippingCombineConfig } from "@/lib/standardChippingCombineConf
 import { lowChipCombineConfig } from "@/lib/lowChipCombineConfig";
 import { survival20Config } from "@/lib/survival20Config";
 import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
+import { ironSafeSideConfig } from "@/lib/ironSafeSideConfig";
+import { ironFadeDrawConfig } from "@/lib/ironFadeDrawConfig";
 import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
 import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
 
@@ -239,6 +241,26 @@ export const COMBINE_TEST_CARDS: CombineTestCard[] = [
     label: ironFaceControlConfig.testName,
     title: "Iron Face Control",
     blurb: "Hit the gate, shape the curve, strike it solid.",
+    meta: ["10 shots", "100 pts max"],
+    group: "Tests",
+  },
+  {
+    id: "iron-safe-side",
+    category: "Irons",
+    href: "/practice/iron-safe-side",
+    label: ironSafeSideConfig.testName,
+    title: "Iron Safe Side",
+    blurb: "Get close to the flag without crossing to the wrong side.",
+    meta: ["9 shots", "90 pts max"],
+    group: "Tests",
+  },
+  {
+    id: "iron-fade-vs-draw",
+    category: "Irons",
+    href: "/practice/iron-fade-vs-draw",
+    label: ironFadeDrawConfig.testName,
+    title: "Fade vs Draw",
+    blurb: "Five fades, five draws. Find out which shape you own.",
     meta: ["10 shots", "100 pts max"],
     group: "Tests",
   },

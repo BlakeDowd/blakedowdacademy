@@ -481,6 +481,8 @@ const COMBINE_HREF_TO_LOG_TYPE: Record<string, string> = {
   "/practice/3-strikes-wedge-challenge": "three_strikes",
   "/practice/iron-precision-protocol": "iron_precision_protocol",
   "/practice/iron-face-control-protocol": "iron_face_control",
+  "/practice/iron-safe-side": "iron_safe_side",
+  "/practice/iron-fade-vs-draw": "iron_fade_draw",
   "/practice/bunker-proximity-protocol": "bunker_protocol",
   "/combines/iron-skills": "iron_skills",
 };
@@ -501,6 +503,8 @@ const COMBINE_HREF_TO_LEADERBOARD_TEST: Partial<Record<string, CombineLeaderboar
   "/practice/standard-chipping-combine": "chipping",
   "/practice/survival-20": "survival_20",
   "/practice/iron-face-control-protocol": "iron_face_control",
+  "/practice/iron-safe-side": "iron_safe_side",
+  "/practice/iron-fade-vs-draw": "iron_fade_draw",
   "/practice/3-strikes-wedge-challenge": "three_strikes",
   "/practice/bunker-proximity-protocol": "bunker_protocol",
 };
@@ -525,6 +529,8 @@ const COMBINE_HREF_TO_EST_MINUTES: Record<string, number> = {
   "/practice/3-strikes-wedge-challenge": 15,
   "/practice/iron-precision-protocol": 20,
   "/practice/iron-face-control-protocol": 20,
+  "/practice/iron-safe-side": 15,
+  "/practice/iron-fade-vs-draw": 15,
   "/practice/bunker-proximity-protocol": 15,
   "/combines/iron-skills": 20,
   "/practice/tee-shot-dispersion-combine": 20,

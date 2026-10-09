@@ -14,6 +14,8 @@ import {
 } from "@/lib/leaderboardTimeWindow";
 import { survival20Config } from "@/lib/survival20Config";
 import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
+import { ironSafeSideConfig } from "@/lib/ironSafeSideConfig";
+import { ironFadeDrawConfig } from "@/lib/ironFadeDrawConfig";
 import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
 import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
 
@@ -33,6 +35,8 @@ export type CombineLeaderboardTestId =
   | "chipping"
   | "survival_20"
   | "iron_face_control"
+  | "iron_safe_side"
+  | "iron_fade_draw"
   | "three_strikes"
   | "bunker_protocol";
 
@@ -162,6 +166,20 @@ export const COMBINE_LEADERBOARD_OPTIONS: CombineLeaderboardTestOption[] = [
   {
     id: "iron_face_control",
     label: ironFaceControlConfig.testName,
+    source: "practice_logs",
+    higherIsBetter: true,
+    scoreHeader: "Score (/100)",
+  },
+  {
+    id: "iron_safe_side",
+    label: ironSafeSideConfig.testName,
+    source: "practice_logs",
+    higherIsBetter: true,
+    scoreHeader: "Score (/90)",
+  },
+  {
+    id: "iron_fade_draw",
+    label: ironFadeDrawConfig.testName,
     source: "practice_logs",
     higherIsBetter: true,
     scoreHeader: "Score (/100)",
@@ -508,6 +526,24 @@ export function buildAcademyCombinesLeaderboard(
           display: `${Math.round(tp)} / 100`,
           dateMs,
         });
+      }
+    }
+  } else if (testId === "iron_safe_side" || testId === "iron_fade_draw") {
+    const isSafeSide = testId === "iron_safe_side";
+    const want = isSafeSide ? ironSafeSideConfig.practiceLogType : ironFadeDrawConfig.practiceLogType;
+    const outOf = isSafeSide ? 90 : ironFadeDrawConfig.maxSessionPoints;
+    for (const row of practiceLogs || []) {
+      if (String(row?.log_type ?? "").trim().toLowerCase() !== want) continue;
+      if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
+      const uid = row.user_id;
+      if (!uid) continue;
+      // Penalties (crossing the flag, double crosses) mean totals can be negative.
+      const tp = num(row.score) ?? num(row.total_points);
+      if (tp == null) continue;
+      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
+      const prev = bestByUser.get(uid);
+      if (!prev || tp > prev.sortValue || (tp === prev.sortValue && dateMs > prev.dateMs)) {
+        bestByUser.set(uid, { sortValue: tp, display: `${Math.round(tp)} / ${outOf}`, dateMs });
       }
     }
   } else if (testId === "three_strikes") {

@@ -103,7 +103,7 @@ function readStoredClubs(userId: string): string[] | null {
   }
 }
 
-function storeClubs(userId: string, clubs: string[]) {
+export function storeClubs(userId: string, clubs: string[]) {
   try {
     window.localStorage.setItem(CLUBS_STORAGE_PREFIX + userId, JSON.stringify(clubs));
   } catch {
@@ -112,7 +112,7 @@ function storeClubs(userId: string, clubs: string[]) {
 }
 
 /** Last saved picks, else clubs matched from the Virtual Caddie bag, else null. */
-async function loadSavedClubs(userId: string): Promise<string[] | null> {
+export async function loadSavedClubs(userId: string): Promise<string[] | null> {
   const local = readStoredClubs(userId);
   if (local) return local;
   try {

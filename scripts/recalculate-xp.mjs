@@ -54,6 +54,8 @@ const COMBINE_PRACTICE_LOG_TYPES = [
   'flop_shot',
   'survival_20',
   'iron_face_control',
+  'iron_safe_side',
+  'iron_fade_draw',
   'iron_skills',
 ];
 

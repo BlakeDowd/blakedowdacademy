@@ -12,6 +12,8 @@ import { flopShotCombineConfig } from "@/lib/flopShotCombineConfig";
 import { standardChippingCombineConfig } from "@/lib/standardChippingCombineConfig";
 import { survival20Config } from "@/lib/survival20Config";
 import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
+import { ironSafeSideConfig } from "@/lib/ironSafeSideConfig";
+import { ironFadeDrawConfig } from "@/lib/ironFadeDrawConfig";
 
 /** `log_type` values written to `practice_logs` by combine protocol runners (leaderboard + completion stats). */
 export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
@@ -26,6 +28,8 @@ export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
   standardChippingCombineConfig.practiceLogType,
   survival20Config.practiceLogType,
   ironFaceControlConfig.practiceLogType,
+  ironSafeSideConfig.practiceLogType,
+  ironFadeDrawConfig.practiceLogType,
   "iron_skills",
 ];
 
@@ -54,6 +58,8 @@ const COMBINE_LOG_TYPE_LABELS: Record<string, string> = {
   [standardChippingCombineConfig.practiceLogType]: standardChippingCombineConfig.testName,
   [survival20Config.practiceLogType]: survival20Config.testName,
   [ironFaceControlConfig.practiceLogType]: ironFaceControlConfig.testName,
+  [ironSafeSideConfig.practiceLogType]: ironSafeSideConfig.testName,
+  [ironFadeDrawConfig.practiceLogType]: ironFadeDrawConfig.testName,
   iron_skills: "Iron Skills Challenge",
 };
 
