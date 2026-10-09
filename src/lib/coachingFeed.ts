@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import * as tus from "tus-js-client";
 import { createClient } from "@/lib/supabase/client";
+import type { CoachingVideoKind } from "@/lib/bunnyCollections";
 
 export type CoachingPost = {
   id: string;
@@ -566,12 +567,17 @@ type TusCredentials = {
  */
 export async function uploadCoachingVideo(
   file: File,
-  opts: { title: string; rawCopyOwnerId?: string; onProgress?: (percent: number) => void },
+  opts: {
+    title: string;
+    kind?: CoachingVideoKind;
+    rawCopyOwnerId?: string;
+    onProgress?: (percent: number) => void;
+  },
 ): Promise<{ videoId: string; storagePath: string | null }> {
   const res = await fetch("/api/coaching/video", {
     method: "POST",
     headers: await authJsonHeaders(),
-    body: JSON.stringify({ title: opts.title }),
+    body: JSON.stringify({ title: opts.title, kind: opts.kind }),
   });
   const payload = (await res.json().catch(() => ({}))) as { upload?: TusCredentials; error?: string };
   if (!res.ok || !payload.upload?.videoId) {

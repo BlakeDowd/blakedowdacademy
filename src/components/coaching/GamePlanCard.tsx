@@ -89,6 +89,7 @@ function GamePlanForm({
         setProgress({ index: i, percent: 0 });
         const v = await uploadCoachingVideo(videos[i]!, {
           title: `${studentName} · Game plan · ${new Date().toLocaleDateString()}${videos.length > 1 ? ` (${i + 1})` : ""}`,
+          kind: "game_plan",
           onProgress: (percent) => setProgress({ index: i, percent }),
         });
         uploaded.push({ bunny_video_id: v.videoId, storage_path: v.storagePath });

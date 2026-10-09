@@ -5,6 +5,7 @@ import {
   createBunnyTusUploadCredentials,
 } from "@/lib/bunnyStreamAdmin";
 import { resolveRequestUser } from "@/lib/coachingServer";
+import { bunnyCollectionFor, isCoachingVideoKind } from "@/lib/bunnyCollections";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,9 +26,10 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json({ error: "Sign in to upload a video." }, { status: 401 });
     }
-    const body = (await request.json().catch(() => null)) as { title?: unknown } | null;
+    const body = (await request.json().catch(() => null)) as { title?: unknown; kind?: unknown } | null;
     const title = String(body?.title || "").trim().slice(0, 120) || "Coaching video";
-    const created = await bunnyCreateVideo(title);
+    const kind = isCoachingVideoKind(body?.kind) ? body.kind : null;
+    const created = await bunnyCreateVideo(title, bunnyCollectionFor(kind));
     const upload = createBunnyTusUploadCredentials(created.guid, created.title, UPLOAD_WINDOW_SECONDS);
     return NextResponse.json({ ok: true, upload });
   } catch (err: unknown) {

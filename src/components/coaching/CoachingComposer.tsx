@@ -21,6 +21,7 @@ import {
   type CoachingVideoRef,
 } from "@/lib/coachingFeed";
 import { Avatar } from "@/components/coaching/coachingUi";
+import type { CoachingVideoKind } from "@/lib/bunnyCollections";
 
 export type ToastState = { message: string; type: "success" | "error" | "info" | "warning" } | null;
 
@@ -32,6 +33,7 @@ type Progress = { index: number; total: number; percent: number } | null;
 type MediaInput = {
   photoFolder: string;
   videoTitle: string;
+  kind: CoachingVideoKind;
   authorId: string;
   authorIsCoach: boolean;
   videos: File[];
@@ -39,7 +41,7 @@ type MediaInput = {
   onProgress: (p: Progress) => void;
 };
 
-type SubmitInput = Omit<MediaInput, "photoFolder" | "videoTitle"> & {
+type SubmitInput = Omit<MediaInput, "photoFolder" | "videoTitle" | "kind"> & {
   studentId: string;
   studentName: string;
   parentId?: string;
@@ -81,6 +83,7 @@ async function uploadMedia(input: MediaInput) {
       try {
         const v = await uploadCoachingVideo(file, {
           title: `${input.videoTitle} · ${new Date().toLocaleDateString()}${input.videos.length > 1 ? ` (${i + 1})` : ""}`,
+          kind: input.kind,
           rawCopyOwnerId: input.authorIsCoach ? undefined : input.authorId,
           onProgress: (percent) => input.onProgress({ index: i, total: input.videos.length, percent }),
         });
@@ -102,6 +105,7 @@ async function submit(input: SubmitInput): Promise<SubmitResult> {
     ...input,
     photoFolder: input.studentId,
     videoTitle: input.studentName,
+    kind: input.authorIsCoach ? "lesson" : "player",
   });
 
   if (input.videos.length && !uploaded.length && !imagePath && !input.body.trim()) {
@@ -128,12 +132,13 @@ async function submit(input: SubmitInput): Promise<SubmitResult> {
 }
 
 async function submitAnnouncement(
-  input: Omit<MediaInput, "photoFolder" | "videoTitle"> & { body: string; pinnedUntil: string | null },
+  input: Omit<MediaInput, "photoFolder" | "videoTitle" | "kind"> & { body: string; pinnedUntil: string | null },
 ): Promise<{ announcement: CoachingAnnouncement | null; failed: File[]; firstError: unknown }> {
   const { imagePath, uploaded, failed, firstError } = await uploadMedia({
     ...input,
     photoFolder: ANNOUNCEMENT_PHOTO_FOLDER,
     videoTitle: "Announcement",
+    kind: "announcement",
   });
   if (!uploaded.length && !imagePath && !input.body.trim()) return { announcement: null, failed, firstError };
   const [first, ...extras] = uploaded;

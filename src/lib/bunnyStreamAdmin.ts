@@ -126,7 +126,10 @@ export async function bunnyVideoExists(videoId: string): Promise<boolean> {
   return true;
 }
 
-export async function bunnyCreateVideo(title: string): Promise<{ guid: string; title: string }> {
+export async function bunnyCreateVideo(
+  title: string,
+  collectionId?: string | null,
+): Promise<{ guid: string; title: string }> {
   const apiKey = getBunnyStreamApiKey();
   const libraryId = resolveBunnyLibraryId();
   if (!apiKey || !libraryId) {
@@ -135,11 +138,20 @@ export async function bunnyCreateVideo(title: string): Promise<{ guid: string; t
     );
   }
 
-  const createRes = await fetch(`${BUNNY_VIDEO_API}/library/${libraryId}/videos`, {
-    method: "POST",
-    headers: bunnyAuthHeaders(apiKey, true),
-    body: JSON.stringify({ title: title || "Swing upload" }),
-  });
+  const create = (withCollection: boolean) =>
+    fetch(`${BUNNY_VIDEO_API}/library/${libraryId}/videos`, {
+      method: "POST",
+      headers: bunnyAuthHeaders(apiKey, true),
+      body: JSON.stringify({
+        title: title || "Swing upload",
+        ...(withCollection && collectionId ? { collectionId } : {}),
+      }),
+    });
+  let createRes = await create(true);
+  if (!createRes.ok && collectionId) {
+    console.warn(`[bunny] create in collection ${collectionId} failed (${createRes.status}); creating without it.`);
+    createRes = await create(false);
+  }
   if (!createRes.ok) {
     const text = await createRes.text();
     throw new Error(`Bunny create failed (${createRes.status}): ${text.slice(0, 200)}`);
