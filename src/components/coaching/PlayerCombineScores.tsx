@@ -8,12 +8,14 @@ import {
   buildCoachPlayerCombineSnapshot,
   type CoachCombineSnapshotRow,
 } from "@/lib/coachPlayerCombineSnapshot";
+import { CombineReportSheet, hasCombineReport } from "@/components/coaching/CombineReportSheet";
 
 type State = { status: "loading" } | { status: "error" } | { status: "ready"; rows: CoachCombineSnapshotRow[] };
 
 /** Best result per Academy combine for a player, shown in the coach's view of their space. */
 export function PlayerCombineScores({ playerId, playerName }: { playerId: string; playerName: string }) {
   const [state, setState] = useState<State>({ status: "loading" });
+  const [open, setOpen] = useState<CoachCombineSnapshotRow | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,21 +75,51 @@ export function PlayerCombineScores({ playerId, playerName }: { playerId: string
         <p className="text-xs text-stone-500">No combines logged yet. Tap Test {playerName.split(" ")[0]} to run one.</p>
       ) : (
         <ul className="space-y-2">
-          {state.rows.map((row) => (
-            <li
-              key={row.id}
-              className="flex items-center justify-between gap-3 rounded-xl bg-stone-50 px-3 py-2"
-            >
-              <span className="min-w-0 truncate text-sm font-medium text-stone-800">{row.label}</span>
+          {state.rows.map((row) => {
+            const score = (
               <span className="shrink-0 rounded-lg bg-[#014421]/10 px-2.5 py-1 text-xs font-bold text-[#014421]">
                 {row.scoreDisplay}
               </span>
-            </li>
-          ))}
+            );
+            return (
+              <li key={row.id}>
+                {hasCombineReport(row.id) ? (
+                  <button
+                    type="button"
+                    onClick={() => setOpen(row)}
+                    className="flex w-full items-center justify-between gap-3 rounded-xl bg-stone-50 px-3 py-2 text-left hover:bg-stone-100"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-stone-800">{row.label}</span>
+                      <span className="block text-[11px] font-semibold text-[#014421]">View report</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {score}
+                      <ChevronRight className="h-4 w-4 text-stone-400" aria-hidden />
+                    </span>
+                  </button>
+                ) : (
+                  <div className="flex items-center justify-between gap-3 rounded-xl bg-stone-50 px-3 py-2">
+                    <span className="min-w-0 truncate text-sm font-medium text-stone-800">{row.label}</span>
+                    {score}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       {state.status === "ready" && state.rows.length > 0 && (
         <p className="mt-2 text-[11px] text-stone-400">Personal best for each combine.</p>
+      )}
+      {open && (
+        <CombineReportSheet
+          playerId={playerId}
+          playerName={playerName}
+          testId={open.id}
+          label={open.label}
+          onClose={() => setOpen(null)}
+        />
       )}
     </section>
   );

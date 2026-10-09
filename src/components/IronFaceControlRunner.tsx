@@ -6,6 +6,8 @@ import { useCombineUser } from "@/hooks/useCombineUser";
 import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
+import { asRecord } from "@/lib/combineReportData";
+import { insertPracticeLogCompat } from "@/lib/practiceLogsCompat";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import {
   CombineHero,
@@ -23,7 +25,7 @@ import {
 import { IronHeroArt, IronShotDiagram, ToggleCard } from "@/components/combine/IronCombineUi";
 import { BreakdownBar, BreakdownCard, FocusCard, RateRow } from "@/components/combine/CombineBreakdown";
 
-type IronFaceShot = {
+export type IronFaceShot = {
   gate: boolean;
   curve: boolean;
   solid: boolean;
@@ -116,20 +118,34 @@ function breakdown(shots: IronFaceShot[]) {
   };
 }
 
-async function persistIronFaceSession(userId: string, total: number): Promise<string | null> {
+/** Saved shots from a practice_logs row, or null for sessions saved before shots were stored. */
+export function parseIronFaceShots(strikeData: unknown): IronFaceShot[] | null {
+  if (!Array.isArray(strikeData) || strikeData.length === 0) return null;
+  const shots: IronFaceShot[] = [];
+  for (const raw of strikeData) {
+    const o = asRecord(raw);
+    if (!o) return null;
+    shots.push({ gate: o.gate === true, curve: o.curve === true, solid: o.solid === true });
+  }
+  return shots;
+}
+
+async function persistIronFaceSession(userId: string, shots: IronFaceShot[]): Promise<string | null> {
   try {
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
-    const { error } = await supabase.from("practice_logs").insert({
+    const total = sessionTotal(shots);
+    const res = await insertPracticeLogCompat(supabase, {
       user_id: userId,
       log_type: ironFaceControlConfig.practiceLogType,
       score: total,
       total_points: total,
+      strike_data: shots,
     });
 
-    if (error) {
-      console.warn("[IronFaceControl] practice_logs insert:", formatSupabaseWriteError(error));
-      return formatSupabaseWriteError(error);
+    if (!res.ok) {
+      console.warn("[IronFaceControl] practice_logs insert:", res.message);
+      return res.message;
     }
     await awardCombineCompletionXp(userId);
     if (typeof window !== "undefined") {
@@ -140,6 +156,56 @@ async function persistIronFaceSession(userId: string, total: number): Promise<st
     console.warn("[IronFaceControl] practice_logs insert failed", formatSupabaseWriteError(e));
     return formatSupabaseWriteError(e);
   }
+}
+
+/** The results screen. Coaches see the same report for a saved session. */
+export function IronFaceControlReport({ shots }: { shots: IronFaceShot[] }) {
+  const total = shots.length;
+  const summary = breakdown(shots);
+  return (
+    <>
+      <ResultHero>
+        <ScoreRing
+          pct={summary.total / ironFaceControlConfig.maxSessionPoints}
+          value={summary.total}
+          caption={`of ${ironFaceControlConfig.maxSessionPoints} points`}
+        />
+        <p className="mt-2 text-xs text-white/70">
+          {summary.perfect} perfect shot{summary.perfect === 1 ? "" : "s"} · higher is better
+        </p>
+      </ResultHero>
+      <StatTiles
+        stats={[
+          { label: "Avg per shot", value: (summary.total / total).toFixed(1) },
+          { label: "Perfect shots", value: summary.perfect },
+          { label: "Best streak", value: summary.bestStreak, sub: "7+ pt shots" },
+        ]}
+      />
+
+      <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+
+      <BreakdownCard title="Shot by shot">
+        <ProgressTrack items={summary.track} current={-1} name="Shot" />
+      </BreakdownCard>
+
+      <BreakdownCard title="Skills" aside="Made / shots">
+        <div className="space-y-3">
+          {summary.skills.map((s) => (
+            <RateRow key={s.key} label={s.label} made={s.made} total={total} flag={s.key === summary.leak ? "Biggest leak" : null} />
+          ))}
+        </div>
+      </BreakdownCard>
+
+      <BreakdownCard title="Where your points went" aside={`${summary.total} of ${ironFaceControlConfig.maxSessionPoints}`}>
+        <BreakdownBar
+          segments={[
+            { label: "Scored", value: summary.total, tone: "bg-[#014421]" },
+            ...summary.skills.map((s) => ({ label: `Lost: ${s.short}`, value: s.lost, tone: s.tone })),
+          ]}
+        />
+      </BreakdownCard>
+    </>
+  );
 }
 
 export function IronFaceControlRunner() {
@@ -170,7 +236,7 @@ export function IronFaceControlRunner() {
       }
       persistAttemptedRef.current = true;
       setSaveError(null);
-      const err = await persistIronFaceSession(userId, sessionTotal(all));
+      const err = await persistIronFaceSession(userId, all);
       setSaved(err == null);
       if (err) {
         setSaveError(err);
@@ -233,46 +299,7 @@ export function IronFaceControlRunner() {
   if (status === "complete" && summary) {
     return (
       <div className="space-y-4">
-        <ResultHero>
-          <ScoreRing
-            pct={summary.total / ironFaceControlConfig.maxSessionPoints}
-            value={summary.total}
-            caption={`of ${ironFaceControlConfig.maxSessionPoints} points`}
-          />
-          <p className="mt-2 text-xs text-white/70">
-            {summary.perfect} perfect shot{summary.perfect === 1 ? "" : "s"} · higher is better
-          </p>
-        </ResultHero>
-        <StatTiles
-          stats={[
-            { label: "Avg per shot", value: (summary.total / total).toFixed(1) },
-            { label: "Perfect shots", value: summary.perfect },
-            { label: "Best streak", value: summary.bestStreak, sub: "7+ pt shots" },
-          ]}
-        />
-
-        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
-
-        <BreakdownCard title="Shot by shot">
-          <ProgressTrack items={summary.track} current={-1} name="Shot" />
-        </BreakdownCard>
-
-        <BreakdownCard title="Skills" aside="Made / shots">
-          <div className="space-y-3">
-            {summary.skills.map((s) => (
-              <RateRow key={s.key} label={s.label} made={s.made} total={total} flag={s.key === summary.leak ? "Biggest leak" : null} />
-            ))}
-          </div>
-        </BreakdownCard>
-
-        <BreakdownCard title="Where your points went" aside={`${summary.total} of ${ironFaceControlConfig.maxSessionPoints}`}>
-          <BreakdownBar
-            segments={[
-              { label: "Scored", value: summary.total, tone: "bg-[#014421]" },
-              ...summary.skills.map((s) => ({ label: `Lost: ${s.short}`, value: s.lost, tone: s.tone })),
-            ]}
-          />
-        </BreakdownCard>
+        <IronFaceControlReport shots={shots} />
 
         <SaveStatus saved={saved} error={saveError} onRetry={userId ? () => void save(shots) : undefined} />
         <PlayAgainButton onClick={startTest} />

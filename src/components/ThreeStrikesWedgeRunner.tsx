@@ -7,6 +7,7 @@ import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
 import { insertPracticeLogCompat } from "@/lib/practiceLogsCompat";
+import { asRecord, parseNotes } from "@/lib/combineReportData";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import {
   CombineHero,
@@ -55,15 +56,17 @@ function isHit(diff: number): boolean {
   return diff <= HIT_WINDOW_M + 1e-9;
 }
 
-async function persistThreeStrikesSession(userId: string, hits: number): Promise<string | null> {
+async function persistThreeStrikesSession(userId: string, shots: StrikeShot[]): Promise<string | null> {
   try {
     const { createClient } = await import("@/lib/supabase/client");
     const supabase = createClient();
+    const hits = shots.filter((s) => s.hit).length;
     const payload = {
-      version: 1,
+      version: 2,
       total_hits: hits,
       max_strikes: threeStrikesWedgeConfig.maxStrikes,
       hit_window_m: threeStrikesWedgeConfig.hitWindowM,
+      shots,
     };
 
     const insertRes = await insertPracticeLogCompat(supabase, {
@@ -85,13 +88,29 @@ async function persistThreeStrikesSession(userId: string, hits: number): Promise
   }
 }
 
-type StrikeShot = {
+export type StrikeShot = {
   shot: number;
   targetM: number;
   actualM: number;
   diff: number;
   hit: boolean;
 };
+
+/** Saved shots from a practice_logs row, or null for sessions saved before shots were stored. */
+export function parseThreeStrikesShots(notes: unknown): StrikeShot[] | null {
+  const list = parseNotes(notes)?.shots;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const shots: StrikeShot[] = [];
+  for (const raw of list) {
+    const o = asRecord(raw);
+    const targetM = Number(o?.targetM);
+    const actualM = Number(o?.actualM);
+    if (!o || !Number.isFinite(targetM) || !Number.isFinite(actualM)) return null;
+    const diff = Math.abs(targetM - actualM);
+    shots.push({ shot: shots.length + 1, targetM, actualM, diff, hit: isHit(diff) });
+  }
+  return shots;
+}
 
 const CARRY_OFFSETS = [-8, -5, -3, -2, -1, 0, 1, 2, 3, 5, 8] as const;
 
@@ -269,6 +288,78 @@ function StrikeDots({ used }: { used: number }) {
   );
 }
 
+/** The results screen. Coaches see the same report for a saved session. */
+export function ThreeStrikesReport({ shots }: { shots: StrikeShot[] }) {
+  const summary = breakdown(shots);
+  const n = shots.length;
+  return (
+    <>
+      <ResultHero>
+        <p className="mt-3 text-6xl font-extrabold tabular-nums leading-none">{summary.hits}</p>
+        <p className="mt-1 text-sm font-semibold text-white/80">
+          hit{summary.hits === 1 ? "" : "s"} before {MAX_STRIKES} strikes
+        </p>
+        <p className="mt-2 text-xs text-white/70">{n} shots · higher is better</p>
+      </ResultHero>
+
+      <StatTiles
+        stats={[
+          { label: "Hit rate", value: `${summary.hitPct}%` },
+          { label: "Best streak", value: summary.bestStreak, sub: "hits in a row" },
+          { label: "Avg miss", value: `${summary.avgMiss.toFixed(1)} m` },
+        ]}
+      />
+
+      <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+
+      <BreakdownCard title="Short or long" aside={`Short ${summary.short} · Long ${summary.long}`}>
+        <ShortLongMap shots={shots} />
+        <p className="mt-2 text-xs text-gray-600">The green zone is a hit. Red dots were strikes.</p>
+      </BreakdownCard>
+
+      <BreakdownCard title="By distance" aside="Hits / shots">
+        <div className="space-y-3">
+          {summary.bands.map((b) => (
+            <RateRow key={b.label} label={b.label} made={b.made} total={b.asked} flag={b.label === summary.worstBand ? "Toughest" : null} />
+          ))}
+        </div>
+      </BreakdownCard>
+
+      <BreakdownCard title="What ended the run">
+        <ul className="space-y-1.5">
+          {summary.strikeShots.map((s, i) => (
+            <li key={s.shot} className="flex items-center gap-3 text-sm">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-500 text-[11px] font-bold text-white">
+                {i + 1}
+              </span>
+              <span className="min-w-0 flex-1 text-gray-600">
+                Shot {s.shot}: {fmtM(s.targetM)} m target
+              </span>
+              <span className="shrink-0 font-bold tabular-nums text-gray-900">
+                {s.diff.toFixed(1)} m {missSide(s)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </BreakdownCard>
+
+      <EveryShotList>
+        {shots.map((s) => (
+          <li key={s.shot} className="flex items-center gap-3 py-2 text-sm">
+            <span className="w-14 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold tabular-nums text-gray-800">
+              {fmtM(s.targetM)} m
+            </span>
+            <span className="min-w-0 flex-1 truncate text-gray-600">
+              Carried {fmtM(s.actualM)} m · {s.diff.toFixed(1)} m {missSide(s)}
+            </span>
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${shotTone(s)}`}>{s.hit ? "Hit" : "Strike"}</span>
+          </li>
+        ))}
+      </EveryShotList>
+    </>
+  );
+}
+
 export function ThreeStrikesWedgeRunner() {
   const user = useCombineUser();
   const userId = user?.id ?? null;
@@ -294,7 +385,7 @@ export function ThreeStrikesWedgeRunner() {
   }, []);
 
   const save = useCallback(
-    async (totalHits: number) => {
+    async (all: StrikeShot[]) => {
       if (!userId) {
         setSaveError("Sign in to save this session.");
         setSaved(false);
@@ -303,7 +394,7 @@ export function ThreeStrikesWedgeRunner() {
       if (persistAttemptedRef.current) return;
       persistAttemptedRef.current = true;
       setSaveError(null);
-      const err = await persistThreeStrikesSession(userId, totalHits);
+      const err = await persistThreeStrikesSession(userId, all);
       setSaved(err == null);
       if (err) {
         setSaveError(err);
@@ -324,7 +415,7 @@ export function ThreeStrikesWedgeRunner() {
 
     if (next.filter((s) => !s.hit).length >= MAX_STRIKES) {
       setStatus("complete");
-      await save(next.filter((s) => s.hit).length);
+      await save(next);
       return;
     }
     setTargetM(randomTargetDistanceM());
@@ -379,73 +470,11 @@ export function ThreeStrikesWedgeRunner() {
   }
 
   if (status === "complete" && summary) {
-    const n = shots.length;
     return (
       <div className="space-y-4">
-        <ResultHero>
-          <p className="mt-3 text-6xl font-extrabold tabular-nums leading-none">{summary.hits}</p>
-          <p className="mt-1 text-sm font-semibold text-white/80">
-            hit{summary.hits === 1 ? "" : "s"} before {MAX_STRIKES} strikes
-          </p>
-          <p className="mt-2 text-xs text-white/70">{n} shots · higher is better</p>
-        </ResultHero>
+        <ThreeStrikesReport shots={shots} />
 
-        <StatTiles
-          stats={[
-            { label: "Hit rate", value: `${summary.hitPct}%` },
-            { label: "Best streak", value: summary.bestStreak, sub: "hits in a row" },
-            { label: "Avg miss", value: `${summary.avgMiss.toFixed(1)} m` },
-          ]}
-        />
-
-        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
-
-        <BreakdownCard title="Short or long" aside={`Short ${summary.short} · Long ${summary.long}`}>
-          <ShortLongMap shots={shots} />
-          <p className="mt-2 text-xs text-gray-600">The green zone is a hit. Red dots were strikes.</p>
-        </BreakdownCard>
-
-        <BreakdownCard title="By distance" aside="Hits / shots">
-          <div className="space-y-3">
-            {summary.bands.map((b) => (
-              <RateRow key={b.label} label={b.label} made={b.made} total={b.asked} flag={b.label === summary.worstBand ? "Toughest" : null} />
-            ))}
-          </div>
-        </BreakdownCard>
-
-        <BreakdownCard title="What ended the run">
-          <ul className="space-y-1.5">
-            {summary.strikeShots.map((s, i) => (
-              <li key={s.shot} className="flex items-center gap-3 text-sm">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-500 text-[11px] font-bold text-white">
-                  {i + 1}
-                </span>
-                <span className="min-w-0 flex-1 text-gray-600">
-                  Shot {s.shot}: {fmtM(s.targetM)} m target
-                </span>
-                <span className="shrink-0 font-bold tabular-nums text-gray-900">
-                  {s.diff.toFixed(1)} m {missSide(s)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </BreakdownCard>
-
-        <EveryShotList>
-          {shots.map((s) => (
-            <li key={s.shot} className="flex items-center gap-3 py-2 text-sm">
-              <span className="w-14 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold tabular-nums text-gray-800">
-                {fmtM(s.targetM)} m
-              </span>
-              <span className="min-w-0 flex-1 truncate text-gray-600">
-                Carried {fmtM(s.actualM)} m · {s.diff.toFixed(1)} m {missSide(s)}
-              </span>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${shotTone(s)}`}>{s.hit ? "Hit" : "Strike"}</span>
-            </li>
-          ))}
-        </EveryShotList>
-
-        <SaveStatus saved={saved} error={saveError} onRetry={userId ? () => void save(summary.hits) : undefined} />
+        <SaveStatus saved={saved} error={saveError} onRetry={userId ? () => void save(shots) : undefined} />
         <PlayAgainButton onClick={startTest} />
       </div>
     );

@@ -50,12 +50,13 @@ import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { refreshAuthSessionIfPossible } from "@/lib/supabasePersistSession";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
 import { saveCombineProfile } from "@/lib/saveCombineProfile";
+import { asRecord, oneOf } from "@/lib/combineReportData";
 
 const FINGER_OPTIONS: IronFingerMiss[] = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, "outside"];
 const MAX_SHOT_POINTS = 12;
 const CLUBS_STORAGE_PREFIX = "iron-precision-clubs:";
 
-type ShotPayload = {
+export type ShotPayload = {
   shot: number;
   club: string;
   direction: IronMissDirection;
@@ -64,6 +65,32 @@ type ShotPayload = {
   contact: IronContact;
   points: number;
 };
+
+/** Saved shots from a practice_logs row's strike_data, or null when they weren't stored. */
+export function parseIronPrecisionShots(strikeData: unknown): ShotPayload[] | null {
+  if (!Array.isArray(strikeData) || strikeData.length === 0) return null;
+  const shots: ShotPayload[] = [];
+  for (const raw of strikeData) {
+    const o = asRecord(raw);
+    if (!o) return null;
+    const direction = oneOf(asRecord(o.metadata)?.direction ?? o.direction, ["left", "straight", "right"] as const) ?? "straight";
+    const fingers: IronFingerMiss | null =
+      o.fingers === "outside" ? "outside" : typeof o.fingers === "number" && Number.isFinite(o.fingers) ? o.fingers : null;
+    const contact = oneOf(o.contact, ["heel", "middle", "toe"] as const);
+    if (fingers === null || !contact) return null;
+    const strike = normalizeLegacyVerticalStrike(o.strike);
+    shots.push({
+      shot: shots.length + 1,
+      club: typeof o.club === "string" && o.club ? o.club : `#${shots.length + 1}`,
+      direction,
+      fingers: direction === "straight" ? 0 : fingers,
+      strike,
+      contact,
+      points: shotPoints(direction === "straight" ? 0 : fingers, strike, contact),
+    });
+  }
+  return shots;
+}
 
 type CombineProfile = Record<string, unknown>;
 
@@ -392,6 +419,110 @@ function MissMap({ shots }: { shots: ShotPayload[] }) {
   );
 }
 
+/** The results screen. Coaches see the same report for a saved session. */
+export function IronPrecisionReport({ shots }: { shots: ShotPayload[] }) {
+  const total = shots.length;
+  const summary = breakdown(shots);
+  const max = total * MAX_SHOT_POINTS;
+  return (
+    <>
+      <ResultHero>
+        <ScoreRing pct={summary.totalPoints / max} value={summary.totalPoints} caption={`of ${max} points`} />
+        <p className="mt-2 text-xs text-white/70">Iron precision score · higher is better</p>
+      </ResultHero>
+
+      <StatTiles
+        stats={[
+          { label: "Avg per shot", value: summary.avgPoints.toFixed(1) },
+          { label: "Within 1 finger", value: `${summary.wallPct.toFixed(0)}%` },
+          { label: "Solid + middle", value: `${summary.solidMiddle}/${total}` },
+        ]}
+      />
+
+      <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+
+      <BreakdownCard title="Where your points went" aside={`${summary.totalPoints} of ${max}`}>
+        <BreakdownBar
+          segments={[
+            { label: "Scored", value: summary.totalPoints, tone: "bg-[#014421]" },
+            { label: "Lost to misses", value: summary.accuracyLost, tone: "bg-[#FFA500]" },
+            { label: "Lost to strike", value: summary.strikeLost, tone: "bg-red-400" },
+          ]}
+        />
+      </BreakdownCard>
+
+      <BreakdownCard title="Miss pattern" aside={`L ${summary.left} · On line ${summary.straight} · R ${summary.right}`}>
+        <MissMap shots={shots} />
+        {summary.strikeByDirLines.length > 0 && (
+          <div className="mt-2 space-y-0.5">
+            {summary.strikeByDirLines.map((line) => (
+              <p key={line} className="text-xs text-gray-600">
+                {line}
+              </p>
+            ))}
+          </div>
+        )}
+      </BreakdownCard>
+
+      <BreakdownCard title="Contact">
+        <div className="space-y-3">
+          <BreakdownBar
+            label="Strike"
+            segments={[
+              { label: "Solid", value: summary.strikes.solid, tone: "bg-[#014421]" },
+              { label: "Fat", value: summary.strikes.fat, tone: "bg-amber-500" },
+              { label: "Thin", value: summary.strikes.thin, tone: "bg-sky-400" },
+            ]}
+          />
+          <BreakdownBar
+            label="Where on the face"
+            segments={[
+              { label: "Middle", value: summary.contacts.middle, tone: "bg-[#014421]" },
+              { label: "Heel", value: summary.contacts.heel, tone: "bg-violet-400" },
+              { label: "Toe", value: summary.contacts.toe, tone: "bg-sky-400" },
+            ]}
+          />
+        </div>
+      </BreakdownCard>
+
+      <BreakdownCard title="By club" aside="Avg points">
+        <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+          {summary.byClub.map((c) => (
+            <div key={c.club} className={`rounded-xl px-2 py-2 text-center ${pointsTone(c.avg)}`}>
+              <p className="text-sm font-extrabold">{c.club}</p>
+              <p className="text-lg font-extrabold tabular-nums leading-tight">{Number.isInteger(c.avg) ? c.avg : c.avg.toFixed(1)}</p>
+              <p className="text-[10px] font-semibold opacity-80">
+                {c.club === summary.bestClub ? "Best" : c.club === summary.worstClub ? "Work on" : c.n > 1 ? `${c.n} shots` : "\u00a0"}
+              </p>
+            </div>
+          ))}
+        </div>
+      </BreakdownCard>
+
+      <details className="group rounded-2xl border border-gray-100">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Every shot
+          <span className="text-xs font-medium normal-case tracking-normal text-[#014421] group-open:hidden">Show</span>
+          <span className="hidden text-xs font-medium normal-case tracking-normal text-[#014421] group-open:inline">Hide</span>
+        </summary>
+        <ul className="divide-y divide-gray-100 px-3.5 pb-2">
+          {shots.map((s) => (
+            <li key={s.shot} className="flex items-center gap-3 py-2 text-sm">
+              <span className="w-9 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">{s.club}</span>
+              <span className="min-w-0 flex-1 truncate text-gray-600">
+                {missLabel(s)} · {STRIKE_LABEL[normalizeLegacyVerticalStrike(s.strike)]} · {CONTACT_LABEL[s.contact]}
+              </span>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${pointsTone(s.points)}`}>
+                {s.points}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </>
+  );
+}
+
 export function IronPrecisionProtocolRunner() {
   const user = useCombineUser();
   const userId = user?.id ?? null;
@@ -562,102 +693,9 @@ export function IronPrecisionProtocolRunner() {
   }
 
   if (status === "complete" && summary) {
-    const max = total * MAX_SHOT_POINTS;
     return (
       <div className="space-y-4">
-        <ResultHero>
-          <ScoreRing pct={summary.totalPoints / max} value={summary.totalPoints} caption={`of ${max} points`} />
-          <p className="mt-2 text-xs text-white/70">Iron precision score · higher is better</p>
-        </ResultHero>
-
-        <StatTiles
-          stats={[
-            { label: "Avg per shot", value: summary.avgPoints.toFixed(1) },
-            { label: "Within 1 finger", value: `${summary.wallPct.toFixed(0)}%` },
-            { label: "Solid + middle", value: `${summary.solidMiddle}/${total}` },
-          ]}
-        />
-
-        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
-
-        <BreakdownCard title="Where your points went" aside={`${summary.totalPoints} of ${max}`}>
-          <BreakdownBar
-            segments={[
-              { label: "Scored", value: summary.totalPoints, tone: "bg-[#014421]" },
-              { label: "Lost to misses", value: summary.accuracyLost, tone: "bg-[#FFA500]" },
-              { label: "Lost to strike", value: summary.strikeLost, tone: "bg-red-400" },
-            ]}
-          />
-        </BreakdownCard>
-
-        <BreakdownCard title="Miss pattern" aside={`L ${summary.left} · On line ${summary.straight} · R ${summary.right}`}>
-          <MissMap shots={completedShots} />
-          {summary.strikeByDirLines.length > 0 && (
-            <div className="mt-2 space-y-0.5">
-              {summary.strikeByDirLines.map((line) => (
-                <p key={line} className="text-xs text-gray-600">
-                  {line}
-                </p>
-              ))}
-            </div>
-          )}
-        </BreakdownCard>
-
-        <BreakdownCard title="Contact">
-          <div className="space-y-3">
-            <BreakdownBar
-              label="Strike"
-              segments={[
-                { label: "Solid", value: summary.strikes.solid, tone: "bg-[#014421]" },
-                { label: "Fat", value: summary.strikes.fat, tone: "bg-amber-500" },
-                { label: "Thin", value: summary.strikes.thin, tone: "bg-sky-400" },
-              ]}
-            />
-            <BreakdownBar
-              label="Where on the face"
-              segments={[
-                { label: "Middle", value: summary.contacts.middle, tone: "bg-[#014421]" },
-                { label: "Heel", value: summary.contacts.heel, tone: "bg-violet-400" },
-                { label: "Toe", value: summary.contacts.toe, tone: "bg-sky-400" },
-              ]}
-            />
-          </div>
-        </BreakdownCard>
-
-        <BreakdownCard title="By club" aside="Avg points">
-          <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
-            {summary.byClub.map((c) => (
-              <div key={c.club} className={`rounded-xl px-2 py-2 text-center ${pointsTone(c.avg)}`}>
-                <p className="text-sm font-extrabold">{c.club}</p>
-                <p className="text-lg font-extrabold tabular-nums leading-tight">{Number.isInteger(c.avg) ? c.avg : c.avg.toFixed(1)}</p>
-                <p className="text-[10px] font-semibold opacity-80">
-                  {c.club === summary.bestClub ? "Best" : c.club === summary.worstClub ? "Work on" : c.n > 1 ? `${c.n} shots` : "\u00a0"}
-                </p>
-              </div>
-            ))}
-          </div>
-        </BreakdownCard>
-
-        <details className="group rounded-2xl border border-gray-100">
-          <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Every shot
-            <span className="text-xs font-medium normal-case tracking-normal text-[#014421] group-open:hidden">Show</span>
-            <span className="hidden text-xs font-medium normal-case tracking-normal text-[#014421] group-open:inline">Hide</span>
-          </summary>
-          <ul className="divide-y divide-gray-100 px-3.5 pb-2">
-            {completedShots.map((s) => (
-              <li key={s.shot} className="flex items-center gap-3 py-2 text-sm">
-                <span className="w-9 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">{s.club}</span>
-                <span className="min-w-0 flex-1 truncate text-gray-600">
-                  {missLabel(s)} · {STRIKE_LABEL[normalizeLegacyVerticalStrike(s.strike)]} · {CONTACT_LABEL[s.contact]}
-                </span>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${pointsTone(s.points)}`}>
-                  {s.points}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </details>
+        <IronPrecisionReport shots={completedShots} />
 
         <SaveStatus saved={saved} error={saveError} onRetry={userId ? retryPersist : undefined} />
         <PlayAgainButton onClick={startTest} />

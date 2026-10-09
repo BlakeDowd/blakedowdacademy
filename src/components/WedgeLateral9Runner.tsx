@@ -12,6 +12,7 @@ import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
 import { fingerBandPoints, qualityBonusPoints } from "@/lib/ironPrecisionScoring";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
+import { asRecord, oneOf, parseNotes } from "@/lib/combineReportData";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import {
   normalizeLegacyVerticalStrike,
@@ -93,6 +94,34 @@ async function persistSession(userId: string, targetsM: number[], shots: WedgeLa
     console.warn("[WedgeLateral9] practice insert failed", msg);
     return msg;
   }
+}
+
+/** Saved shots from a practice row's notes, or null when they weren't stored. */
+export function parseWedgeLateral9Shots(notes: unknown): WedgeLateral9ShotLog[] | null {
+  const n = parseNotes(notes);
+  const list = asRecord(n?.payload)?.shots;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const shots: WedgeLateral9ShotLog[] = [];
+  for (const raw of list) {
+    const o = asRecord(raw);
+    const target = Number(o?.target_m);
+    const dispersion = Number(o?.dispersion);
+    const contact = oneOf(o?.contact, ["heel", "middle", "toe"] as const);
+    if (!o || !Number.isFinite(target) || !Number.isFinite(dispersion) || !contact) return null;
+    const direction = oneOf(o.direction, ["left", "straight", "right"] as const) ?? "straight";
+    const strike = normalizeLegacyVerticalStrike(o.strike);
+    const eff = direction === "straight" ? 0 : dispersion;
+    shots.push({
+      shot: shots.length + 1,
+      target_m: target,
+      direction,
+      dispersion: eff,
+      strike,
+      contact,
+      points: wedgeLateral9ShotPoints(eff, strike, contact),
+    });
+  }
+  return shots;
 }
 
 function shotScore(s: WedgeLateral9ShotLog): number {
@@ -267,6 +296,98 @@ function MissMap({ shots }: { shots: WedgeLateral9ShotLog[] }) {
   );
 }
 
+/** The results screen. Coaches see the same report for a saved session. */
+export function WedgeLateral9Report({ shots }: { shots: WedgeLateral9ShotLog[] }) {
+  const total = shots.length;
+  const summary = breakdown(shots);
+  const max = total * MAX_SHOT_POINTS;
+  return (
+    <>
+      <ResultHero>
+        <ScoreRing pct={summary.total / max} value={summary.total} caption={`of ${max} points`} />
+        <p className="mt-2 text-xs text-white/70">Wedge lateral score · higher is better</p>
+      </ResultHero>
+
+      <StatTiles
+        stats={[
+          { label: "Avg per shot", value: summary.avg.toFixed(1) },
+          { label: "Within 1 finger", value: `${summary.within1}/${total}` },
+          { label: "Solid + middle", value: `${summary.solidMiddle}/${total}` },
+        ]}
+      />
+
+      <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+
+      <BreakdownCard title="Where your points went" aside={`${summary.total} of ${max}`}>
+        <BreakdownBar
+          segments={[
+            { label: "Scored", value: summary.total, tone: "bg-[#014421]" },
+            { label: "Lost to misses", value: summary.accuracyLost, tone: "bg-[#FFA500]" },
+            { label: "Lost to strike", value: summary.strikeLost, tone: "bg-red-400" },
+          ]}
+        />
+      </BreakdownCard>
+
+      <BreakdownCard title="Miss pattern" aside={`L ${summary.left} · On line ${summary.straight} · R ${summary.right}`}>
+        <MissMap shots={shots} />
+        <p className="mt-2 text-xs text-gray-600">{summary.biasSummary}</p>
+      </BreakdownCard>
+
+      <BreakdownCard title="By distance" aside="Avg points">
+        <div className="space-y-3">
+          {summary.bands.map((b) => (
+            <ValueRow
+              key={b.label}
+              label={`${b.label} (${plural(b.n, "shot")})`}
+              value={b.avg}
+              max={MAX_SHOT_POINTS}
+              display={b.avg.toFixed(1)}
+              flag={b.label === summary.worstBand ? "Work on" : null}
+            />
+          ))}
+        </div>
+      </BreakdownCard>
+
+      <BreakdownCard title="Contact">
+        <div className="space-y-3">
+          <BreakdownBar
+            label="Strike"
+            segments={[
+              { label: "Solid", value: summary.strikes.solid, tone: "bg-[#014421]" },
+              { label: "Fat", value: summary.strikes.fat, tone: "bg-amber-500" },
+              { label: "Thin", value: summary.strikes.thin, tone: "bg-sky-400" },
+            ]}
+          />
+          <BreakdownBar
+            label="Where on the face"
+            segments={[
+              { label: "Middle", value: summary.contacts.middle, tone: "bg-[#014421]" },
+              { label: "Heel", value: summary.contacts.heel, tone: "bg-violet-400" },
+              { label: "Toe", value: summary.contacts.toe, tone: "bg-sky-400" },
+            ]}
+          />
+        </div>
+      </BreakdownCard>
+
+      <EveryShotList>
+        {shots.map((s) => (
+          <li key={s.shot} className="flex items-center gap-3 py-2 text-sm">
+            <span className="w-12 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold tabular-nums text-gray-800">
+              {s.target_m} m
+            </span>
+            <span className="min-w-0 flex-1 truncate text-gray-600">
+              {missLabel(s)} · {STRIKE_LABEL[normalizeLegacyVerticalStrike(s.strike)]} · {CONTACT_LABEL[s.contact]}
+            </span>
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${pointsTone(shotScore(s))}`}>
+              {shotScore(s)}
+            </span>
+          </li>
+        ))}
+      </EveryShotList>
+    </>
+  );
+}
+
 export function WedgeLateral9Runner() {
   const user = useCombineUser();
   const userId = user?.id ?? null;
@@ -402,90 +523,9 @@ export function WedgeLateral9Runner() {
   }
 
   if (status === "complete" && summary) {
-    const max = total * MAX_SHOT_POINTS;
     return (
       <div className="space-y-4">
-        <ResultHero>
-          <ScoreRing pct={summary.total / max} value={summary.total} caption={`of ${max} points`} />
-          <p className="mt-2 text-xs text-white/70">Wedge lateral score · higher is better</p>
-        </ResultHero>
-
-        <StatTiles
-          stats={[
-            { label: "Avg per shot", value: summary.avg.toFixed(1) },
-            { label: "Within 1 finger", value: `${summary.within1}/${total}` },
-            { label: "Solid + middle", value: `${summary.solidMiddle}/${total}` },
-          ]}
-        />
-
-        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
-
-        <BreakdownCard title="Where your points went" aside={`${summary.total} of ${max}`}>
-          <BreakdownBar
-            segments={[
-              { label: "Scored", value: summary.total, tone: "bg-[#014421]" },
-              { label: "Lost to misses", value: summary.accuracyLost, tone: "bg-[#FFA500]" },
-              { label: "Lost to strike", value: summary.strikeLost, tone: "bg-red-400" },
-            ]}
-          />
-        </BreakdownCard>
-
-        <BreakdownCard title="Miss pattern" aside={`L ${summary.left} · On line ${summary.straight} · R ${summary.right}`}>
-          <MissMap shots={completedShots} />
-          <p className="mt-2 text-xs text-gray-600">{summary.biasSummary}</p>
-        </BreakdownCard>
-
-        <BreakdownCard title="By distance" aside="Avg points">
-          <div className="space-y-3">
-            {summary.bands.map((b) => (
-              <ValueRow
-                key={b.label}
-                label={`${b.label} (${plural(b.n, "shot")})`}
-                value={b.avg}
-                max={MAX_SHOT_POINTS}
-                display={b.avg.toFixed(1)}
-                flag={b.label === summary.worstBand ? "Work on" : null}
-              />
-            ))}
-          </div>
-        </BreakdownCard>
-
-        <BreakdownCard title="Contact">
-          <div className="space-y-3">
-            <BreakdownBar
-              label="Strike"
-              segments={[
-                { label: "Solid", value: summary.strikes.solid, tone: "bg-[#014421]" },
-                { label: "Fat", value: summary.strikes.fat, tone: "bg-amber-500" },
-                { label: "Thin", value: summary.strikes.thin, tone: "bg-sky-400" },
-              ]}
-            />
-            <BreakdownBar
-              label="Where on the face"
-              segments={[
-                { label: "Middle", value: summary.contacts.middle, tone: "bg-[#014421]" },
-                { label: "Heel", value: summary.contacts.heel, tone: "bg-violet-400" },
-                { label: "Toe", value: summary.contacts.toe, tone: "bg-sky-400" },
-              ]}
-            />
-          </div>
-        </BreakdownCard>
-
-        <EveryShotList>
-          {completedShots.map((s) => (
-            <li key={s.shot} className="flex items-center gap-3 py-2 text-sm">
-              <span className="w-12 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold tabular-nums text-gray-800">
-                {s.target_m} m
-              </span>
-              <span className="min-w-0 flex-1 truncate text-gray-600">
-                {missLabel(s)} · {STRIKE_LABEL[normalizeLegacyVerticalStrike(s.strike)]} · {CONTACT_LABEL[s.contact]}
-              </span>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${pointsTone(shotScore(s))}`}>
-                {shotScore(s)}
-              </span>
-            </li>
-          ))}
-        </EveryShotList>
+        <WedgeLateral9Report shots={completedShots} />
 
         <SaveStatus saved={saved} error={saveError} onRetry={userId ? () => void save(completedShots) : undefined} />
         <PlayAgainButton onClick={startTest} />
