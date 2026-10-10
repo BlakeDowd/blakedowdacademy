@@ -19,6 +19,7 @@ export type CoachingPost = {
   key_issues: string | null;
   contact_info: string | null;
   directional_misses: string | null;
+  is_game_plan?: boolean;
   created_at: string;
 };
 
@@ -62,7 +63,7 @@ export type CoachingThreadSummary = {
 };
 
 const POST_COLUMNS =
-  "id, student_id, author_id, parent_id, announcement_id, body, title, bunny_video_id, storage_bucket, storage_path, image_path, extra_videos, key_issues, contact_info, directional_misses, created_at";
+  "id, student_id, author_id, parent_id, announcement_id, body, title, bunny_video_id, storage_bucket, storage_path, image_path, extra_videos, key_issues, contact_info, directional_misses, is_game_plan, created_at";
 
 export type CoachingAnnouncement = {
   id: string;
@@ -146,7 +147,7 @@ export async function createAnnouncement(
     pinnedUntil: string | null;
   },
 ): Promise<CoachingAnnouncement> {
-  const { data, error } = await supabase
+  const { data, error } = await withSessionRetry(supabase, () => supabase
     .from("coaching_announcements")
     .insert({
       author_id: input.authorId,
@@ -157,7 +158,7 @@ export async function createAnnouncement(
       pinned_until: input.pinnedUntil,
     })
     .select(ANNOUNCEMENT_COLUMNS)
-    .single();
+    .single());
   rethrow(error);
   return data as CoachingAnnouncement;
 }
@@ -183,6 +184,11 @@ export class CoachingSetupError extends Error {}
 function rethrow(error: { message?: string; code?: string } | null): void {
   if (!error) return;
   const msg = error.message || "Something went wrong";
+  if (isAuthRejection(error)) {
+    throw new Error(
+      `Your sign-in timed out, so the post wasn't saved. Your videos are still attached — tap Post again. If it keeps happening, sign out and back in. (${msg})`,
+    );
+  }
   if (/announcement/.test(msg)) {
     throw new CoachingSetupError(
       `Announcements need a database update. Run supabase/migrations/20261006010000_coaching_announcements.sql in Supabase. (${msg})`,
@@ -208,12 +214,21 @@ function rethrow(error: { message?: string; code?: string } | null): void {
       "Replies need a database update. Run supabase/migrations/20261005210000_coaching_replies.sql in Supabase.",
     );
   }
-  if (error.code === "PGRST205" || error.code === "42P01" || /coaching_(posts|reads)/.test(msg)) {
+  if (error.code === "PGRST205" || error.code === "42P01") {
     throw new CoachingSetupError(
-      "The coaching feed needs its database update. Run supabase/migrations/20261005200000_coaching_feed.sql in Supabase.",
+      `The coaching feed needs its database update. Run supabase/migrations/20261005200000_coaching_feed.sql in Supabase. (${msg})`,
     );
   }
   throw new Error(msg);
+}
+
+/** Row-level security or an expired token: usually the session went stale during a long upload. */
+function isAuthRejection(error: { message?: string; code?: string }): boolean {
+  return (
+    error.code === "42501" ||
+    error.code === "PGRST301" ||
+    /row-level security|jwt expired|invalid jwt/i.test(error.message ?? "")
+  );
 }
 
 export async function fetchProfileNames(
@@ -420,6 +435,28 @@ export async function markAllRead(supabase: SupabaseClient, userId: string, stud
     );
 }
 
+/** When each space was last opened by its player and by any coach (ms since epoch, 0 = never). */
+export type SpaceSeen = { player: number; coach: number };
+
+export async function fetchSeenTimes(supabase: SupabaseClient, studentIds: string[]): Promise<Map<string, SpaceSeen>> {
+  const unique = [...new Set(studentIds)];
+  const seen = new Map<string, SpaceSeen>();
+  if (!unique.length) return seen;
+  const { data, error } = await supabase
+    .from("coaching_reads")
+    .select("user_id, student_id, last_read_at")
+    .in("student_id", unique);
+  if (error) return seen;
+  for (const row of (data ?? []) as { user_id: string; student_id: string; last_read_at: string }[]) {
+    const entry = seen.get(row.student_id) ?? { player: 0, coach: 0 };
+    const at = Date.parse(row.last_read_at);
+    if (row.user_id === row.student_id) entry.player = Math.max(entry.player, at);
+    else entry.coach = Math.max(entry.coach, at);
+    seen.set(row.student_id, entry);
+  }
+  return seen;
+}
+
 export type NewCoachingPost = {
   studentId: string;
   authorId: string;
@@ -438,9 +475,21 @@ export type NewCoachingPost = {
   isGamePlan?: boolean;
 };
 
+/** Runs a write, and if the session went stale (common after long phone uploads) renews it and tries once more. */
+async function withSessionRetry<R extends { error: { message?: string; code?: string } | null }>(
+  supabase: SupabaseClient,
+  run: () => PromiseLike<R>,
+): Promise<R> {
+  const first = await run();
+  if (!first.error || !isAuthRejection(first.error)) return first;
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) await supabase.auth.refreshSession().catch(() => undefined);
+  return run();
+}
+
 export async function createPost(supabase: SupabaseClient, input: NewCoachingPost): Promise<CoachingPost> {
   const clean = (v?: string | null) => (v && v.trim() ? v.trim() : null);
-  const { data, error } = await supabase
+  const { data, error } = await withSessionRetry(supabase, () => supabase
     .from("coaching_posts")
     .insert({
       student_id: input.studentId,
@@ -460,7 +509,7 @@ export async function createPost(supabase: SupabaseClient, input: NewCoachingPos
       ...(input.isGamePlan ? { is_game_plan: true } : {}),
     })
     .select(POST_COLUMNS)
-    .single();
+    .single());
   rethrow(error);
   return data as CoachingPost;
 }
@@ -469,7 +518,7 @@ export async function createPost(supabase: SupabaseClient, input: NewCoachingPos
 export async function fetchGamePlans(
   supabase: SupabaseClient,
   studentId: string,
-  limit = 6,
+  limit = 60,
 ): Promise<CoachingPost[]> {
   const { data, error } = await supabase
     .from("coaching_posts")
@@ -561,11 +610,34 @@ type TusCredentials = {
   endpoint: string;
 };
 
+/** Finished uploads per picked file, so tapping Post again after a failed save doesn't re-send every video. */
+const finishedUploads = new WeakMap<File, { key: string; result: { videoId: string; storagePath: string | null } }>();
+
 /**
  * Uploads straight to Bunny. When `rawCopyOwnerId` is set, also stores the original file
  * so coaches can download it (Bunny's CDN often blocks the original).
  */
 export async function uploadCoachingVideo(
+  file: File,
+  opts: {
+    title: string;
+    kind?: CoachingVideoKind;
+    rawCopyOwnerId?: string;
+    onProgress?: (percent: number) => void;
+  },
+): Promise<{ videoId: string; storagePath: string | null }> {
+  const cacheKey = `${opts.kind ?? ""}|${opts.rawCopyOwnerId ?? ""}`;
+  const done = finishedUploads.get(file);
+  if (done?.key === cacheKey) {
+    opts.onProgress?.(100);
+    return done.result;
+  }
+  const result = await uploadCoachingVideoFresh(file, opts);
+  finishedUploads.set(file, { key: cacheKey, result });
+  return result;
+}
+
+async function uploadCoachingVideoFresh(
   file: File,
   opts: {
     title: string;

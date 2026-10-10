@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, ClipboardList, Loader2, Plus, Video, X } from "lucide-react";
+import { ClipboardList, Loader2, Plus, Video, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   MAX_VIDEOS_PER_POST,
@@ -10,38 +10,20 @@ import {
   formatVideoLimit,
   isLikelyVideoFile,
   maxVideoBytes,
-  postVideos,
   uploadCoachingVideo,
   type CoachingPost,
   type CoachingVideoRef,
 } from "@/lib/coachingFeed";
-import { PostVideos } from "@/components/coaching/CoachingPostCard";
+import { GamePlanRow, lessonDate } from "@/components/coaching/CoachingPostCard";
 import { holdScreenAwake } from "@/components/coaching/CoachingComposer";
 
 const VIDEO_ACCEPT = "video/mp4,video/quicktime,video/webm,.mp4,.mov,.m4v,.webm";
-
-function lessonDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
-}
+const PLANS_SHOWN = 5;
 
 function sizeLabel(bytes: number): string {
   return bytes >= 1024 * 1024 * 1024
     ? `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
     : `${Math.max(1, Math.round(bytes / 1024 / 1024))} MB`;
-}
-
-function PlanBody({ plan, studentId, compact }: { plan: CoachingPost; studentId: string; compact?: boolean }) {
-  const videos = postVideos(plan);
-  return (
-    <div className="space-y-2">
-      {videos.length > 0 && (
-        <div className="overflow-hidden rounded-2xl bg-stone-100">
-          <PostVideos videos={videos} compact={compact} createdAt={plan.created_at} studentId={studentId} />
-        </div>
-      )}
-      {plan.body && <p className="whitespace-pre-wrap text-sm leading-relaxed text-stone-800">{plan.body}</p>}
-    </div>
-  );
 }
 
 /** Coach-only form: one long lesson video (plus optional extras) and the key points in writing. */
@@ -59,6 +41,7 @@ function GamePlanForm({
   onCancel: () => void;
 }) {
   const [videos, setVideos] = useState<File[]>([]);
+  const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState<{ index: number; percent: number } | null>(null);
@@ -84,11 +67,12 @@ function GamePlanForm({
     setError(null);
     const release = videos.length ? await holdScreenAwake() : () => undefined;
     const uploaded: CoachingVideoRef[] = [];
+    const planTitle = title.trim() || "Game plan";
     try {
       for (let i = 0; i < videos.length; i++) {
         setProgress({ index: i, percent: 0 });
         const v = await uploadCoachingVideo(videos[i]!, {
-          title: `${studentName} · Game plan · ${new Date().toLocaleDateString()}${videos.length > 1 ? ` (${i + 1})` : ""}`,
+          title: `${studentName} · ${planTitle} · ${new Date().toLocaleDateString()}${videos.length > 1 ? ` (${i + 1})` : ""}`,
           kind: "game_plan",
           onProgress: (percent) => setProgress({ index: i, percent }),
         });
@@ -98,7 +82,7 @@ function GamePlanForm({
       await createPost(createClient(), {
         studentId,
         authorId,
-        title: "Game plan",
+        title: planTitle,
         body: notes,
         bunnyVideoId: first?.bunny_video_id ?? null,
         storagePath: first?.storage_path ?? null,
@@ -109,7 +93,9 @@ function GamePlanForm({
     } catch (err) {
       setError(
         `${err instanceof Error ? err.message : "Upload failed."}${
-          uploaded.length ? ` ${uploaded.length} of ${videos.length} videos had uploaded.` : ""
+          uploaded.length
+            ? ` ${uploaded.length} of ${videos.length} videos had uploaded — tap Post again and those won't re-upload.`
+            : ""
         }`,
       );
     } finally {
@@ -186,6 +172,18 @@ function GamePlanForm({
       )}
 
       <label className="block">
+        <span className="mb-1 block text-xs font-semibold text-stone-700">Video title</span>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          disabled={sending}
+          maxLength={80}
+          placeholder="e.g. Grip and takeaway"
+          className="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 focus:border-[#014421] focus:outline-none focus:ring-1 focus:ring-[#014421]/30"
+        />
+      </label>
+
+      <label className="block">
         <span className="mb-1 block text-xs font-semibold text-stone-700">Key points to work on</span>
         <textarea
           value={notes}
@@ -257,7 +255,7 @@ export function GamePlanCard({
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [showEarlier, setShowEarlier] = useState(false);
+  const [showAll, setShowAll] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -277,7 +275,8 @@ export function GamePlanCard({
   if (!loaded) return null;
   if (!viewerIsCoach && (error || plans.length === 0)) return null;
 
-  const [latest, ...earlier] = plans;
+  const latest = plans[0];
+  const shown = showAll ? plans : plans.slice(0, PLANS_SHOWN);
   const firstName = studentName.split(" ")[0] || "the player";
 
   return (
@@ -289,7 +288,9 @@ export function GamePlanCard({
           {viewerIsCoach ? `What ${firstName} is working on` : "What to work on"}
         </h3>
         <p className="mt-1 text-xs text-white/75">
-          {latest ? `From the lesson on ${lessonDate(latest.created_at)}` : "Nothing posted yet"}
+          {latest
+            ? `${plans.length} game plan${plans.length === 1 ? "" : "s"} · latest ${lessonDate(latest.created_at)}`
+            : "Nothing posted yet"}
         </p>
       </div>
 
@@ -297,7 +298,13 @@ export function GamePlanCard({
         {error && viewerIsCoach && <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">{error}</p>}
 
         {latest ? (
-          <PlanBody plan={latest} studentId={studentId} />
+          <ul className="space-y-2">
+            {shown.map((p) => (
+              <li key={p.id}>
+                <GamePlanRow plan={p} />
+              </li>
+            ))}
+          </ul>
         ) : (
           !adding &&
           viewerIsCoach &&
@@ -308,30 +315,14 @@ export function GamePlanCard({
           )
         )}
 
-        {earlier.length > 0 && (
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowEarlier((v) => !v)}
-              className="flex w-full items-center justify-between rounded-xl px-1 py-1.5 text-xs font-semibold text-stone-600"
-              aria-expanded={showEarlier}
-            >
-              Earlier game plans ({earlier.length})
-              <ChevronDown className={`h-4 w-4 transition-transform ${showEarlier ? "rotate-180" : ""}`} aria-hidden />
-            </button>
-            {showEarlier && (
-              <ul className="mt-1 space-y-3">
-                {earlier.map((p) => (
-                  <li key={p.id} className="rounded-2xl bg-stone-50 p-3">
-                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-                      {lessonDate(p.created_at)}
-                    </p>
-                    <PlanBody plan={p} studentId={studentId} compact />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+        {plans.length > PLANS_SHOWN && (
+          <button
+            type="button"
+            onClick={() => setShowAll((v) => !v)}
+            className="w-full rounded-xl px-1 py-1.5 text-xs font-semibold text-stone-600 hover:text-stone-900"
+          >
+            {showAll ? "Show fewer" : `Show ${plans.length - PLANS_SHOWN} earlier`}
+          </button>
         )}
 
         {viewerIsCoach && !error &&

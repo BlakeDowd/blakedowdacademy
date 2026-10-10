@@ -178,10 +178,34 @@ export default function CoachingTab({
     document.querySelector("main.app-frame-main")?.scrollTo({ top: 0 });
   };
 
+  const unreadSpaces = spaces.filter((s) => s.unread).length;
+  const sectionTabs = (
+    <SubTabs
+      tabs={[
+        { id: "spaces", label: "Spaces", badge: unreadSpaces },
+        { id: "feed", label: "Feed" },
+        { id: "activity", label: "Activity", badge: unreadCount },
+        { id: "assigned", label: "Assigned" },
+        { id: "usage", label: "Usage" },
+        { id: "families", label: "Families" },
+      ]}
+      value={view}
+      onChange={(v) => {
+        if (open) {
+          setOpen(null);
+          writeOpenSpace(null);
+        }
+        setView(v);
+        if (v === "spaces" || open) void loadSpaces();
+      }}
+    />
+  );
+
   if (open) {
     const pending = spaces.find((s) => s.studentId === open.id)?.space;
     return (
       <div className="space-y-4">
+        {sectionTabs}
         <div className="flex items-center gap-3 px-1">
           <button
             type="button"
@@ -204,18 +228,6 @@ export default function CoachingTab({
             {!pending?.pending && <PlayerEmail key={open.id} playerId={open.id} playerName={open.name} />}
           </div>
         </div>
-        {!pending?.pending && (
-          <GamePlanCard
-            key={`plan-${open.id}`}
-            studentId={open.id}
-            studentName={open.name}
-            viewerId={user.id}
-            viewerIsCoach
-            onPosted={() => setFeedVersion((v) => v + 1)}
-          />
-        )}
-        {!pending?.pending && <TestPlayerButton playerId={open.id} playerName={open.name} className="w-full" />}
-        {!pending?.pending && <PlayerCombineScores key={`scores-${open.id}`} playerId={open.id} playerName={open.name} />}
         {pending?.pending && (
           <PendingInviteBanner
             spaceId={pending.id}
@@ -228,6 +240,16 @@ export default function CoachingTab({
             }}
           />
         )}
+        <GamePlanCard
+          key={`plan-${open.id}`}
+          studentId={open.id}
+          studentName={open.name}
+          viewerId={user.id}
+          viewerIsCoach
+          onPosted={() => setFeedVersion((v) => v + 1)}
+        />
+        {!pending?.pending && <TestPlayerButton playerId={open.id} playerName={open.name} className="w-full" />}
+        {!pending?.pending && <PlayerCombineScores key={`scores-${open.id}`} playerId={open.id} playerName={open.name} />}
         <AssignmentsPanel
           key={`assign-${open.id}`}
           studentId={open.id}
@@ -250,25 +272,9 @@ export default function CoachingTab({
     );
   }
 
-  const unreadSpaces = spaces.filter((s) => s.unread).length;
-
   return (
     <div className="space-y-4">
-      <SubTabs
-        tabs={[
-          { id: "spaces", label: "Spaces", badge: unreadSpaces },
-          { id: "feed", label: "Feed" },
-          { id: "activity", label: "Activity", badge: unreadCount },
-          { id: "assigned", label: "Assigned" },
-          { id: "usage", label: "Usage" },
-          { id: "families", label: "Families" },
-        ]}
-        value={view}
-        onChange={(v) => {
-          setView(v);
-          if (v === "spaces") void loadSpaces();
-        }}
-      />
+      {sectionTabs}
       {view === "spaces" && spacesError ? (
         <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{spacesError}</p>
       ) : view === "spaces" ? (

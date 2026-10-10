@@ -12,13 +12,16 @@ import {
   fetchAnnouncements,
   fetchPosts,
   fetchReplies,
+  fetchSeenTimes,
+  isCoachPost,
   markThreadRead,
   type CoachingAnnouncement,
   type CoachingPost,
   type CoachingSpaceSummary,
+  type SpaceSeen,
 } from "@/lib/coachingFeed";
 import { useProfileNames } from "@/components/coaching/coachingUi";
-import { CoachingPostCard } from "@/components/coaching/CoachingPostCard";
+import { CoachingPostCard, type SeenStatus } from "@/components/coaching/CoachingPostCard";
 import { PostComposer, type ToastState } from "@/components/coaching/CoachingComposer";
 import { CoachingAnnouncements } from "@/components/coaching/CoachingAnnouncements";
 
@@ -56,6 +59,7 @@ export function CoachingFeedList({
   const [toast, setToast] = useState<ToastState>(null);
   const [announcements, setAnnouncements] = useState<CoachingAnnouncement[]>([]);
   const [entries, setEntries] = useState<Map<string, CoachingPost[]>>(new Map());
+  const [seen, setSeen] = useState<Map<string, SpaceSeen>>(new Map());
   const showAnnouncements = !studentId || (!viewerIsCoach && studentId === viewerId);
   const onReadRef = useRef(onRead);
   onReadRef.current = onRead;
@@ -105,6 +109,8 @@ export function CoachingFeedList({
         setHasMore(page.length === FEED_PAGE_SIZE);
         setSetupError(null);
         void markRead();
+        const seenTimes = await fetchSeenTimes(supabase, studentId ? [studentId] : page.map((p) => p.student_id));
+        if (!cancelled) setSeen(seenTimes);
       } catch (err) {
         if (cancelled) return;
         if (err instanceof CoachingSetupError) setSetupError(err.message);
@@ -116,7 +122,18 @@ export function CoachingFeedList({
     return () => {
       cancelled = true;
     };
-  }, [loadPage, markRead, showAnnouncements]);
+  }, [loadPage, markRead, showAnnouncements, studentId]);
+
+  const seenIdsKey = useMemo(
+    () => (studentId ? studentId : [...new Set(posts.map((p) => p.student_id))].sort().join(",")),
+    [studentId, posts],
+  );
+  useEffect(() => {
+    if (!seenIdsKey) return;
+    const refresh = async () => setSeen(await fetchSeenTimes(createClient(), seenIdsKey.split(",")));
+    const timer = window.setInterval(() => void refresh(), 60_000);
+    return () => window.clearInterval(timer);
+  }, [seenIdsKey]);
 
   const loadMore = async () => {
     const oldest = posts[posts.length - 1];
@@ -127,6 +144,10 @@ export function CoachingFeedList({
       setPosts((prev) => [...prev, ...page.filter((p) => !prev.some((x) => x.id === p.id))]);
       setReplies((prev) => new Map([...prev, ...pageReplies]));
       setHasMore(page.length === FEED_PAGE_SIZE);
+      if (!studentId) {
+        const more = await fetchSeenTimes(createClient(), page.map((p) => p.student_id));
+        setSeen((prev) => new Map([...prev, ...more]));
+      }
     } catch (err) {
       setToast({ message: err instanceof Error ? err.message : "Couldn't load more posts.", type: "error" });
     } finally {
@@ -249,6 +270,15 @@ export function CoachingFeedList({
     (id === studentId ? studentName : undefined) ?? spaceNames.get(id) ?? names.get(id) ?? "Golfer";
 
   const coachFirst = APP_VIDEO_COACH_NAME.split(" ")[0];
+
+  const seenFor = (p: CoachingPost): SeenStatus | null => {
+    const ownSide = viewerIsCoach ? isCoachPost(p) : p.author_id === viewerId;
+    if (!ownSide) return null;
+    const times = seen.get(p.student_id);
+    const lastOpened = (viewerIsCoach ? times?.player : times?.coach) ?? 0;
+    const by = viewerIsCoach ? studentNameFor(p.student_id).split(" ")[0] || "player" : coachFirst || "coach";
+    return { seen: lastOpened >= Date.parse(p.created_at), by };
+  };
   const placeholder = viewerIsCoach
     ? studentId
       ? `Send ${(studentName ?? "").split(" ")[0] || "your student"} a lesson video, drill or note…`
@@ -329,6 +359,7 @@ export function CoachingFeedList({
               viewerName={viewerName}
               viewerIsCoach={viewerIsCoach}
               showSpace={!studentId}
+              seenFor={seenFor}
               onOpenSpace={onOpenSpace}
               onDeleted={removeById}
               onReply={addReply}

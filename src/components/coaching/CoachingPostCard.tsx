@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
+  Check,
+  CheckCheck,
+  ChevronDown,
+  ClipboardList,
   Crosshair,
   Download,
   ImageIcon,
@@ -535,16 +539,34 @@ function PostMenu({
   );
 }
 
+/** Whether the other side has opened the space since this was posted; `by` names who that is. */
+export type SeenStatus = { seen: boolean; by: string };
+
+function SeenLabel({ status, short }: { status: SeenStatus; short?: boolean }) {
+  if (short && !status.seen) return null;
+  const Icon = status.seen ? CheckCheck : Check;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[11px] font-medium ${status.seen ? "text-[#014421]" : "text-stone-400"}`}
+    >
+      <Icon className="h-3.5 w-3.5" aria-hidden />
+      {status.seen ? (short ? "Seen" : `Seen by ${status.by}`) : "Not seen yet"}
+    </span>
+  );
+}
+
 export function Reply({
   reply,
   name,
   viewerIsCoach,
+  seen,
   onDeleted,
   onToast,
 }: {
   reply: CoachingPost;
   name: string;
   viewerIsCoach: boolean;
+  seen?: SeenStatus | null;
   onDeleted: (id: string) => void;
   onToast: (t: ToastState) => void;
 }) {
@@ -578,10 +600,62 @@ export function Reply({
         </div>
         <div className="mt-0.5 flex items-center gap-2 pl-3">
           <span className="text-[11px] text-stone-400">{timeAgo(reply.created_at)}</span>
+          {seen && <SeenLabel status={seen} short />}
           {viewerIsCoach && <PostMenu post={reply} authorName={name} onDeleted={onDeleted} onToast={onToast} />}
         </div>
       </div>
     </li>
+  );
+}
+
+export function lessonDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    ...(d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}),
+  });
+}
+
+/** A game plan as one tappable line (title and lesson date) that opens to its videos and notes. */
+export function GamePlanRow({ plan }: { plan: CoachingPost }) {
+  const [open, setOpen] = useState(false);
+  const videos = postVideos(plan);
+  const Icon = videos.length ? Play : ClipboardList;
+  return (
+    <div className="overflow-hidden rounded-2xl bg-white ring-1 ring-stone-200">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-stone-50"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#014421] text-white">
+          <Icon className={`h-4 w-4 ${videos.length ? "fill-current" : ""}`} aria-hidden />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-bold text-stone-900">{plan.title || "Game plan"}</span>
+          <span className="block text-xs text-stone-500">
+            {lessonDate(plan.created_at)}
+            {videos.length > 1 ? ` · ${videos.length} videos` : ""}
+          </span>
+        </span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-stone-400 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+      </button>
+      {open && (
+        <div className="space-y-2 border-t border-stone-100 pb-3">
+          {videos.length > 0 && (
+            <PostVideos videos={videos} createdAt={plan.created_at} studentId={plan.student_id} />
+          )}
+          {plan.body && (
+            <p className={`whitespace-pre-wrap px-3 text-sm leading-relaxed text-stone-800 ${videos.length ? "" : "pt-3"}`}>
+              {plan.body}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -594,6 +668,7 @@ export function CoachingPostCard({
   viewerName,
   viewerIsCoach,
   showSpace,
+  seenFor,
   onOpenSpace,
   onDeleted,
   onReply,
@@ -607,6 +682,7 @@ export function CoachingPostCard({
   viewerName: string;
   viewerIsCoach: boolean;
   showSpace?: boolean;
+  seenFor?: (p: CoachingPost) => SeenStatus | null;
   onOpenSpace?: (studentId: string, name: string) => void;
   onDeleted: (id: string) => void;
   onReply: (reply: CoachingPost) => void;
@@ -618,6 +694,8 @@ export function CoachingPostCard({
   const [showAll, setShowAll] = useState(false);
   const hidden = showAll ? 0 : Math.max(0, replies.length - 3);
   const shown = replies.slice(hidden);
+  const postSeen = seenFor?.(post) ?? null;
+  const lastOwnReply = seenFor ? replies.findLast((r) => seenFor(r) !== null) : undefined;
 
   return (
     <article className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-stone-200">
@@ -641,29 +719,45 @@ export function CoachingPostCard({
               In {studentName}&apos;s space
             </button>
           ) : (
-            <p className="text-xs text-stone-500">{fromCoach ? "Coach feedback" : "Posted to the space"}</p>
+            <p className="text-xs text-stone-500">
+              {post.is_game_plan ? "Game plan" : fromCoach ? "Coach feedback" : "Posted to the space"}
+            </p>
           )}
         </div>
         <span className="pt-0.5 text-xs text-stone-500">{timeAgo(post.created_at)}</span>
         {viewerIsCoach && <PostMenu post={post} authorName={authorName} onDeleted={onDeleted} onToast={onToast} />}
       </header>
 
-      {post.title && !post.body && <p className="px-4 pt-3 text-sm font-semibold text-stone-800">{post.title}</p>}
-      {post.body && <p className="whitespace-pre-wrap px-4 pt-3 text-sm leading-relaxed text-stone-700">{post.body}</p>}
-      {(post.key_issues || post.contact_info || post.directional_misses) && (
+      {post.is_game_plan ? (
         <div className="px-4 pt-3">
-          <SwingNotes post={post} />
+          <GamePlanRow plan={post} />
         </div>
+      ) : (
+        <>
+          {post.title && !post.body && <p className="px-4 pt-3 text-sm font-semibold text-stone-800">{post.title}</p>}
+          {post.body && <p className="whitespace-pre-wrap px-4 pt-3 text-sm leading-relaxed text-stone-700">{post.body}</p>}
+          {(post.key_issues || post.contact_info || post.directional_misses) && (
+            <div className="px-4 pt-3">
+              <SwingNotes post={post} />
+            </div>
+          )}
+
+          {post.image_path && (
+            <div className="mt-3">
+              <PostPhoto path={post.image_path} />
+            </div>
+          )}
+          {videos.length > 0 && (
+            <div className={post.image_path ? "mt-1" : "mt-3"}>
+              <PostVideos videos={videos} createdAt={post.created_at} studentId={post.student_id} />
+            </div>
+          )}
+        </>
       )}
 
-      {post.image_path && (
-        <div className="mt-3">
-          <PostPhoto path={post.image_path} />
-        </div>
-      )}
-      {videos.length > 0 && (
-        <div className={post.image_path ? "mt-1" : "mt-3"}>
-          <PostVideos videos={videos} createdAt={post.created_at} studentId={post.student_id} />
+      {postSeen && (
+        <div className="flex justify-end px-4 pt-2">
+          <SeenLabel status={postSeen} />
         </div>
       )}
 
@@ -685,6 +779,7 @@ export function CoachingPostCard({
                 reply={r}
                 name={postAuthorName(r, names, studentName)}
                 viewerIsCoach={viewerIsCoach}
+                seen={r.id === lastOwnReply?.id ? seenFor?.(r) : null}
                 onDeleted={onDeleted}
                 onToast={onToast}
               />
