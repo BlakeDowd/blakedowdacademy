@@ -206,8 +206,12 @@ export function resolveFeaturedHomeVideo(now: Date = new Date()): LibraryVideo {
   return FEATURED_HOME_VIDEOS[dayNumber % FEATURED_HOME_VIDEOS.length]!;
 }
 
-/** Bunny CDN thumbnail for a Stream video (needs NEXT_PUBLIC_BUNNY_CDN_HOSTNAME). */
-export function buildBunnyThumbnailUrl(videoId: string): string | null {
+/**
+ * Bunny CDN thumbnail for a Stream video (needs NEXT_PUBLIC_BUNNY_CDN_HOSTNAME).
+ * Videos with a custom thumbnail use a hashed file name (e.g. `thumbnail_2839bdd3.jpg`), so pass
+ * `fileName` from the video's metadata when it's known.
+ */
+export function buildBunnyThumbnailUrl(videoId: string, fileName?: string | null): string | null {
   const id = videoId.trim();
   if (!id) return null;
   const host =
@@ -215,7 +219,7 @@ export function buildBunnyThumbnailUrl(videoId: string): string | null {
     process.env.BUNNY_CDN_HOSTNAME?.trim();
   if (!host) return null;
   const clean = host.replace(/^https?:\/\//, "").replace(/\/$/, "");
-  return `https://${clean}/${id}/thumbnail.jpg`;
+  return `https://${clean}/${id}/${fileName?.trim() || "thumbnail.jpg"}`;
 }
 
 /** Library/drill videos that must never be deleted from Bunny via the coaching UI. */
@@ -249,6 +253,7 @@ export type BunnyVideoMetadata = {
   lengthSeconds: number;
   width?: number | null;
   height?: number | null;
+  thumbnailFileName?: string | null;
 };
 
 /** True when Bunny reports a portrait encode (e.g. 1080×1920). */

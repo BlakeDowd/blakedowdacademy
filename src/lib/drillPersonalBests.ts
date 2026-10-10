@@ -95,6 +95,12 @@ function isMissingRepsColumn(message: string | null | undefined): boolean {
   return m.includes("reps") && (m.includes("column") || m.includes("schema cache") || m.includes("pgrst204"));
 }
 
+/** True when the optional `details` column hasn't been added yet (20261010130000_drill_score_details.sql). */
+function isMissingDetailsColumn(message: string | null | undefined): boolean {
+  const m = (message || "").toLowerCase();
+  return m.includes("details") && (m.includes("column") || m.includes("schema cache") || m.includes("pgrst204"));
+}
+
 export type DrillScoreSettings = {
   unit: string;
   lowerIsBetter: boolean;
@@ -194,18 +200,31 @@ export async function insertDrillScore(
   drillKey: string,
   score: number,
   reps: number | null = null,
+  details: unknown = null,
 ): Promise<{ log: DrillScoreLog | null; error: string | null }> {
-  const insert = (withReps: boolean) =>
+  const insert = (withReps: boolean, withDetails: boolean) =>
     supabase
       .from("drill_score_logs")
-      .insert({ user_id: userId, drill_key: drillKey, score, ...(withReps ? { reps } : {}) })
+      .insert({
+        user_id: userId,
+        drill_key: drillKey,
+        score,
+        ...(withReps ? { reps } : {}),
+        ...(withDetails ? { details } : {}),
+      })
       .select(withReps ? "id, score, reps, created_at" : "id, score, created_at")
       .single();
 
-  let res = await insert(reps != null);
+  let withDetails = details != null;
+  let res = await insert(reps != null, withDetails);
+  if (res.error && withDetails && isMissingDetailsColumn(res.error.message)) {
+    console.warn("[drillPersonalBests] details column missing; saved the score without shot detail.");
+    withDetails = false;
+    res = await insert(reps != null, false);
+  }
   if (res.error && reps != null && isMissingRepsColumn(res.error.message)) {
     console.warn("[drillPersonalBests] reps column missing; saved the score without attempts.");
-    res = await insert(false);
+    res = await insert(false, withDetails);
   }
   if (res.error) return { log: null, error: userFacingDrillScoreError(res.error.message) };
   return { log: toDrillScoreLog(res.data as unknown as DrillScoreLogRow), error: null };

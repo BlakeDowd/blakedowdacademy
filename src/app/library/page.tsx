@@ -39,7 +39,7 @@ import {
   isBunnyPortraitVideo,
   cleanBunnyVideoTitle,
 } from "@/lib/bunnyStream";
-import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
+import { useBunnyThumbnailUrl, useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 // Drills / video authoring field guide: `src/lib/academyContentSchema.ts`
 
 type LessonType = "video" | "text" | "pdf" | "quiz" | "drill" | "tool";
@@ -113,6 +113,8 @@ const LIBRARY_CURRICULUM_LESSONS: Lesson[] = LIBRARY_MODULES.flatMap((mod) => [
 ]);
 
 const CURRICULUM_LESSON_IDS = new Set(LIBRARY_CURRICULUM_LESSONS.map((l) => l.id));
+/** First swing video; its thumbnail is the Swing Drills module cover. */
+const SWING_COVER_BUNNY_ID = LIBRARY_MODULES.find((m) => m.videos.length > 0)?.videos[0]?.bunnyVideoId ?? null;
 const CURRICULUM_BUNNY_IDS = new Set(
   LIBRARY_MODULES.flatMap((m) => m.videos.map((v) => v.bunnyVideoId.toLowerCase())),
 );
@@ -375,6 +377,7 @@ function LibrarySearchFilters({
 
 function LibraryPageContent() {
   const { user } = useAuth();
+  const swingCoverThumb = useBunnyThumbnailUrl(SWING_COVER_BUNNY_ID);
   
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1032,8 +1035,12 @@ function LibraryPageContent() {
                     .map((l) => (l.type === "video" ? extractBunnyVideoId(l.source) : null))
                     .find(Boolean);
                   const firstLesson = mod.lessons.find((l) => l.type === "video") || mod.lessons[0];
+                  const bunnyThumb =
+                    firstBunnyId && firstBunnyId.toLowerCase() === SWING_COVER_BUNNY_ID?.toLowerCase()
+                      ? swingCoverThumb
+                      : firstBunnyId && buildBunnyThumbnailUrl(firstBunnyId);
                   const thumbUrl =
-                    (firstBunnyId && buildBunnyThumbnailUrl(firstBunnyId)) ||
+                    bunnyThumb ||
                     (firstLesson && firstLesson.type === "video" && isPlayableVideoSource(firstLesson.source)
                       ? getThumbnailUrl(firstLesson.source)
                       : HERO_IMAGE);

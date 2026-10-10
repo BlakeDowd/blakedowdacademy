@@ -104,6 +104,36 @@ export function useDrillProgress(
   const summary = useMemo(() => summarizeDrillProgress(logs, lowerIsBetter), [logs, lowerIsBetter]);
   const repsSummary = useMemo(() => summarizeReps(logs), [logs]);
 
+  /** Saves one session's score; `details` holds drill-specific shot data. True when the save worked. */
+  const saveScore = useCallback(
+    async (score: number, reps: number | null, details: unknown = null): Promise<boolean> => {
+      if (!userId) return false;
+      setSaving(true);
+      try {
+        const supabase = await getSupabase();
+        const { log, error } = await insertDrillScore(supabase, userId, drillKey, score, reps, details);
+        if (error || !log) {
+          setFeedback({ text: error ?? "Could not save. Try again.", tone: "error" });
+          return false;
+        }
+        const reaction = describeDrillLog(score, logs, scoring, milestones);
+        setLogs((prev) => [log, ...prev]);
+        setDraft("");
+        setRepsDraft("");
+        setFeedback({ ...reaction, undoLogId: log.id });
+        announceDrillActivity();
+        if (settings.unit !== unit || settings.lowerIsBetter !== lowerIsBetter) {
+          setSettings((s) => ({ ...s, unit, lowerIsBetter }));
+          void saveDrillScoreSettings(supabase, userId, drillKey, { unit, lowerIsBetter, goalScore: settings.goalScore });
+        }
+        return true;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [userId, drillKey, logs, scoring, milestones, settings, unit, lowerIsBetter],
+  );
+
   /** Logs the current draft (or a session, for completion drills). True when nothing was pending or the save worked. */
   const logDraft = useCallback(async (): Promise<boolean> => {
     if (!userId) return true;
@@ -122,29 +152,8 @@ export function useDrillProgress(
       }
       reps = parsed;
     }
-    setSaving(true);
-    try {
-      const supabase = await getSupabase();
-      const { log, error } = await insertDrillScore(supabase, userId, drillKey, score, reps);
-      if (error || !log) {
-        setFeedback({ text: error ?? "Could not save. Try again.", tone: "error" });
-        return false;
-      }
-      const reaction = describeDrillLog(score, logs, scoring, milestones);
-      setLogs((prev) => [log, ...prev]);
-      setDraft("");
-      setRepsDraft("");
-      setFeedback({ ...reaction, undoLogId: log.id });
-      announceDrillActivity();
-      if (settings.unit !== unit || settings.lowerIsBetter !== lowerIsBetter) {
-        setSettings((s) => ({ ...s, unit, lowerIsBetter }));
-        void saveDrillScoreSettings(supabase, userId, drillKey, { unit, lowerIsBetter, goalScore: settings.goalScore });
-      }
-      return true;
-    } finally {
-      setSaving(false);
-    }
-  }, [userId, drillKey, draft, repsDraft, logs, scoring, milestones, settings, unit, lowerIsBetter]);
+    return saveScore(score, reps);
+  }, [userId, scoring.type, draft, repsDraft, saveScore]);
 
   const undoLog = useCallback(async (logId: string) => {
     const supabase = await getSupabase();
@@ -185,6 +194,7 @@ export function useDrillProgress(
     feedback,
     clearFeedback,
     logDraft,
+    saveScore,
     undoLog,
   };
 }

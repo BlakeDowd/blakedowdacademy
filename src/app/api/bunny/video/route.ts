@@ -10,6 +10,7 @@ type BunnyVideoResponse = {
   length?: number;
   width?: number;
   height?: number;
+  thumbnailFileName?: string | null;
 };
 
 export async function GET(request: Request) {
@@ -34,6 +35,7 @@ export async function GET(request: Request) {
   let lengthSeconds = 0;
   let width: number | null = null;
   let height: number | null = null;
+  let thumbnailFileName: string | null = null;
 
   const hasValidApiKey = Boolean(apiKey && apiKey !== libraryId);
 
@@ -56,6 +58,7 @@ export async function GET(request: Request) {
       lengthSeconds = typeof data.length === "number" ? data.length : 0;
       width = typeof data.width === "number" && data.width > 0 ? data.width : null;
       height = typeof data.height === "number" && data.height > 0 ? data.height : null;
+      thumbnailFileName = data.thumbnailFileName?.trim() || null;
     }
   }
 
@@ -76,5 +79,6 @@ export async function GET(request: Request) {
     lengthSeconds,
     width,
     height,
+    thumbnailFileName,
   });
 }

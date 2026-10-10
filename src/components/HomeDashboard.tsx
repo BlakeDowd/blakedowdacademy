@@ -369,14 +369,18 @@ export default function HomeDashboard() {
   // Remove Hardcoding: Delete any const totalXP = 0 placeholders that might be overriding the real data
   // Data Source: Use profile?.totalXP from the profile object instead of hardcoded state
   const [featuredHome] = useState(() => resolveFeaturedHomeVideo());
-  const { metadata: bunnyVideoMetadata } = useBunnyVideoMetadata(featuredHome.bunnyVideoId);
+  const { metadata: bunnyVideoMetadata, loading: bunnyVideoMetadataLoading } = useBunnyVideoMetadata(
+    featuredHome.bunnyVideoId,
+  );
   const dailyVideoIsPortrait = isBunnyPortraitVideo(bunnyVideoMetadata);
   const dailyVideoTitle = featuredHome.label;
   const dailyVideoDuration = bunnyVideoMetadata?.lengthSeconds
     ? formatBunnyDuration(bunnyVideoMetadata.lengthSeconds)
     : "";
   const [featuredVideoExpanded, setFeaturedVideoExpanded] = useState(false);
-  const featuredThumbUrl = buildBunnyThumbnailUrl(featuredHome.bunnyVideoId);
+  const featuredThumbUrl = bunnyVideoMetadataLoading
+    ? null
+    : buildBunnyThumbnailUrl(featuredHome.bunnyVideoId, bunnyVideoMetadata?.thumbnailFileName);
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [recentTab, setRecentTab] = useState<'activity' | 'myRounds' | 'community'>('activity');
   const scoreTab: 'myRounds' | 'community' = recentTab === 'community' ? 'community' : 'myRounds';

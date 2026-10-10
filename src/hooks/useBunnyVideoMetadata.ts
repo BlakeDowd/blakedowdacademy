@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { BunnyVideoMetadata } from "@/lib/bunnyStream";
+import { buildBunnyThumbnailUrl, type BunnyVideoMetadata } from "@/lib/bunnyStream";
 
 export function useBunnyVideoMetadata(videoId: string | null | undefined) {
   const [metadata, setMetadata] = useState<BunnyVideoMetadata | null>(null);
@@ -39,4 +39,11 @@ export function useBunnyVideoMetadata(videoId: string | null | undefined) {
   }, [videoId]);
 
   return { metadata, loading };
+}
+
+/** Thumbnail URL using the video's real thumbnail file; null until the metadata has loaded. */
+export function useBunnyThumbnailUrl(videoId: string | null | undefined): string | null {
+  const { metadata, loading } = useBunnyVideoMetadata(videoId);
+  if (!videoId || loading) return null;
+  return buildBunnyThumbnailUrl(videoId, metadata?.thumbnailFileName);
 }

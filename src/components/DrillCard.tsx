@@ -14,6 +14,10 @@ import { useKeepInViewAfterOwnTap } from "@/hooks/useKeepInView";
 import { useDrillProgress } from "@/hooks/useDrillProgress";
 import DrillProgressTracker from "@/components/DrillProgressTracker";
 import DrillScoringPicker from "@/components/DrillScoringPicker";
+import FaceStrikeDrill from "@/components/FaceStrikeDrill";
+import { FACE_STRIKE_DRILL_KEY, FACE_STRIKE_SCORE_TYPE } from "@/lib/faceStrikeDrill";
+import BallFlightDrill from "@/components/BallFlightDrill";
+import { BALL_FLIGHT_DRILL_KEY, BALL_FLIGHT_SCORE_TYPE } from "@/lib/ballFlightDrill";
 import { DrillGuide, DrillHero, DrillSteps } from "@/components/drills/DrillIntro";
 import { DrillTimerCard, formatClock, useDrillTimer } from "@/components/drills/DrillTimer";
 import { isPerfectScore, resolveDrillScoring } from "@/lib/drillScoring";
@@ -143,7 +147,13 @@ export default function DrillCard({
     typeof drill.xp_value === "number" && Number.isFinite(drill.xp_value) ? drill.xp_value : undefined;
   const { milestones, coachGoalText } = useMemo(() => parseCoachGoals(goalRepsForUi), [goalRepsForUi]);
   const coachScoreType = drillScoringOverride(useDrillScoringOverrides(), drillKey);
-  const scoreTypeOverride = coachScoreType ?? catalogScoring?.scoreType ?? null;
+  const isFaceStrike = drillKey === FACE_STRIKE_DRILL_KEY && !drill.isCombine;
+  const isBallFlight = drillKey === BALL_FLIGHT_DRILL_KEY && !drill.isCombine;
+  const scoreTypeOverride = isFaceStrike
+    ? FACE_STRIKE_SCORE_TYPE
+    : isBallFlight
+      ? BALL_FLIGHT_SCORE_TYPE
+      : (coachScoreType ?? catalogScoring?.scoreType ?? null);
   const focus = catalogScoring?.focus ?? null;
   const scoring = useMemo(
     () => resolveDrillScoring({ override: scoreTypeOverride, goalText: goalRepsForUi, focus, title: drill.title }),
@@ -418,11 +428,27 @@ export default function DrillCard({
             );
           })()}
 
-          {!drill.isCombine && (
+          {!drill.isCombine && !isFaceStrike && !isBallFlight && (
             <DrillScoringPicker drillKey={drillKey} scoring={scoring} hasOverride={coachScoreType != null} />
           )}
           {userId && !drill.isCombine ? (
-            <DrillProgressTracker progress={progress} coachGoalText={coachGoalText} />
+            <DrillProgressTracker
+              progress={progress}
+              coachGoalText={coachGoalText}
+              scoreEntry={
+                isFaceStrike ? (
+                  <FaceStrikeDrill
+                    saving={progress.saving}
+                    onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
+                  />
+                ) : isBallFlight ? (
+                  <BallFlightDrill
+                    saving={progress.saving}
+                    onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
+                  />
+                ) : undefined
+              }
+            />
           ) : goalRepsForUi ? (
             <DrillGuide title="Goal" defaultOpen>
               {goalRepsForUi}

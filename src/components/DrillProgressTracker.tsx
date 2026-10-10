@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { ArrowDown, ArrowUp, Minus, Plus, Target, TrendingUp, Trophy } from "lucide-react";
 import { formatDrillScore, type DrillProgressSummary, type DrillScoreLog } from "@/lib/drillPersonalBests";
 import { DRILL_SCORE_TYPE_LABELS, isPerfectScore, type DrillScoring } from "@/lib/drillScoring";
@@ -207,10 +208,13 @@ function scoringLabel(s: DrillScoring): string {
 export default function DrillProgressTracker({
   progress,
   coachGoalText = "",
+  scoreEntry,
 }: {
   progress: DrillProgressState;
   /** Catalog Goal/Reps text that couldn't be read as a number; shown as-is. */
   coachGoalText?: string;
+  /** Replaces the typed score form for drills with their own score screen. */
+  scoreEntry?: ReactNode;
 }) {
   const {
     scoring,
@@ -290,6 +294,7 @@ export default function DrillProgressTracker({
             <p className="text-[11px] text-gray-400">Your old note: {settings.legacyText}</p>
           )}
 
+          {scoreEntry ?? (
           <form
             className="space-y-2"
             onSubmit={(e) => {
@@ -331,6 +336,7 @@ export default function DrillProgressTracker({
               </button>
             </div>
           </form>
+          )}
         </>
       )}
 
