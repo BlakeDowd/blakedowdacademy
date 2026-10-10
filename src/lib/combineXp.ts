@@ -1,4 +1,5 @@
 import { addProfileXp } from "@/lib/addProfileXp";
+import { recordCombineCompletion } from "@/lib/weeklyGoals";
 
 /**
  * Awarded once when any Academy combine session is saved successfully.
@@ -9,6 +10,7 @@ export const XP_AWARD_COMBINE_SESSION = 330;
 
 export async function awardCombineCompletionXp(userId: string | undefined): Promise<void> {
   if (!userId) return;
+  void recordCombineCompletion(userId);
   try {
     await addProfileXp(userId, XP_AWARD_COMBINE_SESSION);
   } catch (error) {

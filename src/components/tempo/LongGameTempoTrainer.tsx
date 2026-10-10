@@ -35,6 +35,7 @@ export const LONG_GAME_TEMPO_CONFIG: TempoTrainerConfig = {
   defaultPresetIndex: 1,
   resetSec: 2.5,
   silhouette: <TopOfBackswingSilhouette />,
+  usageKey: "full-swing-tempo",
 };
 
 export default function LongGameTempoTrainer({ hideHeader = false }: { hideHeader?: boolean }) {

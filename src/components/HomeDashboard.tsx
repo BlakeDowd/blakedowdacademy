@@ -10,7 +10,6 @@ import {
   Play,
   Flame,
   Zap,
-  Radio,
   Calendar,
   TrendingUp,
   Star,
@@ -35,17 +34,13 @@ import {
   Timer,
   Camera,
   Loader2,
+  ChevronRight,
 } from "lucide-react";
 import { AddToHomeScreenGuide } from "@/components/AddToHomeScreenGuide";
 import { FeedbackBox } from "@/components/FeedbackBox";
 import { HomeWeekSchedule } from "@/components/HomeWeekSchedule";
 import { HomeCoachingCard } from "@/components/coaching/HomeCoachingCard";
-import { LiveRoundInProgressBanner } from "@/components/LiveRoundInProgressBanner";
-import {
-  LIVE_ENTRY_ENABLED,
-  LiveEntryNotReadyModal,
-} from "@/components/LiveEntryNotReadyModal";
-import { loadLiveRoundDraft, type LiveRoundDraft } from "@/lib/liveRoundDraft";
+import { WeeklyGoalsBar } from "@/components/goals/WeeklyGoalsBar";
 import IconPicker from "@/components/IconPicker";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import {
@@ -404,30 +399,6 @@ export default function HomeDashboard() {
     localStorage.setItem(INSTALL_BANNER_DISMISSED_KEY, '1');
     setInstallBannerHidden(true);
   };
-  const [activeLiveDraft, setActiveLiveDraft] = useState<LiveRoundDraft | null>(null);
-  const [liveEntryGateOpen, setLiveEntryGateOpen] = useState(false);
-
-  const openLiveEntry = () => {
-    if (LIVE_ENTRY_ENABLED) {
-      router.push("/log-round/live");
-      return;
-    }
-    setLiveEntryGateOpen(true);
-  };
-
-  const openLiveEntryForTesting = () => {
-    setLiveEntryGateOpen(false);
-    router.push("/log-round/live");
-  };
-
-  useEffect(() => {
-    if (!user?.id || typeof window === "undefined") {
-      setActiveLiveDraft(null);
-      return;
-    }
-    setActiveLiveDraft(loadLiveRoundDraft(user.id));
-  }, [user?.id]);
-  
   // Add a useMemo Hook: Wrap the rounds display logic in a useMemo that depends on the activeTab state
   // Strict Filtering: If activeTab === 'my-rounds', explicitly return rounds.filter(r => r.user_id === user?.id)
   // If activeTab === 'community', return the full rounds array (Global)
@@ -834,26 +805,18 @@ export default function HomeDashboard() {
         {/* Coach Administration - visible for authorized coaches only */}
         {(['bdowd@pgamember.org.au', 'allendowd86@gmail.com'].includes((user?.email || '').toLowerCase().trim())) && (
           <div className="w-full px-4 mb-4">
-            <Link 
+            <Link
               href="/dashboard/coach"
-              className="block w-full"
+              className="flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:bg-stone-50"
             >
-              <div className="w-full bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl shadow-lg border border-gray-700 overflow-hidden hover:from-gray-800 hover:to-gray-700 transition-all">
-                <div className="p-5 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0">
-                      <Users className="w-6 h-6 text-blue-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-white mb-0.5">Coach Administration</h3>
-                      <p className="text-gray-400 text-sm">Open Coaches Dashboard →</p>
-                    </div>
-                  </div>
-                  <span className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg shrink-0">
-                    Open
-                  </span>
-                </div>
-              </div>
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                <Users className="h-5 w-5 text-[#014421]" aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-base font-bold text-stone-900">Player reports</span>
+                <span className="block truncate text-xs text-stone-500">Stats, goals and practice for every player</span>
+              </span>
+              <ChevronRight className="h-5 w-5 shrink-0 text-stone-300" aria-hidden />
             </Link>
           </div>
         )}
@@ -862,9 +825,6 @@ export default function HomeDashboard() {
 
         {/* Quick actions */}
         <div className="w-full px-4 mb-6 space-y-3">
-          {LIVE_ENTRY_ENABLED && activeLiveDraft && (
-            <LiveRoundInProgressBanner draft={activeLiveDraft} variant="home" />
-          )}
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
@@ -885,14 +845,9 @@ export default function HomeDashboard() {
               Practice
             </button>
           </div>
-          <LiveEntryNotReadyModal
-            open={liveEntryGateOpen}
-            onClose={() => setLiveEntryGateOpen(false)}
-            onOpenForTesting={openLiveEntryForTesting}
-          />
-          <div className="grid grid-cols-3 gap-2">
+          <WeeklyGoalsBar href="/goals" />
+          <div className="grid grid-cols-4 gap-2">
             {[
-              { label: 'Live Entry', icon: Radio, onClick: openLiveEntry },
               { label: 'Combine Tests', icon: Crosshair, onClick: () => router.push('/practice?plan=combine') },
               { label: 'Drill Library', icon: BookOpen, onClick: () => router.push('/practice?plan=library') },
               { label: 'My Stats', icon: BarChart3, onClick: () => router.push('/stats') },

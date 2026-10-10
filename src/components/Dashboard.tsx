@@ -48,10 +48,29 @@ import {
 } from "@/lib/practiceAllocation";
 import { resolveAuthUserId } from "@/lib/resolveAuthUserId";
 import { buildPracticeActivity, minutesByArea } from "@/lib/practiceActivity";
+import { WEEKLY_COUNT_GOALS, type WeeklyGoalCounts } from "@/lib/weeklyGoals";
 import { Pencil, Target } from "lucide-react";
 
 /** Home dashboard brand — `globals.css` / HomeDashboard cards. */
 const BRAND_GREEN = "#014421";
+
+const GOAL_COLUMNS =
+  "user_id,scoring_milestone,focus_area,weekly_hour_commitment,practice_allocation,lowest_score,current_handicap,updated_at";
+const WEEKLY_COUNT_COLUMNS = "weekly_rounds_goal,weekly_drills_goal,weekly_combines_goal,weekly_lessons_goal";
+const NO_WEEKLY_COUNTS: WeeklyGoalCounts = { rounds: 0, drills: 0, combines: 0, lessons: 0 };
+
+function weeklyCountsFromRow(g: PlayerGoalRow): WeeklyGoalCounts {
+  const n = (v: unknown) => Math.max(0, Math.round(Number(v) || 0));
+  return {
+    rounds: n(g.weekly_rounds_goal),
+    drills: n(g.weekly_drills_goal),
+    combines: n(g.weekly_combines_goal),
+    lessons: n(g.weekly_lessons_goal),
+  };
+}
+
+/** True when the weekly goal columns aren't in the database yet (migration not run). */
+const missingWeeklyColumns = (message: string | undefined) => /weekly_(rounds|drills|combines|lessons)_goal/.test(message ?? "");
 
 function parseBaselineLowestForSave(raw: string): number | null {
   const t = raw.trim();
@@ -104,6 +123,8 @@ export function GoalAccountabilityModule() {
     buildSuggestedPracticeAllocation([], [], weeklyHoursPresetToStoredHours(DEFAULT_WEEKLY_HOURS), null).hours,
   );
   const prevBudgetRef = useRef(weeklyHoursPresetToStoredHours(DEFAULT_WEEKLY_HOURS));
+  const [draftCounts, setDraftCounts] = useState<WeeklyGoalCounts>(NO_WEEKLY_COUNTS);
+  const [hasSavedGoals, setHasSavedGoals] = useState(false);
   const [baselineLowest, setBaselineLowest] = useState("");
   const [baselineHandicap, setBaselineHandicap] = useState("");
   /** Handicap computed from round_stats / recent rounds when goal row has no saved value. */
@@ -132,14 +153,11 @@ export function GoalAccountabilityModule() {
       const weekStart = startOfWeekMondayLocal();
       const weekEnd = endOfWeekSundayLocal(weekStart);
 
-      const [goalRes, logsRes, rsRes, recentRoundsRes] = await Promise.all([
-        supabase
-          .from("player_goals")
-          .select(
-            "user_id,scoring_milestone,focus_area,weekly_hour_commitment,practice_allocation,lowest_score,current_handicap,updated_at",
-          )
-          .eq("user_id", uid)
-          .maybeSingle(),
+      const goalQuery = (columns: string) =>
+        supabase.from("player_goals").select(columns).eq("user_id", uid).maybeSingle();
+
+      const [firstGoalRes, logsRes, rsRes, recentRoundsRes] = await Promise.all([
+        goalQuery(`${GOAL_COLUMNS},${WEEKLY_COUNT_COLUMNS}`),
         supabase
           .from("practice_logs")
           .select("id,user_id,log_type,created_at,duration_minutes")
@@ -214,7 +232,8 @@ export function GoalAccountabilityModule() {
         logRows = (logsRes.data || []) as PracticeLogAccountabilityRow[];
       }
 
-      let g = goalRes.data as PlayerGoalRow | null;
+      const goalRes = missingWeeklyColumns(firstGoalRes.error?.message) ? await goalQuery(GOAL_COLUMNS) : firstGoalRes;
+      let g = goalRes.data as unknown as PlayerGoalRow | null;
       const goalErr = goalRes.error;
 
       if (goalErr && !g) {
@@ -222,9 +241,7 @@ export function GoalAccountabilityModule() {
         if (em.includes("multiple") || String((goalErr as { details?: string }).details || "").toLowerCase().includes("multiple")) {
           const pick = await supabase
             .from("player_goals")
-            .select(
-              "user_id,scoring_milestone,focus_area,weekly_hour_commitment,practice_allocation,lowest_score,current_handicap,updated_at",
-            )
+            .select(GOAL_COLUMNS)
             .eq("user_id", uid)
             .order("updated_at", { ascending: false, nullsFirst: false })
             .limit(1)
@@ -249,6 +266,8 @@ export function GoalAccountabilityModule() {
       const hasRoundContext = hasStatsRoundContext(rsRows, recentRoundRows);
       if (g) {
         setGoalsLoadError(null);
+        setHasSavedGoals(true);
+        setDraftCounts(weeklyCountsFromRow(g));
         setDraftScoring(milestoneToPreset(g.scoring_milestone));
         const hoursPreset = weeklyHoursToPreset(Number(g.weekly_hour_commitment));
         const budget = weeklyHoursPresetToStoredHours(hoursPreset);
@@ -288,6 +307,8 @@ export function GoalAccountabilityModule() {
         }
       } else if (!goalFetchFailed) {
         setGoalsLoadError(null);
+        setHasSavedGoals(false);
+        setDraftCounts(NO_WEEKLY_COUNTS);
         setDraftScoring(DEFAULT_SCORING_PRESET);
         setDraftHours(DEFAULT_WEEKLY_HOURS);
         const budget = weeklyHoursPresetToStoredHours(DEFAULT_WEEKLY_HOURS);
@@ -504,12 +525,18 @@ export function GoalAccountabilityModule() {
           practice_allocation: practiceAllocationForDb(allocationToSave),
           lowest_score: lowestSave,
           current_handicap: handicapSave,
+          weekly_rounds_goal: draftCounts.rounds,
+          weekly_drills_goal: draftCounts.drills,
+          weekly_combines_goal: draftCounts.combines,
+          weekly_lessons_goal: draftCounts.lessons,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "user_id" },
       );
 
-      if (error) {
+      if (error && missingWeeklyColumns(error.message)) {
+        setSaveMsg("Weekly goals need the Supabase migration 20261011120000_weekly_goals_xp.sql before they can save.");
+      } else if (error) {
         const code = "code" in error ? String((error as { code?: string }).code) : "";
         const details = "details" in error ? String((error as { details?: string }).details || "") : "";
         const hint = "hint" in error ? String((error as { hint?: string }).hint || "") : "";
@@ -586,6 +613,9 @@ export function GoalAccountabilityModule() {
   })).filter((r) => r.plannedH > 0 || r.doneH > 0);
   const fmtH = (h: number) => (h === 0 ? "0" : h < 10 ? h.toFixed(1).replace(/\.0$/, "") : String(Math.round(h)));
   const tip = accountabilityLeakAlert || coachAmbitiousBadge || dataInsightMessage;
+  const countGoalsText = WEEKLY_COUNT_GOALS.filter((g) => draftCounts[g.key] > 0)
+    .map((g) => `${draftCounts[g.key]} ${g.unit}${draftCounts[g.key] === 1 ? "" : "s"}`)
+    .join(" · ");
 
   return (
     <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
@@ -604,7 +634,7 @@ export function GoalAccountabilityModule() {
             className="flex items-center gap-1 rounded-lg bg-stone-100 px-2.5 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-200"
           >
             <Pencil className="h-3 w-3" aria-hidden />
-            Edit
+            {hasSavedGoals ? "Adjust goals" : "Set goals"}
           </button>
         )}
       </div>
@@ -629,6 +659,11 @@ export function GoalAccountabilityModule() {
               </div>
             ))}
           </div>
+          {countGoalsText && (
+            <p className="mt-2 rounded-2xl bg-stone-50 px-3 py-2.5 text-xs text-stone-500">
+              Also each week: <span className="font-semibold text-stone-900">{countGoalsText}</span>
+            </p>
+          )}
           {(handicapNow != null || lowestNow != null) && (
             <div className="mt-2 flex items-center justify-between gap-2 rounded-2xl bg-stone-50 px-3 py-2.5 text-xs">
               <span className="text-stone-500">
@@ -717,6 +752,8 @@ export function GoalAccountabilityModule() {
             onLowestScoreChange={setBaselineLowest}
             onCurrentHandicapChange={setBaselineHandicap}
             suggestedAllocation={suggestedPack.hours}
+            weeklyCounts={draftCounts}
+            onWeeklyCountsChange={setDraftCounts}
             tip={volumeEffortWarning ? "Your target needs more practice time than 2h a week based on your current handicap." : tip}
           />
           <div className="mt-4 flex items-center gap-2">

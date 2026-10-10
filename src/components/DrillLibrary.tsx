@@ -10,8 +10,7 @@ import DrillScoringPicker from "@/components/DrillScoringPicker";
 import { DrillGuide, DrillHero, DrillSteps } from "@/components/drills/DrillIntro";
 import { stableDrillKey } from "@/lib/drillPersonalBests";
 import { resolveDrillScoring } from "@/lib/drillScoring";
-import { FACE_STRIKE_DRILL_KEY } from "@/lib/faceStrikeDrill";
-import { BALL_FLIGHT_DRILL_KEY } from "@/lib/ballFlightDrill";
+import { runnerDrillKey } from "@/lib/drillRunners";
 import { drillScoringOverride, useDrillScoringOverrides } from "@/lib/drillScoringOverrides";
 
 const LIBRARY_CATEGORIES = [
@@ -156,7 +155,7 @@ function DrillScoringRow({ drill }: { drill: DrillRecord }) {
     focus: drill.focus,
     title: drill.drill_name ?? drill.title,
   });
-  if (drillKey === FACE_STRIKE_DRILL_KEY || drillKey === BALL_FLIGHT_DRILL_KEY) return null;
+  if (runnerDrillKey(drill)) return null;
   return (
     <div className="mt-3">
       <DrillScoringPicker drillKey={drillKey} scoring={scoring} hasOverride={coachScoreType != null} />

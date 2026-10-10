@@ -7,6 +7,9 @@ export type LibraryCompletionRow = {
   completed_at: string;
 };
 
+/** Paid once per lesson by the `library_lesson_completions_award_xp` trigger. */
+export const XP_AWARD_LIBRARY_LESSON = 50;
+
 const TABLE = "library_lesson_completions";
 const PAGE_SIZE = 1000;
 
@@ -58,6 +61,7 @@ export async function recordLibraryCompletions(
         { onConflict: "user_id,lesson_id", ignoreDuplicates: true },
       );
     if (error) console.error("Error saving library completion:", error.message);
+    else if (typeof window !== "undefined") window.dispatchEvent(new Event("xpUpdated"));
   } catch (err) {
     console.error("Failed to save library completion:", err);
   }

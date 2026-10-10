@@ -29,6 +29,7 @@ import {
 } from "@/lib/practiceSessionDuration";
 import { listUserCombineCompletionEvents } from "@/lib/combineCompletionDetection";
 import { XP_AWARD_COMBINE_SESSION } from "@/lib/combineXp";
+import { XP_AWARD_LIBRARY_LESSON } from "@/lib/libraryCompletions";
 import { parsePuttingHoleRow } from "@/lib/combinePageLeaderboard";
 import {
   combineHighlightPutting18,
@@ -367,6 +368,28 @@ function accumulateRoundXpByUserForTimeFilter(
   return out;
 }
 
+/** XP from `round_xp_awards` (every logged round, including ones whose score is private). */
+type RoundXpAwardLike = { user_id?: string; earned_at?: string; xp?: number | string };
+
+function accumulateRoundAwardXpByUser(
+  timeFilter: "week" | "month" | "year" | "allTime",
+  awards: RoundXpAwardLike[],
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const row of awards) {
+    const uid = row?.user_id;
+    if (!uid) continue;
+    if (timeFilter !== "allTime") {
+      const ms = parseLeaderboardEventMs(row.earned_at) ?? NaN;
+      if (!eventMsMatchesLeaderboardTimeFilter(ms, timeFilter)) continue;
+    }
+    const add = Number(row.xp) || 0;
+    if (add <= 0) continue;
+    out.set(uid, (out.get(uid) || 0) + add);
+  }
+  return out;
+}
+
 /** XP from logged drill days (`drill_xp_awards`) in the window; allTime counts every row. */
 type DrillSessionLike = { user_id?: string; first_logged_at?: string; xp?: number | string };
 
@@ -385,6 +408,26 @@ function accumulateDrillSessionXpByUser(
     const add = Number(row.xp) || 0;
     if (add <= 0) continue;
     out.set(uid, (out.get(uid) || 0) + add);
+  }
+  return out;
+}
+
+/** XP from finished Library lessons (`XP_AWARD_LIBRARY_LESSON` each). */
+type LibraryCompletionLike = { user_id?: string; completed_at?: string };
+
+function accumulateLibraryXpByUser(
+  timeFilter: "week" | "month" | "year" | "allTime",
+  libraryCompletions: LibraryCompletionLike[],
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const row of libraryCompletions || []) {
+    const uid = row?.user_id;
+    if (!uid) continue;
+    if (timeFilter !== "allTime") {
+      const ms = parseLeaderboardEventMs(row.completed_at) ?? NaN;
+      if (!eventMsMatchesLeaderboardTimeFilter(ms, timeFilter)) continue;
+    }
+    out.set(uid, (out.get(uid) || 0) + XP_AWARD_LIBRARY_LESSON);
   }
   return out;
 }
@@ -1492,6 +1535,9 @@ function getLeaderboardData(
   drills?: any[],
   practiceLogs: any[] = [],
   drillSessions: DrillSessionLike[] = [],
+  libraryCompletions: LibraryCompletionLike[] = [],
+  roundXpAwards: RoundXpAwardLike[] | null = null,
+  weeklyGoalXpAwards: RoundXpAwardLike[] = [],
 ) {
   if (metric === "puttingCombine") {
     const allPractice = practiceSessions || [];
@@ -3045,9 +3091,14 @@ function getLeaderboardData(
   if (metric === "xp") {
     const allEntries: any[] = [];
 
-    const lifetimeActivityXpByUser = mergePeriodXpMaps(
-      accumulateLifetimeActivityXpByUser(practiceSessions || [], rounds, drillSessions),
+    const lifetimeActivityXpByUser = [
       accumulateCombineXpByUser("allTime", practiceSessions || [], practiceLogs),
+      accumulateLibraryXpByUser("allTime", libraryCompletions),
+      accumulateRoundAwardXpByUser("allTime", roundXpAwards ?? []),
+      accumulateRoundAwardXpByUser("allTime", weeklyGoalXpAwards),
+    ].reduce(
+      mergePeriodXpMaps,
+      accumulateLifetimeActivityXpByUser(practiceSessions || [], roundXpAwards ? [] : rounds, drillSessions),
     );
 
     const periodXpPractice =
@@ -3060,7 +3111,9 @@ function getLeaderboardData(
     const periodXpRounds =
       timeFilter === "allTime"
         ? null
-        : accumulateRoundXpByUserForTimeFilter(timeFilter, rounds);
+        : roundXpAwards
+          ? accumulateRoundAwardXpByUser(timeFilter, roundXpAwards)
+          : accumulateRoundXpByUserForTimeFilter(timeFilter, rounds);
     const periodXpByUser =
       timeFilter === "allTime"
         ? null
@@ -3068,6 +3121,8 @@ function getLeaderboardData(
             periodXpRounds || new Map<string, number>(),
             accumulateDrillSessionXpByUser(timeFilter, drillSessions),
             accumulateCombineXpByUser(timeFilter, practiceSessions || [], practiceLogs),
+            accumulateLibraryXpByUser(timeFilter, libraryCompletions),
+            accumulateRoundAwardXpByUser(timeFilter, weeklyGoalXpAwards),
           ].reduce(mergePeriodXpMaps, periodXpPractice || new Map<string, number>());
 
     if (userProfiles && userProfiles.size > 0) {

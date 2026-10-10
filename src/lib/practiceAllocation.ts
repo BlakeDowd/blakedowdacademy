@@ -1,6 +1,11 @@
 import { FOCUS_AREA_PRESETS } from "@/lib/goalPresetConstants";
 import type { GoalFocusArea } from "@/types/playerGoals";
-import type { RoundLikeForInsight, RoundStatRow, StatWeakBucket } from "@/lib/roundStatsGoalInsight";
+import {
+  roundProxyPressure,
+  type RoundLikeForInsight,
+  type RoundStatRow,
+  type StatWeakBucket,
+} from "@/lib/roundStatsGoalInsight";
 
 export type PracticeHoursMap = Record<GoalFocusArea, number>;
 
@@ -26,25 +31,11 @@ function sumBucketTotalsFromRoundStats(rows: RoundStatRow[]): Record<StatWeakBuc
 function sumBucketTotalsFromRoundProxies(rounds: RoundLikeForInsight[]): Record<StatWeakBucket, number> {
   const totals: Record<StatWeakBucket, number> = { off_tee: 0, approach: 0, short_game: 0, putting: 0 };
   for (const r of rounds) {
-    const h = Math.max(1, r.holes ?? 18);
-    const firL = r.firLeft ?? 0;
-    const firH = r.firHit ?? 0;
-    const firR = r.firRight ?? 0;
-    const firAtt = firL + firH + firR;
-    const firMiss = firL + firR;
-    const gir = r.totalGir ?? 0;
-    const girRate = gir / h;
-
-    totals.off_tee += (r.teePenalties ?? 0) * 1.15 + firMiss * 0.12 + (firAtt > 0 ? (1 - firH / firAtt) * 2.2 * (h / 18) : 0);
-    totals.approach += (r.approachPenalties ?? 0) * 1.15 + (1 - girRate) * 3.2;
-    const udAtt = (r.upAndDownConversions ?? 0) + (r.missed ?? 0);
-    const missRate = udAtt > 0 ? (r.missed ?? 0) / udAtt : 0;
-    totals.short_game +=
-      missRate * 3.5 +
-      Math.max(0, (r.bunkerAttempts ?? 0) - (r.bunkerSaves ?? 0)) * 0.35 +
-      (r.doubleChips ?? 0) * 0.45 +
-      (r.chipInside6ft ?? 0) * 0.02;
-    totals.putting += (r.threePutts ?? 0) * 0.42 + Math.max(0, (r.totalPutts ?? 0) - 31) * 0.18;
+    const p = roundProxyPressure(r);
+    totals.off_tee += p.off_tee;
+    totals.approach += p.approach;
+    totals.short_game += p.short_game;
+    totals.putting += p.putting;
   }
   return totals;
 }

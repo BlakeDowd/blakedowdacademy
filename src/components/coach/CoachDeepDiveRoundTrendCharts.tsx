@@ -1,6 +1,5 @@
 "use client";
 
-import { Activity } from "lucide-react";
 import {
   CartesianGrid,
   LabelList,
@@ -70,9 +69,9 @@ function TrendCard({
     30 + (data.length > 10 ? 8 : 0) + (data.length > 16 ? 6 : 0) + (firstPairStackLabels ? 14 : 0);
 
   return (
-    <div className="coach-deepdive-trend-card rounded-2xl border border-stone-200 bg-white p-4 shadow-md sm:p-5 print:break-inside-avoid print:shadow-none print:rounded-xl print:border-stone-400 print:p-3">
-      <div className="mb-4 print:mb-2">
-        <h3 className="text-base font-semibold tracking-tight text-stone-900 print:text-[13pt] print:text-black">
+    <div className="coach-deepdive-trend-card rounded-2xl border border-stone-200 bg-white px-4 py-4 shadow-sm sm:px-5 print:break-inside-avoid print:shadow-none print:rounded-xl print:border-stone-400 print:p-3">
+      <div className="mb-3 print:mb-2">
+        <h3 className="text-xs font-bold uppercase tracking-[0.08em] text-[#014421] print:text-[13pt] print:text-black">
           {title}
         </h3>
         <p className="mt-0.5 text-xs text-stone-500 print:text-[9pt] print:text-stone-700 print:max-w-none">
@@ -80,7 +79,7 @@ function TrendCard({
         </p>
       </div>
       {chartData.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-stone-200 bg-stone-50/80 py-10 text-center text-xs text-stone-500 print:border-stone-400 print:bg-white print:text-stone-700">
+        <p className="rounded-xl bg-stone-50 px-3 py-4 text-center text-xs leading-relaxed text-stone-500 print:bg-white print:text-stone-700">
           {emptyMessage}
         </p>
       ) : (
@@ -237,39 +236,26 @@ type Props = {
 
 export function CoachDeepDiveRoundTrendCharts({ grossPoints, handicapPoints, rangeCaption }: Props) {
   return (
-    <section id="coach-deepdive-round-charts" className="mb-10 space-y-6 print:mb-6">
-      <div className="mb-5 flex items-center gap-3 sm:mb-6 print:mb-2">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-700 print:border print:border-stone-400 print:bg-white">
-          <Activity className="h-4 w-4 print:h-5 print:w-5" aria-hidden />
-        </div>
-        <div>
-          <h2 className="text-base font-semibold tracking-tight text-stone-900 print:text-[14pt] print:text-black">
-            Round trends
-          </h2>
-          <p className="text-xs text-stone-500 print:text-[9pt] print:text-stone-800">{rangeCaption}</p>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-7 sm:gap-8">
-        <TrendCard
-          title="Gross score by round"
-          subtitle="Total gross score for each logged round in the selected window."
-          data={grossPoints}
-          dataKey="gross"
-          stroke="#014421"
-          emptyMessage="No rounds with a gross score in this date range."
-          yLabel="Gross"
-        />
-        <TrendCard
-          title="Handicap index"
-          subtitle="Uses official handicap history when available; otherwise handicap entered on each round."
-          data={handicapPoints}
-          dataKey="handicap"
-          stroke="#ea580c"
-          emptyMessage="No handicap entries in this window (log handicap on rounds or via handicap updates)."
-          yLabel="Hcp"
-        />
-      </div>
+    <section id="coach-deepdive-round-charts" className="space-y-3">
+      <p className="hidden text-[9pt] text-stone-800 print:block">Round trends · {rangeCaption}</p>
+      <TrendCard
+        title="Gross score"
+        subtitle="Each round in this range"
+        data={grossPoints}
+        dataKey="gross"
+        stroke="#014421"
+        emptyMessage="No rounds with a score in this range."
+        yLabel="Gross"
+      />
+      <TrendCard
+        title="Handicap"
+        subtitle="From handicap updates, or the handicap entered on each round"
+        data={handicapPoints}
+        dataKey="handicap"
+        stroke="#ea580c"
+        emptyMessage="No handicap changes in this range."
+        yLabel="Hcp"
+      />
     </section>
   );
 }

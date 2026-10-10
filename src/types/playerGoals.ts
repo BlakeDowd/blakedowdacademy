@@ -29,6 +29,11 @@ export interface PlayerGoalRow {
   lowest_score?: number | null;
   /** Handicap index; optional (negative = plus). */
   current_handicap?: number | null;
+  /** Weekly count goals; 0 = not a goal. */
+  weekly_rounds_goal?: number | null;
+  weekly_drills_goal?: number | null;
+  weekly_combines_goal?: number | null;
+  weekly_lessons_goal?: number | null;
   updated_at?: string;
 }
 

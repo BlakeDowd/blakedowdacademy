@@ -6,6 +6,7 @@ import {
   APPROACH_MATRIX_ROWS,
   type ApproachMatrixCellKey,
 } from "@/lib/advancedApproachAggregates";
+import { onlyEighteenHoleRounds } from "@/lib/roundStatTracking";
 import {
   Check,
   MoveDown,
@@ -40,19 +41,16 @@ type RoundLike = {
 
 type Props = {
   rounds: RoundLike[];
-  holeFilter: "9" | "18";
   /** When set, replaces the default subtitle under the section title. */
   description?: string;
   /** Hide built-in title/subtitle block when wrapped by an external card header. */
   showHeader?: boolean;
-  /** e.g. 9/18 filter controls on coach deep dive */
   headerEnd?: ReactNode;
   className?: string;
 };
 
 export function AdvancedApproachStatsPanel({
   rounds,
-  holeFilter,
   description,
   showHeader = true,
   headerEnd,
@@ -68,11 +66,7 @@ export function AdvancedApproachStatsPanel({
     [rounds],
   );
 
-  const filteredRounds = useMemo(
-    () =>
-      normalizedRounds.filter((r) => r.holes === (holeFilter === "9" ? 9 : 18)),
-    [normalizedRounds, holeFilter],
-  );
+  const filteredRounds = useMemo(() => onlyEighteenHoleRounds(normalizedRounds), [normalizedRounds]);
 
   const agg = useMemo(
     () => aggregateAdvancedApproach(filteredRounds),
@@ -92,8 +86,7 @@ export function AdvancedApproachStatsPanel({
               Advanced approach
             </div>
             <p className="mt-0.5 text-[11px] text-gray-500">
-              {description ??
-                `From directional logs on round entry (${holeFilter}-hole rounds only).`}
+              {description ?? "From directional logs on round entry."}
             </p>
           </div>
           {headerEnd ? <div className="shrink-0">{headerEnd}</div> : null}
@@ -105,7 +98,7 @@ export function AdvancedApproachStatsPanel({
       {agg.total === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/80 py-6 px-3 text-center">
           <p className="text-xs text-gray-600 leading-relaxed">
-            No advanced approach data yet for {holeFilter}-hole rounds. Use{" "}
+            No advanced approach data yet. Use{" "}
             <span className="font-semibold text-gray-800">Add Directional Misses</span> when logging
             a round to build your miss pattern and GIR map here.
           </p>
@@ -213,7 +206,7 @@ export function AdvancedApproachStatsPanel({
 
           <p className="text-[10px] text-center text-gray-400">
             Based on {agg.roundsWithData} round{agg.roundsWithData !== 1 ? "s" : ""} with at least one
-            entry · {filteredRounds.length} total {holeFilter}-hole rounds in view
+            entry · {filteredRounds.length} total rounds in view
           </p>
         </div>
       )}

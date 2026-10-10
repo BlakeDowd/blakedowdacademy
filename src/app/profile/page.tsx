@@ -3,7 +3,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import { AdvancedApproachStatsPanel } from "@/components/stats/AdvancedApproachStatsPanel";
-import { LivePuttingBreakdownPanel } from "@/components/stats/LivePuttingBreakdownPanel";
 import type { AcademyTrophyDbRow } from "@/components/AcademyTrophyCasePanel";
 import {
   TourPlayerProfileHero,
@@ -17,20 +16,7 @@ import { isCoachEmail } from "@/lib/coachEmails";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import {
-  AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
-  CircleDot,
-  Crosshair,
-  Flag,
-  Gauge,
-  LineChart,
-  Navigation2,
-  Shuffle,
-  Table2,
-  Target,
-} from "lucide-react";
+import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import {
   HeadlineStatTile,
   Segmented,
@@ -52,6 +38,13 @@ import type { PlayerGoalRow } from "@/types/playerGoals";
 import { AcademyProfileSection } from "@/components/academy/AcademyProfileSection";
 import { ProfilePracticeOverview } from "@/components/profile/ProfilePracticeOverview";
 import { getBenchmarkGoals } from "@/lib/benchmarkGoals";
+import {
+  SCORE_DISTRIBUTION_COLORS,
+  fairwaysPossibleFor,
+  roundsTrackingStat,
+  sandSaveAttempts,
+  upAndDownAttempts,
+} from "@/lib/roundStatTracking";
 import { countUserCombineCompletions } from "@/lib/combineCompletionDetection";
 import { practiceSessionMinutesFromRow, practiceSessionsForUser } from "@/lib/practiceSessionDuration";
 import { buildDummyRoundsForUser } from "@/lib/seedDummyRounds";
@@ -60,6 +53,10 @@ function clampTargetGoalHandicap(raw: number): number {
   const r = Math.round(Number(raw));
   if (!Number.isFinite(r)) return 9;
   return Math.min(54, Math.max(-5, r));
+}
+
+function pairText(made: number, total: number): string {
+  return `${fmtStat(made)} / ${fmtStat(total)}`;
 }
 
 function roundSortTimeMs(r: { created_at?: string; date?: string }): number {
@@ -261,7 +258,6 @@ export default function ProfilePage() {
   };
   
   const [selectedMetric, setSelectedMetric] = useState<TrendMetricId>('nettScore');
-  const [holeFilter, setHoleFilter] = useState<'9' | '18'>('18');
   /** Rounds window for every player-stats section below Trend Analysis (not the trend chart itself). */
   const [playerStatsScope, setPlayerStatsScope] = useState<"LAST 5" | "LAST 10" | "LAST 20" | "ALL">("ALL");
   const [forceLoaded, setForceLoaded] = useState(false);
@@ -271,6 +267,8 @@ export default function ProfilePage() {
   const [collapsedCards, setCollapsedCards] = useState<Record<string, boolean>>({
     trendAnalysis: false,
     coreScoring: false,
+    scoring: false,
+    distribution: false,
     fullMatrix: true,
     strokeOpportunities: false,
     driving: false,
@@ -498,6 +496,9 @@ export default function ProfilePage() {
   );
 
   const hasRoundData = scopedPlayerStatsRounds.length > 0;
+  const hasDirectionalShots = scopedPlayerStatsRounds.some(
+    (r) => Array.isArray(r.approachDirectionalShots) && r.approachDirectionalShots.length > 0,
+  );
 
   const statsProfileDisplayName = useMemo(() => {
     if (user?.fullName?.trim()) return user.fullName.trim();
@@ -607,88 +608,129 @@ export default function ProfilePage() {
       };
     }
 
+    type StatsRound = (typeof scopedPlayerStatsRounds)[number];
+    const rs = scopedPlayerStatsRounds;
+    const sum = (list: StatsRound[], value: (r: StatsRound) => number | null | undefined) =>
+      list.reduce((s, r) => s + (value(r) || 0), 0);
+    const holesIn = (list: StatsRound[]) => sum(list, (r) => r.holes || 18);
+    // -1 = no data: only rounds where the player tracked a stat count towards it.
+    const pct = (made: number, total: number) => (total > 0 ? (made / total) * 100 : -1);
+    const per18 = (list: StatsRound[], value: (r: StatsRound) => number | null | undefined) => {
+      const holes = holesIn(list);
+      return list.length > 0 && holes > 0 ? (sum(list, value) / holes) * 18 : -1;
+    };
+    const oneDp = (v: number) => (v < 0 ? -1 : Math.round(v * 10) / 10);
+    const upDownAttempts = (r: StatsRound) =>
+      upAndDownAttempts(r.upAndDownConversions || 0, r.missed || 0, r.created_at ?? r.date);
+
     // DRIVING: FIR percentage and shot breakdown
-    const totalFir = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.firHit || 0) + (r.firLeft || 0) + (r.firRight || 0), 0);
-    const firHit = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.firHit || 0), 0);
-    const firLeft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.firLeft || 0), 0);
-    const firRight = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.firRight || 0), 0);
-    const firMissed = firLeft + firRight;
-    const firPercent = totalFir > 0 ? (firHit / totalFir) * 100 : 0;
-    const missedLeft = totalFir > 0 ? (firLeft / totalFir) * 100 : 0;
-    const missedRight = totalFir > 0 ? (firRight / totalFir) * 100 : 0;
+    const fairwayRounds = roundsTrackingStat(rs, "fairways");
+    const totalFir = sum(fairwayRounds, (r) =>
+      fairwaysPossibleFor(r.firHit || 0, r.firLeft || 0, r.firRight || 0, r.fairwaysPossible),
+    );
+    const firHit = sum(fairwayRounds, (r) => r.firHit);
+    const firLeft = sum(fairwayRounds, (r) => r.firLeft);
+    const firRight = sum(fairwayRounds, (r) => r.firRight);
 
-    // APPROACH: GIR percentage
-    const totalGir = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.totalGir || 0), 0);
-    const totalHoles = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.holes || 18), 0);
-    const girPercent = totalHoles > 0 ? (totalGir / totalHoles) * 100 : 0;
+    // APPROACH: GIR and proximity as % of holes
+    const girRounds = roundsTrackingStat(rs, "gir");
+    const proximityRounds = roundsTrackingStat(rs, "gir_proximity");
 
-    // APPROACH: GIR from distances - % of holes (18) hit within 8ft/20ft
-    const totalGir8ft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.gir8ft || 0), 0);
-    const totalGir20ft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.gir20ft || 0), 0);
-    const gir8ft = totalHoles > 0 ? (totalGir8ft / totalHoles) * 100 : 0;
-    const gir20ft = totalHoles > 0 ? (totalGir20ft / totalHoles) * 100 : 0;
+    // SHORT GAME: made / attempts
+    const scrambleRounds = roundsTrackingStat(rs, "scrambling");
+    const sandRounds = roundsTrackingStat(rs, "sand_saves");
+    const chipRounds = roundsTrackingStat(rs, "chipping", "scrambling");
 
-    // SHORT GAME: Up & Down percentage
-    const totalUpDownAttempts = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.upAndDownConversions || 0) + (r.missed || 0), 0);
-    const upDownSuccess = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.upAndDownConversions || 0), 0);
-    const upAndDownPercent = totalUpDownAttempts > 0 ? (upDownSuccess / totalUpDownAttempts) * 100 : 0;
+    // PUTTING
+    const shortPuttRounds = roundsTrackingStat(rs, "short_putts");
+    const shortPuttMake = pct(sum(shortPuttRounds, (r) => r.made6ftAndIn), sum(shortPuttRounds, (r) => r.puttsUnder6ftAttempts));
 
-    // SHORT GAME: Bunker Saves percentage
-    const totalBunkerAttempts = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.bunkerAttempts || 0) + (r.bunkerSaves || 0), 0);
-    const bunkerSavesCount = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.bunkerSaves || 0), 0);
-    const bunkerSaves = totalBunkerAttempts > 0 ? (bunkerSavesCount / totalBunkerAttempts) * 100 : 0;
-
-    // SHORT GAME: Chip Inside 6ft (Scrambling %)
-    const totalChips = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.chipInside6ft || 0) + (r.doubleChips || 0), 0); // Need to know total chips, using doubleChips as missed for now or just standardizing based on up&down attempts
-    // Better way for Chip Inside 6ft percentage: It's usually chip inside 6ft / total chips
-    // Let's use totalUpDownAttempts as the denominator since that's roughly total short game shots
-    const chipInside6ft = totalUpDownAttempts > 0 ? (scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.chipInside6ft || 0), 0) / totalUpDownAttempts) * 100 : 0;
-
-    // Counting stats are per 18 holes so 9-hole rounds don't drag the averages down.
-    const per18 = (count: number) => (totalHoles > 0 ? (count / totalHoles) * 18 : 0);
-
-    const totalPutts = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.totalPutts || 0), 0);
-    const avgPutts = per18(totalPutts);
-
-    // PUTTING: < 6ft Make percentage (made_under_6ft / putts_under_6ft_attempts)
-    const totalPuttsUnder6ft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.puttsUnder6ftAttempts || 0), 0);
-    const puttsMadeUnder6ft = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.made6ftAndIn || 0), 0);
-    const puttsUnder6ftMake = totalPuttsUnder6ft > 0 ? Math.round((puttsMadeUnder6ft / totalPuttsUnder6ft) * 100) : 0;
-
-    // PUTTING: 3-Putts (average per round)
-    const totalThreePutts = scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.threePutts || 0), 0);
-    const avgThreePutts = per18(totalThreePutts);
-
-    const teePenalties = per18(scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.teePenalties || 0), 0));
-    const approachPenalties = per18(scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.approachPenalties || 0), 0));
-    const totalPenalties = per18(scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.totalPenalties || 0), 0));
-    const doublesPerRound = per18(scopedPlayerStatsRounds.reduce((sum, r) => sum + (r.doubleBogeys || 0), 0));
+    const penaltyRounds = roundsTrackingStat(rs, "penalties");
 
     return {
       // DRIVING
-      firPercent: Math.round(firPercent * 10) / 10,
-      missedLeft: Math.round(missedLeft * 10) / 10,
-      missedRight: Math.round(missedRight * 10) / 10,
+      firPercent: oneDp(pct(firHit, totalFir)),
+      missedLeft: oneDp(pct(firLeft, totalFir)),
+      missedRight: oneDp(pct(firRight, totalFir)),
       totalFirShots: totalFir,
       firHit: firHit,
-      firMissed: firMissed,
+      firMissed: firLeft + firRight,
       // APPROACH
-      girPercent: Math.round(girPercent * 10) / 10,
-      gir8ft: Math.round(gir8ft * 10) / 10,
-      gir20ft: Math.round(gir20ft * 10) / 10,
+      girPercent: oneDp(pct(sum(girRounds, (r) => r.totalGir), holesIn(girRounds))),
+      gir8ft: oneDp(pct(sum(proximityRounds, (r) => r.gir8ft), holesIn(proximityRounds))),
+      gir20ft: oneDp(pct(sum(proximityRounds, (r) => r.gir20ft), holesIn(proximityRounds))),
       // SHORT GAME
-      upAndDownPercent: Math.round(upAndDownPercent * 10) / 10,
-      bunkerSaves: Math.round(bunkerSaves * 10) / 10,
-      chipInside6ft: Math.round(chipInside6ft * 10) / 10,
+      upAndDownPercent: oneDp(
+        pct(sum(scrambleRounds, (r) => r.upAndDownConversions), sum(scrambleRounds, upDownAttempts)),
+      ),
+      bunkerSaves: oneDp(
+        pct(
+          sum(sandRounds, (r) => r.bunkerSaves),
+          sum(sandRounds, (r) => sandSaveAttempts(r.bunkerSaves || 0, r.bunkerAttempts || 0)),
+        ),
+      ),
+      chipInside6ft: oneDp(pct(sum(chipRounds, (r) => r.chipInside6ft), sum(chipRounds, upDownAttempts))),
       // PUTTING
-      avgPutts: Math.round(avgPutts * 10) / 10,
-      puttsUnder6ftMake: Math.round(puttsUnder6ftMake * 10) / 10,
-      avgThreePutts: Math.round(avgThreePutts * 10) / 10,
+      avgPutts: oneDp(per18(roundsTrackingStat(rs, "putts"), (r) => r.totalPutts)),
+      puttsUnder6ftMake: shortPuttMake < 0 ? -1 : Math.round(shortPuttMake),
+      avgThreePutts: oneDp(per18(roundsTrackingStat(rs, "three_putts"), (r) => r.threePutts)),
       // PENALTIES
-      teePenalties: Math.round(teePenalties * 10) / 10,
-      approachPenalties: Math.round(approachPenalties * 10) / 10,
-      totalPenalties: Math.round(totalPenalties * 10) / 10,
-      doublesPerRound: Math.round(doublesPerRound * 10) / 10,
+      teePenalties: oneDp(per18(penaltyRounds, (r) => r.teePenalties)),
+      approachPenalties: oneDp(per18(penaltyRounds, (r) => r.approachPenalties)),
+      totalPenalties: oneDp(per18(penaltyRounds, (r) => r.totalPenalties)),
+      doublesPerRound: oneDp(per18(roundsTrackingStat(rs, "distribution"), (r) => r.doubleBogeys)),
+    };
+  }, [scopedPlayerStatsRounds]);
+
+  /** Averages laid out like the MiScore post-round summary (-1 = no data). */
+  const roundSummary = useMemo(() => {
+    type StatsRound = (typeof scopedPlayerStatsRounds)[number];
+    const rs = scopedPlayerStatsRounds;
+    const finite = (list: StatsRound[], value: (r: StatsRound) => number | null | undefined) =>
+      list.map(value).filter((n): n is number => typeof n === "number" && Number.isFinite(n));
+    const avg = (values: number[]) => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : -1);
+    const per18 = (list: StatsRound[], value: (r: StatsRound) => number | null | undefined) => {
+      const holes = list.reduce((s, r) => s + (r.holes || 18), 0);
+      return list.length > 0 && holes > 0 ? (list.reduce((s, r) => s + (value(r) || 0), 0) / holes) * 18 : -1;
+    };
+
+    const ninesRounds = roundsTrackingStat(rs, "front_back");
+    const fairwayRounds = roundsTrackingStat(rs, "fairways");
+    const girRounds = roundsTrackingStat(rs, "gir");
+    const scrambleRounds = roundsTrackingStat(rs, "scrambling");
+    const sandRounds = roundsTrackingStat(rs, "sand_saves");
+    const distRounds = roundsTrackingStat(rs, "distribution");
+    const tripleRounds = distRounds.filter((r) => r.tripleBogeys != null);
+
+    return {
+      grossAvg: avg(finite(rs, (r) => r.score)),
+      nettAvg: avg(finite(rs, (r) => r.nett)),
+      stableford: per18(
+        roundsTrackingStat(rs, "stableford").filter((r) => r.stableford != null),
+        (r) => r.stableford,
+      ),
+      frontNine: avg(finite(ninesRounds, (r) => r.frontNine)),
+      backNine: avg(finite(ninesRounds, (r) => r.backNine)),
+      fairwaysHit: per18(fairwayRounds, (r) => r.firHit),
+      fairwaysPossible: per18(fairwayRounds, (r) =>
+        fairwaysPossibleFor(r.firHit || 0, r.firLeft || 0, r.firRight || 0, r.fairwaysPossible),
+      ),
+      girPerRound: per18(girRounds, (r) => r.totalGir),
+      puttsPerGir: avg(finite(roundsTrackingStat(rs, "putts_per_gir"), (r) => r.puttsPerGir)),
+      upDownsMade: per18(scrambleRounds, (r) => r.upAndDownConversions),
+      upDownsAttempts: per18(scrambleRounds, (r) =>
+        upAndDownAttempts(r.upAndDownConversions || 0, r.missed || 0, r.created_at ?? r.date),
+      ),
+      sandSaves: per18(sandRounds, (r) => r.bunkerSaves),
+      sandAttempts: per18(sandRounds, (r) => sandSaveAttempts(r.bunkerSaves || 0, r.bunkerAttempts || 0)),
+      distribution: {
+        eagles: per18(distRounds, (r) => r.eagles),
+        birdies: per18(distRounds, (r) => r.birdies),
+        pars: per18(distRounds, (r) => r.pars),
+        bogeys: per18(distRounds, (r) => r.bogeys),
+        doubleBogeys: per18(distRounds, (r) => (r.doubleBogeys || 0) - (r.tripleBogeys ?? 0)),
+        tripleBogeys: per18(tripleRounds, (r) => r.tripleBogeys),
+      },
     };
   }, [scopedPlayerStatsRounds]);
 
@@ -707,6 +749,20 @@ export default function ProfilePage() {
       </div>
     );
   }
+
+  const distributionRows: {
+    key: keyof typeof roundSummary.distribution;
+    label: string;
+    goal?: number;
+    lowerIsBetter?: boolean;
+  }[] = [
+    { key: "eagles", label: "Eagles or better" },
+    { key: "birdies", label: "Birdies", goal: goals.birdies },
+    { key: "pars", label: "Pars", goal: goals.pars },
+    { key: "bogeys", label: "Bogeys", goal: goals.bogeys, lowerIsBetter: true },
+    { key: "doubleBogeys", label: "Double bogeys" },
+    { key: "tripleBogeys", label: "Triple bogey+" },
+  ];
 
   return (
     <div className="coach-deepdive-root w-full max-w-3xl overflow-x-hidden bg-[#f4f6f4] min-w-0 mx-auto">
@@ -735,7 +791,7 @@ export default function ProfilePage() {
               <section className="rounded-3xl border border-dashed border-[#FFA500]/50 bg-orange-50/80 p-5">
                 <p className="text-sm font-semibold text-stone-800">No rounds logged yet</p>
                 <p className="mt-1 text-xs text-stone-600">
-                  Load three sample rounds (two 18-hole, one 9-hole) with full stats to preview this page.
+                  Load three sample rounds with full stats to preview this page.
                 </p>
                 <button
                   type="button"
@@ -749,10 +805,10 @@ export default function ProfilePage() {
               </section>
             ) : null}
 
-            <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+            <section className="rounded-2xl border border-stone-200 bg-white px-4 py-4 shadow-sm sm:px-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="text-base font-bold text-stone-900">Your benchmark</h2>
+                  <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-[#014421]">Your benchmark</h2>
                   <p className="text-xs text-stone-500">Every target on this page is set for this handicap.</p>
                 </div>
                 <p className="shrink-0 text-right">
@@ -804,7 +860,6 @@ export default function ProfilePage() {
 
             <StatsCard
               id="stats-core-scoring-metrics"
-              icon={Gauge}
               title="At a glance"
               subtitle="Your averages against the benchmark"
               open={!collapsedCards.coreScoring}
@@ -831,7 +886,12 @@ export default function ProfilePage() {
                     </div>
                   )}
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    <HeadlineStatTile label="Scoring average" value={bigSix.scoringAvg} goal={goals.score} lowerIsBetter />
+                    <HeadlineStatTile
+                      label="Scoring average"
+                      value={roundSummary.grossAvg}
+                      goal={goals.score}
+                      lowerIsBetter
+                    />
                     <HeadlineStatTile label="Greens in regulation" value={bigSix.girPct} goal={goals.gir} unit="%" />
                     <HeadlineStatTile label="Fairways hit" value={bigSix.firPct} goal={goals.fir} unit="%" />
                     <HeadlineStatTile label="Scrambling" value={bigSix.scramblePct} goal={goals.upAndDown} unit="%" />
@@ -847,7 +907,6 @@ export default function ProfilePage() {
             </StatsCard>
 
             <StatsCard
-              icon={Target}
               title="Where you're losing shots"
               subtitle="Biggest gaps to your benchmark"
               open={!collapsedCards.strokeOpportunities}
@@ -897,7 +956,7 @@ export default function ProfilePage() {
                       ] as const
                     ).map((leak) => (
                       <div key={leak.label} className="rounded-2xl bg-stone-50 px-2 py-3 text-center">
-                        <p className="text-xl font-bold tabular-nums text-stone-900">{fmtStat(leak.value)}</p>
+                        <p className="text-xl font-bold tabular-nums text-stone-900">{leak.value < 0 ? "–" : fmtStat(leak.value)}</p>
                         <p className="text-[11px] text-stone-500">{leak.label}</p>
                       </div>
                     ))}
@@ -907,7 +966,6 @@ export default function ProfilePage() {
             </StatsCard>
 
             <StatsCard
-              icon={LineChart}
               title="Trends"
               subtitle="How your stats are moving over time"
               open={!collapsedCards.trendAnalysis}
@@ -927,195 +985,325 @@ export default function ProfilePage() {
                       </option>
                     ))}
                   </select>
-                  <Segmented
-                    label="Round length"
-                    value={holeFilter}
-                    onChange={setHoleFilter}
-                    options={[
-                      { id: "18", label: "18 holes" },
-                      { id: "9", label: "9 holes" },
-                    ]}
-                  />
                 </div>
-                <StatTrendChart
-                  rounds={safeRounds}
-                  metricId={selectedMetric}
-                  goals={goals}
-                  holes={holeFilter === "9" ? 9 : 18}
-                />
+                <StatTrendChart rounds={safeRounds} metricId={selectedMetric} goals={goals} />
               </div>
             </StatsCard>
 
-            <StatsCard
-              icon={Navigation2}
-              title="Driving"
-              subtitle="Fairways and where you miss"
-              open={!collapsedCards.driving}
-              onToggle={() => toggleCard("driving")}
-            >
-              <TargetStatRow label="Fairways hit" value={performanceMetrics.firPercent} goal={goals.fir} unit="%" />
-              {hasRoundData && performanceMetrics.totalFirShots > 0 && (
-                <div className="mt-4 rounded-2xl bg-stone-50 p-3">
-                  <p className="mb-2 text-xs font-semibold text-stone-600">Tee shot pattern</p>
-                  <div className="flex h-3 overflow-hidden rounded-full bg-stone-200">
-                    <div className="bg-stone-400" style={{ width: `${performanceMetrics.missedLeft}%` }} />
-                    <div className="bg-[#014421]" style={{ width: `${performanceMetrics.firPercent}%` }} />
-                    <div className="bg-[#FFA500]" style={{ width: `${performanceMetrics.missedRight}%` }} />
-                  </div>
-                  <div className="mt-2 grid grid-cols-3 text-[11px] text-stone-600">
-                    {(
-                      [
-                        { label: "Missed left", value: performanceMetrics.missedLeft, dot: "bg-stone-400", align: "text-left" },
-                        { label: "Hit", value: performanceMetrics.firPercent, dot: "bg-[#014421]", align: "text-center" },
-                        { label: "Missed right", value: performanceMetrics.missedRight, dot: "bg-[#FFA500]", align: "text-right" },
-                      ] as const
-                    ).map((part) => (
-                      <span key={part.label} className={part.align}>
-                        <span className="block text-sm font-bold tabular-nums text-stone-900">{fmtStat(part.value)}%</span>
-                        <span className="inline-flex items-center gap-1">
-                          <span className={`h-2 w-2 rounded-full ${part.dot}`} aria-hidden />
-                          {part.label}
+            {hasRoundData && (
+              <div className="px-1 pt-2">
+                <h2 className="text-sm font-bold text-stone-900">Round stats</h2>
+                <p className="text-xs text-stone-500">
+                  Grouped like your MiScore summary. Stats you don&apos;t track are left out.
+                </p>
+              </div>
+            )}
+
+            {roundSummary.grossAvg >= 0 && (
+              <StatsCard
+                title="Scoring"
+                subtitle="Averages per round"
+                open={!collapsedCards.scoring}
+                onToggle={() => toggleCard("scoring")}
+              >
+                <div className="divide-y divide-stone-100">
+                  <TargetStatRow
+                    label="Gross"
+                    value={roundSummary.grossAvg}
+                    goal={goals.score}
+                    lowerIsBetter
+                  />
+                  <TargetStatRow label="Nett" value={roundSummary.nettAvg} />
+                  {roundSummary.stableford >= 0 && (
+                    <TargetStatRow
+                      label="Stableford"
+                      value={roundSummary.stableford}
+                      sub="Points a round · 36 is playing to your handicap"
+                    />
+                  )}
+                  {roundSummary.frontNine >= 0 && <TargetStatRow label="Front 9" value={roundSummary.frontNine} />}
+                  {roundSummary.backNine >= 0 && <TargetStatRow label="Back 9" value={roundSummary.backNine} />}
+                </div>
+              </StatsCard>
+            )}
+
+            {performanceMetrics.firPercent >= 0 && (
+              <StatsCard
+                title="Driving"
+                subtitle="Fairways and where you miss"
+                open={!collapsedCards.driving}
+                onToggle={() => toggleCard("driving")}
+              >
+                <div className="divide-y divide-stone-100">
+                  <TargetStatRow label="Fairways hit" value={performanceMetrics.firPercent} goal={goals.fir} unit="%" />
+                  <TargetStatRow
+                    label="Fairways a round"
+                    value={roundSummary.fairwaysHit}
+                    display={pairText(roundSummary.fairwaysHit, roundSummary.fairwaysPossible)}
+                    sub="Hit / possible (par 3s left out)"
+                  />
+                </div>
+                {performanceMetrics.totalFirShots > 0 && (
+                  <div className="mt-3 rounded-xl bg-stone-50 p-3">
+                    <div className="flex h-2.5 overflow-hidden rounded-full bg-stone-200">
+                      <div className="bg-stone-400" style={{ width: `${performanceMetrics.missedLeft}%` }} />
+                      <div className="bg-[#014421]" style={{ width: `${performanceMetrics.firPercent}%` }} />
+                      <div className="bg-[#FFA500]" style={{ width: `${performanceMetrics.missedRight}%` }} />
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 text-[11px] text-stone-600">
+                      {(
+                        [
+                          { label: "Missed left", value: performanceMetrics.missedLeft, dot: "bg-stone-400", align: "text-left" },
+                          { label: "Hit", value: performanceMetrics.firPercent, dot: "bg-[#014421]", align: "text-center" },
+                          { label: "Missed right", value: performanceMetrics.missedRight, dot: "bg-[#FFA500]", align: "text-right" },
+                        ] as const
+                      ).map((part) => (
+                        <span key={part.label} className={part.align}>
+                          <span className="block text-sm font-bold tabular-nums text-stone-900">{fmtStat(part.value)}%</span>
+                          <span className="inline-flex items-center gap-1">
+                            <span className={`h-2 w-2 rounded-full ${part.dot}`} aria-hidden />
+                            {part.label}
+                          </span>
                         </span>
-                      </span>
-                    ))}
+                      ))}
+                    </div>
+                    {performanceMetrics.firMissed > 0 && (
+                      <p className="mt-2 border-t border-stone-200 pt-2 text-center text-[11px] text-stone-500">
+                        {performanceMetrics.missedLeft > performanceMetrics.missedRight
+                          ? "Most misses go left"
+                          : performanceMetrics.missedRight > performanceMetrics.missedLeft
+                            ? "Most misses go right"
+                            : "Misses split evenly"}
+                      </p>
+                    )}
                   </div>
-                  <p className="mt-2 border-t border-stone-200 pt-2 text-center text-[11px] text-stone-500">
-                    {performanceMetrics.firHit} of {performanceMetrics.totalFirShots} fairways hit
-                    {performanceMetrics.firMissed > 0
-                      ? performanceMetrics.missedLeft > performanceMetrics.missedRight
-                        ? " · most misses go left"
-                        : performanceMetrics.missedRight > performanceMetrics.missedLeft
-                          ? " · most misses go right"
-                          : " · misses split evenly"
-                      : ""}
-                  </p>
+                )}
+              </StatsCard>
+            )}
+
+            {(performanceMetrics.girPercent >= 0 || performanceMetrics.gir8ft >= 0) && (
+              <StatsCard
+                title="Approach"
+                subtitle="Greens hit and how close you finish"
+                open={!collapsedCards.approach}
+                onToggle={() => toggleCard("approach")}
+              >
+                <div className="divide-y divide-stone-100">
+                  {performanceMetrics.girPercent >= 0 && (
+                    <>
+                      <TargetStatRow
+                        label="Greens in regulation"
+                        value={performanceMetrics.girPercent}
+                        goal={goals.gir}
+                        unit="%"
+                      />
+                      <TargetStatRow
+                        label="Greens a round"
+                        value={roundSummary.girPerRound}
+                        display={pairText(roundSummary.girPerRound, 18)}
+                        sub="Hit / holes"
+                      />
+                    </>
+                  )}
+                  {performanceMetrics.gir8ft >= 0 && (
+                    <>
+                      <TargetStatRow
+                        label="Green inside 8 ft"
+                        hint="(2.4 m)"
+                        value={performanceMetrics.gir8ft}
+                        goal={goals.within8ft}
+                        unit="%"
+                      />
+                      <TargetStatRow
+                        label="Green inside 20 ft"
+                        hint="(6.1 m)"
+                        value={performanceMetrics.gir20ft}
+                        goal={goals.within20ft}
+                        unit="%"
+                      />
+                    </>
+                  )}
                 </div>
-              )}
-            </StatsCard>
+              </StatsCard>
+            )}
 
-            <StatsCard
-              icon={Flag}
-              title="Approach"
-              subtitle="Greens hit and how close you finish"
-              open={!collapsedCards.approach}
-              onToggle={() => toggleCard("approach")}
-            >
-              <div className="divide-y divide-stone-100">
-                <TargetStatRow label="Greens in regulation" value={performanceMetrics.girPercent} goal={goals.gir} unit="%" />
-                <TargetStatRow
-                  label="Green inside 8 ft"
-                  hint="(2.4 m)"
-                  value={performanceMetrics.gir8ft}
-                  goal={goals.within8ft}
-                  unit="%"
-                />
-                <TargetStatRow
-                  label="Green inside 20 ft"
-                  hint="(6.1 m)"
-                  value={performanceMetrics.gir20ft}
-                  goal={goals.within20ft}
-                  unit="%"
-                />
-              </div>
-            </StatsCard>
+            {(performanceMetrics.avgPutts >= 0 ||
+              roundSummary.puttsPerGir >= 0 ||
+              performanceMetrics.avgThreePutts >= 0 ||
+              performanceMetrics.puttsUnder6ftMake >= 0) && (
+              <StatsCard
+                title="Putting"
+                subtitle="Putts, putts per GIR and 3-putts"
+                open={!collapsedCards.putting}
+                onToggle={() => toggleCard("putting")}
+              >
+                <div className="divide-y divide-stone-100">
+                  {performanceMetrics.avgPutts >= 0 && (
+                    <TargetStatRow
+                      label="Putts a round"
+                      value={performanceMetrics.avgPutts}
+                      goal={goals.putts}
+                      lowerIsBetter
+                    />
+                  )}
+                  {roundSummary.puttsPerGir >= 0 && (
+                    <TargetStatRow
+                      label="Putts per GIR"
+                      value={roundSummary.puttsPerGir}
+                      display={roundSummary.puttsPerGir.toFixed(2)}
+                    />
+                  )}
+                  {performanceMetrics.avgThreePutts >= 0 && (
+                    <TargetStatRow
+                      label="3-putts a round"
+                      value={performanceMetrics.avgThreePutts}
+                      goal={Math.max(0, goals.putts / 18 - 1)}
+                      lowerIsBetter
+                    />
+                  )}
+                  {performanceMetrics.puttsUnder6ftMake >= 0 && (
+                    <TargetStatRow
+                      label="Makes inside 6 ft"
+                      hint="(1.8 m)"
+                      value={performanceMetrics.puttsUnder6ftMake}
+                      goal={goals.puttMake6ft}
+                      unit="%"
+                    />
+                  )}
+                </div>
+              </StatsCard>
+            )}
 
-            <StatsCard
-              id="stats-advanced-approach"
-              icon={Crosshair}
-              title="Approach detail"
-              subtitle="Distances, proximity and misses from live rounds"
-              open={!collapsedCards.advancedApproach}
-              onToggle={() => toggleCard("advancedApproach")}
-            >
-              <AdvancedApproachStatsPanel
-                rounds={scopedPlayerStatsRounds}
-                holeFilter={holeFilter}
-                showHeader={false}
-                className="border-0! p-0! shadow-none! sm:p-0!"
-                headerEnd={
-                  <Segmented
-                    label="Round length"
-                    value={holeFilter}
-                    onChange={setHoleFilter}
-                    options={[
-                      { id: "18", label: "18 holes" },
-                      { id: "9", label: "9 holes" },
-                    ]}
+            {(performanceMetrics.upAndDownPercent >= 0 ||
+              performanceMetrics.bunkerSaves >= 0 ||
+              performanceMetrics.chipInside6ft >= 0) && (
+              <StatsCard
+                title="Short game"
+                subtitle="Getting up and down"
+                open={!collapsedCards.shortGame}
+                onToggle={() => toggleCard("shortGame")}
+              >
+                <div className="divide-y divide-stone-100">
+                  {performanceMetrics.upAndDownPercent >= 0 && (
+                    <>
+                      <TargetStatRow
+                        label="Scrambling"
+                        value={performanceMetrics.upAndDownPercent}
+                        goal={goals.upAndDown}
+                        unit="%"
+                      />
+                      <TargetStatRow
+                        label="Up & downs a round"
+                        value={roundSummary.upDownsMade}
+                        display={pairText(roundSummary.upDownsMade, roundSummary.upDownsAttempts)}
+                        sub="Converted / attempts"
+                      />
+                    </>
+                  )}
+                  {performanceMetrics.bunkerSaves >= 0 && (
+                    <TargetStatRow
+                      label="Sand saves"
+                      value={performanceMetrics.bunkerSaves}
+                      goal={goals.bunkerSaves}
+                      unit="%"
+                    />
+                  )}
+                  {performanceMetrics.chipInside6ft >= 0 && (
+                    <TargetStatRow
+                      label="Chips inside 6 ft"
+                      hint="(1.8 m)"
+                      value={performanceMetrics.chipInside6ft}
+                      goal={goals.chipsInside6ft}
+                      unit="%"
+                    />
+                  )}
+                </div>
+              </StatsCard>
+            )}
+
+            {roundSummary.distribution.pars >= 0 && (
+              <StatsCard
+                title="Scoring distribution"
+                subtitle="Holes a round by score"
+                open={!collapsedCards.distribution}
+                onToggle={() => toggleCard("distribution")}
+              >
+                <div className="mb-3 flex h-2.5 overflow-hidden rounded-full bg-stone-100" aria-hidden>
+                  {distributionRows.map((row) =>
+                    roundSummary.distribution[row.key] > 0 ? (
+                      <div
+                        key={row.key}
+                        style={{
+                          flexGrow: roundSummary.distribution[row.key],
+                          backgroundColor: SCORE_DISTRIBUTION_COLORS[row.key],
+                        }}
+                      />
+                    ) : null,
+                  )}
+                </div>
+                <div className="divide-y divide-stone-100">
+                  {distributionRows.map((row) => (
+                    <TargetStatRow
+                      key={row.key}
+                      label={row.label}
+                      dot={SCORE_DISTRIBUTION_COLORS[row.key]}
+                      value={roundSummary.distribution[row.key]}
+                      goal={row.goal}
+                      lowerIsBetter={row.lowerIsBetter}
+                    />
+                  ))}
+                </div>
+              </StatsCard>
+            )}
+
+            {performanceMetrics.totalPenalties >= 0 && (
+              <StatsCard
+                title="Penalties"
+                subtitle="Shots given away a round"
+                open={!collapsedCards.penalties}
+                onToggle={() => toggleCard("penalties")}
+              >
+                <div className="divide-y divide-stone-100">
+                  <TargetStatRow
+                    label="Off the tee"
+                    value={performanceMetrics.teePenalties}
+                    goal={goals.teePenalties}
+                    lowerIsBetter
                   />
-                }
-              />
-            </StatsCard>
+                  <TargetStatRow
+                    label="On approach"
+                    value={performanceMetrics.approachPenalties}
+                    goal={goals.approachPenalties}
+                    lowerIsBetter
+                  />
+                  <TargetStatRow
+                    label="Total"
+                    value={performanceMetrics.totalPenalties}
+                    goal={goals.totalPenalties}
+                    lowerIsBetter
+                  />
+                </div>
+              </StatsCard>
+            )}
 
-            <StatsCard
-              icon={Shuffle}
-              title="Short game"
-              subtitle="Getting up and down"
-              open={!collapsedCards.shortGame}
-              onToggle={() => toggleCard("shortGame")}
-            >
-              <div className="divide-y divide-stone-100">
-                <TargetStatRow label="Up and down" value={performanceMetrics.upAndDownPercent} goal={goals.upAndDown} unit="%" />
-                <TargetStatRow label="Bunker saves" value={performanceMetrics.bunkerSaves} goal={goals.bunkerSaves} unit="%" />
-                <TargetStatRow
-                  label="Chips inside 6 ft"
-                  hint="(1.8 m)"
-                  value={performanceMetrics.chipInside6ft}
-                  goal={goals.chipsInside6ft}
-                  unit="%"
+            {hasDirectionalShots && (
+              <StatsCard
+                id="stats-advanced-approach"
+                title="Approach detail"
+                subtitle="Misses and GIR map from Add Directional Misses"
+                open={!collapsedCards.advancedApproach}
+                onToggle={() => toggleCard("advancedApproach")}
+              >
+                <AdvancedApproachStatsPanel
+                  rounds={scopedPlayerStatsRounds}
+                  showHeader={false}
+                  className="border-0! p-0! shadow-none! sm:p-0!"
                 />
-              </div>
-            </StatsCard>
-
-            <StatsCard
-              icon={CircleDot}
-              title="Putting"
-              subtitle="Putts, short putts and 3-putts"
-              open={!collapsedCards.putting}
-              onToggle={() => toggleCard("putting")}
-            >
-              <div className="divide-y divide-stone-100">
-                <TargetStatRow label="Putts per round" value={performanceMetrics.avgPutts} goal={goals.putts} lowerIsBetter />
-                <TargetStatRow
-                  label="Makes inside 6 ft"
-                  hint="(1.8 m)"
-                  value={performanceMetrics.puttsUnder6ftMake}
-                  goal={goals.puttMake6ft}
-                  unit="%"
-                />
-                <TargetStatRow
-                  label="3-putts per round"
-                  value={performanceMetrics.avgThreePutts}
-                  goal={Math.max(0, goals.putts / 18 - 1)}
-                  lowerIsBetter
-                />
-              </div>
-              <div className="mt-4 border-t border-stone-100 pt-4">
-                <LivePuttingBreakdownPanel rounds={scopedPlayerStatsRounds} holeFilter={holeFilter} />
-              </div>
-            </StatsCard>
-
-            <StatsCard
-              icon={AlertTriangle}
-              title="Penalties"
-              subtitle="Shots given away per round"
-              open={!collapsedCards.penalties}
-              onToggle={() => toggleCard("penalties")}
-            >
-              <div className="divide-y divide-stone-100">
-                <TargetStatRow label="Off the tee" value={performanceMetrics.teePenalties} goal={goals.teePenalties} lowerIsBetter />
-                <TargetStatRow
-                  label="On approach"
-                  value={performanceMetrics.approachPenalties}
-                  goal={goals.approachPenalties}
-                  lowerIsBetter
-                />
-                <TargetStatRow label="Total" value={performanceMetrics.totalPenalties} goal={goals.totalPenalties} lowerIsBetter />
-              </div>
-            </StatsCard>
+              </StatsCard>
+            )}
 
             <StatsCard
               id="full-metric-matrix"
-              icon={Table2}
               title="Every stat"
               subtitle={
                 matrixSummary.total > 0

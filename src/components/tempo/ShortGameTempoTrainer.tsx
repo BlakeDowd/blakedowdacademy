@@ -36,6 +36,7 @@ export const SHORT_GAME_TEMPO_CONFIG: TempoTrainerConfig = {
   defaultPresetIndex: 2,
   resetSec: 2,
   silhouette: <ChipTakeawaySilhouette />,
+  usageKey: "short-game-tempo",
 };
 
 export default function ShortGameTempoTrainer({ hideHeader = false }: { hideHeader?: boolean }) {

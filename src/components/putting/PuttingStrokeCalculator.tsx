@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { trackToolUse } from "@/lib/appUsage";
 import { releaseAudio, unlockAudio } from "@/lib/unlockAudio";
 import {
   COUNT_IN_BEATS,
@@ -504,6 +505,7 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
     const ctx = unlockAudio(ctxRef.current);
     if (!ctx) return;
     ctxRef.current = ctx;
+    trackToolUse("putting-calculator");
 
     const master = createLoudOutput(ctx);
     master.gain.value = soundRef.current ? 1 : 0;

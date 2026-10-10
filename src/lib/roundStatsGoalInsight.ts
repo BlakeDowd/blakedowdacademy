@@ -7,6 +7,12 @@ import {
   type WeeklyHoursPreset,
 } from "@/lib/goalPresetConstants";
 import type { GoalFocusArea } from "@/types/playerGoals";
+import {
+  fairwaysPossibleFor,
+  roundTracksStat,
+  upAndDownAttempts,
+  type RoundStatKey,
+} from "@/lib/roundStatTracking";
 
 /** Buckets aligned with classic SG-style reporting (map to focus presets in the app). */
 export type StatWeakBucket = "off_tee" | "approach" | "short_game" | "putting";
@@ -42,7 +48,43 @@ export type RoundLikeForInsight = {
   chipInside6ft?: number;
   threePutts?: number;
   totalPutts?: number;
+  fairwaysPossible?: number | null;
+  trackedStats?: readonly string[] | null;
+  created_at?: string | null;
+  date?: string | null;
 };
+
+/** Heuristic stroke pressure per bucket for one round; stats the player didn't track add nothing. */
+export function roundProxyPressure(r: RoundLikeForInsight): Record<StatWeakBucket, number> {
+  const tracks = (key: RoundStatKey) => roundTracksStat(r, key);
+  const h = Math.max(1, r.holes ?? 18);
+  const out: Record<StatWeakBucket, number> = { off_tee: 0, approach: 0, short_game: 0, putting: 0 };
+
+  if (tracks("penalties")) {
+    out.off_tee += (r.teePenalties ?? 0) * 1.15;
+    out.approach += (r.approachPenalties ?? 0) * 1.15;
+  }
+  if (tracks("fairways")) {
+    const firL = r.firLeft ?? 0;
+    const firH = r.firHit ?? 0;
+    const firR = r.firRight ?? 0;
+    const firAtt = fairwaysPossibleFor(firH, firL, firR, r.fairwaysPossible);
+    out.off_tee += (firL + firR) * 0.12 + (firAtt > 0 ? (1 - firH / firAtt) * 2.2 * (h / 18) : 0);
+  }
+  if (tracks("gir")) out.approach += (1 - (r.totalGir ?? 0) / h) * 3.2;
+  if (tracks("scrambling")) {
+    const made = r.upAndDownConversions ?? 0;
+    const udAtt = upAndDownAttempts(made, r.missed ?? 0, r.created_at ?? r.date);
+    out.short_game += (udAtt > 0 ? (udAtt - made) / udAtt : 0) * 3.5;
+  }
+  if (tracks("sand_saves")) {
+    out.short_game += Math.max(0, (r.bunkerAttempts ?? 0) - (r.bunkerSaves ?? 0)) * 0.35;
+  }
+  if (tracks("chipping")) out.short_game += (r.doubleChips ?? 0) * 0.45 + (r.chipInside6ft ?? 0) * 0.02;
+  if (tracks("three_putts")) out.putting += (r.threePutts ?? 0) * 0.42;
+  if (tracks("putts")) out.putting += Math.max(0, (r.totalPutts ?? 0) - 31) * 0.18;
+  return out;
+}
 
 const BUCKET_ORDER: StatWeakBucket[] = ["putting", "short_game", "approach", "off_tee"];
 
@@ -116,25 +158,11 @@ export function weakestBucketFromRoundProxies(rounds: RoundLikeForInsight[]): St
     putting: 0,
   };
   for (const r of rounds) {
-    const h = Math.max(1, r.holes ?? 18);
-    const firL = r.firLeft ?? 0;
-    const firH = r.firHit ?? 0;
-    const firR = r.firRight ?? 0;
-    const firAtt = firL + firH + firR;
-    const firMiss = firL + firR;
-    const gir = r.totalGir ?? 0;
-    const girRate = gir / h;
-
-    totals.off_tee += (r.teePenalties ?? 0) * 1.15 + firMiss * 0.12 + (firAtt > 0 ? (1 - firH / firAtt) * 2.2 * (h / 18) : 0);
-    totals.approach += (r.approachPenalties ?? 0) * 1.15 + (1 - girRate) * 3.2;
-    const udAtt = (r.upAndDownConversions ?? 0) + (r.missed ?? 0);
-    const missRate = udAtt > 0 ? (r.missed ?? 0) / udAtt : 0;
-    totals.short_game +=
-      missRate * 3.5 +
-      Math.max(0, (r.bunkerAttempts ?? 0) - (r.bunkerSaves ?? 0)) * 0.35 +
-      (r.doubleChips ?? 0) * 0.45 +
-      (r.chipInside6ft ?? 0) * 0.02;
-    totals.putting += (r.threePutts ?? 0) * 0.42 + Math.max(0, (r.totalPutts ?? 0) - 31) * 0.18;
+    const p = roundProxyPressure(r);
+    totals.off_tee += p.off_tee;
+    totals.approach += p.approach;
+    totals.short_game += p.short_game;
+    totals.putting += p.putting;
   }
   return pickWeakestFromTotals(totals);
 }
@@ -179,9 +207,7 @@ export function avgPuttingLossFromRoundStats(rows: RoundStatRow[]): number {
 export function avgPuttingProxyFromRounds(rounds: RoundLikeForInsight[]): number {
   if (!rounds.length) return 0;
   let sum = 0;
-  for (const r of rounds) {
-    sum += (r.threePutts ?? 0) * 0.42 + Math.max(0, (r.totalPutts ?? 0) - 31) * 0.18;
-  }
+  for (const r of rounds) sum += roundProxyPressure(r).putting;
   return sum / rounds.length;
 }
 

@@ -1,3 +1,12 @@
+import {
+  fairwaysPossibleFor,
+  normalizeTrackedStats,
+  roundsTrackingStat,
+  sandSaveAttempts,
+  upAndDownAttempts,
+  type RoundStatKey,
+} from "@/lib/roundStatTracking";
+
 /** Same shape as `getBenchmarkGoals` from stats page (benchmark targets by handicap). */
 export type BenchmarkGoalsShape = {
   score: number;
@@ -28,15 +37,23 @@ function getNum(val: unknown, fallback = 0): number {
 /** Normalize a round (camelCase RoundData or snake Supabase) to snake_case fields used by metric math. */
 export function roundToCoachMetricShape(r: Record<string, unknown>) {
   const holes = getNum(r.holes, 18);
+  const trackedStats = Array.isArray(r.trackedStats)
+    ? normalizeTrackedStats(r.trackedStats)
+    : normalizeTrackedStats(r.tracked_stats);
+  const upDownMade = getNum(r.up_and_down_conversions ?? r.upAndDownConversions ?? r.conversions);
+  const upDownColumn = Math.max(getNum(r.missed), getNum(r.up_and_down_missed));
   return {
     date: r.date,
+    trackedStats,
     score: getNum(r.score),
     holes,
     total_gir: getNum(r.total_gir ?? r.totalGir),
     fir_hit: getNum(r.fir_hit ?? r.firHit),
     fir_left: getNum(r.fir_left ?? r.firLeft),
     fir_right: getNum(r.fir_right ?? r.firRight),
-    up_and_down_conversions: getNum(r.up_and_down_conversions ?? r.upAndDownConversions),
+    fairways_possible: getNum(r.fairways_possible ?? r.fairwaysPossible),
+    up_and_down_conversions: upDownMade,
+    up_and_down_attempts: upAndDownAttempts(upDownMade, upDownColumn, r.created_at ?? r.date),
     missed: getNum(r.missed),
     up_and_down_missed: getNum(r.up_and_down_missed),
     total_putts: getNum(r.total_putts ?? r.totalPutts),
@@ -94,18 +111,30 @@ export type StrokeOpportunityRow = {
   unit: string;
 };
 
-function getChipInside6ft(r: ReturnType<typeof roundToCoachMetricShape>) {
-  return r.chip_inside_6ft;
-}
+type MetricRound = ReturnType<typeof roundToCoachMetricShape>;
 
-function getUpDownAttempts(r: ReturnType<typeof roundToCoachMetricShape>) {
-  return r.up_and_down_conversions + r.missed + getNum(r.up_and_down_missed);
-}
+const firPossible = (r: MetricRound) => fairwaysPossibleFor(r.fir_hit, r.fir_left, r.fir_right, r.fairways_possible);
+const bunkerAttempts = (r: MetricRound) => sandSaveAttempts(r.bunker_saves, r.bunker_attempts);
+const shortPuttsMade = (r: MetricRound) => Math.max(r.made_under_6ft, r.missed_6ft_and_in, r.made6ftAndIn);
+const per18 = (count: number, r: MetricRound) => (count / getNum(r.holes, 18)) * 18;
+const pctOf = (made: number, total: number) => (total > 0 ? (made / total) * 100 : 0);
+
+/** Percentage metrics are pooled across rounds (total made / total chances), not averaged per round. */
+const PERCENT_PARTS: Record<string, (r: MetricRound) => [number, number]> = {
+  "GIR %": (r) => [r.total_gir, r.holes],
+  "FIR %": (r) => [r.fir_hit, firPossible(r)],
+  "Scrambling %": (r) => [r.up_and_down_conversions, r.up_and_down_attempts],
+  "Bunker Save %": (r) => [r.bunker_saves, bunkerAttempts(r)],
+  "GIR 8ft %": (r) => [r.gir_8ft, r.holes],
+  "GIR 20ft %": (r) => [r.gir_20ft, r.holes],
+  "Chips Inside 6ft %": (r) => [r.chip_inside_6ft, r.up_and_down_attempts],
+  "Putts Under 6ft %": (r) => [shortPuttsMade(r), r.putts_under_6ft_attempts],
+};
 
 function calculateMetric(
   name: string,
-  rounds: ReturnType<typeof roundToCoachMetricShape>[],
-  extractor: (r: ReturnType<typeof roundToCoachMetricShape>) => number,
+  rounds: MetricRound[],
+  extractor: (r: MetricRound) => number,
   goal: number,
   isLowerBetter = false,
 ): MetricMatrixRow {
@@ -113,41 +142,17 @@ function calculateMetric(
     return { name, current: 0, goal: Math.round(goal * 10) / 10, gap: 0, isLowerBetter, trend: "neutral" };
   }
 
-  if (name.includes("%") && name !== "Scoring Avg") {
+  const parts = PERCENT_PARTS[name];
+  if (parts) {
     let totalNumerator = 0;
     let totalDenominator = 0;
-
     rounds.forEach((rr) => {
-      if (name === "GIR %") {
-        totalNumerator += rr.total_gir;
-        totalDenominator += rr.holes;
-      } else if (name === "FIR %") {
-        totalNumerator += rr.fir_hit;
-        totalDenominator += rr.fir_hit + rr.fir_left + rr.fir_right;
-      } else if (name === "Scrambling %") {
-        totalNumerator += rr.up_and_down_conversions;
-        totalDenominator += rr.up_and_down_conversions + rr.missed;
-      } else if (name === "Bunker Save %") {
-        totalNumerator += rr.bunker_saves;
-        totalDenominator += rr.bunker_attempts + rr.bunker_saves;
-      } else if (name === "GIR 8ft %") {
-        totalNumerator += rr.gir_8ft;
-        totalDenominator += rr.holes;
-      } else if (name === "GIR 20ft %") {
-        totalNumerator += rr.gir_20ft;
-        totalDenominator += rr.holes;
-      } else if (name === "Chips Inside 6ft %") {
-        totalNumerator += getChipInside6ft(rr);
-        totalDenominator += getUpDownAttempts(rr);
-      } else if (name === "Putts Under 6ft %") {
-        const attempts = rr.putts_under_6ft_attempts;
-        const made = Math.max(rr.made_under_6ft, rr.missed_6ft_and_in, rr.made6ftAndIn);
-        totalNumerator += made;
-        totalDenominator += attempts;
-      }
+      const [made, chances] = parts(rr);
+      totalNumerator += made;
+      totalDenominator += chances;
     });
 
-    const current = totalDenominator > 0 ? (totalNumerator / totalDenominator) * 100 : 0;
+    const current = pctOf(totalNumerator, totalDenominator);
     const gap = isLowerBetter ? goal - current : current - goal;
 
     let trend: "up" | "down" | "neutral" = "neutral";
@@ -195,6 +200,41 @@ export type ComputeDeepDiveRoundMetricsOptions = {
   perfStatsData?: unknown[] | null;
 };
 
+type MetricSpec = {
+  name: string;
+  /** Rounds must have tracked all of these for the metric; empty = every round counts. */
+  stats: RoundStatKey[];
+  extractor: (r: MetricRound) => number;
+  goal: number;
+  lowerIsBetter?: boolean;
+};
+
+/** Pooled percentage over the given rounds, or -1 when none of them recorded it. */
+function pooledPct(rounds: MetricRound[], parts: (r: MetricRound) => [number, number]): number {
+  if (rounds.length === 0) return -1;
+  let made = 0;
+  let chances = 0;
+  for (const r of rounds) {
+    const [m, c] = parts(r);
+    made += m;
+    chances += c;
+  }
+  return chances > 0 ? Math.round(pctOf(made, chances) * 10) / 10 : -1;
+}
+
+/** Count per 18 holes over the given rounds, or -1 when none of them recorded it. */
+function pooledPer18(rounds: MetricRound[], value: (r: MetricRound) => number): number {
+  if (rounds.length === 0) return -1;
+  const holes = rounds.reduce((s, r) => s + getNum(r.holes, 18), 0);
+  const total = rounds.reduce((s, r) => s + value(r), 0);
+  return holes > 0 ? Math.round((total / holes) * 18 * 10) / 10 : -1;
+}
+
+function perRound(rounds: MetricRound[], value: (r: MetricRound) => number): number {
+  if (rounds.length === 0) return -1;
+  return Math.round((rounds.reduce((s, r) => s + value(r), 0) / rounds.length) * 10) / 10;
+}
+
 export function computeDeepDiveRoundMetrics(
   rounds: readonly Record<string, unknown>[],
   goals: BenchmarkGoalsShape,
@@ -210,195 +250,130 @@ export function computeDeepDiveRoundMetrics(
     .map((r) => roundToCoachMetricShape(r as Record<string, unknown>))
     .sort((a, b) => new Date(String(a.date)).getTime() - new Date(String(b.date)).getTime());
 
-  const nRounds = sortedRounds.length;
-
-  if (nRounds === 0) {
+  if (sortedRounds.length === 0) {
     return { bigSix: null, penaltyStats: null, metricMatrix: [] };
   }
+
+  const tracking = (...keys: RoundStatKey[]) => roundsTrackingStat(sortedRounds, ...keys);
 
   const last5 = sortedRounds.slice(-5);
   const scoringAvg =
     last5.reduce((s, r) => s + getNum(r.score), 0) / Math.max(1, last5.length);
 
-  const totalGir = sortedRounds.reduce((s, r) => s + r.total_gir, 0);
-  const totalHolesForGir = sortedRounds.reduce((s, r) => s + getNum(r.holes, 18), 0);
-  const girPct = totalHolesForGir > 0 ? (totalGir / totalHolesForGir) * 100 : 0;
-
-  const totalFirHit = sortedRounds.reduce((s, r) => s + r.fir_hit, 0);
-  const totalFirShots = sortedRounds.reduce(
-    (s, r) => s + r.fir_hit + r.fir_left + r.fir_right,
-    0,
-  );
-  const firPct = totalFirShots > 0 ? (totalFirHit / totalFirShots) * 100 : 0;
-
-  const totalScrambleSuccess = sortedRounds.reduce((s, r) => s + r.up_and_down_conversions, 0);
-  const totalScrambleAttempts = sortedRounds.reduce(
-    (s, r) => s + r.up_and_down_conversions + r.missed,
-    0,
-  );
-  const scramblePct =
-    totalScrambleAttempts > 0 ? (totalScrambleSuccess / totalScrambleAttempts) * 100 : 0;
-
-  const totalPutts = sortedRounds.reduce((s, r) => s + r.total_putts, 0);
-  const totalHoles = sortedRounds.reduce((s, r) => s + getNum(r.holes, 18), 0);
-  const puttsPer18 = totalHoles > 0 ? (totalPutts / totalHoles) * 18 : 0;
-
-  const totalBirdies = sortedRounds.reduce((s, r) => s + r.birdies, 0);
-  const birdiesPer18 = totalHoles > 0 ? (totalBirdies / totalHoles) * 18 : 0;
-
   const bigSix: DeepDiveBigSix = {
     scoringAvg: Math.round(scoringAvg * 10) / 10,
-    girPct: Math.round(girPct * 10) / 10,
-    firPct: Math.round(firPct * 10) / 10,
-    scramblePct: Math.round(scramblePct * 10) / 10,
-    puttsPer18: Math.round(puttsPer18 * 10) / 10,
-    birdiesPer18: Math.round(birdiesPer18 * 10) / 10,
+    girPct: pooledPct(tracking("gir"), PERCENT_PARTS["GIR %"]!),
+    firPct: pooledPct(tracking("fairways"), PERCENT_PARTS["FIR %"]!),
+    scramblePct: pooledPct(tracking("scrambling"), PERCENT_PARTS["Scrambling %"]!),
+    puttsPer18: pooledPer18(tracking("putts"), (r) => r.total_putts),
+    birdiesPer18: pooledPer18(tracking("distribution"), (r) => r.birdies),
   };
-
-  const totalPenalties = sortedRounds.reduce(
-    (s, r) => s + r.tee_penalties + r.approach_penalties,
-    0,
-  );
-  const total3Putts = sortedRounds.reduce((s, r) => s + r.three_putts, 0);
-  const totalDoublePlus = sortedRounds.reduce((s, r) => s + r.double_bogeys, 0);
 
   const penaltyStats: DeepDivePenaltyStats = {
-    penaltiesPerRound: Math.round((totalPenalties / nRounds) * 10) / 10,
-    threePuttsPerRound: Math.round((total3Putts / nRounds) * 10) / 10,
-    doublesPerRound: Math.round((totalDoublePlus / nRounds) * 10) / 10,
+    penaltiesPerRound: perRound(tracking("penalties"), (r) => r.tee_penalties + r.approach_penalties),
+    threePuttsPerRound: perRound(tracking("three_putts"), (r) => r.three_putts),
+    doublesPerRound: perRound(tracking("distribution"), (r) => r.double_bogeys),
   };
 
-  const matrix: MetricMatrixRow[] = [
-    calculateMetric("Scoring Avg", sortedRounds, (r) => getNum(r.score), goals.score, true),
-    calculateMetric("GIR %", sortedRounds, (r) => (r.total_gir / getNum(r.holes, 18)) * 100, goals.gir),
-    calculateMetric(
-      "FIR %",
-      sortedRounds,
-      (r) => {
-        const tot = r.fir_hit + r.fir_left + r.fir_right;
-        return tot > 0 ? (r.fir_hit / tot) * 100 : 0;
-      },
-      goals.fir,
-    ),
-    calculateMetric(
-      "Scrambling %",
-      sortedRounds,
-      (r) => {
-        const tot = r.up_and_down_conversions + r.missed;
-        return tot > 0 ? (r.up_and_down_conversions / tot) * 100 : 0;
-      },
-      goals.upAndDown,
-    ),
-    calculateMetric(
-      "Putts Per 18",
-      sortedRounds,
-      (r) => (r.total_putts / getNum(r.holes, 18)) * 18,
-      goals.putts,
-      true,
-    ),
-    calculateMetric(
-      "Bunker Save %",
-      sortedRounds,
-      (r) => {
-        const tot = r.bunker_attempts + r.bunker_saves;
-        return tot > 0 ? (r.bunker_saves / tot) * 100 : 0;
-      },
-      goals.bunkerSaves,
-    ),
-    calculateMetric(
-      "GIR 8ft %",
-      sortedRounds,
-      (r) => {
-        const holes = getNum(r.holes, 18);
-        return holes > 0 ? (r.gir_8ft / holes) * 100 : 0;
-      },
-      goals.within8ft,
-    ),
-    calculateMetric(
-      "GIR 20ft %",
-      sortedRounds,
-      (r) => {
-        const holes = getNum(r.holes, 18);
-        return holes > 0 ? (r.gir_20ft / holes) * 100 : 0;
-      },
-      goals.within20ft,
-    ),
-    calculateMetric(
-      "Chips Inside 6ft %",
-      sortedRounds,
-      (r) => {
-        const denominator = getUpDownAttempts(r);
-        const numerator = getChipInside6ft(r);
-        if (denominator <= 0) return 0;
-        return (numerator / denominator) * 100;
-      },
-      goals.chipsInside6ft,
-    ),
-    calculateMetric(
-      "Putts Under 6ft %",
-      sortedRounds,
-      (r) => {
-        const tot = r.putts_under_6ft_attempts;
-        const made = Math.max(r.made_under_6ft, r.missed_6ft_and_in, r.made6ftAndIn);
-        return tot > 0 ? (made / tot) * 100 : 0;
-      },
-      goals.puttMake6ft,
-    ),
-    calculateMetric(
-      "3-Putts / Round",
-      sortedRounds,
-      (r) => (r.three_putts / getNum(r.holes, 18)) * 18,
-      Math.max(0, goals.putts / 18 - 1),
-      true,
-    ),
-    calculateMetric(
-      "Tee Penalties",
-      sortedRounds,
-      (r) => (r.tee_penalties / getNum(r.holes, 18)) * 18,
-      goals.teePenalties,
-      true,
-    ),
-    calculateMetric(
-      "Approach Penalties",
-      sortedRounds,
-      (r) => (r.approach_penalties / getNum(r.holes, 18)) * 18,
-      goals.approachPenalties,
-      true,
-    ),
-    calculateMetric(
-      "Total Penalties",
-      sortedRounds,
-      (r) => ((r.tee_penalties + r.approach_penalties) / getNum(r.holes, 18)) * 18,
-      goals.totalPenalties,
-      true,
-    ),
-    calculateMetric(
-      "Birdies / Round",
-      sortedRounds,
-      (r) => (r.birdies / getNum(r.holes, 18)) * 18,
-      goals.birdies,
-    ),
-    calculateMetric(
-      "Pars / Round",
-      sortedRounds,
-      (r) => (r.pars / getNum(r.holes, 18)) * 18,
-      goals.pars,
-    ),
-    calculateMetric(
-      "Bogeys / Round",
-      sortedRounds,
-      (r) => (r.bogeys / getNum(r.holes, 18)) * 18,
-      goals.bogeys,
-      true,
-    ),
-    calculateMetric(
-      "Double Bogeys+ / Round",
-      sortedRounds,
-      (r) => (r.double_bogeys / getNum(r.holes, 18)) * 18,
-      goals.doubleBogeys,
-      true,
-    ),
+  const specs: MetricSpec[] = [
+    { name: "Scoring Avg", stats: [], extractor: (r) => getNum(r.score), goal: goals.score, lowerIsBetter: true },
+    { name: "GIR %", stats: ["gir"], extractor: (r) => pctOf(r.total_gir, getNum(r.holes, 18)), goal: goals.gir },
+    { name: "FIR %", stats: ["fairways"], extractor: (r) => pctOf(r.fir_hit, firPossible(r)), goal: goals.fir },
+    {
+      name: "Scrambling %",
+      stats: ["scrambling"],
+      extractor: (r) => pctOf(r.up_and_down_conversions, r.up_and_down_attempts),
+      goal: goals.upAndDown,
+    },
+    {
+      name: "Putts Per 18",
+      stats: ["putts"],
+      extractor: (r) => per18(r.total_putts, r),
+      goal: goals.putts,
+      lowerIsBetter: true,
+    },
+    {
+      name: "Bunker Save %",
+      stats: ["sand_saves"],
+      extractor: (r) => pctOf(r.bunker_saves, bunkerAttempts(r)),
+      goal: goals.bunkerSaves,
+    },
+    {
+      name: "GIR 8ft %",
+      stats: ["gir_proximity"],
+      extractor: (r) => pctOf(r.gir_8ft, getNum(r.holes, 18)),
+      goal: goals.within8ft,
+    },
+    {
+      name: "GIR 20ft %",
+      stats: ["gir_proximity"],
+      extractor: (r) => pctOf(r.gir_20ft, getNum(r.holes, 18)),
+      goal: goals.within20ft,
+    },
+    {
+      name: "Chips Inside 6ft %",
+      stats: ["chipping", "scrambling"],
+      extractor: (r) => pctOf(r.chip_inside_6ft, r.up_and_down_attempts),
+      goal: goals.chipsInside6ft,
+    },
+    {
+      name: "Putts Under 6ft %",
+      stats: ["short_putts"],
+      extractor: (r) => pctOf(shortPuttsMade(r), r.putts_under_6ft_attempts),
+      goal: goals.puttMake6ft,
+    },
+    {
+      name: "3-Putts / Round",
+      stats: ["three_putts"],
+      extractor: (r) => per18(r.three_putts, r),
+      goal: Math.max(0, goals.putts / 18 - 1),
+      lowerIsBetter: true,
+    },
+    {
+      name: "Tee Penalties",
+      stats: ["penalties"],
+      extractor: (r) => per18(r.tee_penalties, r),
+      goal: goals.teePenalties,
+      lowerIsBetter: true,
+    },
+    {
+      name: "Approach Penalties",
+      stats: ["penalties"],
+      extractor: (r) => per18(r.approach_penalties, r),
+      goal: goals.approachPenalties,
+      lowerIsBetter: true,
+    },
+    {
+      name: "Total Penalties",
+      stats: ["penalties"],
+      extractor: (r) => per18(r.tee_penalties + r.approach_penalties, r),
+      goal: goals.totalPenalties,
+      lowerIsBetter: true,
+    },
+    { name: "Birdies / Round", stats: ["distribution"], extractor: (r) => per18(r.birdies, r), goal: goals.birdies },
+    { name: "Pars / Round", stats: ["distribution"], extractor: (r) => per18(r.pars, r), goal: goals.pars },
+    {
+      name: "Bogeys / Round",
+      stats: ["distribution"],
+      extractor: (r) => per18(r.bogeys, r),
+      goal: goals.bogeys,
+      lowerIsBetter: true,
+    },
+    {
+      name: "Double Bogeys+ / Round",
+      stats: ["distribution"],
+      extractor: (r) => per18(r.double_bogeys, r),
+      goal: goals.doubleBogeys,
+      lowerIsBetter: true,
+    },
   ];
+
+  const matrix: MetricMatrixRow[] = specs.flatMap((spec) => {
+    const parts = PERCENT_PARTS[spec.name];
+    const used = tracking(...spec.stats).filter((r) => !parts || parts(r)[1] > 0);
+    if (used.length === 0) return [];
+    return [calculateMetric(spec.name, used, spec.extractor, spec.goal, spec.lowerIsBetter)];
+  });
 
   if (perfStatsData && perfStatsData.length > 0) {
     const latestStats = perfStatsData[perfStatsData.length - 1] as Record<string, unknown>;

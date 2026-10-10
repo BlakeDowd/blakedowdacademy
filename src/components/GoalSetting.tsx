@@ -11,6 +11,7 @@ import {
   type WeeklyHoursPreset,
 } from "@/lib/goalPresetConstants";
 import { bumpAllocationQuarter, sumPracticeAllocation, type PracticeHoursMap } from "@/lib/practiceAllocation";
+import { WEEKLY_COUNT_GOALS, WEEKLY_GOAL_XP, type WeeklyGoalCounts } from "@/lib/weeklyGoals";
 
 const label = "mb-2 text-xs font-semibold text-gray-700";
 const chip = "rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors";
@@ -36,6 +37,8 @@ export type GoalSettingProps = {
   onCurrentHandicapChange: (v: string) => void;
   suggestedAllocation: PracticeHoursMap;
   tip: string | null;
+  weeklyCounts: WeeklyGoalCounts;
+  onWeeklyCountsChange: (next: WeeklyGoalCounts) => void;
 };
 
 export function GoalSetting({
@@ -52,6 +55,8 @@ export function GoalSetting({
   onCurrentHandicapChange,
   suggestedAllocation,
   tip,
+  weeklyCounts,
+  onWeeklyCountsChange,
 }: GoalSettingProps) {
   const allocatedSum = sumPracticeAllocation(allocation);
   const remaining = Math.round((budgetHours - allocatedSum) * 100) / 100;
@@ -172,6 +177,46 @@ export function GoalSetting({
             : remaining > 0
               ? `${remaining.toFixed(2)}h left to allocate`
               : `${Math.abs(remaining).toFixed(2)}h over your weekly hours`}
+        </p>
+      </div>
+
+      <div>
+        <p className={label}>4. Other weekly goals</p>
+        <div className="divide-y divide-gray-100 rounded-xl bg-white ring-1 ring-gray-200">
+          {WEEKLY_COUNT_GOALS.map((g) => {
+            const v = weeklyCounts[g.key];
+            const set = (next: number) =>
+              onWeeklyCountsChange({ ...weeklyCounts, [g.key]: Math.max(0, Math.min(g.max, next)) });
+            return (
+              <div key={g.key} className="flex items-center gap-2 px-2.5 py-1.5">
+                <p className="min-w-0 flex-1 truncate text-xs font-medium text-gray-900">{g.label}</p>
+                <button
+                  type="button"
+                  aria-label={`Fewer ${g.label.toLowerCase()}`}
+                  disabled={v <= 0}
+                  onClick={() => set(v - 1)}
+                  className={`${stepBtn} bg-gray-100 text-gray-700 hover:bg-gray-200`}
+                >
+                  −
+                </button>
+                <span className={`w-10 text-center text-xs font-bold tabular-nums ${v > 0 ? "text-[#014421]" : "text-gray-400"}`}>
+                  {v > 0 ? v : "Off"}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`More ${g.label.toLowerCase()}`}
+                  disabled={v >= g.max}
+                  onClick={() => set(v + 1)}
+                  className={`${stepBtn} bg-[#014421]/10 text-[#014421] hover:bg-[#014421]/20`}
+                >
+                  +
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-1.5 text-[11px] text-gray-500">
+          Finish your hours and every goal here in a week to earn {WEEKLY_GOAL_XP.toLocaleString()} XP.
         </p>
       </div>
 

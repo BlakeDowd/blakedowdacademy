@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { addProfileXp, XP_AWARD_PER_LOGGED_ROUND } from "@/lib/addProfileXp";
@@ -17,43 +17,32 @@ import {
   MoveUp,
   MoveUpLeft,
   MoveUpRight,
-  Plus,
-  Minus,
-  Radio,
   RotateCcw,
   Save,
+  SlidersHorizontal,
   Trash2,
   type LucideIcon,
 } from "lucide-react";
 import { logActivity } from "@/lib/activity";
 import { InfoBubble } from "@/components/InfoBubble";
-import {
-  clearLiveRoundHandoff,
-  loadLiveRoundHandoff,
-  loadLiveRoundDraft,
-  type LiveRoundDraft,
-} from "@/lib/liveRoundDraft";
-import { LiveRoundInProgressBanner } from "@/components/LiveRoundInProgressBanner";
-import {
-  LIVE_ENTRY_ENABLED,
-  LiveEntryNotReadyModal,
-} from "@/components/LiveEntryNotReadyModal";
 import { ShareRoundCommunityModal } from "@/components/ShareRoundCommunityModal";
-
-/** Hole results + Tee & Approach: one visual system (2-col grid, centered orphan row). */
-const ROUND_COUNTER_GRID = "grid grid-cols-2 gap-3";
-/** Single column width when spanning 2 (matches one grid cell with gap-3). */
-const ROUND_COUNTER_GRID_SINGLE =
-  "col-span-2 w-[calc((100%-0.75rem)/2)] max-w-full justify-self-center";
-const ROUND_COUNTER_TILE =
-  "flex min-h-[8rem] flex-col items-stretch justify-between gap-2 rounded-2xl border-2 bg-gradient-to-b from-white to-slate-50/90 px-3 py-3.5 shadow-sm transition-all";
-const ROUND_COUNTER_LABEL = "text-center text-sm font-semibold leading-tight text-gray-700";
-const ROUND_COUNTER_LABEL_TALL = `${ROUND_COUNTER_LABEL} flex min-h-[2.75rem] flex-col items-center justify-center gap-1 px-0.5`;
-const ROUND_COUNTER_VALUE =
-  "min-w-[2.5rem] text-center text-[1.75rem] font-bold tabular-nums leading-none tracking-tight text-gray-900 sm:text-3xl";
-const ROUND_STEP_ROW = "flex items-center justify-center gap-2";
-const ROUND_STEP_BTN =
-  "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 transition-colors active:scale-[0.98]";
+import {
+  RoundCalcLine,
+  RoundStatCounter,
+  RoundStatNumberField,
+  RoundStatReadout,
+} from "@/components/logRound/RoundStatCounter";
+import { TrackedStatsSheet } from "@/components/logRound/TrackedStatsSheet";
+import {
+  ALL_ROUND_STATS,
+  DEFAULT_TRACKED_ROUND_STATS,
+  ROUND_STAT_GROUPS,
+  SCORE_DISTRIBUTION_COLORS,
+  DEFAULT_FAIRWAYS_POSSIBLE,
+  loadTrackedRoundStats,
+  saveTrackedRoundStats,
+  type RoundStatKey,
+} from "@/lib/roundStatTracking";
 
 /** Direction / GIR taps on the 3×3 matrix. */
 type AdvancedApproachMatrixResult =
@@ -131,48 +120,88 @@ function formatApproachResultLabel(result: AdvancedApproachResult): string {
   return result.replace(/-/g, " ");
 }
 
+const HOLES = 18;
+
 interface RoundData {
-  // Scoring Card
+  // Scoring
   date: string;
   course: string;
-  handicap: number | null; // Supports decimals
-  holes: number;
-  score: number | null; // Supports decimals
-  nett: number | null; // Calculated with one decimal place
+  handicap: number | null;
+  score: number | null;
+  nett: number | null;
+  stableford: number | null;
+  frontNine: number | null;
+  backNine: number | null;
   eagles: number;
   birdies: number;
   pars: number;
   bogeys: number;
+  /** Exactly double bogey here; saved to `double_bogeys` together with triples (2+ bogey). */
   doubleBogeys: number;
-  
-  // Tee & Approach Card
+  tripleBogeys: number;
+
+  // Driving
   firLeft: number;
   firHit: number;
   firRight: number;
+  fairwaysPossible: number;
+  /** Possible fairways stay at the default until the player sets them. */
+  autoFairwaysPossible: boolean;
+
+  // Approach
   totalGir: number;
-  totalPenalties: number;
-  teePenalties: number;
-  approachPenalties: number;
   goingForGreen: number;
   gir8ft: number;
   gir20ft: number;
-  
-  // Short Game Card
+
+  // Penalties
+  totalPenalties: number;
+  teePenalties: number;
+  approachPenalties: number;
+
+  // Short game
   upAndDownConversions: number;
+  /** Up & down attempts (stored in the legacy `missed` column). */
   missed: number;
+  /** Attempts follow greens missed (holes − GIR) until the player sets them. */
+  autoUpDownAttempts: boolean;
   bunkerAttempts: number;
   bunkerSaves: number;
   chipInside6ft: number;
   doubleChips: number;
-  
-  // Putting Card
-  /** Stored as a number (may be fractional); entry uses text state so decimals type cleanly. */
+
+  // Putting
   totalPutts: number;
+  puttsPerGir: number | null;
   threePutts: number;
   made6ftAndIn: number;
-  puttsUnder6ftAttempts: number; // Total attempts from < 6ft
-  /** Per-putt detail from live entry (distance, break, miss line / speed). */
-  puttingLogs?: import("@/lib/roundPuttingLogs").RoundPuttingLogEntry[];
+  puttsUnder6ftAttempts: number;
+}
+
+type CounterField = {
+  [K in keyof RoundData]-?: RoundData[K] extends number ? K : never;
+}[keyof RoundData];
+
+/** Applies a change and keeps linked fields consistent (nett, fairways possible, made ≤ attempts). */
+function applyRoundChange(prev: RoundData, patch: Partial<RoundData>, girTracked: boolean): RoundData {
+  const next: RoundData = { ...prev, ...patch };
+  if ("fairwaysPossible" in patch && patch.autoFairwaysPossible === undefined) next.autoFairwaysPossible = false;
+  if ("missed" in patch && patch.autoUpDownAttempts === undefined) next.autoUpDownAttempts = false;
+
+  const fairwaysUsed = next.firHit + next.firLeft + next.firRight;
+  const basePossible = next.autoFairwaysPossible ? DEFAULT_FAIRWAYS_POSSIBLE : next.fairwaysPossible;
+  next.fairwaysPossible = Math.max(basePossible, fairwaysUsed);
+
+  if (next.autoUpDownAttempts && girTracked) next.missed = Math.max(0, HOLES - next.totalGir);
+  next.upAndDownConversions = Math.min(next.upAndDownConversions, next.missed);
+  next.bunkerSaves = Math.min(next.bunkerSaves, next.bunkerAttempts);
+  next.made6ftAndIn = Math.min(next.made6ftAndIn, next.puttsUnder6ftAttempts);
+
+  next.nett =
+    next.score !== null && next.handicap !== null
+      ? Math.round((next.score - next.handicap) * 10) / 10
+      : null;
+  return next;
 }
 
 /** Parse a text field to a finite number, or null when empty / incomplete / invalid. */
@@ -195,7 +224,23 @@ function roundScoreForDb(value: number | null): number | null {
   return Math.round(value);
 }
 
+const pctText = (made: number, total: number) => (total > 0 ? `${Math.round((made / total) * 100)}%` : null);
+
 const ROUND_SHARE_PREF_KEY = "roundShareOnCommunityPref";
+
+/** Newer `rounds` columns; saves retry without any the database doesn't have yet. */
+const OPTIONAL_ROUND_COLUMNS = [
+  "share_on_community",
+  "tracked_stats",
+  "stableford",
+  "front_nine",
+  "back_nine",
+  "fairways_possible",
+  "putts_per_gir",
+  "triple_bogeys",
+] as const;
+
+const STAT_LABELS = new Map(ROUND_STAT_GROUPS.flatMap((g) => g.stats.map((s) => [s.key, s.label] as const)));
 
 function loadShareOnCommunityPref(): boolean {
   if (typeof window === "undefined") return true;
@@ -223,65 +268,136 @@ function formatSupabaseError(error: unknown): string {
   return e.message || e.details || e.hint || e.code || JSON.stringify(error);
 }
 
+const FIELD_INPUT =
+  "w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-[15px] text-stone-900 focus:border-[#014421] focus:bg-white focus:outline-none";
+function StatCard({
+  title,
+  onClear,
+  aside,
+  children,
+}: {
+  title: string;
+  onClear?: () => void;
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-stone-200 bg-white px-4 pb-4 pt-3.5 shadow-sm">
+      <div className="mb-1 flex min-h-7 items-center justify-between gap-2">
+        <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-[#014421]">{title}</h2>
+        <div className="flex items-center gap-1.5">
+          {aside}
+          {onClear ? (
+            <button
+              type="button"
+              onClick={onClear}
+              className="rounded-full p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600"
+              title="Clear all"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
+
+function SubLabel({ children, info }: { children: ReactNode; info?: ReactNode }) {
+  return (
+    <div className="flex items-center gap-1.5 pt-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">{children}</p>
+      {info ? (
+        <InfoBubble
+          content={info}
+          buttonClassName="flex h-3.5 w-3.5 shrink-0 cursor-help items-center justify-center rounded-full border border-stone-200 bg-stone-50 text-[8px] font-bold text-stone-400"
+          tooltipClassName="-left-16 bottom-full mb-2 w-56 max-w-[14rem]"
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export default function LogRoundPage() {
   const router = useRouter();
   const { user, refreshUser } = useAuth();
   const today = new Date().toISOString().split('T')[0];
   const [isSaving, setIsSaving] = useState(false);
-  const [liveHandoffApplied, setLiveHandoffApplied] = useState(false);
-  const [activeLiveDraft, setActiveLiveDraft] = useState<LiveRoundDraft | null>(null);
-  const [liveEntryGateOpen, setLiveEntryGateOpen] = useState(false);
 
-  const openLiveEntry = () => {
-    if (LIVE_ENTRY_ENABLED) {
-      router.push("/log-round/live");
-      return;
-    }
-    setLiveEntryGateOpen(true);
-  };
+  const [trackedStats, setTrackedStats] = useState<RoundStatKey[]>(DEFAULT_TRACKED_ROUND_STATS);
+  const [trackedSheetOpen, setTrackedSheetOpen] = useState(false);
 
-  const openLiveEntryForTesting = () => {
-    setLiveEntryGateOpen(false);
-    router.push("/log-round/live");
-  };
-  
+  const formStats = new Set<RoundStatKey>(trackedStats);
+  const tracks = (key: RoundStatKey) => formStats.has(key);
+  const girTracked = tracks("gir");
+
   const [roundData, setRoundData] = useState<RoundData>({
     date: today,
     course: '',
     handicap: null,
-    holes: 18,
     score: null,
     nett: null,
+    stableford: null,
+    frontNine: null,
+    backNine: null,
     eagles: 0,
     birdies: 0,
     pars: 0,
     bogeys: 0,
     doubleBogeys: 0,
+    tripleBogeys: 0,
     firLeft: 0,
     firHit: 0,
     firRight: 0,
+    fairwaysPossible: DEFAULT_FAIRWAYS_POSSIBLE,
+    autoFairwaysPossible: true,
     totalGir: 0,
-    totalPenalties: 0,
-    teePenalties: 0,
-    approachPenalties: 0,
     goingForGreen: 0,
     gir8ft: 0,
     gir20ft: 0,
+    totalPenalties: 0,
+    teePenalties: 0,
+    approachPenalties: 0,
     upAndDownConversions: 0,
     missed: 0,
+    autoUpDownAttempts: true,
     bunkerAttempts: 0,
     bunkerSaves: 0,
     chipInside6ft: 0,
     doubleChips: 0,
     totalPutts: 0,
+    puttsPerGir: null,
     threePutts: 0,
     made6ftAndIn: 0,
     puttsUnder6ftAttempts: 0,
   });
 
+  const changeRound = (patch: Partial<RoundData>, girOn = girTracked) =>
+    setRoundData((prev) => applyRoundChange(prev, patch, girOn));
+  const setCounter = (field: CounterField, value: number) => changeRound({ [field]: value });
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    void loadTrackedRoundStats(user.id).then((stats) => {
+      if (cancelled) return;
+      setTrackedStats(stats);
+      setRoundData((prev) => applyRoundChange(prev, {}, stats.includes("gir")));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const saveTrackedStats = (stats: RoundStatKey[]) => {
+    setTrackedStats(stats);
+    setTrackedSheetOpen(false);
+    changeRound({}, stats.includes("gir"));
+    if (user?.id) void saveTrackedRoundStats(user.id, stats);
+  };
+
   const [shareOnCommunity, setShareOnCommunity] = useState(true);
-  const [shareCommunityConfirmedFromLive, setShareCommunityConfirmedFromLive] =
-    useState(false);
   const [sharePromptOpen, setSharePromptOpen] = useState(false);
 
   useEffect(() => {
@@ -292,6 +408,10 @@ export default function LogRoundPage() {
   const [scoreText, setScoreText] = useState("");
   const [handicapText, setHandicapText] = useState("");
   const [totalPuttsText, setTotalPuttsText] = useState("");
+  const [stablefordText, setStablefordText] = useState("");
+  const [frontNineText, setFrontNineText] = useState("");
+  const [backNineText, setBackNineText] = useState("");
+  const [puttsPerGirText, setPuttsPerGirText] = useState("");
 
   const [showAdvancedApproachMatrix, setShowAdvancedApproachMatrix] = useState(false);
   const [selectedApproachHole, setSelectedApproachHole] = useState(1);
@@ -302,68 +422,9 @@ export default function LogRoundPage() {
   const [lastTappedApproachResult, setLastTappedApproachResult] =
     useState<AdvancedApproachResult | null>(null);
 
-  useEffect(() => {
-    setDirectionalApproachShots((prev) =>
-      prev.filter((s) => s.hole >= 1 && s.hole <= roundData.holes),
-    );
-    setSelectedApproachHole((h) => Math.min(Math.max(1, h), roundData.holes));
-  }, [roundData.holes]);
-
-  useEffect(() => {
-    if (!user?.id || typeof window === "undefined") {
-      setActiveLiveDraft(null);
-      return;
-    }
-    setActiveLiveDraft(loadLiveRoundDraft(user.id));
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!user?.id || typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("from") !== "live") return;
-    const handoff = loadLiveRoundHandoff(user.id);
-    if (!handoff) return;
-
-    const handicap = handoff.handicap;
-    const score = handoff.score;
-    const nett =
-      score != null && handicap != null
-        ? Math.round((score - handicap) * 10) / 10
-        : null;
-
-    setRoundData((prev) => ({
-      ...prev,
-      date: handoff.date || prev.date,
-      course: handoff.course || prev.course,
-      handicap,
-      holes: handoff.holes || prev.holes,
-      score,
-      nett,
-      firLeft: handoff.firLeft,
-      firHit: handoff.firHit,
-      firRight: handoff.firRight,
-      totalGir: handoff.totalGir,
-      totalPenalties: handoff.totalPenalties,
-      totalPutts: handoff.totalPutts,
-      threePutts: handoff.threePutts,
-      made6ftAndIn: handoff.made6ftAndIn ?? prev.made6ftAndIn,
-      puttsUnder6ftAttempts: handoff.puttsUnder6ftAttempts ?? prev.puttsUnder6ftAttempts,
-      puttingLogs: handoff.puttingLogs ?? [],
-    }));
-    setScoreText(score != null ? String(score) : "");
-    setHandicapText(handicap != null ? String(handicap) : "");
-    setTotalPuttsText(handoff.totalPutts > 0 ? String(handoff.totalPutts) : "");
-    if (handoff.shareCommunityConfirmed) {
-      setShareOnCommunity(handoff.shareOnCommunity ?? true);
-      setShareCommunityConfirmedFromLive(true);
-    }
-    setLiveHandoffApplied(true);
-    clearLiveRoundHandoff(user.id);
-  }, [user?.id]);
-
   const appendDirectionalApproachShot = (result: AdvancedApproachResult) => {
     const holeForShot = selectedApproachHole;
-    const maxHole = roundData.holes;
+    const maxHole = HOLES;
     setDirectionalApproachShots((prev) => [
       ...prev,
       {
@@ -385,106 +446,80 @@ export default function LogRoundPage() {
     (s) => s.hole === selectedApproachHole,
   );
 
-  const updateField = (field: keyof RoundData, value: any) => {
-    setRoundData(prev => {
-      const updated = { ...prev, [field]: value };
-      // Auto-calculate Nett if Score and Handicap are set
-      if (field === 'score' || field === 'handicap') {
-        if (updated.score !== null && updated.handicap !== null) {
-          // Calculate Nett with one decimal place
-          updated.nett = Math.round((updated.score - updated.handicap) * 10) / 10;
-        } else {
-          updated.nett = null;
-        }
-      }
-      return updated;
-    });
+  const onNineChange = (which: "frontNine" | "backNine", raw: string) => {
+    (which === "frontNine" ? setFrontNineText : setBackNineText)(raw);
+    const parsed = optionalNumberFromInput(raw);
+    const value = parsed === null ? null : Math.round(parsed);
+    const other = which === "frontNine" ? roundData.backNine : roundData.frontNine;
+    const patch: Partial<RoundData> = { [which]: value };
+    if (value !== null && other !== null) {
+      patch.score = value + other;
+      setScoreText(String(value + other));
+    }
+    changeRound(patch);
   };
 
-  const incrementCounter = (field: keyof RoundData) => {
-    setRoundData(prev => {
-      const newValue = (prev[field] as number) + 1;
-      
-      // If we're incrementing Made < 6ft, ensure it doesn't exceed Attempts
-      if (field === 'made6ftAndIn' && newValue > prev.puttsUnder6ftAttempts) {
-        return prev;
-      }
-      
-      return {
-        ...prev,
-        [field]: newValue
-      };
-    });
+  const clearScoringExtras = () => {
+    setStablefordText("");
+    setFrontNineText("");
+    setBackNineText("");
+    changeRound({ stableford: null, frontNine: null, backNine: null });
   };
 
-  const decrementCounter = (field: keyof RoundData) => {
-    setRoundData(prev => {
-      const newValue = Math.max(0, (prev[field] as number) - 1);
-      
-      // If we're decrementing Attempts, ensure Made < 6ft doesn't exceed the new Attempts value
-      if (field === 'puttsUnder6ftAttempts' && prev.made6ftAndIn > newValue) {
-        return {
-          ...prev,
-          [field]: newValue,
-          made6ftAndIn: newValue
-        };
-      }
-      
-      return {
-        ...prev,
-        [field]: newValue
-      };
+  const clearDistribution = () =>
+    changeRound({
+      eagles: 0,
+      birdies: 0,
+      pars: 0,
+      bogeys: 0,
+      doubleBogeys: 0,
+      tripleBogeys: 0,
     });
-  };
 
-  const clearTeeApproach = () => {
-    setRoundData(prev => ({
-      ...prev,
-      firLeft: 0,
-      firHit: 0,
-      firRight: 0,
-      totalGir: 0,
-      totalPenalties: 0,
-      teePenalties: 0,
-      approachPenalties: 0,
-      goingForGreen: 0,
-      gir8ft: 0,
-      gir20ft: 0,
-    }));
+  const clearDriving = () =>
+    changeRound({ firLeft: 0, firHit: 0, firRight: 0, autoFairwaysPossible: true, fairwaysPossible: 0 });
+
+  const clearApproach = () => {
+    changeRound({ totalGir: 0, goingForGreen: 0, gir8ft: 0, gir20ft: 0 });
     setDirectionalApproachShots([]);
     setShowAdvancedApproachMatrix(false);
     setLastTappedApproachResult(null);
     setSelectedApproachHole(1);
   };
 
-  const clearShortGame = () => {
-    setRoundData(prev => ({
-      ...prev,
+  const clearPenalties = () => changeRound({ totalPenalties: 0, teePenalties: 0, approachPenalties: 0 });
+
+  const clearShortGame = () =>
+    changeRound({
       upAndDownConversions: 0,
       missed: 0,
+      autoUpDownAttempts: true,
       bunkerAttempts: 0,
       bunkerSaves: 0,
       chipInside6ft: 0,
       doubleChips: 0,
-    }));
-  };
+    });
 
   const clearPutting = () => {
     setTotalPuttsText("");
-    setRoundData(prev => ({
-      ...prev,
+    setPuttsPerGirText("");
+    changeRound({
       totalPutts: 0,
+      puttsPerGir: null,
       threePutts: 0,
       made6ftAndIn: 0,
       puttsUnder6ftAttempts: 0,
-    }));
+    });
   };
+
+  const puttsRequired = tracks("putts");
+  const isRequiredFilled =
+    Boolean(roundData.course) && roundData.score !== null && (!puttsRequired || roundData.totalPutts > 0);
 
   const saveRound = async (shareChoice?: boolean) => {
     const share = shareChoice ?? shareOnCommunity;
-    // Validate required fields
-    if (!roundData.course || roundData.score === null || roundData.totalPutts === 0) {
-      alert('Please fill in all required fields (Course, Score, Total Putts)');
+    if (!isRequiredFilled) {
+      alert(`Please fill in all required fields (Course, Score${puttsRequired ? ", Total Putts" : ""})`);
       return;
     }
 
@@ -494,159 +529,98 @@ export default function LogRoundPage() {
       return;
     }
 
-    // Explicitly validate and set user_id before saving
     const currentUserId = user.id;
-    if (!currentUserId) {
-      console.error('User ID is missing or invalid:', { user, userId: currentUserId });
-      alert('User ID is missing. Please log out and log back in, then try again.');
-      setIsSaving(false);
-      return;
-    }
-
-    console.log('Saving round with explicit user_id:', currentUserId);
     setIsSaving(true);
 
     try {
-      // Save to database only - no localStorage
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
-      // Prepare insert data with ALL fields - every UI input mapped to database
-      // Complete mapping of all stats including Proximity, Short Game, and 3-Putt
       const handicapDb = roundToOneDecimal(roundData.handicap);
       const nettDb = roundToOneDecimal(roundData.nett);
       const scoreDb = roundScoreForDb(roundData.score);
-
-      const insertData: Record<string, any> = {
-        user_id: currentUserId, // Explicitly set to logged-in user's ID
+      const roundStats = ALL_ROUND_STATS.filter((k) => formStats.has(k));
+      // Older columns default to 0, so untracked stats save as 0 and `tracked_stats` says to ignore them.
+      const count = (key: RoundStatKey, value: number) => (formStats.has(key) ? value : 0);
+      const optional = <T,>(key: RoundStatKey, value: T | null) => (formStats.has(key) ? value : null);
+      const insertData: Record<string, unknown> = {
+        user_id: currentUserId,
         date: roundData.date || today,
-        course_name: roundData.course, // Database expects course_name, not course
+        course_name: roundData.course,
         handicap: handicapDb,
-        holes: roundData.holes,
+        holes: HOLES,
         score: scoreDb,
         nett: nettDb,
-        // Scoring stats
-        eagles: roundData.eagles,
-        birdies: roundData.birdies,
-        pars: roundData.pars,
-        bogeys: roundData.bogeys,
-        double_bogeys: roundData.doubleBogeys, // Maps '2+ Bogey' from UI to database column
-        // Tee & Approach stats
-        fir_left: roundData.firLeft,
-        fir_hit: roundData.firHit,
-        fir_right: roundData.firRight,
-        total_gir: roundData.totalGir,
-        going_for_green: roundData.goingForGreen,
-        // Proximity stats (GIR Proximity)
-        gir_8ft: roundData.gir8ft, // Proximity: Inside 8ft
-        gir_20ft: roundData.gir20ft, // Proximity: Inside 20ft
-        // Penalty stats
-        total_penalties: roundData.totalPenalties,
-        tee_penalties: roundData.teePenalties,
-        approach_penalties: roundData.approachPenalties,
-        // Short Game stats
-        up_and_down_conversions: roundData.upAndDownConversions, // Conversions under Up & Down
-        conversions: roundData.upAndDownConversions, // Also map to conversions column
-        up_and_down_missed: roundData.missed, // Missed under Up & Down maps to up_and_down_missed
-        missed: roundData.missed, // Also keep missed for backward compatibility
-        bunker_attempts: roundData.bunkerAttempts,
-        bunker_saves: roundData.bunkerSaves,
-        chip_ins: roundData.doubleChips || 0, // Chip ins
-        chip_inside_6ft: roundData.chipInside6ft, // Chips ending inside 6ft
-        double_chips: roundData.doubleChips,
-        // Putting stats
-        total_putts: roundData.totalPutts,
-        three_putts: roundData.threePutts, // 3-Putt stat
-        made_under_6ft: roundData.made6ftAndIn,
-        putts_under_6ft_attempts: roundData.puttsUnder6ftAttempts,
-        approach_directional_shots: directionalApproachShots,
-        putting_logs: roundData.puttingLogs ?? [],
-        share_on_community: share,
-      };
-
-      console.log('Attempting to save round with user_id:', currentUserId);
-      console.log('Verified user_id before insert:', insertData.user_id);
-      console.log('Complete round data being inserted (ALL FIELDS):', {
-        user_id: insertData.user_id,
-        date: insertData.date,
-        course_name: insertData.course_name,
-        score: insertData.score,
-        // Scoring
-        eagles: insertData.eagles,
-        birdies: insertData.birdies,
-        pars: insertData.pars,
-        bogeys: insertData.bogeys,
-        double_bogeys: insertData.double_bogeys,
-        // Approach & Proximity
-        total_gir: insertData.total_gir,
-        gir_8ft: insertData.gir_8ft,
-        gir_20ft: insertData.gir_20ft,
-        going_for_green: insertData.going_for_green,
+        stableford: optional("stableford", roundData.stableford),
+        front_nine: optional("front_back", roundData.frontNine),
+        back_nine: optional("front_back", roundData.backNine),
+        // Scoring distribution (double_bogeys keeps meaning "double or worse")
+        eagles: count("distribution", roundData.eagles),
+        birdies: count("distribution", roundData.birdies),
+        pars: count("distribution", roundData.pars),
+        bogeys: count("distribution", roundData.bogeys),
+        double_bogeys: count("distribution", roundData.doubleBogeys + roundData.tripleBogeys),
+        triple_bogeys: optional("distribution", roundData.tripleBogeys),
+        // Driving
+        fir_left: count("fairways", roundData.firLeft),
+        fir_hit: count("fairways", roundData.firHit),
+        fir_right: count("fairways", roundData.firRight),
+        fairways_possible: optional("fairways", roundData.fairwaysPossible),
+        // Approach
+        total_gir: count("gir", roundData.totalGir),
+        going_for_green: count("going_for_green", roundData.goingForGreen),
+        gir_8ft: count("gir_proximity", roundData.gir8ft),
+        gir_20ft: count("gir_proximity", roundData.gir20ft),
         // Penalties
-        tee_penalties: insertData.tee_penalties,
-        approach_penalties: insertData.approach_penalties,
-        // Short Game
-        up_and_down_conversions: insertData.up_and_down_conversions,
-        conversions: insertData.conversions,
-        up_and_down_missed: insertData.up_and_down_missed,
-        missed: insertData.missed,
-        bunker_attempts: insertData.bunker_attempts,
-        bunker_saves: insertData.bunker_saves,
-        chip_ins: insertData.chip_ins,
-        chip_inside_6ft: insertData.chip_inside_6ft,
-        // Putting (including 3-Putt)
-        total_putts: insertData.total_putts,
-        three_putts: insertData.three_putts,
-        made_under_6ft: insertData.made_under_6ft, // Made < 6ft
-        putts_under_6ft_attempts: insertData.putts_under_6ft_attempts,
-      });
+        total_penalties: count("penalties", roundData.totalPenalties),
+        tee_penalties: count("penalties", roundData.teePenalties),
+        approach_penalties: count("penalties", roundData.approachPenalties),
+        // Short game (`missed` / `up_and_down_missed` hold up & down attempts)
+        up_and_down_conversions: count("scrambling", roundData.upAndDownConversions),
+        conversions: count("scrambling", roundData.upAndDownConversions),
+        up_and_down_missed: count("scrambling", roundData.missed),
+        missed: count("scrambling", roundData.missed),
+        bunker_attempts: count("sand_saves", roundData.bunkerAttempts),
+        bunker_saves: count("sand_saves", roundData.bunkerSaves),
+        chip_ins: count("chipping", roundData.doubleChips),
+        chip_inside_6ft: count("chipping", roundData.chipInside6ft),
+        double_chips: count("chipping", roundData.doubleChips),
+        // Putting
+        total_putts: count("putts", roundData.totalPutts),
+        putts_per_gir: optional("putts_per_gir", roundData.puttsPerGir),
+        three_putts: count("three_putts", roundData.threePutts),
+        made_under_6ft: count("short_putts", roundData.made6ftAndIn),
+        putts_under_6ft_attempts: count("short_putts", roundData.puttsUnder6ftAttempts),
+        approach_directional_shots: formStats.has("advanced_approach") ? directionalApproachShots : [],
+        share_on_community: share,
+        tracked_stats: roundStats,
+      };
 
       let insertPayload: Record<string, unknown> = { ...insertData };
       let { data, error } = await supabase.from("rounds").insert(insertPayload).select();
 
-      const optionalColumns = ["share_on_community", "putting_logs"] as const;
-      for (const column of optionalColumns) {
-        if (
-          !error ||
-          !(
-            error.code === "42703" ||
-            error.code === "PGRST204" ||
-            error.message?.includes(column)
-          )
-        ) {
-          break;
-        }
-        console.warn(
-          `${column} column missing — retrying save without it. Run the latest Supabase migrations.`,
+      for (let attempt = 0; error && attempt < OPTIONAL_ROUND_COLUMNS.length; attempt++) {
+        const message = `${error.message ?? ""} ${error.details ?? ""}`;
+        const missingColumn = OPTIONAL_ROUND_COLUMNS.find(
+          (column) => column in insertPayload && message.includes(column),
         );
-        const { [column]: _removed, ...rest } = insertPayload;
-        insertPayload = rest;
+        if (!missingColumn) break;
+        console.warn(
+          `${missingColumn} column missing — retrying save without it. Run the latest Supabase migrations.`,
+        );
+        insertPayload = { ...insertPayload };
+        delete insertPayload[missingColumn];
         ({ data, error } = await supabase.from("rounds").insert(insertPayload).select());
       }
 
       if (error) {
         console.error('Database error saving round:', error);
-        console.error('Error details:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
-        
-        // Check for missing column errors (PGRST204)
-        if (error.code === 'PGRST204' || error.message?.includes('column') || error.message?.includes('does not exist')) {
-          console.warn('WARNING: Database column mismatch detected. The database schema may be missing some columns.');
-          console.warn('Insert data attempted:', Object.keys(insertData));
-          console.warn('This is a schema mismatch issue. Some columns may need to be added to the database.');
-        }
-        
         alert(`Failed to save round: ${error.message || 'Unknown error'}. Please check the console for details.`);
         setIsSaving(false);
         return;
       }
 
       console.log('Round saved successfully!', data);
-      console.log('Round saved successfully');
 
       saveShareOnCommunityPref(share);
       setShareOnCommunity(share);
@@ -670,7 +644,7 @@ export default function LogRoundPage() {
             new_handicap: handicapDb,
             date: roundDate,
           });
-          
+
         if (historyError) {
           console.error(
             'Error saving handicap history:',
@@ -678,13 +652,13 @@ export default function LogRoundPage() {
             historyError,
           );
         }
-        
+
         // 2. Update profiles table with new handicap
         const { error: profileError } = await supabase
           .from('profiles')
           .update({ handicap: handicapDb })
           .eq('id', currentUserId);
-          
+
         if (profileError) {
           console.error(
             'Error updating profile handicap:',
@@ -704,24 +678,16 @@ export default function LogRoundPage() {
       }
 
       setIsSaving(false);
-      // Navigate to academy page to see the updated leaderboard
       router.push('/profile?tab=stats');
     } catch (error) {
       console.error('Unexpected error saving round:', error);
-      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
       alert(`Failed to save round: ${error instanceof Error ? error.message : 'Unknown error'}. Please check the console for details.`);
       setIsSaving(false);
     }
   };
 
-  const isRequiredFilled = roundData.course && roundData.score !== null && roundData.totalPutts > 0;
-
   const handleSaveClick = () => {
     if (!isRequiredFilled || isSaving) return;
-    if (shareCommunityConfirmedFromLive) {
-      void saveRound(shareOnCommunity);
-      return;
-    }
     setSharePromptOpen(true);
   };
 
@@ -731,37 +697,69 @@ export default function LogRoundPage() {
     void saveRound(share);
   };
 
+  type CounterSpec = { field: CounterField; label: string; info?: ReactNode; max?: number; dot?: string };
+  const renderCounters = (specs: (CounterSpec | false)[]) => {
+    const list = specs.filter((s): s is CounterSpec => Boolean(s));
+    if (list.length === 0) return null;
+    return (
+      <div className="divide-y divide-stone-100">
+        {list.map((spec) => (
+          <RoundStatCounter
+            key={spec.field}
+            label={spec.label}
+            info={spec.info}
+            dot={spec.dot}
+            value={roundData[spec.field]}
+            max={spec.max}
+            onChange={(v) => setCounter(spec.field, v)}
+          />
+        ))}
+      </div>
+    );
+  };
+
+  const distribution = [
+    { field: "eagles", label: "Eagle or better" },
+    { field: "birdies", label: "Birdie" },
+    { field: "pars", label: "Par" },
+    { field: "bogeys", label: "Bogey" },
+    { field: "doubleBogeys", label: "Double bogey" },
+    { field: "tripleBogeys", label: "Triple bogey+" },
+  ] as const;
+  const holesCounted = distribution.reduce((sum, d) => sum + roundData[d.field], 0);
+  const trackedLabels = ALL_ROUND_STATS.filter((k) => trackedStats.includes(k)).map((k) => STAT_LABELS.get(k) ?? k);
+
+  const showApproach = tracks("gir") || tracks("gir_proximity") || tracks("going_for_green") || tracks("advanced_approach");
+  const showShortGame = tracks("scrambling") || tracks("sand_saves") || tracks("chipping");
+  const showPutting = tracks("putts") || tracks("putts_per_gir") || tracks("three_putts") || tracks("short_putts");
+  const missingToSave = [
+    !roundData.course && "course",
+    roundData.score === null && "gross score",
+    puttsRequired && roundData.totalPutts <= 0 && "total putts",
+  ]
+    .filter(Boolean)
+    .join(", ")
+    .replace(/, ([^,]+)$/, " and $1");
+
   return (
-    <div className="flex-1 w-full flex flex-col bg-[#014421]">
+    <div className="flex w-full flex-1 flex-col bg-[#f4f6f4]">
       {/* Header */}
-      <div className="shrink-0 px-4 pt-6 pb-4 flex items-center justify-between gap-3 sticky top-0 z-10" style={{ backgroundColor: '#014421' }}>
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="sticky top-0 z-10 flex shrink-0 items-center gap-3 border-b border-stone-200/70 bg-[#f4f6f4]/95 px-4 pb-3 pt-5 backdrop-blur">
+        <div className="flex min-w-0 items-center gap-2">
           <button
+            type="button"
             onClick={() => router.back()}
-            className="p-2 rounded-lg text-white hover:bg-white/10 transition-colors shrink-0"
+            className="shrink-0 rounded-full p-2 text-stone-700 transition-colors hover:bg-stone-200/60"
+            aria-label="Back"
           >
-            <ArrowLeft className="w-6 h-6" />
+            <ArrowLeft className="h-5 w-5" />
           </button>
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-bold text-white truncate">Round Performance Entry</h1>
-            <p className="text-white/80 text-sm">Enter your performance metrics</p>
+            <h1 className="truncate text-lg font-bold text-stone-900">Log a round</h1>
+            <p className="truncate text-xs text-stone-500">Same stats as your MiScore summary</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={openLiveEntry}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#FFA500]/60 bg-[#FFA500] px-3 py-2 text-xs font-bold text-black shadow-sm transition hover:bg-amber-400"
-        >
-          <Radio className="h-3.5 w-3.5" aria-hidden />
-          Live Entry
-        </button>
       </div>
-
-      <LiveEntryNotReadyModal
-        open={liveEntryGateOpen}
-        onClose={() => setLiveEntryGateOpen(false)}
-        onOpenForTesting={openLiveEntryForTesting}
-      />
 
       <ShareRoundCommunityModal
         open={sharePromptOpen}
@@ -770,723 +768,172 @@ export default function LogRoundPage() {
         context="save"
       />
 
+      <TrackedStatsSheet
+        open={trackedSheetOpen}
+        initial={trackedStats}
+        onClose={() => setTrackedSheetOpen(false)}
+        onSave={saveTrackedStats}
+      />
+
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
         <div className="max-w-md mx-auto">
-          {LIVE_ENTRY_ENABLED && activeLiveDraft && !liveHandoffApplied && (
-            <LiveRoundInProgressBanner
-              draft={activeLiveDraft}
-              variant="post-round"
-              onContinueLive={openLiveEntry}
-            />
-          )}
-          {liveHandoffApplied && (
-            <div className="mb-4 rounded-xl border border-[#FFA500]/40 bg-[#FFF7ED] px-4 py-3 text-sm text-gray-800">
-              <span className="font-semibold text-[#014421]">Live entry loaded.</span> Review the
-              totals below, add anything else, then save your round.
-              {shareCommunityConfirmedFromLive && (
-                <span className="mt-1 block text-xs text-gray-600">
-                  Community sharing:{" "}
-                  {shareOnCommunity ? "will be shared" : "will stay private"} (you chose this after
-                  live entry).
-                </span>
-              )}
-            </div>
-          )}
-          <div className="space-y-4 pb-6">
-          {/* Scoring Card */}
-          <div className="bg-white rounded-2xl p-4 shadow-lg">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Scoring</h2>
-            
-            <div className="space-y-3">
-              {/* Date */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                <input
-                  type="date"
-                  value={roundData.date}
-                  onChange={(e) => updateField('date', e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#FFA500] focus:outline-none text-gray-900"
-                />
-              </div>
+          <button
+            type="button"
+            onClick={() => setTrackedSheetOpen(true)}
+            className="mb-3 flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-left shadow-sm transition-colors hover:border-stone-300"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+              <SlidersHorizontal className="h-4 w-4 text-[#014421]" aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-stone-900">Stats I track</span>
+              <span className="block truncate text-xs text-stone-500">
+                Score{trackedLabels.length > 0 ? `, ${trackedLabels.join(", ")}` : ""}
+              </span>
+            </span>
+            <span className="shrink-0 text-sm font-semibold text-[#014421]">Edit</span>
+          </button>
 
-              {/* Course */}
+          <div className="space-y-3 pb-6">
+          {/* Round */}
+          <StatCard title="Round">
+            <div className="space-y-3 pt-1">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Course *</label>
+                <label htmlFor="round-course" className="mb-1 block text-xs font-medium text-stone-500">
+                  Course *
+                </label>
                 <input
+                  id="round-course"
                   type="text"
                   value={roundData.course}
-                  onChange={(e) => updateField('course', e.target.value)}
-                  placeholder="Enter course name"
-                  className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#FFA500] focus:outline-none text-gray-900"
+                  onChange={(e) => changeRound({ course: e.target.value })}
+                  placeholder="Course name"
+                  className={FIELD_INPUT}
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                {/* Handicap */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Handicap</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={handicapText}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      setHandicapText(raw);
-                      updateField("handicap", optionalNumberFromInput(raw));
-                    }}
-                    placeholder="0.0"
-                    className="w-full px-4 py-3 rounded-xl border-2 focus:outline-none transition-colors"
-                    style={{ 
-                      color: roundData.handicap !== null ? '#FFA500' : '#6B7280',
-                      borderColor: roundData.handicap !== null ? '#FFA500' : '#E5E7EB'
-                    }}
-                  />
-                </div>
-
-                {/* Holes */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Holes</label>
-                  <select
-                    value={roundData.holes}
-                    onChange={(e) => updateField('holes', parseInt(e.target.value))}
-                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#FFA500] focus:outline-none text-gray-900"
-                  >
-                    <option value={9}>9 Holes</option>
-                    <option value={18}>18 Holes</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                {/* Score */}
-                <div>
-                  <div className="flex items-center gap-1 mb-1">
-                    <label className="block text-sm font-medium text-gray-700">Score *</label>
-                    <InfoBubble content="Total gross score for the round." />
-                  </div>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={scoreText}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      setScoreText(raw);
-                      updateField("score", optionalNumberFromInput(raw));
-                    }}
-                    placeholder="0"
-                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#FFA500] focus:outline-none text-gray-900"
-                  />
-                </div>
-
-                {/* Nett */}
-                <div>
-                  <div className="flex items-center gap-1 mb-1">
-                    <label className="block text-sm font-medium text-gray-700">Nett</label>
-                    <InfoBubble content="Gross score minus handicap." />
-                  </div>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={roundData.nett !== null ? roundData.nett.toFixed(1) : ''}
-                    readOnly
-                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 bg-gray-50"
-                    style={{ color: roundData.nett !== null ? '#FFA500' : '#9CA3AF' }}
-                  />
-                </div>
-              </div>
-
-              {/* Hole Results — same tile chrome as Tee & Approach */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Hole Results</label>
-                <div className={ROUND_COUNTER_GRID}>
-                  {/* Eagle */}
-                  <div className={`${ROUND_COUNTER_TILE} border-gray-200`}>
-                    <span className={ROUND_COUNTER_LABEL}>Eagle</span>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        type="button"
-                        onClick={() => decrementCounter("eagles")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.eagles > 0 ? "#FFA500" : "#111827" }}>
-                        {roundData.eagles}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => incrementCounter("eagles")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Birdie */}
-                  <div className={`${ROUND_COUNTER_TILE} border-gray-200`}>
-                    <span className={ROUND_COUNTER_LABEL}>Birdie</span>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        type="button"
-                        onClick={() => decrementCounter("birdies")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.birdies > 0 ? "#FFA500" : "#111827" }}>
-                        {roundData.birdies}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => incrementCounter("birdies")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Par */}
-                  <div className={`${ROUND_COUNTER_TILE} border-gray-200`}>
-                    <span className={ROUND_COUNTER_LABEL}>Par</span>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        type="button"
-                        onClick={() => decrementCounter("pars")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.pars > 0 ? "#FFA500" : "#111827" }}>
-                        {roundData.pars}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => incrementCounter("pars")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Bogey */}
-                  <div className={`${ROUND_COUNTER_TILE} border-gray-200`}>
-                    <span className={ROUND_COUNTER_LABEL}>Bogey</span>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        type="button"
-                        onClick={() => decrementCounter("bogeys")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.bogeys > 0 ? "#FFA500" : "#111827" }}>
-                        {roundData.bogeys}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => incrementCounter("bogeys")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 2+ Bogey — centered under 2-col grid */}
-                  <div className={`${ROUND_COUNTER_GRID_SINGLE} ${ROUND_COUNTER_TILE} border-gray-200`}>
-                    <span className={ROUND_COUNTER_LABEL}>2+ Bogey</span>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        type="button"
-                        onClick={() => decrementCounter("doubleBogeys")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.doubleBogeys > 0 ? "#FFA500" : "#111827" }}>
-                        {roundData.doubleBogeys}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => incrementCounter("doubleBogeys")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <label htmlFor="round-date" className="mb-1 block text-xs font-medium text-stone-500">
+                  Date
+                </label>
+                <input
+                  id="round-date"
+                  type="date"
+                  value={roundData.date}
+                  onChange={(e) => changeRound({ date: e.target.value })}
+                  className={FIELD_INPUT}
+                />
               </div>
             </div>
-          </div>
+          </StatCard>
 
-          {/* Tee & Approach Card */}
-          <div className="bg-white rounded-2xl p-4 shadow-lg">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">Tee & Approach</h2>
-              <button
-                onClick={clearTeeApproach}
-                className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-                title="Clear all"
-              >
-                <RotateCcw className="w-4 h-4 text-gray-500" />
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              {/* FIR */}
-              <div>
-                <div className="flex items-center gap-1 mb-3">
-                  <label className="block text-sm font-medium text-gray-700">Fairways in Regulation</label>
-                  <InfoBubble content="The tee shot lands on the fairway on Par 4s and Par 5s." />
-                </div>
-                <div className={ROUND_COUNTER_GRID}>
-                  {/* FIR Left */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${
-                      roundData.firLeft > 0 ? "border-[#FFA500]" : "border-gray-200"
-                    }`}
-                    style={{
-                      backgroundColor: roundData.firLeft > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div className="text-center text-sm font-semibold leading-tight" style={{ color: roundData.firLeft > 0 ? "#014421" : "#6B7280" }}>
-                      Left
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        onClick={() => decrementCounter("firLeft")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.firLeft > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.firLeft > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.firLeft > 0 ? "#014421" : "#111827" }}>
-                        {roundData.firLeft}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter("firLeft")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.firLeft > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.firLeft > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* FIR Hit */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${roundData.firHit > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
-                    style={{
-                      backgroundColor: roundData.firHit > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div className="text-center text-sm font-semibold leading-tight" style={{ color: roundData.firHit > 0 ? "#014421" : "#6B7280" }}>
-                      Hit
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        onClick={() => decrementCounter("firHit")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.firHit > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.firHit > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.firHit > 0 ? "#014421" : "#111827" }}>
-                        {roundData.firHit}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter("firHit")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.firHit > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.firHit > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* FIR Right */}
-                  <div
-                    className={`${ROUND_COUNTER_GRID_SINGLE} ${ROUND_COUNTER_TILE} ${
-                      roundData.firRight > 0 ? "border-[#FFA500]" : "border-gray-200"
-                    }`}
-                    style={{
-                      backgroundColor: roundData.firRight > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div className="text-center text-sm font-semibold leading-tight" style={{ color: roundData.firRight > 0 ? "#014421" : "#6B7280" }}>
-                      Right
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        onClick={() => decrementCounter("firRight")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.firRight > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.firRight > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.firRight > 0 ? "#014421" : "#111827" }}>
-                        {roundData.firRight}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter("firRight")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.firRight > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.firRight > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Penalties */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">Penalties</label>
-                <div className={ROUND_COUNTER_GRID}>
-                  {/* Total Penalties */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${
-                      roundData.totalPenalties > 0 ? "border-[#FFA500]" : "border-gray-200"
-                    }`}
-                    style={{
-                      backgroundColor: roundData.totalPenalties > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div className="text-center text-sm font-semibold leading-tight" style={{ color: roundData.totalPenalties > 0 ? "#014421" : "#6B7280" }}>
-                      Total
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        onClick={() => decrementCounter("totalPenalties")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.totalPenalties > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.totalPenalties > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.totalPenalties > 0 ? "#014421" : "#111827" }}>
-                        {roundData.totalPenalties}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter("totalPenalties")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.totalPenalties > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.totalPenalties > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Tee Penalties */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${roundData.teePenalties > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
-                    style={{
-                      backgroundColor: roundData.teePenalties > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div className="text-center text-sm font-semibold leading-tight" style={{ color: roundData.teePenalties > 0 ? "#014421" : "#6B7280" }}>
-                      Tee
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        onClick={() => decrementCounter("teePenalties")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.teePenalties > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.teePenalties > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.teePenalties > 0 ? "#014421" : "#111827" }}>
-                        {roundData.teePenalties}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter("teePenalties")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.teePenalties > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.teePenalties > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Approach Penalties */}
-                  <div
-                    className={`${ROUND_COUNTER_GRID_SINGLE} ${ROUND_COUNTER_TILE} ${
-                      roundData.approachPenalties > 0 ? "border-[#FFA500]" : "border-gray-200"
-                    }`}
-                    style={{
-                      backgroundColor: roundData.approachPenalties > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div className="text-center text-sm font-semibold leading-tight" style={{ color: roundData.approachPenalties > 0 ? "#014421" : "#6B7280" }}>
-                      Approach
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        onClick={() => decrementCounter("approachPenalties")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.approachPenalties > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.approachPenalties > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.approachPenalties > 0 ? "#014421" : "#111827" }}>
-                        {roundData.approachPenalties}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter("approachPenalties")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.approachPenalties > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.approachPenalties > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Greens in Regulation */}
-              <div>
-                <div className="flex items-center gap-1 mb-2">
-                  <label className="block text-sm font-medium text-gray-700">Greens in Regulation</label>
-                  <InfoBubble
-                    content={
-                      <>
-                        <span className="font-semibold">Tier 1 (Base):</span> Green hit → &quot;GIR&quot;
-                        <br />
-                        <span className="font-semibold">Tier 2 (Proximity):</span> Ball inside 20ft → &quot;GIR + 20ft GIR&quot;
-                        <br />
-                        <span className="font-semibold">Tier 3 (Elite):</span> Ball inside 8ft → &quot;GIR + 20ft GIR + 8ft GIR&quot;
-                      </>
-                    }
-                    tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 max-w-[200px]"
+          {/* Scoring */}
+          <StatCard
+            title="Scoring"
+            onClear={tracks("stableford") || tracks("front_back") ? clearScoringExtras : undefined}
+          >
+            <div className="divide-y divide-stone-100">
+              <RoundStatNumberField
+                label="Gross score *"
+                info="Total strokes for the round."
+                text={scoreText}
+                onTextChange={(raw) => {
+                  setScoreText(raw);
+                  changeRound({ score: optionalNumberFromInput(raw) });
+                }}
+              />
+              <RoundStatNumberField
+                label="Handicap"
+                decimal
+                info="Your handicap for this round. Nett is gross minus handicap."
+                text={handicapText}
+                onTextChange={(raw) => {
+                  setHandicapText(raw);
+                  changeRound({ handicap: optionalNumberFromInput(raw) });
+                }}
+              />
+              <RoundStatReadout
+                label="Nett"
+                value={roundData.nett !== null ? roundData.nett.toFixed(1) : null}
+              />
+              {tracks("front_back") && (
+                <>
+                  <RoundStatNumberField
+                    label="Front 9"
+                    info="Gross on holes 1-9. Fills in your gross score when both nines are entered."
+                    text={frontNineText}
+                    onTextChange={(raw) => onNineChange("frontNine", raw)}
                   />
-                </div>
-                <div className={ROUND_COUNTER_GRID}>
-                  {/* Total GIR */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${roundData.totalGir > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
-                    style={{
-                      backgroundColor: roundData.totalGir > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div
-                      className={`${ROUND_COUNTER_LABEL} flex min-h-[2.75rem] items-center justify-center`}
-                      style={{ color: roundData.totalGir > 0 ? "#014421" : "#6B7280" }}
-                    >
-                      Total GIR
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        onClick={() => decrementCounter("totalGir")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.totalGir > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.totalGir > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.totalGir > 0 ? "#014421" : "#111827" }}>
-                        {roundData.totalGir}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter("totalGir")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.totalGir > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.totalGir > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
+                  <RoundStatNumberField
+                    label="Back 9"
+                    info="Gross on holes 10-18."
+                    text={backNineText}
+                    onTextChange={(raw) => onNineChange("backNine", raw)}
+                  />
+                </>
+              )}
+              {tracks("stableford") && (
+                <RoundStatNumberField
+                  label="Stableford points"
+                  text={stablefordText}
+                  onTextChange={(raw) => {
+                    setStablefordText(raw);
+                    const v = optionalNumberFromInput(raw);
+                    changeRound({ stableford: v === null ? null : Math.max(0, Math.round(v)) });
+                  }}
+                />
+              )}
+            </div>
+          </StatCard>
 
-                  {/* Inside 8ft */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${roundData.gir8ft > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
-                    style={{
-                      backgroundColor: roundData.gir8ft > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 text-center">
-                      <span className="text-sm font-semibold leading-tight" style={{ color: roundData.gir8ft > 0 ? "#014421" : "#6B7280" }}>
-                        Inside 8ft
-                      </span>
-                      <InfoBubble
-                        content="2.4m"
-                        buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border bg-white/50 text-[8px] font-bold cursor-help"
-                        buttonStyle={{
-                          borderColor: roundData.gir8ft > 0 ? "#014421" : "#E5E7EB",
-                          color: roundData.gir8ft > 0 ? "#014421" : "#9CA3AF",
-                        }}
-                        tooltipClassName="left-1/2 bottom-full mb-2 w-24 -translate-x-1/2 p-1.5 text-center"
-                      />
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        onClick={() => decrementCounter("gir8ft")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.gir8ft > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.gir8ft > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.gir8ft > 0 ? "#014421" : "#111827" }}>
-                        {roundData.gir8ft}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter("gir8ft")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.gir8ft > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.gir8ft > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
+          {/* Driving */}
+          {tracks("fairways") && (
+            <StatCard title="Driving" onClear={clearDriving}>
+              {renderCounters([
+                { field: "firHit", label: "Fairways hit", info: "Tee shots on par 4s and par 5s that finish in the fairway." },
+                {
+                  field: "fairwaysPossible",
+                  label: "Possible fairways",
+                  info: "Par 4s and par 5s played. Starts at 14 for 18 holes.",
+                },
+                { field: "firLeft", label: "Missed left" },
+                { field: "firRight", label: "Missed right" },
+              ])}
+              <RoundCalcLine
+                items={[
+                  { label: "FIR", value: pctText(roundData.firHit, roundData.fairwaysPossible) },
+                  { label: "Left", value: pctText(roundData.firLeft, roundData.fairwaysPossible) },
+                  { label: "Right", value: pctText(roundData.firRight, roundData.fairwaysPossible) },
+                ]}
+              />
+            </StatCard>
+          )}
 
-                  {/* Inside 20ft */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${roundData.gir20ft > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
-                    style={{
-                      backgroundColor: roundData.gir20ft > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 px-0.5 text-center">
-                      <span className="text-sm font-semibold leading-tight" style={{ color: roundData.gir20ft > 0 ? "#014421" : "#6B7280" }}>
-                        Inside 20ft
-                      </span>
-                      <InfoBubble
-                        content="6.1m. Note: Also includes shots inside 8ft."
-                        buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border bg-white/50 text-[8px] font-bold cursor-help"
-                        buttonStyle={{
-                          borderColor: roundData.gir20ft > 0 ? "#014421" : "#E5E7EB",
-                          color: roundData.gir20ft > 0 ? "#014421" : "#9CA3AF",
-                        }}
-                        tooltipClassName="left-1/2 bottom-full mb-2 w-48 max-w-[min(100vw-2rem,12rem)] -translate-x-1/2 p-1.5 text-center"
-                      />
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        onClick={() => decrementCounter("gir20ft")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.gir20ft > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.gir20ft > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.gir20ft > 0 ? "#014421" : "#111827" }}>
-                        {roundData.gir20ft}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter("gir20ft")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.gir20ft > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.gir20ft > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Going for Green */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${roundData.goingForGreen > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
-                    style={{
-                      backgroundColor: roundData.goingForGreen > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 px-0.5 text-center">
-                      <span className="text-sm font-semibold leading-tight" style={{ color: roundData.goingForGreen > 0 ? "#014421" : "#6B7280" }}>
-                        Going for Green
-                      </span>
-                      <InfoBubble
-                        content="Attempts to reach a Par 4 in 1 stroke or a Par 5 in 2 strokes."
-                        buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border bg-white/50 text-[8px] font-bold cursor-help"
-                        buttonStyle={{
-                          borderColor: roundData.goingForGreen > 0 ? "#014421" : "#E5E7EB",
-                          color: roundData.goingForGreen > 0 ? "#014421" : "#9CA3AF",
-                        }}
-                        tooltipClassName="left-1/2 bottom-full mb-2 w-48 max-w-[min(100vw-2rem,12rem)] -translate-x-1/2 p-1.5 text-center"
-                      />
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        onClick={() => decrementCounter("goingForGreen")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.goingForGreen > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.goingForGreen > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.goingForGreen > 0 ? "#014421" : "#111827" }}>
-                        {roundData.goingForGreen}
-                      </span>
-                      <button
-                        onClick={() => incrementCounter("goingForGreen")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.goingForGreen > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.goingForGreen > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Advanced Approach Stats (optional) */}
+          {/* Approach */}
+          {showApproach && (
+            <StatCard title="Approach" onClear={clearApproach}>
+              {renderCounters([
+                tracks("gir") && {
+                  field: "totalGir",
+                  label: "Greens in regulation",
+                  info: "On the green in par minus 2 strokes.",
+                  max: HOLES,
+                },
+                tracks("gir_proximity") && { field: "gir8ft", label: "GIR inside 8ft", info: "Approx. 2.4 metres." },
+                tracks("gir_proximity") && {
+                  field: "gir20ft",
+                  label: "GIR inside 20ft",
+                  info: "Approx. 6.1 metres. Also counts shots inside 8ft.",
+                },
+                tracks("going_for_green") && {
+                  field: "goingForGreen",
+                  label: "Going for green",
+                  info: "Attempts to reach a Par 4 in 1 stroke or a Par 5 in 2 strokes.",
+                },
+              ])}
+              {tracks("gir") && (
+                <RoundCalcLine items={[{ label: "GIR", value: pctText(roundData.totalGir, HOLES) }]} />
+              )}
+              {tracks("advanced_approach") && (
               <div className="border-t border-gray-100 pt-4">
                 <h3 className="text-sm font-semibold text-gray-900">Advanced Approach Stats</h3>
                 <p className="mt-1 text-xs text-gray-500">
@@ -1513,10 +960,10 @@ export default function LogRoundPage() {
 
                     <div>
                       <span className="mb-1.5 block text-xs font-medium text-slate-600">
-                        Hole ({roundData.holes}-hole round)
+                        Hole
                       </span>
                       <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
-                        {Array.from({ length: roundData.holes }, (_, i) => i + 1).map((h) => {
+                        {Array.from({ length: HOLES }, (_, i) => i + 1).map((h) => {
                           const count = directionalApproachShots.filter((s) => s.hole === h).length;
                           const active = h === selectedApproachHole;
                           return (
@@ -1681,584 +1128,194 @@ export default function LogRoundPage() {
                   </div>
                 )}
               </div>
-            </div>
-          </div>
+              )}
+            </StatCard>
+          )}
 
-          {/* Short Game Card */}
-          <div className="bg-white rounded-2xl p-4 shadow-lg">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">Short Game</h2>
-              <button
-                onClick={clearShortGame}
-                className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-                title="Clear all"
-              >
-                <RotateCcw className="w-4 h-4 text-gray-500" />
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              {/* Up & Down Conversions */}
-              <div>
-                <div className="flex items-center gap-1 mb-3">
-                  <label className="block text-sm font-medium text-gray-700">Up & Down Conversions</label>
-                  <InfoBubble content="Missing the GIR but still making Par or better (The 'Up & Down' %)." tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 max-w-[200px]" />
-                </div>
-                <div className={ROUND_COUNTER_GRID}>
-                  {/* Up & Down Attempts */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${roundData.missed > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
-                    style={{
-                      backgroundColor: roundData.missed > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div
-                      className="text-center text-sm font-semibold leading-tight"
-                      style={{ color: roundData.missed > 0 ? "#014421" : "#6B7280" }}
-                    >
-                      Attempts
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        type="button"
-                        onClick={() => decrementCounter("missed")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.missed > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.missed > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.missed > 0 ? "#014421" : "#111827" }}>
-                        {roundData.missed}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => incrementCounter("missed")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.missed > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.missed > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Up & Down Made */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${
-                      roundData.upAndDownConversions > 0 ? "border-[#FFA500]" : "border-gray-200"
-                    }`}
-                    style={{
-                      backgroundColor: roundData.upAndDownConversions > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div
-                      className="text-center text-sm font-semibold leading-tight"
-                      style={{ color: roundData.upAndDownConversions > 0 ? "#014421" : "#6B7280" }}
-                    >
-                      Made
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        type="button"
-                        onClick={() => decrementCounter("upAndDownConversions")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.upAndDownConversions > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.upAndDownConversions > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span
-                        className={ROUND_COUNTER_VALUE}
-                        style={{ color: roundData.upAndDownConversions > 0 ? "#014421" : "#111827" }}
-                      >
-                        {roundData.upAndDownConversions}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (roundData.upAndDownConversions < roundData.missed) {
-                            incrementCounter("upAndDownConversions");
-                          }
-                        }}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50 ${
-                          roundData.upAndDownConversions >= roundData.missed ? "cursor-not-allowed opacity-50" : ""
-                        }`}
-                        style={{
-                          borderColor: roundData.upAndDownConversions > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.upAndDownConversions > 0 ? "#014421" : "#6B7280",
-                        }}
-                        disabled={roundData.upAndDownConversions >= roundData.missed}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bunker Saves */}
-              <div>
-                <div className="flex items-center gap-1 mb-3">
-                  <label className="block text-sm font-medium text-gray-700">Bunker Saves</label>
-                  <InfoBubble content="Greenside only." tooltipClassName="left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 max-w-[200px]" />
-                </div>
-                <div className={ROUND_COUNTER_GRID}>
-                  {/* Bunker Attempts */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${
-                      roundData.bunkerAttempts > 0 ? "border-[#FFA500]" : "border-gray-200"
-                    }`}
-                    style={{
-                      backgroundColor: roundData.bunkerAttempts > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div
-                      className="text-center text-sm font-semibold leading-tight"
-                      style={{ color: roundData.bunkerAttempts > 0 ? "#014421" : "#6B7280" }}
-                    >
-                      Attempts
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        type="button"
-                        onClick={() => decrementCounter("bunkerAttempts")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.bunkerAttempts > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.bunkerAttempts > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span
-                        className={ROUND_COUNTER_VALUE}
-                        style={{ color: roundData.bunkerAttempts > 0 ? "#014421" : "#111827" }}
-                      >
-                        {roundData.bunkerAttempts}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => incrementCounter("bunkerAttempts")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.bunkerAttempts > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.bunkerAttempts > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Bunker Saves */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${roundData.bunkerSaves > 0 ? "border-[#FFA500]" : "border-gray-200"}`}
-                    style={{
-                      backgroundColor: roundData.bunkerSaves > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div
-                      className="text-center text-sm font-semibold leading-tight"
-                      style={{ color: roundData.bunkerSaves > 0 ? "#014421" : "#6B7280" }}
-                    >
-                      Made
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        type="button"
-                        onClick={() => decrementCounter("bunkerSaves")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.bunkerSaves > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.bunkerSaves > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span className={ROUND_COUNTER_VALUE} style={{ color: roundData.bunkerSaves > 0 ? "#014421" : "#111827" }}>
-                        {roundData.bunkerSaves}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (roundData.bunkerSaves < roundData.bunkerAttempts) {
-                            incrementCounter("bunkerSaves");
-                          }
-                        }}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50 ${
-                          roundData.bunkerSaves >= roundData.bunkerAttempts ? "cursor-not-allowed opacity-50" : ""
-                        }`}
-                        style={{
-                          borderColor: roundData.bunkerSaves > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.bunkerSaves > 0 ? "#014421" : "#6B7280",
-                        }}
-                        disabled={roundData.bunkerSaves >= roundData.bunkerAttempts}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Chip Inside 6ft and Double Chips */}
-              <div>
-                <div className={ROUND_COUNTER_GRID}>
-                  {/* Chip Inside 6ft */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${
-                      roundData.chipInside6ft > 0 ? "border-[#FFA500]" : "border-gray-200"
-                    }`}
-                    style={{
-                      backgroundColor: roundData.chipInside6ft > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 text-center">
-                      <span className="text-sm font-semibold leading-tight" style={{ color: roundData.chipInside6ft > 0 ? "#014421" : "#6B7280" }}>
-                        Chip inside 6ft
-                      </span>
-                      <InfoBubble
-                        content="Approx. 1.8 metres"
-                        buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-[9px] font-bold text-gray-500 cursor-help"
-                        tooltipClassName="left-1/2 bottom-full mb-2 w-32 -translate-x-1/2 text-center"
-                      />
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        type="button"
-                        onClick={() => decrementCounter("chipInside6ft")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.chipInside6ft > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.chipInside6ft > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span
-                        className={ROUND_COUNTER_VALUE}
-                        style={{ color: roundData.chipInside6ft > 0 ? "#014421" : "#111827" }}
-                      >
-                        {roundData.chipInside6ft}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => incrementCounter("chipInside6ft")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.chipInside6ft > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.chipInside6ft > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Double Chips */}
-                  <div
-                    className={`${ROUND_COUNTER_TILE} ${
-                      roundData.doubleChips > 0 ? "border-[#FFA500]" : "border-gray-200"
-                    }`}
-                    style={{
-                      backgroundColor: roundData.doubleChips > 0 ? "#FFF7ED" : "white",
-                    }}
-                  >
-                    <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 px-0.5 text-center">
-                      <span className="text-sm font-semibold leading-tight" style={{ color: roundData.doubleChips > 0 ? "#014421" : "#6B7280" }}>
-                        Double chips
-                      </span>
-                      <InfoBubble
-                        content="Any instance where an initial chip or pitch failed to reach the putting surface, requiring a second chip."
-                        buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-[9px] font-bold text-gray-500 cursor-help"
-                        tooltipClassName="left-1/2 bottom-full mb-2 w-48 max-w-[min(100vw-2rem,12rem)] -translate-x-1/2 p-1.5 text-center"
-                      />
-                    </div>
-                    <div className={ROUND_STEP_ROW}>
-                      <button
-                        type="button"
-                        onClick={() => decrementCounter("doubleChips")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.doubleChips > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.doubleChips > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Minus className="h-5 w-5" />
-                      </button>
-                      <span
-                        className={ROUND_COUNTER_VALUE}
-                        style={{ color: roundData.doubleChips > 0 ? "#014421" : "#111827" }}
-                      >
-                        {roundData.doubleChips}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => incrementCounter("doubleChips")}
-                        className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                        style={{
-                          borderColor: roundData.doubleChips > 0 ? "#014421" : "#D1D5DB",
-                          color: roundData.doubleChips > 0 ? "#014421" : "#6B7280",
-                        }}
-                      >
-                        <Plus className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Putting Card */}
-          <div className="bg-white rounded-2xl p-4 shadow-lg">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">Putting</h2>
-              <button
-                type="button"
-                onClick={clearPutting}
-                className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-                title="Clear all"
-              >
-                <RotateCcw className="w-4 h-4 text-gray-500" />
-              </button>
-            </div>
-
-            <div className={ROUND_COUNTER_GRID}>
-              {/* Total putts */}
-              <div
-                className={`${ROUND_COUNTER_TILE} ${
-                  roundData.totalPutts > 0 ? "border-[#FFA500]" : "border-gray-200"
-                }`}
-                style={{
-                  backgroundColor: roundData.totalPutts > 0 ? "#FFF7ED" : "white",
-                }}
-              >
-                <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 text-center">
-                  <span
-                    className="text-sm font-semibold leading-tight"
-                    style={{ color: roundData.totalPutts > 0 ? "#014421" : "#6B7280" }}
-                  >
-                    Total putts
-                  </span>
-                  <InfoBubble
-                    content="Only strokes taken once the ball is on the putting surface."
-                    buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-[9px] font-bold text-gray-500 cursor-help"
-                    tooltipClassName="left-1/2 bottom-full mb-2 w-40 max-w-[min(100vw-2rem,12rem)] -translate-x-1/2 p-1.5 text-center"
-                  />
-                </div>
-                <div className={ROUND_STEP_ROW}>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    aria-label="Total putts"
-                    value={totalPuttsText}
-                    onChange={(e) => {
-                      const raw = e.target.value;
+          {/* Putting */}
+          {showPutting && (
+            <StatCard title="Putting" onClear={clearPutting}>
+              <div className="divide-y divide-stone-100">
+                {tracks("putts") && (
+                  <RoundStatNumberField
+                    label="Total putts *"
+                    info="Only strokes taken once the ball is on the putting surface."
+                    text={totalPuttsText}
+                    onTextChange={(raw) => {
                       setTotalPuttsText(raw);
-                      const t = raw.trim();
-                      if (t === "") {
-                        updateField("totalPutts", 0);
-                        return;
-                      }
-                      const n = Number(t);
-                      updateField("totalPutts", Number.isFinite(n) ? Math.max(0, n) : 0);
-                    }}
-                    placeholder="0"
-                    className="min-w-0 max-w-[5.5rem] rounded-lg border-2 border-gray-200 bg-white px-1 py-1.5 text-center text-[1.4rem] font-bold tabular-nums text-gray-900 sm:text-2xl"
-                    style={{
-                      borderColor: roundData.totalPutts > 0 ? "#014421" : "#D1D5DB",
-                      color: roundData.totalPutts > 0 ? "#014421" : "#6B7280",
+                      const v = optionalNumberFromInput(raw);
+                      changeRound({ totalPutts: v === null ? 0 : Math.max(0, v) });
                     }}
                   />
-                </div>
+                )}
+                {tracks("putts_per_gir") && (
+                  <RoundStatNumberField
+                    label="Putts per GIR"
+                    decimal
+                    placeholder="0.0"
+                    info="Average putts on greens hit in regulation, e.g. 1.8."
+                    text={puttsPerGirText}
+                    onTextChange={(raw) => {
+                      setPuttsPerGirText(raw);
+                      const v = optionalNumberFromInput(raw);
+                      changeRound({
+                        puttsPerGir: v === null ? null : Math.min(9.99, Math.max(0, Math.round(v * 100) / 100)),
+                      });
+                    }}
+                  />
+                )}
+                {tracks("three_putts") && (
+                  <RoundStatCounter
+                    label="3-putts"
+                    info="Any hole where 3 or more strokes were taken once the ball reached the putting surface."
+                    value={roundData.threePutts}
+                    max={HOLES}
+                    onChange={(v) => setCounter("threePutts", v)}
+                  />
+                )}
               </div>
 
-              {/* 3-Putts */}
-              <div
-                className={`${ROUND_COUNTER_TILE} ${
-                  roundData.threePutts > 0 ? "border-[#FFA500]" : "border-gray-200"
-                }`}
-                style={{
-                  backgroundColor: roundData.threePutts > 0 ? "#FFF7ED" : "white",
-                }}
-              >
-                <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1 text-center">
-                  <span
-                    className="text-sm font-semibold leading-tight"
-                    style={{ color: roundData.threePutts > 0 ? "#014421" : "#6B7280" }}
-                  >
-                    3-Putts
-                  </span>
-                  <InfoBubble
-                    content="Any hole where 3 or more strokes were taken once the ball reached the putting surface."
-                    buttonClassName="flex h-3 w-3 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-[9px] font-bold text-gray-500 cursor-help"
-                    tooltipClassName="left-1/2 bottom-full mb-2 w-48 max-w-[min(100vw-2rem,12rem)] -translate-x-1/2 p-1.5 text-center"
+              {tracks("short_putts") && (
+                <div>
+                  <SubLabel info="Putts from inside 6ft (1.8m).">Putts inside 6ft</SubLabel>
+                  {renderCounters([
+                    { field: "puttsUnder6ftAttempts", label: "Attempts" },
+                    { field: "made6ftAndIn", label: "Made", max: roundData.puttsUnder6ftAttempts },
+                  ])}
+                  <RoundCalcLine
+                    items={[
+                      { label: "Make", value: pctText(roundData.made6ftAndIn, roundData.puttsUnder6ftAttempts) },
+                    ]}
                   />
                 </div>
-                <div className={ROUND_STEP_ROW}>
-                  <button
-                    type="button"
-                    onClick={() => decrementCounter("threePutts")}
-                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                    style={{
-                      borderColor: roundData.threePutts > 0 ? "#014421" : "#D1D5DB",
-                      color: roundData.threePutts > 0 ? "#014421" : "#6B7280",
-                    }}
-                  >
-                    <Minus className="h-5 w-5" />
-                  </button>
-                  <span
-                    className={ROUND_COUNTER_VALUE}
-                    style={{ color: roundData.threePutts > 0 ? "#014421" : "#111827" }}
-                  >
-                    {roundData.threePutts}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => incrementCounter("threePutts")}
-                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                    style={{
-                      borderColor: roundData.threePutts > 0 ? "#014421" : "#D1D5DB",
-                      color: roundData.threePutts > 0 ? "#014421" : "#6B7280",
-                    }}
-                  >
-                    <Plus className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
+              )}
+            </StatCard>
+          )}
 
-              {/* &lt; 6ft attempts */}
-              <div
-                className={`${ROUND_COUNTER_TILE} ${
-                  roundData.puttsUnder6ftAttempts > 0 ? "border-[#FFA500]" : "border-gray-200"
-                }`}
-                style={{
-                  backgroundColor: roundData.puttsUnder6ftAttempts > 0 ? "#FFF7ED" : "white",
-                }}
-              >
-                <div
-                  className="flex min-h-[2.75rem] flex-col items-center justify-center text-center text-sm font-semibold leading-tight"
-                  style={{ color: roundData.puttsUnder6ftAttempts > 0 ? "#014421" : "#6B7280" }}
-                >
-                  &lt; 6ft Att
+          {/* Short Game */}
+          {showShortGame && (
+            <StatCard title="Short game" onClear={clearShortGame}>
+              {tracks("scrambling") && (
+                <div>
+                  <SubLabel info="Missing the green in regulation but still making par or better.">
+                    Up & downs
+                  </SubLabel>
+                  {renderCounters([
+                    {
+                      field: "missed",
+                      label: "Attempts",
+                      info: girTracked
+                        ? "Greens missed. Fills in from your GIR until you change it."
+                        : "Greens missed.",
+                    },
+                    { field: "upAndDownConversions", label: "Converted", max: roundData.missed },
+                  ])}
+                  <RoundCalcLine
+                    items={[{ label: "Scrambling", value: pctText(roundData.upAndDownConversions, roundData.missed) }]}
+                  />
                 </div>
-                <div className={ROUND_STEP_ROW}>
-                  <button
-                    type="button"
-                    onClick={() => decrementCounter("puttsUnder6ftAttempts")}
-                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                    style={{
-                      borderColor: roundData.puttsUnder6ftAttempts > 0 ? "#014421" : "#D1D5DB",
-                      color: roundData.puttsUnder6ftAttempts > 0 ? "#014421" : "#6B7280",
-                    }}
-                  >
-                    <Minus className="h-5 w-5" />
-                  </button>
-                  <span
-                    className={ROUND_COUNTER_VALUE}
-                    style={{ color: roundData.puttsUnder6ftAttempts > 0 ? "#014421" : "#111827" }}
-                  >
-                    {roundData.puttsUnder6ftAttempts}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => incrementCounter("puttsUnder6ftAttempts")}
-                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                    style={{
-                      borderColor: roundData.puttsUnder6ftAttempts > 0 ? "#014421" : "#D1D5DB",
-                      color: roundData.puttsUnder6ftAttempts > 0 ? "#014421" : "#6B7280",
-                    }}
-                  >
-                    <Plus className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
+              )}
 
-              {/* &lt; 6ft made */}
-              <div
-                className={`${ROUND_COUNTER_TILE} ${
-                  roundData.made6ftAndIn > 0 ? "border-[#FFA500]" : "border-gray-200"
-                }`}
-                style={{
-                  backgroundColor: roundData.made6ftAndIn > 0 ? "#FFF7ED" : "white",
-                }}
-              >
-                <div
-                  className="flex min-h-[2.75rem] flex-col items-center justify-center text-center text-sm font-semibold leading-tight"
-                  style={{ color: roundData.made6ftAndIn > 0 ? "#014421" : "#6B7280" }}
+              {tracks("sand_saves") && (
+                <div>
+                  <SubLabel info="Greenside bunkers only: up and down from the sand.">Sand saves</SubLabel>
+                  {renderCounters([
+                    { field: "bunkerAttempts", label: "Attempts" },
+                    { field: "bunkerSaves", label: "Converted", max: roundData.bunkerAttempts },
+                  ])}
+                  <RoundCalcLine
+                    items={[{ label: "Sand saves", value: pctText(roundData.bunkerSaves, roundData.bunkerAttempts) }]}
+                  />
+                </div>
+              )}
+
+              {tracks("chipping") && (
+                <div>
+                  <SubLabel info="Chips and pitches from around the green.">Chipping</SubLabel>
+                  {renderCounters([
+                    { field: "chipInside6ft", label: "Chip inside 6ft", info: "Approx. 1.8 metres" },
+                    {
+                      field: "doubleChips",
+                      label: "Double chips",
+                      info: "Any instance where an initial chip or pitch failed to reach the putting surface, requiring a second chip.",
+                    },
+                  ])}
+                </div>
+              )}
+            </StatCard>
+          )}
+
+          {/* Scoring distribution */}
+          {tracks("distribution") && (
+            <StatCard
+              title="Scoring distribution"
+              onClear={clearDistribution}
+              aside={
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${
+                    holesCounted > HOLES
+                      ? "bg-red-50 text-red-600"
+                      : holesCounted === HOLES
+                        ? "bg-[#014421]/10 text-[#014421]"
+                        : "bg-stone-100 text-stone-500"
+                  }`}
                 >
-                  &lt; 6ft Made
-                </div>
-                <div className={ROUND_STEP_ROW}>
-                  <button
-                    type="button"
-                    onClick={() => decrementCounter("made6ftAndIn")}
-                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50`}
-                    style={{
-                      borderColor: roundData.made6ftAndIn > 0 ? "#014421" : "#D1D5DB",
-                      color: roundData.made6ftAndIn > 0 ? "#014421" : "#6B7280",
-                    }}
-                  >
-                    <Minus className="h-5 w-5" />
-                  </button>
-                  <span
-                    className={ROUND_COUNTER_VALUE}
-                    style={{ color: roundData.made6ftAndIn > 0 ? "#014421" : "#111827" }}
-                  >
-                    {roundData.made6ftAndIn}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (roundData.made6ftAndIn < roundData.puttsUnder6ftAttempts) {
-                        incrementCounter("made6ftAndIn");
-                      }
-                    }}
-                    className={`${ROUND_STEP_BTN} border-gray-200 bg-white hover:bg-gray-50 ${
-                      roundData.made6ftAndIn >= roundData.puttsUnder6ftAttempts
-                        ? "cursor-not-allowed opacity-50"
-                        : ""
-                    }`}
-                    style={{
-                      borderColor: roundData.made6ftAndIn > 0 ? "#014421" : "#D1D5DB",
-                      color: roundData.made6ftAndIn > 0 ? "#014421" : "#6B7280",
-                    }}
-                    disabled={roundData.made6ftAndIn >= roundData.puttsUnder6ftAttempts}
-                  >
-                    <Plus className="h-5 w-5" />
-                  </button>
-                </div>
+                  {holesCounted} of {HOLES} holes
+                </span>
+              }
+            >
+              <div className="mt-1 flex h-2 overflow-hidden rounded-full bg-stone-100" aria-hidden>
+                {distribution.map((d) =>
+                  roundData[d.field] > 0 ? (
+                    <div
+                      key={d.field}
+                      style={{
+                        width: `${(roundData[d.field] / Math.max(holesCounted, HOLES)) * 100}%`,
+                        backgroundColor: SCORE_DISTRIBUTION_COLORS[d.field],
+                      }}
+                    />
+                  ) : null,
+                )}
               </div>
-            </div>
-          </div>
+              {renderCounters(distribution.map((d) => ({ ...d, dot: SCORE_DISTRIBUTION_COLORS[d.field] })))}
+            </StatCard>
+          )}
+
+          {/* Penalties */}
+          {tracks("penalties") && (
+            <StatCard title="Penalties" onClear={clearPenalties}>
+              {renderCounters([
+                { field: "totalPenalties", label: "Total penalties" },
+                { field: "teePenalties", label: "Off the tee" },
+                { field: "approachPenalties", label: "On approach" },
+              ])}
+            </StatCard>
+          )}
 
           {/* Save Button */}
-          <button
-            onClick={handleSaveClick}
-            disabled={!isRequiredFilled || isSaving}
-            className="w-full py-4 rounded-xl text-lg font-semibold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg mb-6"
-            style={{ backgroundColor: '#FFA500' }}
-          >
-            {isSaving ? (
-              <>
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save className="w-5 h-5" />
-                Save Round
-              </>
-            )}
-          </button>
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={handleSaveClick}
+              disabled={!isRequiredFilled || isSaving}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#014421] py-4 text-base font-bold text-white shadow-sm transition hover:bg-[#01361a] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isSaving ? (
+                <>
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-5 w-5" />
+                  Save round
+                </>
+              )}
+            </button>
+            {missingToSave && !isSaving ? (
+              <p className="mt-2 text-center text-xs text-stone-500">Add your {missingToSave} to save.</p>
+            ) : null}
+          </div>
         </div>
         </div>
       </div>

@@ -120,7 +120,8 @@ function HallOfFameLeaderboardInner(
   ref: React.ForwardedRef<HTMLDivElement>,
 ) {
   const showCompact = compact && !expanded;
-  const { communityRounds, drills, drillSessions, practiceSessions, practiceLogs } = useStats();
+  const { communityRounds, drills, drillSessions, roundXpAwards, weeklyGoalXpAwards, practiceSessions, practiceLogs } =
+    useStats();
   const { user } = useAuth();
 
   const practiceLogsIdentity = useMemo(() => {
@@ -315,6 +316,9 @@ function HallOfFameLeaderboardInner(
           drills,
           practiceLogs || [],
           drillSessions,
+          libraryCompletions,
+          roundXpAwards,
+          weeklyGoalXpAwards,
         );
       }
       return { top3: [], all: [], userRank: 0, userValue: 0 };
@@ -356,6 +360,8 @@ function HallOfFameLeaderboardInner(
     practiceLogs,
     libraryCompletions,
     drillSessions,
+    roundXpAwards,
+    weeklyGoalXpAwards,
   ]);
 
   return (
@@ -453,6 +459,9 @@ function HallOfFameLeaderboardInner(
                       drills || [],
                       practiceLogs || [],
                       drillSessions,
+                      libraryCompletions,
+                      roundXpAwards,
+                      weeklyGoalXpAwards,
                     )
                   : currentLeaderboard;
 

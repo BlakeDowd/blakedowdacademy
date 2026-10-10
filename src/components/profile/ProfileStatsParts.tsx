@@ -1,6 +1,6 @@
 "use client";
 
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 
 /** "50.0" → "50", "70.25" → "70.3". */
@@ -10,7 +10,6 @@ export function fmtStat(n: number, decimals = 1): string {
 
 export function StatsCard({
   id,
-  icon: Icon,
   title,
   subtitle,
   open,
@@ -18,7 +17,6 @@ export function StatsCard({
   children,
 }: {
   id?: string;
-  icon: ComponentType<{ className?: string }>;
   title: string;
   subtitle?: string;
   open: boolean;
@@ -26,26 +24,23 @@ export function StatsCard({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="min-w-0 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
+    <section id={id} className="min-w-0 rounded-2xl border border-stone-200 bg-white px-4 py-3.5 shadow-sm sm:px-5">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
         className="flex w-full items-center gap-3 text-left"
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#014421]/10 text-[#014421]">
-          <Icon className="h-4 w-4" aria-hidden />
-        </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-base font-bold text-stone-900">{title}</span>
-          {subtitle && <span className="block text-xs text-stone-500">{subtitle}</span>}
+          <span className="block text-xs font-bold uppercase tracking-[0.08em] text-[#014421]">{title}</span>
+          {subtitle && <span className="mt-0.5 block text-xs text-stone-500">{subtitle}</span>}
         </span>
         <ChevronDown
-          className={`h-5 w-5 shrink-0 text-stone-400 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`h-4 w-4 shrink-0 text-stone-400 transition-transform ${open ? "rotate-180" : ""}`}
           aria-hidden
         />
       </button>
-      {open && <div className="mt-4">{children}</div>}
+      {open && <div className="mt-3">{children}</div>}
     </section>
   );
 }
@@ -91,23 +86,7 @@ export function targetStatus(value: number, goal: number, lowerIsBetter: boolean
   return { noData: false, met, text: lowerIsBetter ? `${diff} over` : `${diff} to go` };
 }
 
-function StatusPill({ status }: { status: TargetStatus }) {
-  return (
-    <span
-      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-        status.noData
-          ? "bg-stone-100 text-stone-400"
-          : status.met
-            ? "bg-emerald-50 text-emerald-700"
-            : "bg-orange-50 text-orange-700"
-      }`}
-    >
-      {status.text}
-    </span>
-  );
-}
-
-/** One stat with a bar showing where it sits against the target marker. */
+/** One stat as a summary row: label and target on the left, value on the right. */
 export function TargetStatRow({
   label,
   hint,
@@ -115,49 +94,53 @@ export function TargetStatRow({
   goal,
   unit = "",
   lowerIsBetter = false,
+  display,
+  sub,
+  dot,
 }: {
   label: string;
   hint?: string;
   value: number;
-  goal: number;
+  goal?: number;
   unit?: "" | "%";
   lowerIsBetter?: boolean;
+  /** Shown instead of the formatted value, e.g. "7.1 / 14". */
+  display?: string;
+  sub?: string;
+  dot?: string;
 }) {
-  const status = targetStatus(value, goal, lowerIsBetter, unit);
-  const scaleMax = unit === "%" ? 100 : Math.max(value, goal, 0.1) * 1.3;
-  const fillPct = status.noData ? 0 : Math.min(100, (Math.max(0, value) / scaleMax) * 100);
-  const goalPct = Math.min(100, (Math.max(0, goal) / scaleMax) * 100);
+  const noData = !Number.isFinite(value) || value < 0;
+  const status = goal === undefined ? null : targetStatus(value, goal, lowerIsBetter, unit);
 
   return (
-    <div className="py-3 first:pt-0 last:pb-0">
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="min-w-0 text-sm font-medium text-stone-800">
-          {label}
-          {hint && <span className="ml-1 text-xs font-normal text-stone-400">{hint}</span>}
+    <div className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+      <div className="min-w-0">
+        <p className="flex items-center gap-2 text-[15px] font-medium text-stone-800">
+          {dot && <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: dot }} aria-hidden />}
+          <span className="min-w-0">
+            {label}
+            {hint && <span className="ml-1 text-xs font-normal text-stone-400">{hint}</span>}
+          </span>
         </p>
-        <p className="shrink-0 text-xl font-bold tabular-nums text-stone-900">
-          {status.noData ? "–" : `${fmtStat(value)}${unit}`}
-        </p>
+        {status && goal !== undefined ? (
+          <p className="mt-0.5 text-[11px] text-stone-500">
+            Target {fmtStat(goal)}
+            {unit}
+            {lowerIsBetter && goal > 0 ? " or less" : ""}
+            {!status.noData && (
+              <span className={`font-semibold ${status.met ? "text-emerald-700" : "text-orange-600"}`}>
+                {" "}
+                · {status.text}
+              </span>
+            )}
+          </p>
+        ) : sub ? (
+          <p className="mt-0.5 text-[11px] text-stone-500">{sub}</p>
+        ) : null}
       </div>
-      <div className="relative mt-2 h-2 rounded-full bg-stone-100">
-        <div
-          className={`h-full rounded-full transition-all ${status.met ? "bg-[#014421]" : "bg-[#FFA500]"}`}
-          style={{ width: `${fillPct}%` }}
-        />
-        <span
-          className="absolute -top-1 h-4 w-0.5 rounded-full bg-stone-700"
-          style={{ left: `calc(${goalPct}% - 1px)` }}
-          aria-hidden
-        />
-      </div>
-      <div className="mt-1.5 flex items-center justify-between gap-3">
-        <span className="text-[11px] text-stone-500">
-          Target {fmtStat(goal)}
-          {unit}
-          {lowerIsBetter && goal > 0 ? " or less" : ""}
-        </span>
-        <StatusPill status={status} />
-      </div>
+      <p className={`shrink-0 text-lg font-semibold tabular-nums ${noData ? "text-stone-300" : "text-stone-900"}`}>
+        {noData ? "–" : (display ?? `${fmtStat(value)}${unit}`)}
+      </p>
     </div>
   );
 }

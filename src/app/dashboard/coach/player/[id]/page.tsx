@@ -5,23 +5,15 @@ import { useRouter, useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
+import { ArrowLeft, ArrowUpRight, ArrowDownRight, Download, Loader2 } from "lucide-react";
 import {
-  ArrowLeft,
-  Target,
-  ArrowUpRight,
-  ArrowDownRight,
-  Minus,
-  FileText,
-  BarChart3,
-  Percent,
-  Navigation2,
-  Shuffle,
-  CircleDot,
-  Bird,
-  AlertTriangle,
-  ArrowUpDown,
-  Table2,
-} from "lucide-react";
+  initials,
+  ReportEmpty,
+  ReportSection,
+  ReportSubLabel,
+  ReportTile,
+} from "@/components/coach/CoachReportParts";
+import { Segmented } from "@/components/profile/ProfileStatsParts";
 import { getBenchmarkGoals } from "@/lib/benchmarkGoals";
 import type { PlayerGoalRow } from "@/types/playerGoals";
 import type { PracticeLogAccountabilityRow } from "@/types/playerGoals";
@@ -50,6 +42,7 @@ import {
   computeStrokeOpportunityTop3,
   sortMetricMatrix,
 } from "@/lib/deepDiveRoundMetrics";
+import { fairwaysPossibleFor, onlyEighteenHoleRounds, roundTracksStat } from "@/lib/roundStatTracking";
 
 class CoachDeepDiveErrorBoundary extends Component<
   { children: ReactNode },
@@ -84,15 +77,30 @@ class CoachDeepDiveErrorBoundary extends Component<
   }
 }
 
-function getDefaultRange() {
+function rangeForDays(days: number) {
   const end = new Date();
   const start = new Date();
-  start.setDate(start.getDate() - 30);
+  start.setDate(start.getDate() - days);
   return {
     start: start.toISOString().split("T")[0],
     end: end.toISOString().split("T")[0],
   };
 }
+
+function getDefaultRange() {
+  return rangeForDays(30);
+}
+
+type RangePreset = "30" | "90" | "365" | "custom";
+
+const RANGE_PRESETS: readonly { id: RangePreset; label: string; days: number }[] = [
+  { id: "30", label: "30 days", days: 30 },
+  { id: "90", label: "90 days", days: 90 },
+  { id: "365", label: "1 year", days: 365 },
+];
+
+const DATE_INPUT =
+  "mt-1 block w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm font-medium text-stone-900 outline-none focus:border-[#014421] focus:bg-white";
 
 export default function PlayerDeepDivePage() {
   const router = useRouter();
@@ -123,8 +131,6 @@ export default function PlayerDeepDivePage() {
   /** false = strongest vs benchmark first; true = largest benchmark gaps first */
   const [metricMatrixWorstFirst, setMetricMatrixWorstFirst] = useState(false);
   /** Advanced approach matrix aggregates: match 9- vs 18-hole rounds */
-  const [deepDiveApproachHoleFilter, setDeepDiveApproachHoleFilter] = useState<"9" | "18">("18");
-
   /** After first successful profile load for this player, date-range refetches skip the full-screen loader. */
   const coachDeepDiveBlockingLoadDoneRef = useRef(false);
 
@@ -356,7 +362,7 @@ export default function PlayerDeepDivePage() {
         .lte("date", endDateStr)
         .order("date", { ascending: true });
 
-      setRoundsData(roundsRows || []);
+      setRoundsData(onlyEighteenHoleRounds(roundsRows || []));
 
       let handicapHistInRange: any[] = [];
       const hcpHistRes = await supabase
@@ -403,11 +409,17 @@ export default function PlayerDeepDivePage() {
         (roundsRows as any[]).forEach((r) => {
           const date = r.date || (r.created_at || "").split("T")[0];
           if (!date) return;
-          const firTotal = (r.fir_left || 0) + (r.fir_hit || 0) + (r.fir_right || 0);
+          if (!roundTracksStat(r, "fairways") && !roundTracksStat(r, "gir")) return;
+          const firTotal = fairwaysPossibleFor(
+            r.fir_hit || 0,
+            r.fir_left || 0,
+            r.fir_right || 0,
+            r.fairways_possible,
+          );
           const firPct = firTotal > 0 ? ((r.fir_hit || 0) / firTotal) * 100 : 0;
-          const goingForGreen = r.going_for_green ?? r.goingForGreen ?? 18;
+          const holes = r.holes || 18;
           const totalGir = r.total_gir ?? r.totalGir ?? 0;
-          const girPct = goingForGreen > 0 ? (totalGir / goingForGreen) * 100 : 0;
+          const girPct = (totalGir / holes) * 100;
           skillByDate[date] = {
             date,
             firPct: Math.round(firPct * 10) / 10,
@@ -486,6 +498,14 @@ export default function PlayerDeepDivePage() {
   );
 
   const strokeOpportunityRows = useMemo(() => computeStrokeOpportunityTop3(metricMatrix), [metricMatrix]);
+
+  const hasDirectionalShots = useMemo(
+    () =>
+      roundsData.some(
+        (r) => Array.isArray(r.approach_directional_shots) && r.approach_directional_shots.length > 0,
+      ),
+    [roundsData],
+  );
 
   const sortedMetricMatrix = useMemo(
     () => sortMetricMatrix(metricMatrix, metricMatrixWorstFirst),
@@ -566,101 +586,119 @@ export default function PlayerDeepDivePage() {
   // Role check removed - app stays on page even if user isn't a coach
   if (!role) console.log("REDIRECTION BLOCKED");
 
-  // Show database error instead of redirecting (e.g. RLS denial)
   if (error) {
     return (
-      <div className="p-20 text-white bg-red-600 min-h-screen flex flex-col items-center justify-center text-center">
-        DATABASE ERROR: {error}
+      <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center gap-4 p-6 text-center">
+        <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Couldn&apos;t load this player: {error}
+        </p>
+        <Link href="/dashboard/coach" className="text-sm font-semibold text-[#014421] hover:underline">
+          Back to players
+        </Link>
       </div>
     );
   }
 
-  if (!user || !playerName || isLoading) {
+  if (!user || !playerName || isLoading || !playerId || playerId === "undefined") {
     return (
-      <div className="p-20 h-screen flex flex-col items-center justify-center text-center text-orange-600 bg-white">
-        Loading Player Stats...
-      </div>
-    );
-  }
-
-  // Defensive: ensure we have minimal data before rendering full UI
-  if (!playerId || playerId === "undefined") {
-    return (
-      <div className="p-20 h-screen flex flex-col items-center justify-center text-center text-orange-600 bg-white">
-        Loading Player Stats...
+      <div className="flex min-h-[60vh] items-center justify-center gap-2 text-sm text-stone-500">
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+        Loading player report…
       </div>
     );
   }
 
   const downloadPlayerReport = () => window.print();
+  const name = playerName || "Player";
+  const activePreset: RangePreset =
+    RANGE_PRESETS.find((p) => {
+      const r = rangeForDays(p.days);
+      return r.start === dateRange.start && r.end === dateRange.end;
+    })?.id ?? "custom";
+  const fmt = (v: number, unit = "") => (v < 0 ? null : `${v}${unit}`);
 
   return (
     <CoachDeepDiveErrorBoundary>
-    <div className="coach-deepdive-root w-full max-w-3xl mx-auto min-w-0 flex flex-col bg-[#f4f6f4] overflow-x-hidden">
-      {/* Header */}
-      <header className="coach-deepdive-no-print shrink-0 w-full bg-[#014421] text-white pt-3 pb-4 px-4">
-        <div className="flex items-start justify-between gap-2 mb-2">
+    <div className="coach-deepdive-root mx-auto flex w-full min-w-0 max-w-3xl flex-col overflow-x-hidden bg-stone-50">
+      <header className="coach-deepdive-no-print shrink-0 px-4 pt-4">
+        <div className="flex items-center justify-between gap-2">
           <Link
             href="/dashboard/coach"
-            className="inline-flex items-center text-green-100 hover:text-white transition-colors text-sm min-w-0 truncate"
+            className="inline-flex items-center gap-1.5 py-1.5 pr-2 text-sm font-semibold text-stone-600 hover:text-stone-900"
           >
-            <ArrowLeft className="w-4 h-4 mr-2 shrink-0" />
-            Back to Coach Dashboard
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Players
           </Link>
           <button
             type="button"
             onClick={downloadPlayerReport}
-            className="shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-white/50 bg-white/10 text-white hover:bg-white/20 transition-colors text-xs font-semibold"
-            aria-label="Generate Report"
+            className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 shadow-sm hover:bg-stone-50"
           >
-            <FileText className="w-4 h-4" />
-            Generate Report
+            <Download className="h-3.5 w-3.5" aria-hidden />
+            Save PDF
           </button>
         </div>
-        <h1 className="text-xl font-bold tracking-tight truncate min-w-0 mb-1">
-          {playerName || "Player"}
-        </h1>
-        <p className="text-xs text-white/80 font-medium">Coach deep dive · Player profile & performance</p>
-        <div className="mt-2 w-fit max-w-full rounded-xl bg-white px-3 py-1.5 empty:hidden">
-          <PlayerEmail key={playerId} playerId={playerId} playerName={playerName || "Player"} />
+
+        <div className="mt-3 flex items-start gap-3">
+          <span
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#014421] text-base font-bold text-white"
+            aria-hidden
+          >
+            {initials(name)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-2xl font-bold tracking-tight text-stone-900">{name}</h1>
+            <PlayerEmail key={playerId} playerId={playerId} playerName={name} />
+          </div>
         </div>
-        <TestPlayerButton playerId={playerId} playerName={playerName || "Player"} className="mt-3" />
-        <div className="flex flex-col gap-3 w-full max-w-sm mt-3">
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <label className="flex items-center gap-1.5 text-white/90">
-              <span>From</span>
+        <TestPlayerButton playerId={playerId} playerName={name} className="mt-3 w-full" />
+
+        <div className="mt-3 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-bold uppercase tracking-[0.08em] text-[#014421]">Date range</span>
+            <Segmented
+              label="Date range"
+              value={activePreset}
+              onChange={(id) => {
+                const preset = RANGE_PRESETS.find((p) => p.id === id);
+                if (preset) setDateRange(rangeForDays(preset.days));
+              }}
+              options={RANGE_PRESETS}
+            />
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <label className="text-[11px] font-medium text-stone-500">
+              From
               <input
                 type="date"
                 value={dateRange.start}
                 max={dateRange.end}
                 onChange={(e) => setDateRange((prev) => ({ ...prev, start: e.target.value }))}
-                className="px-2 py-1 rounded bg-white/20 text-white border border-white/30 focus:outline-none focus:ring-1 focus:ring-white/50 [color-scheme:dark] [&::-webkit-datetime-edit]:text-white [&::-webkit-datetime-edit-fields-wrapper]:text-white [&::-webkit-datetime-edit-text]:text-white/80 [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:invert"
+                className={DATE_INPUT}
               />
             </label>
-            <label className="flex items-center gap-1.5 text-white/90">
-              <span>To</span>
+            <label className="text-[11px] font-medium text-stone-500">
+              To
               <input
                 type="date"
                 value={dateRange.end}
                 min={dateRange.start}
                 onChange={(e) => setDateRange((prev) => ({ ...prev, end: e.target.value }))}
-                className="px-2 py-1 rounded bg-white/20 text-white border border-white/30 focus:outline-none focus:ring-1 focus:ring-white/50 [color-scheme:dark] [&::-webkit-datetime-edit]:text-white [&::-webkit-datetime-edit-fields-wrapper]:text-white [&::-webkit-datetime-edit-text]:text-white/80 [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:invert"
+                className={DATE_INPUT}
               />
             </label>
           </div>
         </div>
       </header>
 
-      <div id="coach-deepdive-scroll" className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32">
-        <div className="w-full min-w-0" id="coach-deepdive-pdf-content">
-          {/* Print-only header */}
-          <div className="hidden print:block text-sm font-bold text-gray-900 mb-4 pb-2 border-b border-gray-200">
-            Player Report — {playerName || "Player"} ({dateRange.start} to {dateRange.end})
+      <div id="coach-deepdive-scroll" className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-32 pt-3">
+        <div className="w-full min-w-0 space-y-3" id="coach-deepdive-pdf-content">
+          <div className="hidden border-b border-gray-200 pb-2 text-sm font-bold text-gray-900 print:block">
+            Player Report — {name} ({dateRange.start} to {dateRange.end})
           </div>
 
-        <div className="mb-6">
           <CoachDeepDiveProfilePanels
-            playerName={playerName || "Player"}
+            playerName={name}
             playerHandicap={playerHandicap}
             totalXp={playerTotalXp}
             playerGoal={playerGoal}
@@ -672,310 +710,171 @@ export default function PlayerDeepDivePage() {
             dateRangeLabel={dateRangeLabel}
             unlockedTrophies={playerUnlockedTrophies}
           />
-        </div>
 
-        {error && (
-          <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6">
-            {error}
-          </div>
-        )}
-
-        {/* Benchmark handicap (coaching slider) */}
-        <div className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#014421]/10 text-[#014421]">
-              <Target className="h-4 w-4" aria-hidden />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold tracking-tight text-stone-900">Benchmark handicap</h3>
-              <p className="text-xs text-stone-500">Used for on-page targets vs tour benchmarks</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4 min-w-0">
-            <input
-              type="range"
-              min="-5"
-              max="54"
-              step={1}
-              value={playerHandicap}
-              onChange={(e) => {
-                const v = parseInt(e.target.value, 10);
-                setPlayerHandicap(Number.isFinite(v) ? Math.min(54, Math.max(-5, v)) : 54);
-              }}
-              className="flex-1 min-w-0 h-2 bg-stone-200 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#014421] [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:ring-2 [&::-webkit-slider-thumb]:ring-white"
-              style={{
-                background: `linear-gradient(to right, #014421 0%, #014421 ${((playerHandicap + 5) / 59) * 100}%, #e7e5e4 ${((playerHandicap + 5) / 59) * 100}%, #e7e5e4 100%)`,
-              }}
-            />
-            <div className="min-w-[3.5rem] text-right text-lg font-semibold tabular-nums text-stone-900">
-              {playerHandicap >= 0 ? `${playerHandicap}` : `+${Math.abs(playerHandicap)}`}
-            </div>
-          </div>
-        </div>
-
-        {user?.id && (
-          <div className="mb-6">
+          {user?.id && (
             <GamePlanCard
               key={`plan-${playerId}`}
               studentId={playerId}
-              studentName={playerName || "Player"}
+              studentName={name}
               viewerId={user.id}
               viewerIsCoach
             />
-          </div>
-        )}
+          )}
 
-        {/* Core scoring metrics (last 5 rounds aggregate) */}
-        {bigSix && (
-          <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
-            <div className="mb-5 flex items-center gap-3 border-b border-stone-100 pb-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
-                <BarChart3 className="h-4 w-4" aria-hidden />
-              </div>
-              <div>
-                <h3 className="text-base font-semibold tracking-tight text-stone-900">Core scoring metrics</h3>
-                <p className="text-xs text-stone-500">Recent form · rolling view in selected date range</p>
-              </div>
-            </div>
-            <div
-              id="coach-deepdive-big-six-grid"
-              className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4"
-            >
-              {(
-                [
-                  {
-                    label: "Scoring average",
-                    statValue: bigSix.scoringAvg,
-                    unit: "",
-                    Icon: BarChart3,
-                  },
-                  { label: "GIR", statValue: bigSix.girPct, unit: "%", Icon: Percent },
-                  { label: "Fairways", statValue: bigSix.firPct, unit: "%", Icon: Navigation2 },
-                  { label: "Scrambling", statValue: bigSix.scramblePct, unit: "%", Icon: Shuffle },
-                  { label: "Putts / 18", statValue: bigSix.puttsPer18, unit: "", Icon: CircleDot },
-                  { label: "Birdies / 18", statValue: bigSix.birdiesPer18, unit: "", Icon: Bird },
-                ] as const
-              ).map((stat, i) => {
-                const val = stat.statValue ?? 0;
-                const Icon = stat.Icon;
-                return (
-                  <div
-                    key={i}
-                    className="coach-deepdive-stat-card group rounded-2xl border border-stone-100 bg-stone-50/40 p-4 transition-colors hover:border-stone-200 hover:bg-white"
-                  >
-                    <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-white text-stone-600 shadow-sm ring-1 ring-stone-100 group-hover:text-[#014421]">
-                      <Icon className="h-4 w-4" aria-hidden />
+          <ReportSection title="Scoring" subtitle="Averages over the rounds in this range">
+            {bigSix ? (
+              <>
+                <div id="coach-deepdive-big-six-grid" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <ReportTile label="Scoring average" value={fmt(bigSix.scoringAvg)} />
+                  <ReportTile label="Greens in regulation" value={fmt(bigSix.girPct, "%")} />
+                  <ReportTile label="Fairways hit" value={fmt(bigSix.firPct, "%")} />
+                  <ReportTile label="Scrambling" value={fmt(bigSix.scramblePct, "%")} />
+                  <ReportTile label="Putts per round" value={fmt(bigSix.puttsPer18)} />
+                  <ReportTile label="Birdies per round" value={fmt(bigSix.birdiesPer18)} />
+                </div>
+                {penaltyStats && (
+                  <>
+                    <ReportSubLabel>Shots leaking · per round</ReportSubLabel>
+                    <div className="grid grid-cols-3 gap-2">
+                      <ReportTile label="Penalties" value={fmt(penaltyStats.penaltiesPerRound)} />
+                      <ReportTile label="3-putts" value={fmt(penaltyStats.threePuttsPerRound)} />
+                      <ReportTile label="Double+" value={fmt(penaltyStats.doublesPerRound)} />
                     </div>
-                    <p className="text-[11px] font-medium leading-tight text-stone-500">{stat.label}</p>
-                    <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-stone-900">
-                      {val}
-                      {stat.unit}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
+                  </>
+                )}
+              </>
+            ) : (
+              <ReportEmpty>No rounds logged in this range.</ReportEmpty>
+            )}
+          </ReportSection>
 
-        {/* Scoring leaks (penalties & errors per round) */}
-        {penaltyStats && (
-          <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
-            <div className="mb-5 flex items-center gap-3 border-b border-stone-100 pb-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-800">
-                <AlertTriangle className="h-4 w-4" aria-hidden />
-              </div>
-              <div>
-                <h3 className="text-base font-semibold tracking-tight text-stone-900">Scoring leaks</h3>
-                <p className="text-xs text-stone-500">Penalties, three-putts, and doubles or worse · per round</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 divide-x divide-stone-100 rounded-2xl border border-stone-100 bg-stone-50/50">
-              {(
-                [
-                  { label: "Penalties", value: penaltyStats.penaltiesPerRound },
-                  { label: "3-putts", value: penaltyStats.threePuttsPerRound },
-                  { label: "Double+", value: penaltyStats.doublesPerRound },
-                ] as const
-              ).map((row) => (
-                <div key={row.label} className="coach-deepdive-stat-card px-3 py-4 text-center sm:px-4">
-                  <p className="text-[11px] font-medium text-stone-500">{row.label}</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums text-stone-900">{row.value}</p>
-                  <p className="mt-0.5 text-[10px] text-stone-400">per round</p>
-                </div>
-              ))}
-            </div>
-            <p className="mt-4 border-l-2 border-amber-200 pl-3 text-xs leading-relaxed text-stone-600">
-              Tightening these three areas is often the fastest path to lower scores without changing swing technique.
-            </p>
-          </section>
-        )}
-
-        {strokeOpportunityRows.length > 0 && (
-          <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 mb-6">
-            <h2 className="text-lg font-black text-gray-900 mb-5 flex items-center gap-2 tracking-tighter">
-              <span className="w-2 h-6 bg-[#FF9800] rounded-full" />
-              Top 3 Stroke Opportunities
-            </h2>
-            <div className="space-y-3">
-              {strokeOpportunityRows.map((row: any, idx: number) => (
-                <div key={`${row.name}-${idx}`} className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-bold text-gray-900">{row.name}</div>
-                      <div className="text-xs text-gray-500">{row.category} focus</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-base font-black text-[#014421]">-{row.estimatedGain.toFixed(2)}</div>
-                      <div className="text-[10px] text-gray-500 uppercase tracking-wide">strokes / round</div>
-                    </div>
-                  </div>
-                  <div className="mt-2 text-xs text-gray-600">
-                    Current: {row.current} | Goal: {row.goal} ({row.unit})
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Full metric matrix — ranked vs benchmark; toggle sort */}
-        {metricMatrix.length > 0 && (
-          <section className="mb-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6">
-            <div className="mb-5 flex flex-col gap-4 border-b border-stone-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#014421]/10 text-[#014421]">
-                  <Table2 className="h-4 w-4" aria-hidden />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold tracking-tight text-stone-900">Full metric matrix</h3>
-                  <p className="text-xs text-stone-500">
-                    {metricMatrixWorstFirst
-                      ? "Largest benchmark gaps first — flip to review strengths."
-                      : "Strongest vs benchmark first — flip to prioritize improvement opportunities."}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setMetricMatrixWorstFirst((v) => !v)}
-                className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-800 shadow-sm transition-colors hover:border-stone-300 hover:bg-white sm:self-auto"
-              >
-                <ArrowUpDown className="h-3.5 w-3.5 text-stone-500" aria-hidden />
-                {metricMatrixWorstFirst ? "Show strongest first" : "Show largest gaps first"}
-              </button>
-            </div>
-            <div className="divide-y divide-stone-100">
-              {sortedMetricMatrix.map((stat: any, i) => {
-                const val = (stat as any)?.statValue ?? (stat as any)?.value ?? (stat as any)?.current ?? 0;
-                const goalVal = (stat as any)?.goal ?? 0;
-                const gapVal = (stat as any)?.gap ?? 0;
-                const isMeetingGoal = (stat as any)?.isLowerBetter ? val <= goalVal : val >= goalVal;
-                const isPositive = gapVal > 0;
-                const name = String((stat as any)?.name ?? "");
-
-                return (
-                  <div
-                    key={`${name}-${i}`}
-                    className="coach-deepdive-stat-card flex items-center justify-between gap-3 py-3.5 first:pt-0 transition-colors hover:bg-stone-50/80 sm:gap-4"
-                  >
+          {strokeOpportunityRows.length > 0 && (
+            <ReportSection title="Biggest stroke savers" subtitle="Where reaching the target saves the most shots">
+              <ol className="divide-y divide-stone-100">
+                {strokeOpportunityRows.map((row, idx) => (
+                  <li key={`${row.name}-${idx}`} className="coach-deepdive-stat-card flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#014421]/10 text-xs font-bold text-[#014421]">
+                      {idx + 1}
+                    </span>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-stone-900">
-                        <span className="truncate">{name}</span>
-                        {(stat as any)?.trend === "up" && (
-                          <ArrowUpRight
-                            className={`h-3.5 w-3.5 shrink-0 ${(stat as any)?.isLowerBetter ? "text-rose-500" : "text-emerald-600"}`}
-                            aria-hidden
-                          />
-                        )}
-                        {(stat as any)?.trend === "down" && (
-                          <ArrowDownRight
-                            className={`h-3.5 w-3.5 shrink-0 ${(stat as any)?.isLowerBetter ? "text-emerald-600" : "text-rose-500"}`}
-                            aria-hidden
-                          />
-                        )}
-                        {(stat as any)?.trend === "neutral" && (
-                          <Minus className="h-3.5 w-3.5 shrink-0 text-stone-300" aria-hidden />
-                        )}
-                      </div>
-                      <p className="mt-0.5 text-[11px] font-medium text-stone-500">
-                        Target {goalVal} · Gap {isPositive ? "+" : ""}
-                        {gapVal}
+                      <p className="truncate text-sm font-medium text-stone-800">{row.name}</p>
+                      <p className="mt-0.5 text-[11px] text-stone-500">
+                        Now {row.current} · Target {row.goal} {row.unit}
                       </p>
                     </div>
-                    <div className="flex shrink-0 items-center gap-3 sm:gap-4">
-                      <span className="text-lg font-semibold tabular-nums text-stone-900">{val}</span>
-                      <span
-                        className={`min-w-[5.25rem] rounded-full px-2.5 py-1 text-center text-[10px] font-semibold uppercase tracking-wide ${
-                          isMeetingGoal
-                            ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100"
-                            : "bg-rose-50 text-rose-800 ring-1 ring-rose-100"
-                        }`}
-                      >
-                        {isMeetingGoal ? "On target" : `${isPositive ? "+" : ""}${gapVal}`}
-                      </span>
+                    <div className="shrink-0 text-right">
+                      <p className="text-base font-semibold tabular-nums text-[#014421]">−{row.estimatedGain.toFixed(2)}</p>
+                      <p className="text-[10px] text-stone-400">shots / round</p>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
+                  </li>
+                ))}
+              </ol>
+            </ReportSection>
+          )}
 
-        <PracticeVsGoalsSection
-          practiceRows={practiceRowsForGoals}
-          playerGoalRow={playerGoal}
-          playerGoalsLoaded={!isLoading}
-          variant="coach"
-          typeMatch="coach"
-        />
-
-        <CoachDeepDiveRoundTrendCharts
-          grossPoints={roundTrendChartPoints.gross}
-          handicapPoints={roundTrendChartPoints.handicap}
-          rangeCaption={`Same date range as this report · ${dateRangeLabel}`}
-        />
-
-        <section
-          id="coach-deepdive-advanced-approach"
-          className="mb-8 mt-2 print:mt-0 print:break-inside-avoid print:shadow-none"
-        >
-          <AdvancedApproachStatsPanel
-            rounds={roundsData}
-            holeFilter={deepDiveApproachHoleFilter}
-            className="border-stone-200 shadow-md print:border-stone-400"
-            description={`Rounds in this report (${dateRangeLabel}). Only ${deepDiveApproachHoleFilter}-hole rounds with directional logs are included.`}
-            headerEnd={
-              <div className="flex gap-0.5 rounded-xl border border-stone-200 bg-stone-50/90 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setDeepDiveApproachHoleFilter("9")}
-                  className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase transition-colors ${
-                    deepDiveApproachHoleFilter === "9"
-                      ? "bg-[#014421] text-white shadow-sm"
-                      : "text-stone-600 hover:bg-white"
-                  }`}
-                >
-                  9
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeepDiveApproachHoleFilter("18")}
-                  className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase transition-colors ${
-                    deepDiveApproachHoleFilter === "18"
-                      ? "bg-[#014421] text-white shadow-sm"
-                      : "text-stone-600 hover:bg-white"
-                  }`}
-                >
-                  18
-                </button>
+          {metricMatrix.length > 0 && (
+            <ReportSection
+              title="Every stat vs target"
+              subtitle={`Targets for a ${playerHandicap >= 0 ? playerHandicap : `+${Math.abs(playerHandicap)}`} handicap`}
+              aside={
+                <Segmented
+                  label="Sort stats"
+                  value={metricMatrixWorstFirst ? "gaps" : "strengths"}
+                  onChange={(id) => setMetricMatrixWorstFirst(id === "gaps")}
+                  options={[
+                    { id: "strengths", label: "Strengths" },
+                    { id: "gaps", label: "Gaps" },
+                  ]}
+                />
+              }
+            >
+              <div className="coach-deepdive-no-print mb-3 flex items-center gap-3 rounded-xl bg-stone-50 px-3 py-2.5">
+                <span className="shrink-0 text-[11px] font-medium text-stone-500">Compare to</span>
+                <input
+                  type="range"
+                  min="-5"
+                  max="54"
+                  step={1}
+                  value={playerHandicap}
+                  aria-label="Benchmark handicap"
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    setPlayerHandicap(Number.isFinite(v) ? Math.min(54, Math.max(-5, v)) : 54);
+                  }}
+                  className="h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#014421] [&::-webkit-slider-thumb]:shadow [&::-webkit-slider-thumb]:ring-2 [&::-webkit-slider-thumb]:ring-white"
+                  style={{
+                    background: `linear-gradient(to right, #014421 0%, #014421 ${((playerHandicap + 5) / 59) * 100}%, #e7e5e4 ${((playerHandicap + 5) / 59) * 100}%, #e7e5e4 100%)`,
+                  }}
+                />
+                <span className="w-8 shrink-0 text-right text-sm font-semibold tabular-nums text-stone-900">
+                  {playerHandicap >= 0 ? playerHandicap : `+${Math.abs(playerHandicap)}`}
+                </span>
               </div>
-            }
-          />
-        </section>
+              <div className="divide-y divide-stone-100">
+                {sortedMetricMatrix.map((stat, i) => {
+                  const met = stat.isLowerBetter ? stat.current <= stat.goal : stat.current >= stat.goal;
+                  const TrendIcon = stat.trend === "up" ? ArrowUpRight : stat.trend === "down" ? ArrowDownRight : null;
+                  const trendGood = stat.trend === "up" ? !stat.isLowerBetter : stat.isLowerBetter;
+                  return (
+                    <div
+                      key={`${stat.name}-${i}`}
+                      className="coach-deepdive-stat-card flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+                    >
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-1.5 text-sm font-medium text-stone-800">
+                          <span className="truncate">{stat.name}</span>
+                          {TrendIcon && (
+                            <TrendIcon
+                              className={`h-3.5 w-3.5 shrink-0 ${trendGood ? "text-emerald-600" : "text-rose-500"}`}
+                              aria-label={trendGood ? "Improving" : "Getting worse"}
+                            />
+                          )}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-stone-500">
+                          Target {stat.goal}
+                          <span className={`font-semibold ${met ? "text-emerald-700" : "text-orange-600"}`}>
+                            {" "}
+                            · {met ? "On target" : `${stat.gap > 0 ? "+" : ""}${stat.gap}`}
+                          </span>
+                        </p>
+                      </div>
+                      <p className="shrink-0 text-lg font-semibold tabular-nums text-stone-900">{stat.current}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </ReportSection>
+          )}
 
-          {/* Print-only footer */}
-          <div className="hidden print:block mt-8 pt-4 border-t border-gray-200 text-center text-xs text-gray-500">
+          <PracticeVsGoalsSection
+            practiceRows={practiceRowsForGoals}
+            playerGoalRow={playerGoal}
+            playerGoalsLoaded={!isLoading}
+            variant="coach"
+            typeMatch="coach"
+          />
+
+          <CoachDeepDiveRoundTrendCharts
+            grossPoints={roundTrendChartPoints.gross}
+            handicapPoints={roundTrendChartPoints.handicap}
+            rangeCaption={dateRangeLabel}
+          />
+
+          {hasDirectionalShots && (
+            <ReportSection
+              id="coach-deepdive-advanced-approach"
+              title="Approach detail"
+              subtitle="Misses and greens from Add Directional Misses on their rounds"
+            >
+              <AdvancedApproachStatsPanel
+                rounds={roundsData}
+                showHeader={false}
+                className="border-0! p-0! shadow-none! sm:p-0!"
+              />
+            </ReportSection>
+          )}
+
+          <div className="mt-8 hidden border-t border-gray-200 pt-4 text-center text-xs text-gray-500 print:block">
             Blake Dowd Golf — blakedowdgolf.com
           </div>
         </div>

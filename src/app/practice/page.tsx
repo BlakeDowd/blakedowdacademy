@@ -12,6 +12,14 @@ import { GuidedPracticeSession, type GuidedSessionDrill } from "@/components/Gui
 import { WeekDayStrip } from "@/components/WeekDayStrip";
 import { NutritionPlannerPanel } from "@/components/NutritionPlannerPanel";
 import { getBenchmarkGoals } from "@/lib/benchmarkGoals";
+import {
+  fairwaysPossibleFor,
+  roundTracksStat,
+  roundsTrackingStat,
+  sandSaveAttempts,
+  upAndDownAttempts,
+  type RoundStatKey,
+} from "@/lib/roundStatTracking";
 import { trackScreen } from "@/lib/appUsage";
 import {
   fetchDrillsCatalogRows,
@@ -1489,24 +1497,32 @@ export default function PracticePage() {
     let totalUpAndDownOpps = 0;
     let totalPutts = 0;
 
-    rounds.forEach(round => {
-      const firShots = round.firLeft + round.firHit + round.firRight;
+    roundsTrackingStat(rounds, "fairways").forEach(round => {
+      const firShots = fairwaysPossibleFor(round.firHit, round.firLeft, round.firRight, round.fairwaysPossible);
       if (firShots > 0) {
         totalFIR += (round.firHit / firShots) * 100;
         totalFIRShots++;
       }
+    });
+    roundsTrackingStat(rounds, "gir").forEach(round => {
       totalGIR += round.totalGir;
       totalHoles += round.holes || 18;
+    });
+    roundsTrackingStat(rounds, "scrambling").forEach(round => {
       totalUpAndDown += round.upAndDownConversions;
-      totalUpAndDownOpps += round.upAndDownConversions + round.missed;
+      totalUpAndDownOpps += upAndDownAttempts(round.upAndDownConversions, round.missed, round.created_at ?? round.date);
+    });
+    const puttRounds = roundsTrackingStat(rounds, "putts");
+    puttRounds.forEach(round => {
       totalPutts += round.totalPutts;
     });
 
+    // null = the player doesn't track this stat, so it can't be ranked.
     const averages = {
-      gir: totalHoles > 0 ? (totalGIR / totalHoles) * 100 : 0,
-      fir: totalFIRShots > 0 ? totalFIR / totalFIRShots : 0,
-      upAndDown: totalUpAndDownOpps > 0 ? (totalUpAndDown / totalUpAndDownOpps) * 100 : 0,
-      putts: rounds.length > 0 ? totalPutts / rounds.length : 0,
+      gir: totalHoles > 0 ? (totalGIR / totalHoles) * 100 : null,
+      fir: totalFIRShots > 0 ? totalFIR / totalFIRShots : null,
+      upAndDown: totalUpAndDownOpps > 0 ? (totalUpAndDown / totalUpAndDownOpps) * 100 : null,
+      putts: puttRounds.length > 0 ? totalPutts / puttRounds.length : null,
     };
 
     const goals = {
@@ -1517,16 +1533,20 @@ export default function PracticePage() {
     };
 
     const gaps: { category: FacilityType; gap: number }[] = [
-      { category: 'Irons', gap: goals.gir - averages.gir },
-      { category: 'Driving', gap: goals.fir - averages.fir },
-      { category: 'Chipping', gap: goals.upAndDown - averages.upAndDown },
-      { category: 'Putting', gap: averages.putts - goals.putts },
+      { category: 'Irons', gap: averages.gir === null ? 0 : goals.gir - averages.gir },
+      { category: 'Driving', gap: averages.fir === null ? 0 : goals.fir - averages.fir },
+      { category: 'Chipping', gap: averages.upAndDown === null ? 0 : goals.upAndDown - averages.upAndDown },
+      { category: 'Putting', gap: averages.putts === null ? 0 : averages.putts - goals.putts },
     ];
     const ranked = [...gaps].sort((a, b) => b.gap - a.gap);
 
     // Priority: more than 2 missed putts inside 6ft last round puts Putting first
     const lastRound = rounds[rounds.length - 1];
-    if (lastRound && (lastRound.puttsUnder6ftAttempts - lastRound.made6ftAndIn) > 2) {
+    if (
+      lastRound &&
+      roundTracksStat(lastRound, "short_putts") &&
+      (lastRound.puttsUnder6ftAttempts - lastRound.made6ftAndIn) > 2
+    ) {
       const putting = ranked.findIndex((g) => g.category === 'Putting');
       ranked.unshift(...ranked.splice(putting, 1));
       ranked[0] = { ...ranked[0], gap: Math.max(ranked[0].gap, 1) };
@@ -2628,13 +2648,19 @@ export default function PracticePage() {
         );
         const completedAt = new Date().toISOString();
         // Omit `.select()`: some setups fail RETURNING (empty-looking PostgrestError) even when the row inserts.
-        const { error: practiceError } = await supabase.from("practice").insert({
+        const practiceRow = {
           user_id: user.id,
           type: typeForRow,
           duration_minutes: durationMinutes,
           notes: `Completed Drill: ${drill.category ?? "General"}`,
-          completed_at: completedAt,
-        });
+        };
+        let { error: practiceError } = await supabase
+          .from("practice")
+          .insert({ ...practiceRow, completed_at: completedAt });
+        if (practiceError && /completed_at/.test(practiceError.message ?? "")) {
+          // Databases without `practice.completed_at` (migration 20260501120000 not run) still save the drill.
+          ({ error: practiceError } = await supabase.from("practice").insert(practiceRow));
+        }
 
         if (practiceError) {
           const pe = practiceError as {
@@ -3120,44 +3146,66 @@ export default function PracticePage() {
 
     if (myRounds.length === 0) return [g, empty];
 
-    const n = myRounds.length;
+    // Each stat only uses rounds where the player tracked it.
+    const tracked = (...keys: RoundStatKey[]) => roundsTrackingStat(myRounds, ...keys);
+    const upDownAttempts = (r: (typeof myRounds)[number]) =>
+      upAndDownAttempts(r.upAndDownConversions || 0, r.missed || 0, r.created_at ?? r.date);
 
     // DRIVING: Fairways in Regulation
-    const totalFir = myRounds.reduce((s, r) => s + (r.firHit || 0) + (r.firLeft || 0) + (r.firRight || 0), 0);
-    const firHit = myRounds.reduce((s, r) => s + (r.firHit || 0), 0);
+    const firRounds = tracked("fairways");
+    const totalFir = firRounds.reduce(
+      (s, r) => s + fairwaysPossibleFor(r.firHit || 0, r.firLeft || 0, r.firRight || 0, r.fairwaysPossible),
+      0,
+    );
+    const firHit = firRounds.reduce((s, r) => s + (r.firHit || 0), 0);
     const firPercent = totalFir > 0 ? (firHit / totalFir) * 100 : 0;
 
     // APPROACH: GIR + Proximity
-    const totalGir = myRounds.reduce((s, r) => s + (r.totalGir || 0), 0);
-    const totalHoles = myRounds.reduce((s, r) => s + (r.holes || 18), 0);
+    const girRounds = tracked("gir");
+    const totalGir = girRounds.reduce((s, r) => s + (r.totalGir || 0), 0);
+    const totalHoles = girRounds.reduce((s, r) => s + (r.holes || 18), 0);
     const girPercent = totalHoles > 0 ? (totalGir / totalHoles) * 100 : 0;
-    const totalGir8ft = myRounds.reduce((s, r) => s + (r.gir8ft || 0), 0);
-    const totalGir20ft = myRounds.reduce((s, r) => s + (r.gir20ft || 0), 0);
-    const gir8ft = totalHoles > 0 ? (totalGir8ft / totalHoles) * 100 : 0;
-    const gir20ft = totalHoles > 0 ? (totalGir20ft / totalHoles) * 100 : 0;
+    const proximityRounds = tracked("gir_proximity");
+    const proximityHoles = proximityRounds.reduce((s, r) => s + (r.holes || 18), 0);
+    const totalGir8ft = proximityRounds.reduce((s, r) => s + (r.gir8ft || 0), 0);
+    const totalGir20ft = proximityRounds.reduce((s, r) => s + (r.gir20ft || 0), 0);
+    const gir8ft = proximityHoles > 0 ? (totalGir8ft / proximityHoles) * 100 : 0;
+    const gir20ft = proximityHoles > 0 ? (totalGir20ft / proximityHoles) * 100 : 0;
 
     // SHORT GAME: Up & Down, Bunker Saves, Chips inside 6ft
-    const totalUpDownAttempts = myRounds.reduce((s, r) => s + (r.upAndDownConversions || 0) + (r.missed || 0), 0);
-    const upDownSuccess = myRounds.reduce((s, r) => s + (r.upAndDownConversions || 0), 0);
+    const scrambleRounds = tracked("scrambling");
+    const totalUpDownAttempts = scrambleRounds.reduce((s, r) => s + upDownAttempts(r), 0);
+    const upDownSuccess = scrambleRounds.reduce((s, r) => s + (r.upAndDownConversions || 0), 0);
     const upAndDownPercent = totalUpDownAttempts > 0 ? (upDownSuccess / totalUpDownAttempts) * 100 : 0;
-    const totalBunkerAttempts = myRounds.reduce((s, r) => s + (r.bunkerAttempts || 0) + (r.bunkerSaves || 0), 0);
-    const bunkerSavesCount = myRounds.reduce((s, r) => s + (r.bunkerSaves || 0), 0);
+    const sandRounds = tracked("sand_saves");
+    const totalBunkerAttempts = sandRounds.reduce(
+      (s, r) => s + sandSaveAttempts(r.bunkerSaves || 0, r.bunkerAttempts || 0),
+      0,
+    );
+    const bunkerSavesCount = sandRounds.reduce((s, r) => s + (r.bunkerSaves || 0), 0);
     const bunkerSaves = totalBunkerAttempts > 0 ? (bunkerSavesCount / totalBunkerAttempts) * 100 : 0;
-    const chipInside6ft = totalUpDownAttempts > 0 ? (myRounds.reduce((s, r) => s + (r.chipInside6ft || 0), 0) / totalUpDownAttempts) * 100 : 0;
+    const chipRounds = tracked("chipping", "scrambling");
+    const chipAttempts = chipRounds.reduce((s, r) => s + upDownAttempts(r), 0);
+    const chipInside6ft = chipAttempts > 0 ? (chipRounds.reduce((s, r) => s + (r.chipInside6ft || 0), 0) / chipAttempts) * 100 : 0;
 
     // PUTTING: Total Putts, < 6ft Make %, 3-Putts
-    const totalPutts = myRounds.reduce((s, r) => s + (r.totalPutts || 0), 0);
-    const avgPutts = n > 0 ? totalPutts / n : 0;
-    const totalPuttsUnder6ft = myRounds.reduce((s, r) => s + (r.puttsUnder6ftAttempts || 0), 0);
-    const puttsMadeUnder6ft = myRounds.reduce((s, r) => s + (r.made6ftAndIn || 0), 0);
+    const puttRounds = tracked("putts");
+    const totalPutts = puttRounds.reduce((s, r) => s + (r.totalPutts || 0), 0);
+    const avgPutts = puttRounds.length > 0 ? totalPutts / puttRounds.length : 0;
+    const shortPuttRounds = tracked("short_putts");
+    const totalPuttsUnder6ft = shortPuttRounds.reduce((s, r) => s + (r.puttsUnder6ftAttempts || 0), 0);
+    const puttsMadeUnder6ft = shortPuttRounds.reduce((s, r) => s + (r.made6ftAndIn || 0), 0);
     const puttsUnder6ftMake = totalPuttsUnder6ft > 0 ? Math.round((puttsMadeUnder6ft / totalPuttsUnder6ft) * 100) : 0;
-    const totalThreePutts = myRounds.reduce((s, r) => s + (r.threePutts || 0), 0);
-    const avgThreePutts = n > 0 ? totalThreePutts / n : 0;
+    const threePuttRounds = tracked("three_putts");
+    const totalThreePutts = threePuttRounds.reduce((s, r) => s + (r.threePutts || 0), 0);
+    const avgThreePutts = threePuttRounds.length > 0 ? totalThreePutts / threePuttRounds.length : 0;
 
     // PENALTIES
-    const teePenalties = n > 0 ? myRounds.reduce((s, r) => s + (r.teePenalties || 0), 0) / n : 0;
-    const approachPenalties = n > 0 ? myRounds.reduce((s, r) => s + (r.approachPenalties || 0), 0) / n : 0;
-    const totalPenalties = n > 0 ? myRounds.reduce((s, r) => s + (r.totalPenalties || 0), 0) / n : 0;
+    const penaltyRounds = tracked("penalties");
+    const pn = penaltyRounds.length;
+    const teePenalties = pn > 0 ? penaltyRounds.reduce((s, r) => s + (r.teePenalties || 0), 0) / pn : 0;
+    const approachPenalties = pn > 0 ? penaltyRounds.reduce((s, r) => s + (r.approachPenalties || 0), 0) / pn : 0;
+    const totalPenalties = pn > 0 ? penaltyRounds.reduce((s, r) => s + (r.totalPenalties || 0), 0) / pn : 0;
 
     return [g, {
       firPercent: r1(firPercent), girPercent: r1(girPercent), gir8ft: r1(gir8ft), gir20ft: r1(gir20ft),

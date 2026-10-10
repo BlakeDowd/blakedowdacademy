@@ -4,6 +4,14 @@ import { useRef, useState, type PointerEvent } from "react";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import type { getBenchmarkGoals } from "@/lib/benchmarkGoals";
 import { Segmented, fmtStat } from "@/components/profile/ProfileStatsParts";
+import {
+  fairwaysPossibleFor,
+  roundTracksStat,
+  onlyEighteenHoleRounds,
+  sandSaveAttempts,
+  upAndDownAttempts,
+  type RoundStatKey,
+} from "@/lib/roundStatTracking";
 
 type Goals = ReturnType<typeof getBenchmarkGoals>;
 
@@ -33,6 +41,10 @@ export type TrendRound = {
   chipInside6ft?: number | null;
   doubleChips?: number | null;
   totalPenalties?: number | null;
+  fairwaysPossible?: number | null;
+  stableford?: number | null;
+  puttsPerGir?: number | null;
+  trackedStats?: readonly string[] | null;
 };
 
 type TrendMetric = {
@@ -40,51 +52,76 @@ type TrendMetric = {
   label: string;
   unit: "" | "%";
   lowerIsBetter: boolean;
+  /** Rounds that didn't track these stats are left off the chart. */
+  stats?: readonly RoundStatKey[];
   /** null = not recorded for this round, so it's left off the chart. */
   value: (r: TrendRound) => number | null;
-  /** `scale` is holes / 18 so counting targets shrink for 9-hole rounds. */
-  goal: (g: Goals, scale: number) => number;
+  goal: (g: Goals) => number;
 };
 
 const n = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 const pct = (made: number, total: number) => (total > 0 ? (made / total) * 100 : null);
 const positive = (v: number | null | undefined) => (typeof v === "number" && v > 0 ? v : null);
 
+const upDownAttemptsOf = (r: TrendRound) =>
+  upAndDownAttempts(n(r.upAndDownConversions), n(r.missed), r.created_at ?? r.date);
+
 export const TREND_METRICS = [
-  { id: "nettScore", label: "Nett score", unit: "", lowerIsBetter: true, value: (r) => positive(r.nett), goal: (_g, s) => 72 * s },
-  { id: "gross", label: "Gross score", unit: "", lowerIsBetter: true, value: (r) => positive(r.score), goal: (g, s) => g.score * s },
-  { id: "birdies", label: "Birdies", unit: "", lowerIsBetter: false, value: (r) => n(r.birdies), goal: (g, s) => g.birdies * s },
-  { id: "pars", label: "Pars", unit: "", lowerIsBetter: false, value: (r) => n(r.pars), goal: (g, s) => g.pars * s },
-  { id: "bogeys", label: "Bogeys", unit: "", lowerIsBetter: true, value: (r) => n(r.bogeys), goal: (g, s) => g.bogeys * s },
-  { id: "doubleBogeys", label: "Double bogeys", unit: "", lowerIsBetter: true, value: (r) => n(r.doubleBogeys), goal: (g, s) => g.doubleBogeys * s },
-  { id: "eagles", label: "Eagles", unit: "", lowerIsBetter: false, value: (r) => n(r.eagles), goal: () => 0 },
-  { id: "totalPutts", label: "Total putts", unit: "", lowerIsBetter: true, value: (r) => positive(r.totalPutts), goal: (g, s) => g.putts * s },
-  { id: "threePutts", label: "3-putts", unit: "", lowerIsBetter: true, value: (r) => n(r.threePutts), goal: (g, s) => Math.max(0, g.putts / 18 - 1) * s },
+  { id: "nettScore", label: "Nett score", unit: "", lowerIsBetter: true, value: (r) => positive(r.nett), goal: () => 72 },
+  { id: "gross", label: "Gross score", unit: "", lowerIsBetter: true, value: (r) => positive(r.score), goal: (g) => g.score },
+  {
+    id: "stableford",
+    label: "Stableford points",
+    unit: "",
+    lowerIsBetter: false,
+    stats: ["stableford"],
+    value: (r) => (typeof r.stableford === "number" ? r.stableford : null),
+    goal: () => 36,
+  },
+  { id: "birdies", label: "Birdies", unit: "", lowerIsBetter: false, stats: ["distribution"], value: (r) => n(r.birdies), goal: (g) => g.birdies },
+  { id: "pars", label: "Pars", unit: "", lowerIsBetter: false, stats: ["distribution"], value: (r) => n(r.pars), goal: (g) => g.pars },
+  { id: "bogeys", label: "Bogeys", unit: "", lowerIsBetter: true, stats: ["distribution"], value: (r) => n(r.bogeys), goal: (g) => g.bogeys },
+  { id: "doubleBogeys", label: "Double bogeys or worse", unit: "", lowerIsBetter: true, stats: ["distribution"], value: (r) => n(r.doubleBogeys), goal: (g) => g.doubleBogeys },
+  { id: "eagles", label: "Eagles", unit: "", lowerIsBetter: false, stats: ["distribution"], value: (r) => n(r.eagles), goal: () => 0 },
+  { id: "totalPutts", label: "Total putts", unit: "", lowerIsBetter: true, stats: ["putts"], value: (r) => positive(r.totalPutts), goal: (g) => g.putts },
+  {
+    id: "puttsPerGir",
+    label: "Putts per GIR",
+    unit: "",
+    lowerIsBetter: true,
+    stats: ["putts_per_gir"],
+    value: (r) => positive(r.puttsPerGir),
+    goal: () => 1.8,
+  },
+  { id: "threePutts", label: "3-putts", unit: "", lowerIsBetter: true, stats: ["three_putts"], value: (r) => n(r.threePutts), goal: (g) => Math.max(0, g.putts / 18 - 1) },
   {
     id: "fairwaysHit",
     label: "Fairways hit",
     unit: "%",
     lowerIsBetter: false,
-    value: (r) => pct(n(r.firHit), n(r.firHit) + n(r.firLeft) + n(r.firRight)),
+    stats: ["fairways"],
+    value: (r) => pct(n(r.firHit), fairwaysPossibleFor(n(r.firHit), n(r.firLeft), n(r.firRight), r.fairwaysPossible)),
     goal: (g) => g.fir,
   },
-  { id: "gir", label: "Greens in regulation", unit: "%", lowerIsBetter: false, value: (r) => pct(n(r.totalGir), n(r.holes) || 18), goal: (g) => g.gir },
-  { id: "gir8ft", label: "Greens inside 8 ft", unit: "%", lowerIsBetter: false, value: (r) => pct(n(r.gir8ft), n(r.holes) || 18), goal: (g) => g.within8ft },
-  { id: "gir20ft", label: "Greens inside 20 ft", unit: "%", lowerIsBetter: false, value: (r) => pct(n(r.gir20ft), n(r.holes) || 18), goal: (g) => g.within20ft },
+  { id: "gir", label: "Greens in regulation", unit: "%", lowerIsBetter: false, stats: ["gir"], value: (r) => pct(n(r.totalGir), 18), goal: (g) => g.gir },
+  { id: "gir8ft", label: "Greens inside 8 ft", unit: "%", lowerIsBetter: false, stats: ["gir_proximity"], value: (r) => pct(n(r.gir8ft), 18), goal: (g) => g.within8ft },
+  { id: "gir20ft", label: "Greens inside 20 ft", unit: "%", lowerIsBetter: false, stats: ["gir_proximity"], value: (r) => pct(n(r.gir20ft), 18), goal: (g) => g.within20ft },
   {
     id: "upAndDown",
-    label: "Up and downs",
+    label: "Scrambling (up and downs)",
     unit: "%",
     lowerIsBetter: false,
-    value: (r) => pct(n(r.upAndDownConversions), n(r.upAndDownConversions) + n(r.missed)),
+    stats: ["scrambling"],
+    value: (r) => pct(n(r.upAndDownConversions), upDownAttemptsOf(r)),
     goal: (g) => g.upAndDown,
   },
   {
     id: "bunkerSaves",
-    label: "Bunker saves",
+    label: "Sand saves",
     unit: "%",
     lowerIsBetter: false,
-    value: (r) => pct(n(r.bunkerSaves), n(r.bunkerSaves) + n(r.bunkerAttempts)),
+    stats: ["sand_saves"],
+    value: (r) => pct(n(r.bunkerSaves), sandSaveAttempts(n(r.bunkerSaves), n(r.bunkerAttempts))),
     goal: (g) => g.bunkerSaves,
   },
   {
@@ -92,11 +129,12 @@ export const TREND_METRICS = [
     label: "Chips inside 6 ft",
     unit: "%",
     lowerIsBetter: false,
-    value: (r) => pct(n(r.chipInside6ft), n(r.upAndDownConversions) + n(r.missed)),
+    stats: ["chipping", "scrambling"],
+    value: (r) => pct(n(r.chipInside6ft), upDownAttemptsOf(r)),
     goal: (g) => g.chipsInside6ft,
   },
-  { id: "doubleChips", label: "Double chips", unit: "", lowerIsBetter: true, value: (r) => n(r.doubleChips), goal: () => 0 },
-  { id: "totalPenalties", label: "Penalties", unit: "", lowerIsBetter: true, value: (r) => n(r.totalPenalties), goal: (g, s) => g.totalPenalties * s },
+  { id: "doubleChips", label: "Double chips", unit: "", lowerIsBetter: true, stats: ["chipping"], value: (r) => n(r.doubleChips), goal: () => 0 },
+  { id: "totalPenalties", label: "Penalties", unit: "", lowerIsBetter: true, stats: ["penalties"], value: (r) => n(r.totalPenalties), goal: (g) => g.totalPenalties },
 ] as const satisfies readonly TrendMetric[];
 
 export type TrendMetricId = (typeof TREND_METRICS)[number]["id"];
@@ -113,6 +151,7 @@ function roundPlayedAt(r: TrendRound): Date | null {
 function buildPoints(rounds: readonly TrendRound[], metric: TrendMetric): Point[] {
   const out: Point[] = [];
   for (const r of rounds) {
+    if (metric.stats && !metric.stats.every((k) => roundTracksStat(r, k))) continue;
     const at = roundPlayedAt(r);
     const value = metric.value(r);
     if (at && value !== null && Number.isFinite(value)) out.push({ value, at });
@@ -140,24 +179,19 @@ export function StatTrendChart({
   rounds,
   metricId,
   goals,
-  holes,
 }: {
   rounds: readonly TrendRound[];
   metricId: TrendMetricId;
   goals: Goals;
-  holes: 9 | 18;
 }) {
   const metric: TrendMetric = TREND_METRICS.find((m) => m.id === metricId) ?? TREND_METRICS[0];
-  const goal = metric.goal(goals, holes / 18);
+  const goal = metric.goal(goals);
   const isPct = metric.unit === "%";
   const fmt = (v: number) => (isPct ? `${Math.round(v)}%` : fmtStat(v));
   const isBetter = (a: number, b: number) => (metric.lowerIsBetter ? a < b : a > b);
   const meets = (v: number) => (metric.lowerIsBetter ? v <= goal : v >= goal);
 
-  const points = buildPoints(
-    rounds.filter((r) => (r.holes ?? 18) === holes),
-    metric,
-  );
+  const points = buildPoints(onlyEighteenHoleRounds(rounds), metric);
 
   const [viewChoice, setViewChoice] = useState<View | null>(null);
   const view: View = viewChoice ?? (points.length > MAX_ROUNDS ? "months" : "rounds");
@@ -204,7 +238,7 @@ export function StatTrendChart({
   if (!points.length) {
     return (
       <p className="rounded-2xl bg-stone-50 px-4 py-10 text-center text-sm text-stone-500">
-        No {holes}-hole rounds with {metric.label.toLowerCase()} logged yet.
+        No rounds with {metric.label.toLowerCase()} logged yet.
       </p>
     );
   }

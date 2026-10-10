@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
 import { User, CheckCircle2 } from "lucide-react";
+import HandicapField from "@/components/HandicapField";
 
 export default function FinishProfile() {
   const { user, isAuthenticated, loading, profileLoading, refreshUser } = useAuth();
@@ -155,26 +156,7 @@ export default function FinishProfile() {
               </div>
             </div>
 
-            <div>
-              <label htmlFor="handicap" className="block text-sm font-medium text-gray-700 mb-1.5">
-                Current Handicap
-              </label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  id="handicap"
-                  type="number"
-                  value={handicap}
-                  onChange={(e) => setHandicap(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#014421] focus:border-[#014421] outline-none transition-all"
-                  placeholder="e.g. 18"
-                  min="0"
-                  max="54"
-                  step="0.1"
-                  required
-                />
-              </div>
-            </div>
+            <HandicapField value={handicap} onChange={setHandicap} required min={0} />
 
             <button
               type="submit"

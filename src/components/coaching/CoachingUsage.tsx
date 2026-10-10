@@ -9,8 +9,12 @@ import {
   featureOf,
   fetchDrillTitles,
   fetchUsageEvents,
+  isScreenView,
   itemOf,
+  TOOL_LABELS,
+  toolKeyOf,
   type DrillTitles,
+  type ToolKey,
   type UsageEvent,
 } from "@/lib/appUsage";
 import { Avatar, timeAgo, useProfileNames } from "@/components/coaching/coachingUi";
@@ -48,6 +52,35 @@ function BarList({ rows, empty }: { rows: { label: string; count: number; player
           <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-stone-100">
             <div className="h-full rounded-full bg-[#014421]" style={{ width: `${(r.count / max) * 100}%` }} />
           </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+type ToolRow = { key: ToolKey; label: string; uses: number; players: number; opens: number };
+
+function ToolList({ rows }: { rows: ToolRow[] }) {
+  const max = Math.max(1, ...rows.map((r) => r.uses));
+  return (
+    <ul className="space-y-3">
+      {rows.map((r) => (
+        <li key={r.key}>
+          <div className="flex items-baseline justify-between gap-2 text-xs">
+            <span className="min-w-0 truncate font-medium text-stone-800">{r.label}</span>
+            <span className="shrink-0 tabular-nums text-stone-500">
+              <span className="font-semibold text-stone-900">{r.uses}</span> {r.uses === 1 ? "use" : "uses"} ·{" "}
+              {r.players} {r.players === 1 ? "player" : "players"}
+            </span>
+          </div>
+          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-stone-100">
+            <div className="h-full rounded-full bg-[#014421]" style={{ width: `${(r.uses / max) * 100}%` }} />
+          </div>
+          {r.opens > 0 && (
+            <p className="mt-0.5 text-[10px] text-stone-400">
+              Page opened {r.opens} {r.opens === 1 ? "time" : "times"}
+            </p>
+          )}
         </li>
       ))}
     </ul>
@@ -120,8 +153,26 @@ export function CoachingUsage({
     const cutoff = Date.now() - range * DAY_MS;
     return events.filter((e) => Date.parse(e.at) >= cutoff);
   }, [events, range]);
-  const actions = useMemo(() => inRange.filter((e) => e.source !== "screen"), [inRange]);
-  const screens = useMemo(() => inRange.filter((e) => e.source === "screen"), [inRange]);
+  const actions = useMemo(() => inRange.filter((e) => !isScreenView(e)), [inRange]);
+  const screens = useMemo(() => inRange.filter(isScreenView), [inRange]);
+  const tools = useMemo<ToolRow[]>(
+    () =>
+      (Object.keys(TOOL_LABELS) as ToolKey[]).map((key) => {
+        const uses = actions.filter((e) => toolKeyOf(e) === key);
+        return {
+          key,
+          label: TOOL_LABELS[key],
+          uses: uses.length,
+          players: new Set(uses.map((e) => e.user_id)).size,
+          opens: screens.filter((e) => e.detail === key).length,
+        };
+      }),
+    [actions, screens],
+  );
+  const firstToolUseAt = useMemo(
+    () => events.reduce<string | null>((min, e) => (toolKeyOf(e) && (!min || e.at < min) ? e.at : min), null),
+    [events],
+  );
   const activeIds = useMemo(() => new Set(inRange.map((e) => e.user_id)), [inRange]);
   const practiceMinutes = useMemo(
     () => actions.reduce((sum, e) => sum + (e.source === "practice" ? e.minutes : 0), 0),
@@ -156,7 +207,7 @@ export function CoachingUsage({
   );
   const topScreens = useMemo(() => tally(screens, (e) => itemOf(e, drills), 12), [screens, drills]);
   const firstScreenAt = useMemo(
-    () => events.reduce<string | null>((min, e) => (e.source === "screen" && (!min || e.at < min) ? e.at : min), null),
+    () => events.reduce<string | null>((min, e) => (isScreenView(e) && (!min || e.at < min) ? e.at : min), null),
     [events],
   );
 
@@ -165,7 +216,7 @@ export function CoachingUsage({
     for (const e of inRange) {
       const row = map.get(e.user_id) ?? { last: e.at, count: 0, features: new Map<string, number>() };
       if (e.at > row.last) row.last = e.at;
-      if (e.source !== "screen") {
+      if (!isScreenView(e)) {
         row.count += 1;
         const f = featureOf(e);
         row.features.set(f, (row.features.get(f) ?? 0) + 1);
@@ -188,7 +239,7 @@ export function CoachingUsage({
 
   const feed = useMemo(
     () =>
-      inRange.filter((e) => (showScreens || e.source !== "screen") && (!player || e.user_id === player)),
+      inRange.filter((e) => (showScreens || !isScreenView(e)) && (!player || e.user_id === player)),
     [inRange, showScreens, player],
   );
 
@@ -275,6 +326,17 @@ export function CoachingUsage({
 
       <Card title="What's getting used" note="Times each feature was used, and by how many players">
         <BarList rows={features} empty="No activity in this period." />
+      </Card>
+
+      <Card
+        title="Tools"
+        note={
+          firstToolUseAt
+            ? `Uses = pressed Play, once per player per 30 min. Counted since ${new Date(firstToolUseAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`
+            : "Uses = pressed Play, once per player per 30 min. Starts counting once players have this update"
+        }
+      >
+        <ToolList rows={tools} />
       </Card>
 
       <Card title="Top drills & tests">

@@ -18,6 +18,7 @@ import FaceStrikeDrill from "@/components/FaceStrikeDrill";
 import { FACE_STRIKE_DRILL_KEY, FACE_STRIKE_SCORE_TYPE } from "@/lib/faceStrikeDrill";
 import BallFlightDrill from "@/components/BallFlightDrill";
 import { BALL_FLIGHT_DRILL_KEY, BALL_FLIGHT_SCORE_TYPE } from "@/lib/ballFlightDrill";
+import { runnerDrillKey } from "@/lib/drillRunners";
 import { DrillGuide, DrillHero, DrillSteps } from "@/components/drills/DrillIntro";
 import { DrillTimerCard, formatClock, useDrillTimer } from "@/components/drills/DrillTimer";
 import { isPerfectScore, resolveDrillScoring } from "@/lib/drillScoring";
@@ -138,7 +139,8 @@ export default function DrillCard({
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const keepInViewProps = useKeepInViewAfterOwnTap<HTMLDivElement>(isExpanded);
   const isCompleted = drill.completed || false;
-  const drillKey = useMemo(() => stableDrillKey(drill), [drill]);
+  const runnerKey = drill.isCombine ? null : runnerDrillKey(drill);
+  const drillKey = useMemo(() => runnerKey ?? stableDrillKey(drill), [runnerKey, drill]);
   const goalRepsForUi = useMemo(
     () => effectiveGoalRepsString(drill.goal, drill.goal_reps),
     [drill.goal, drill.goal_reps]
@@ -147,8 +149,8 @@ export default function DrillCard({
     typeof drill.xp_value === "number" && Number.isFinite(drill.xp_value) ? drill.xp_value : undefined;
   const { milestones, coachGoalText } = useMemo(() => parseCoachGoals(goalRepsForUi), [goalRepsForUi]);
   const coachScoreType = drillScoringOverride(useDrillScoringOverrides(), drillKey);
-  const isFaceStrike = drillKey === FACE_STRIKE_DRILL_KEY && !drill.isCombine;
-  const isBallFlight = drillKey === BALL_FLIGHT_DRILL_KEY && !drill.isCombine;
+  const isFaceStrike = runnerKey === FACE_STRIKE_DRILL_KEY;
+  const isBallFlight = runnerKey === BALL_FLIGHT_DRILL_KEY;
   const scoreTypeOverride = isFaceStrike
     ? FACE_STRIKE_SCORE_TYPE
     : isBallFlight

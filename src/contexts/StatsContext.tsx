@@ -5,6 +5,13 @@ import { useAuth } from "./AuthContext";
 import { COMBINE_PRACTICE_LOG_TYPE_VALUES } from "@/lib/combineCompletionDetection";
 import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
 import { refreshAuthSessionIfPossible } from "@/lib/supabasePersistSession";
+import { normalizeTrackedStats, onlyEighteenHoleRounds, type RoundStatKey } from "@/lib/roundStatTracking";
+
+function optionalRoundNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
 
 interface RoundData {
   id?: string;
@@ -42,10 +49,17 @@ interface RoundData {
   puttsUnder6ftAttempts: number;
   /** JSON array from `rounds.approach_directional_shots` (optional). */
   approachDirectionalShots?: unknown[];
-  /** Per-putt detail from live entry (`rounds.putting_logs`). */
-  puttingLogs?: import("@/lib/roundPuttingLogs").RoundPuttingLogEntry[];
   /** When false, hidden from community tab / leaderboards (coach can still view). */
   shareOnCommunity?: boolean;
+  stableford?: number | null;
+  frontNine?: number | null;
+  backNine?: number | null;
+  fairwaysPossible?: number | null;
+  puttsPerGir?: number | null;
+  /** Triple bogey or worse; already included in `doubleBogeys` (2+ bogey). */
+  tripleBogeys?: number | null;
+  /** Stats the player tracked for this round; null = logged before stat tracking (all count). */
+  trackedStats?: RoundStatKey[] | null;
 }
 
 interface DrillData {
@@ -64,6 +78,13 @@ export interface DrillSessionRow {
   drill_key: string;
   day: string;
   first_logged_at: string;
+  xp: number;
+}
+
+/** One row per logged round (`round_xp_awards`): who earned the round XP and when, no scores. */
+export interface RoundXpAwardRow {
+  user_id: string;
+  earned_at: string;
   xp: number;
 }
 
@@ -102,6 +123,10 @@ interface StatsContextType {
   communityRoundsHydrated: boolean;
   drills: DrillData[];
   drillSessions: DrillSessionRow[];
+  /** Null until loaded, or when `round_xp_awards` doesn't exist yet (leaderboards then count shared rounds). */
+  roundXpAwards: RoundXpAwardRow[] | null;
+  /** Weekly goal bonuses (`weekly_goal_xp_awards`), same shape as round awards. */
+  weeklyGoalXpAwards: RoundXpAwardRow[];
   practiceSessions: PracticeSessionData[];
   practiceLogs: PracticeLogRow[];
   loading: boolean;
@@ -170,6 +195,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   // Check Fetch Logic: Add state for drills and practice_sessions
   const [drills, setDrills] = useState<DrillData[]>([]);
   const [drillSessions, setDrillSessions] = useState<DrillSessionRow[]>([]);
+  const [roundXpAwards, setRoundXpAwards] = useState<RoundXpAwardRow[] | null>(null);
+  const [weeklyGoalXpAwards, setWeeklyGoalXpAwards] = useState<RoundXpAwardRow[]>([]);
   const [practiceSessions, setPracticeSessions] = useState<PracticeSessionData[]>([]);
   const [practiceLogs, setPracticeLogs] = useState<PracticeLogRow[]>([]);
   // Set loading to true initially
@@ -223,16 +250,66 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     approachDirectionalShots: Array.isArray(round.approach_directional_shots)
       ? round.approach_directional_shots
       : [],
-    puttingLogs: Array.isArray(round.putting_logs) ? round.putting_logs : [],
     shareOnCommunity: round.share_on_community !== false,
+    stableford: optionalRoundNumber(round.stableford),
+    frontNine: optionalRoundNumber(round.front_nine),
+    backNine: optionalRoundNumber(round.back_nine),
+    fairwaysPossible: optionalRoundNumber(round.fairways_possible),
+    puttsPerGir: optionalRoundNumber(round.putts_per_gir),
+    tripleBogeys: optionalRoundNumber(round.triple_bogeys),
+    trackedStats: normalizeTrackedStats(round.tracked_stats),
     user_id: round.user_id,
     full_name: undefined,
     profile_icon: undefined,
   });
 
+  const loadRoundXpAwards = async () => {
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const { data, error } = await createClient()
+        .from("round_xp_awards")
+        .select("user_id, earned_at, xp")
+        .order("earned_at", { ascending: false })
+        .limit(20000);
+      if (error) {
+        if (!/round_xp_awards/.test(error.message ?? "")) {
+          console.warn("StatsContext: round_xp_awards:", error.message);
+        }
+        setRoundXpAwards(null);
+        return;
+      }
+      setRoundXpAwards((data ?? []) as RoundXpAwardRow[]);
+    } catch (error) {
+      console.warn("StatsContext: round_xp_awards:", error);
+      setRoundXpAwards(null);
+    }
+  };
+
+  const loadWeeklyGoalXpAwards = async () => {
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const { data, error } = await createClient()
+        .from("weekly_goal_xp_awards")
+        .select("user_id, earned_at, xp")
+        .order("earned_at", { ascending: false })
+        .limit(20000);
+      if (error) {
+        if (!/weekly_goal_xp_awards/.test(error.message ?? "")) {
+          console.warn("StatsContext: weekly_goal_xp_awards:", error.message);
+        }
+        return;
+      }
+      setWeeklyGoalXpAwards((data ?? []) as RoundXpAwardRow[]);
+    } catch (error) {
+      console.warn("StatsContext: weekly_goal_xp_awards:", error);
+    }
+  };
+
   /** Leaderboards / community: all users' rounds (RLS permitting). */
   const loadCommunityRounds = async () => {
     if (communityRoundsFetched.current) return;
+    void loadRoundXpAwards();
+    void loadWeeklyGoalXpAwards();
 
     try {
       const { createClient } = await import("@/lib/supabase/client");
@@ -257,9 +334,9 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const transformed = (data || [])
-        .map(mapRoundRow)
-        .filter((round) => round.shareOnCommunity);
+      const transformed = onlyEighteenHoleRounds((data || []).map(mapRoundRow)).filter(
+        (round) => round.shareOnCommunity,
+      );
       setCommunityRounds(transformed);
       communityRoundsFetched.current = true;
       if (transformed.length > 0 && typeof window !== "undefined") {
@@ -313,7 +390,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const transformed = (data || []).map(mapRoundRow);
+      const transformed = onlyEighteenHoleRounds((data || []).map(mapRoundRow));
       setRounds(transformed);
       if (transformed.length > 0 && typeof window !== "undefined") {
         sessionStorage.removeItem("statsContextRoundsToastShown");
@@ -877,6 +954,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         communityRoundsHydrated,
         drills,
         drillSessions,
+        roundXpAwards,
+        weeklyGoalXpAwards,
         practiceSessions,
         practiceLogs,
         loading,
@@ -905,6 +984,8 @@ export function useStats() {
       communityRoundsHydrated: false,
       drills: [], 
       drillSessions: [],
+      roundXpAwards: null,
+      weeklyGoalXpAwards: [],
       practiceSessions: [], 
       practiceLogs: [],
       loading: false, 

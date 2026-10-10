@@ -6,6 +6,7 @@ import { Mail, Lock, User, LogIn, UserPlus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import IconPicker from "@/components/IconPicker";
 import ForgotPasswordPanel from "@/components/ForgotPasswordPanel";
+import HandicapField from "@/components/HandicapField";
 import { pendingInviteName, postLoginPath } from "@/lib/coachingSpaces";
 
 export default function LoginPage() {
@@ -335,31 +336,7 @@ export default function LoginPage() {
             )}
 
             {/* Initial Handicap Field (Sign Up Only) */}
-            {isSignUp && (
-              <div>
-                <label htmlFor="handicap" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Current Handicap
-                </label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    id="handicap"
-                    type="number"
-                    step="0.1"
-                    value={initialHandicap}
-                    onChange={(e) => setInitialHandicap(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#054d2b] focus:border-[#054d2b] outline-none transition-all"
-                    placeholder="e.g., 12.0"
-                    required={isSignUp}
-                    min="-5"
-                    max="54"
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Enter your current golf handicap (-5 to +5 Pro, 0 to 54)
-                </p>
-              </div>
-            )}
+            {isSignUp && <HandicapField value={initialHandicap} onChange={setInitialHandicap} required />}
 
             {/* Icon Picker (Sign Up Only) */}
             {isSignUp && (

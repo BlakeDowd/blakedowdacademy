@@ -87,6 +87,36 @@ export function trackScreen(screen: string): void {
   })();
 }
 
+/** Tools that log a use when the player presses Play, stored as `tool/<key>` screens. */
+export const TOOL_LABELS = {
+  "full-swing-tempo": "Full swing tempo",
+  "short-game-tempo": "Short game tempo",
+  "putting-calculator": "Putting stroke calculator",
+} as const;
+
+export type ToolKey = keyof typeof TOOL_LABELS;
+
+const TOOL_PREFIX = "tool/";
+
+/** Records that the player actually used a tool, at most once per 30 minutes each. */
+export function trackToolUse(tool: ToolKey): void {
+  trackScreen(`${TOOL_PREFIX}${tool}`);
+}
+
+export function isToolUse(e: UsageEvent): boolean {
+  return e.source === "screen" && !!e.detail?.startsWith(TOOL_PREFIX);
+}
+
+/** Screen views only, not tool uses. */
+export function isScreenView(e: UsageEvent): boolean {
+  return e.source === "screen" && !isToolUse(e);
+}
+
+export function toolKeyOf(e: UsageEvent): ToolKey | null {
+  const key = isToolUse(e) ? e.detail!.slice(TOOL_PREFIX.length) : null;
+  return key && key in TOOL_LABELS ? (key as ToolKey) : null;
+}
+
 // ---------------------------------------------------------------------------
 // Labels
 
@@ -204,14 +234,18 @@ export function featureOf(e: UsageEvent): string {
     case "swing_upload":
       return "Swing uploads";
     case "screen":
-      return "Screens opened";
+      return isToolUse(e) ? "Tools used" : "Screens opened";
   }
 }
 
 /** The specific drill, test or screen, e.g. "Putting test 8–20 ft". */
 export function itemOf(e: UsageEvent, drills: DrillTitles): string | null {
   const d = e.detail?.trim();
-  if (e.source === "screen") return d ? screenLabel(d) : null;
+  if (e.source === "screen") {
+    const tool = toolKeyOf(e);
+    if (tool) return TOOL_LABELS[tool];
+    return d ? screenLabel(d) : null;
+  }
   if (!d) return null;
   if (e.source === "practice" || e.source === "skills_log") {
     return TEST_LABELS[d] ?? (PRACTICE_AREAS.has(d) ? d : (drills.get(d) ?? humanize(d)));
@@ -247,6 +281,6 @@ export function describeUsage(e: UsageEvent, drills: DrillTitles): string {
     case "swing_upload":
       return "uploaded a swing";
     case "screen":
-      return `opened ${item}`;
+      return isToolUse(e) ? `used the ${item}` : `opened ${item}`;
   }
 }

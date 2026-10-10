@@ -5,16 +5,6 @@ export type DirectionalApproachShot = {
   result: string;
 };
 
-type SeedPuttingLog = {
-  hole: number;
-  puttNumber: number;
-  made: boolean;
-  distanceFeet: number;
-  break: "left_to_right" | "straight" | "right_to_left" | "double_breaker";
-  missLine?: "high" | "low" | "good" | null;
-  missLength?: "long" | "short" | "good" | null;
-};
-
 export type DummyRoundInsert = {
   date: string;
   course_name: string;
@@ -51,7 +41,6 @@ export type DummyRoundInsert = {
   made_under_6ft: number;
   putts_under_6ft_attempts: number;
   approach_directional_shots: DirectionalApproachShot[];
-  putting_logs: SeedPuttingLog[];
   share_on_community: boolean;
 };
 
@@ -122,24 +111,6 @@ export const DUMMY_ROUND_TEMPLATES: DummyRoundInsert[] = [
       [17, "8i", "gir"],
       [18, "9i", "right"],
     ]),
-    putting_logs: [
-      { hole: 1, puttNumber: 1, made: false, distanceFeet: 22, break: "left_to_right", missLine: "low", missLength: "long" },
-      { hole: 1, puttNumber: 2, made: true, distanceFeet: 4, break: "left_to_right" },
-      { hole: 2, puttNumber: 1, made: true, distanceFeet: 8, break: "straight" },
-      { hole: 3, puttNumber: 1, made: false, distanceFeet: 15, break: "right_to_left", missLine: "high", missLength: "short" },
-      { hole: 3, puttNumber: 2, made: true, distanceFeet: 3, break: "right_to_left" },
-      { hole: 5, puttNumber: 1, made: true, distanceFeet: 12, break: "left_to_right" },
-      { hole: 7, puttNumber: 1, made: false, distanceFeet: 25, break: "double_breaker", missLine: "low", missLength: "long" },
-      { hole: 7, puttNumber: 2, made: false, distanceFeet: 6, break: "double_breaker", missLine: "high", missLength: "short" },
-      { hole: 7, puttNumber: 3, made: true, distanceFeet: 2, break: "double_breaker" },
-      { hole: 9, puttNumber: 1, made: true, distanceFeet: 5, break: "straight" },
-      { hole: 11, puttNumber: 1, made: false, distanceFeet: 18, break: "right_to_left", missLine: "high", missLength: "long" },
-      { hole: 11, puttNumber: 2, made: true, distanceFeet: 4, break: "right_to_left" },
-      { hole: 14, puttNumber: 1, made: true, distanceFeet: 10, break: "left_to_right" },
-      { hole: 16, puttNumber: 1, made: false, distanceFeet: 7, break: "straight", missLine: "low", missLength: "short" },
-      { hole: 16, puttNumber: 2, made: true, distanceFeet: 3, break: "straight" },
-      { hole: 18, puttNumber: 1, made: true, distanceFeet: 14, break: "left_to_right" },
-    ],
     share_on_community: true,
   },
   {
@@ -197,51 +168,43 @@ export const DUMMY_ROUND_TEMPLATES: DummyRoundInsert[] = [
       [17, "9i", "bottom-left"],
       [18, "7i", "right"],
     ]),
-    putting_logs: [
-      { hole: 2, puttNumber: 1, made: false, distanceFeet: 20, break: "right_to_left", missLine: "high", missLength: "long" },
-      { hole: 2, puttNumber: 2, made: true, distanceFeet: 5, break: "right_to_left" },
-      { hole: 6, puttNumber: 1, made: false, distanceFeet: 8, break: "straight", missLine: "low", missLength: "short" },
-      { hole: 6, puttNumber: 2, made: false, distanceFeet: 4, break: "straight", missLine: "high", missLength: "long" },
-      { hole: 6, puttNumber: 3, made: true, distanceFeet: 2, break: "straight" },
-      { hole: 12, puttNumber: 1, made: true, distanceFeet: 16, break: "left_to_right" },
-    ],
     share_on_community: false,
   },
   {
     date: "2026-03-15",
-    course_name: "Bandon Dunes (Front 9)",
+    course_name: "Bandon Dunes",
     handicap: 13.1,
-    holes: 9,
-    score: 42,
-    nett: 28.9,
+    holes: 18,
+    score: 84,
+    nett: 70.9,
     eagles: 0,
-    birdies: 1,
-    pars: 3,
-    bogeys: 4,
-    double_bogeys: 1,
-    fir_left: 2,
-    fir_hit: 4,
-    fir_right: 1,
-    total_gir: 4,
-    total_penalties: 1,
-    tee_penalties: 0,
+    birdies: 2,
+    pars: 7,
+    bogeys: 7,
+    double_bogeys: 2,
+    fir_left: 3,
+    fir_hit: 8,
+    fir_right: 3,
+    total_gir: 8,
+    total_penalties: 2,
+    tee_penalties: 1,
     approach_penalties: 1,
-    going_for_green: 7,
-    gir_8ft: 1,
-    gir_20ft: 2,
-    up_and_down_conversions: 2,
-    conversions: 2,
-    up_and_down_missed: 1,
-    missed: 1,
-    bunker_attempts: 1,
-    bunker_saves: 0,
-    chip_inside_6ft: 2,
+    going_for_green: 14,
+    gir_8ft: 2,
+    gir_20ft: 4,
+    up_and_down_conversions: 4,
+    conversions: 4,
+    up_and_down_missed: 3,
+    missed: 3,
+    bunker_attempts: 2,
+    bunker_saves: 1,
+    chip_inside_6ft: 4,
     double_chips: 0,
     chip_ins: 0,
-    total_putts: 17,
-    three_putts: 0,
-    made_under_6ft: 5,
-    putts_under_6ft_attempts: 7,
+    total_putts: 33,
+    three_putts: 1,
+    made_under_6ft: 10,
+    putts_under_6ft_attempts: 13,
     approach_directional_shots: approachShots([
       [1, "7i", "gir"],
       [2, "pw", "left"],
@@ -252,13 +215,12 @@ export const DUMMY_ROUND_TEMPLATES: DummyRoundInsert[] = [
       [7, "pw", "gir"],
       [8, "8i", "bottom-left"],
       [9, "9i", "gir"],
+      [10, "6i", "left"],
+      [11, "pw", "gir"],
+      [12, "7i", "bottom-right"],
+      [13, "9i", "gir"],
+      [14, "8i", "right"],
     ]),
-    putting_logs: [
-      { hole: 1, puttNumber: 1, made: true, distanceFeet: 6, break: "left_to_right" },
-      { hole: 3, puttNumber: 1, made: false, distanceFeet: 11, break: "straight", missLine: "low", missLength: "short" },
-      { hole: 3, puttNumber: 2, made: true, distanceFeet: 3, break: "straight" },
-      { hole: 7, puttNumber: 1, made: true, distanceFeet: 9, break: "right_to_left" },
-    ],
     share_on_community: true,
   },
 ];

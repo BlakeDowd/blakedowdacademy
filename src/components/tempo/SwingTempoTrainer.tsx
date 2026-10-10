@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Mic, Music, Pause, Play, Volume2, type LucideIcon } from "lucide-react";
+import { trackToolUse, type ToolKey } from "@/lib/appUsage";
 import { releaseAudio, unlockAudio } from "@/lib/unlockAudio";
 import {
   COUNT_IN_BEATS,
@@ -31,6 +32,7 @@ export type TempoTrainerConfig = {
   /** Pause between reps so the player can address the ball. */
   resetSec: number;
   silhouette: ReactNode;
+  usageKey: ToolKey;
 };
 
 type Cue = "takeaway" | "apex" | "impact";
@@ -76,7 +78,7 @@ function dialPoint(angleDeg: number, radius: number) {
 }
 
 export function SwingTempoTrainer({ config, hideHeader = false }: { config: TempoTrainerConfig; hideHeader?: boolean }) {
-  const { title, subtitle, ratio, presets, defaultPresetIndex, resetSec, silhouette } = config;
+  const { title, subtitle, ratio, presets, defaultPresetIndex, resetSec, silhouette, usageKey } = config;
   const [presetIndex, setPresetIndex] = useState(defaultPresetIndex);
   const [mode, setMode] = useState<SoundMode>("tones");
   const [playing, setPlaying] = useState(false);
@@ -159,6 +161,7 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
     const ctx = unlockAudio(ctxRef.current);
     if (!ctx) return;
     ctxRef.current = ctx;
+    trackToolUse(usageKey);
     voiceRef.current = undefined;
     void loadVoiceClips(ctx).then((clips) => {
       voiceRef.current = clips;
