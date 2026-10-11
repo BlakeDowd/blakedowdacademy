@@ -17,6 +17,7 @@ import {
   flightLabel,
   shotPoints,
   type BallFlight,
+  type BallFlightClub,
   type BallFlightDetails,
   type BallFlightShot,
   type FlightMark,
@@ -82,7 +83,7 @@ function Flag({ x, y }: { x: number; y: number }) {
   );
 }
 
-function FlightPicture({ flight, lefty }: { flight: BallFlight; lefty: boolean }) {
+export function FlightPicture({ flight, lefty }: { flight: BallFlight; lefty: boolean }) {
   const sign = curveSign(flight.shape);
   const startFrac = 0.62;
   const start = {
@@ -167,7 +168,7 @@ function FlightPicture({ flight, lefty }: { flight: BallFlight; lefty: boolean }
   );
 }
 
-function MarkRow({
+export function MarkRow({
   label,
   value,
   onChange,
@@ -199,6 +200,43 @@ function MarkRow({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/** Right/left-handed, remembered on this device. */
+export function useLefty(): [boolean, (next: boolean) => void] {
+  const [lefty, setLefty] = useState(() => {
+    try {
+      return localStorage.getItem(LEFTY_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const setHand = (next: boolean) => {
+    setLefty(next);
+    try {
+      localStorage.setItem(LEFTY_KEY, next ? "1" : "0");
+    } catch {
+      /* storage unavailable */
+    }
+  };
+  return [lefty, setHand];
+}
+
+export function HandToggle({ lefty, onChange }: { lefty: boolean; onChange: (lefty: boolean) => void }) {
+  return (
+    <div className="flex rounded-lg bg-white p-0.5 ring-1 ring-gray-200">
+      {[false, true].map((l) => (
+        <button
+          key={String(l)}
+          type="button"
+          onClick={() => onChange(l)}
+          className={`flex-1 rounded-md py-1.5 text-xs font-semibold ${lefty === l ? "bg-[#014421] text-white" : "text-gray-600"}`}
+        >
+          {l ? "Left-handed" : "Right-handed"}
+        </button>
+      ))}
     </div>
   );
 }
@@ -242,11 +280,13 @@ function ResultGrid({ shots }: { shots: BallFlightShot[] }) {
   );
 }
 
-/** Calls each of the 9 driver flights once; the player marks the start line, curve and height. */
+/** Calls each of the 9 flights once; the player marks the start line, curve and height. */
 export default function BallFlightDrill({
+  club,
   saving,
   onSave,
 }: {
+  club: BallFlightClub;
   saving: boolean;
   onSave: (score: number, reps: number, details: BallFlightDetails) => Promise<boolean>;
 }) {
@@ -255,22 +295,7 @@ export default function BallFlightDrill({
   const [shots, setShots] = useState<BallFlightShot[]>([]);
   const [marks, setMarks] = useState<Marks>(NO_MARKS);
   const [saved, setSaved] = useState(false);
-  const [lefty, setLefty] = useState(() => {
-    try {
-      return localStorage.getItem(LEFTY_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-
-  const setHand = (next: boolean) => {
-    setLefty(next);
-    try {
-      localStorage.setItem(LEFTY_KEY, next ? "1" : "0");
-    } catch {
-      /* storage unavailable */
-    }
-  };
+  const [lefty, setHand] = useLefty();
 
   const start = () => {
     setSequence(buildBallFlightSequence());
@@ -306,22 +331,12 @@ export default function BallFlightDrill({
           <li>Pick a target. The app calls a flight and shows the start line and curve.</li>
           <li>Hit it, then mark whether the start line, the curve and the height came off.</li>
           <li>9 shots: draw, straight and fade, each high, mid and low.</li>
+          {club === "irons" && <li>Use the same iron for all 9 shots. A 7 iron is a good start.</li>}
         </ol>
         <p className="text-[11px] text-gray-500">
           1 point each for start line, curve and height. Out of {BALL_FLIGHT_MAX_SCORE}.
         </p>
-        <div className="flex rounded-lg bg-white p-0.5 ring-1 ring-gray-200">
-          {[false, true].map((l) => (
-            <button
-              key={String(l)}
-              type="button"
-              onClick={() => setHand(l)}
-              className={`flex-1 rounded-md py-1.5 text-xs font-semibold ${lefty === l ? "bg-[#014421] text-white" : "text-gray-600"}`}
-            >
-              {l ? "Left-handed" : "Right-handed"}
-            </button>
-          ))}
-        </div>
+        <HandToggle lefty={lefty} onChange={setHand} />
         <button
           type="button"
           onClick={start}

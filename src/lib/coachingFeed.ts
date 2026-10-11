@@ -611,22 +611,18 @@ type TusCredentials = {
 };
 
 /** Finished uploads per picked file, so tapping Post again after a failed save doesn't re-send every video. */
-const finishedUploads = new WeakMap<File, { key: string; result: { videoId: string; storagePath: string | null } }>();
+const finishedUploads = new WeakMap<File, { key: string; result: { videoId: string } }>();
 
-/**
- * Uploads straight to Bunny. When `rawCopyOwnerId` is set, also stores the original file
- * so coaches can download it (Bunny's CDN often blocks the original).
- */
+/** Uploads straight to Bunny, which stores and streams it. */
 export async function uploadCoachingVideo(
   file: File,
   opts: {
     title: string;
     kind?: CoachingVideoKind;
-    rawCopyOwnerId?: string;
     onProgress?: (percent: number) => void;
   },
-): Promise<{ videoId: string; storagePath: string | null }> {
-  const cacheKey = `${opts.kind ?? ""}|${opts.rawCopyOwnerId ?? ""}`;
+): Promise<{ videoId: string }> {
+  const cacheKey = opts.kind ?? "";
   const done = finishedUploads.get(file);
   if (done?.key === cacheKey) {
     opts.onProgress?.(100);
@@ -642,10 +638,9 @@ async function uploadCoachingVideoFresh(
   opts: {
     title: string;
     kind?: CoachingVideoKind;
-    rawCopyOwnerId?: string;
     onProgress?: (percent: number) => void;
   },
-): Promise<{ videoId: string; storagePath: string | null }> {
+): Promise<{ videoId: string }> {
   const res = await fetch("/api/coaching/video", {
     method: "POST",
     headers: await authJsonHeaders(),
@@ -656,21 +651,6 @@ async function uploadCoachingVideoFresh(
     throw new Error(payload.error || `Could not start the upload (${res.status}).`);
   }
   const upload = payload.upload;
-
-  const rawCopy = opts.rawCopyOwnerId
-    ? (async () => {
-        const ext = file.name.split(".").pop()?.toLowerCase() || "mp4";
-        const path = `${opts.rawCopyOwnerId}/${upload.videoId}.${ext}`;
-        const { error } = await createClient()
-          .storage.from("swing-submissions")
-          .upload(path, file, { cacheControl: "3600", upsert: true, contentType: file.type || "video/mp4" });
-        if (error) {
-          console.warn("[coaching] raw copy upload failed:", error.message);
-          return null;
-        }
-        return path;
-      })()
-    : Promise.resolve(null);
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -698,7 +678,6 @@ async function uploadCoachingVideoFresh(
     throw err;
   }
 
-  const storagePath = await rawCopy;
   opts.onProgress?.(100);
-  return { videoId: upload.videoId, storagePath };
+  return { videoId: upload.videoId };
 }

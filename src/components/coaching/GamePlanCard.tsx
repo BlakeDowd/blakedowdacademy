@@ -76,7 +76,7 @@ function GamePlanForm({
           kind: "game_plan",
           onProgress: (percent) => setProgress({ index: i, percent }),
         });
-        uploaded.push({ bunny_video_id: v.videoId, storage_path: v.storagePath });
+        uploaded.push({ bunny_video_id: v.videoId, storage_path: null });
       }
       const [first, ...extras] = uploaded;
       await createPost(createClient(), {

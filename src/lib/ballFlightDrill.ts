@@ -1,6 +1,18 @@
-/** "9 Ball flight Driver" (DRIV-9BFD-036): the app calls a flight, the player marks the start line, curve and height. */
+/**
+ * "9 Ball flight Driver" (DRIV-9BFD-036) and "9 Ball flight irons" (IRON-9BAL-046): the app calls a flight,
+ * the player marks the start line, curve and height.
+ */
 
 export const BALL_FLIGHT_DRILL_KEY = "DRIV-9BFD-036";
+export const BALL_FLIGHT_IRONS_DRILL_KEY = "IRON-9BAL-046";
+export type BallFlightClub = "driver" | "irons";
+
+export function ballFlightClub(drillKey: string | null | undefined): BallFlightClub | null {
+  if (drillKey === BALL_FLIGHT_DRILL_KEY) return "driver";
+  if (drillKey === BALL_FLIGHT_IRONS_DRILL_KEY) return "irons";
+  return null;
+}
+
 export const BALL_FLIGHT_SHOTS = 9;
 
 export const FLIGHT_MARKS = ["start", "curve", "height"] as const;

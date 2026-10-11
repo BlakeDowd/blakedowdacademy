@@ -70,7 +70,7 @@ export const DESCRIPTION_BY_DRILL_ID: Record<string, string> = {
   "IRON-3SWG-052": "Performing 3 different swing lengths. Shaft parallel, left arm parallel and full backswing. Building blocks for solid contact and make sure you can get all three in a row.",
   "IRON-RESP-053": "Visualising recovery shots on the range and performing them so you can translate them to the course better.",
   "IRON-RBFD-054": "How many times in a row can you repeat the ball flight. Main thing to look for is curve first then to get harder make sure they are starting on the correct side of the target.",
-  "IRON-TETW-055": "Practicing the smoothest tempo you can do. If you have the tour tempo app this would be perfect as well.",
+  "IRON-TETW-055": "Practicing the smoothest tempo you can do. Swing to the Full Swing Tempo trainer below and log your reps.",
   "WEDG-CLSY-056": "Practicing every position on the clock and checking distances as reference points on the golf course.",
   "WEDG-RUSW-057": "Full wedge swings going from as slow as possible to as fast as possible while maintaining the same length swing.",
   "WEDG-LOFL-058": "Hitting low flight wedges. This will help you chase them to a back pin or windy conditions.",

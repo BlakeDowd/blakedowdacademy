@@ -77,7 +77,16 @@ function dialPoint(angleDeg: number, radius: number) {
   return { x: round(DIAL_C + radius * Math.sin(a)), y: round(DIAL_C - radius * Math.cos(a)) };
 }
 
-export function SwingTempoTrainer({ config, hideHeader = false }: { config: TempoTrainerConfig; hideHeader?: boolean }) {
+export function SwingTempoTrainer({
+  config,
+  hideHeader = false,
+  onRep,
+}: {
+  config: TempoTrainerConfig;
+  hideHeader?: boolean;
+  /** Called at each "Hit!" with the tempo that rep was played at. */
+  onRep?: (preset: TempoPreset) => void;
+}) {
   const { title, subtitle, ratio, presets, defaultPresetIndex, resetSec, silhouette, usageKey } = config;
   const [presetIndex, setPresetIndex] = useState(defaultPresetIndex);
   const [mode, setMode] = useState<SoundMode>("tones");
@@ -106,10 +115,15 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
   const presetRef = useRef(preset);
   const modeRef = useRef(mode);
   const countInRef = useRef(countIn);
+  const onRepRef = useRef(onRep);
 
   useEffect(() => {
     presetRef.current = preset;
   }, [preset]);
+
+  useEffect(() => {
+    onRepRef.current = onRep;
+  }, [onRep]);
 
   useEffect(() => {
     countInRef.current = countIn;
@@ -230,7 +244,10 @@ export function SwingTempoTrainer({ config, hideHeader = false }: { config: Temp
         }
       }
       if (next !== phaseRef.current) {
-        if (next === "hit") setReps((r) => r + 1);
+        if (next === "hit") {
+          setReps((r) => r + 1);
+          onRepRef.current?.(presetRef.current);
+        }
         phaseRef.current = next;
         setPhase(next);
       }

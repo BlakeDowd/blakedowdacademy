@@ -17,7 +17,11 @@ import DrillScoringPicker from "@/components/DrillScoringPicker";
 import FaceStrikeDrill from "@/components/FaceStrikeDrill";
 import { FACE_STRIKE_DRILL_KEY, FACE_STRIKE_SCORE_TYPE } from "@/lib/faceStrikeDrill";
 import BallFlightDrill from "@/components/BallFlightDrill";
-import { BALL_FLIGHT_DRILL_KEY, BALL_FLIGHT_SCORE_TYPE } from "@/lib/ballFlightDrill";
+import { BALL_FLIGHT_SCORE_TYPE, ballFlightClub } from "@/lib/ballFlightDrill";
+import FingerDispersionDrill from "@/components/FingerDispersionDrill";
+import { FINGER_DISPERSION_DRILL_KEY, FINGER_DISPERSION_SCORE_TYPE } from "@/lib/fingerDispersionDrill";
+import TempoTownDrill from "@/components/TempoTownDrill";
+import { TEMPO_TOWN_DRILL_KEY, TEMPO_TOWN_SCORE_TYPE } from "@/lib/tempoTownDrill";
 import { runnerDrillKey } from "@/lib/drillRunners";
 import { DrillGuide, DrillHero, DrillSteps } from "@/components/drills/DrillIntro";
 import { DrillTimerCard, formatClock, useDrillTimer } from "@/components/drills/DrillTimer";
@@ -150,12 +154,19 @@ export default function DrillCard({
   const { milestones, coachGoalText } = useMemo(() => parseCoachGoals(goalRepsForUi), [goalRepsForUi]);
   const coachScoreType = drillScoringOverride(useDrillScoringOverrides(), drillKey);
   const isFaceStrike = runnerKey === FACE_STRIKE_DRILL_KEY;
-  const isBallFlight = runnerKey === BALL_FLIGHT_DRILL_KEY;
+  const flightClub = ballFlightClub(runnerKey);
+  const isBallFlight = flightClub != null;
+  const isFingerDispersion = runnerKey === FINGER_DISPERSION_DRILL_KEY;
+  const isTempoTown = runnerKey === TEMPO_TOWN_DRILL_KEY;
   const scoreTypeOverride = isFaceStrike
     ? FACE_STRIKE_SCORE_TYPE
     : isBallFlight
       ? BALL_FLIGHT_SCORE_TYPE
-      : (coachScoreType ?? catalogScoring?.scoreType ?? null);
+      : isFingerDispersion
+        ? FINGER_DISPERSION_SCORE_TYPE
+        : isTempoTown
+          ? TEMPO_TOWN_SCORE_TYPE
+          : (coachScoreType ?? catalogScoring?.scoreType ?? null);
   const focus = catalogScoring?.focus ?? null;
   const scoring = useMemo(
     () => resolveDrillScoring({ override: scoreTypeOverride, goalText: goalRepsForUi, focus, title: drill.title }),
@@ -430,7 +441,7 @@ export default function DrillCard({
             );
           })()}
 
-          {!drill.isCombine && !isFaceStrike && !isBallFlight && (
+          {!drill.isCombine && !runnerKey && (
             <DrillScoringPicker drillKey={drillKey} scoring={scoring} hasOverride={coachScoreType != null} />
           )}
           {userId && !drill.isCombine ? (
@@ -443,8 +454,19 @@ export default function DrillCard({
                     saving={progress.saving}
                     onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
                   />
-                ) : isBallFlight ? (
+                ) : flightClub ? (
                   <BallFlightDrill
+                    club={flightClub}
+                    saving={progress.saving}
+                    onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
+                  />
+                ) : isFingerDispersion ? (
+                  <FingerDispersionDrill
+                    saving={progress.saving}
+                    onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
+                  />
+                ) : isTempoTown ? (
+                  <TempoTownDrill
                     saving={progress.saving}
                     onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
                   />

@@ -84,10 +84,9 @@ async function uploadMedia(input: MediaInput) {
         const v = await uploadCoachingVideo(file, {
           title: `${input.videoTitle} · ${new Date().toLocaleDateString()}${input.videos.length > 1 ? ` (${i + 1})` : ""}`,
           kind: input.kind,
-          rawCopyOwnerId: input.authorIsCoach ? undefined : input.authorId,
           onProgress: (percent) => input.onProgress({ index: i, total: input.videos.length, percent }),
         });
-        uploaded.push({ bunny_video_id: v.videoId, storage_path: v.storagePath });
+        uploaded.push({ bunny_video_id: v.videoId, storage_path: null });
       } catch (err) {
         failed.push(file);
         firstError ??= err;
