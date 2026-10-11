@@ -1537,7 +1537,7 @@ function getLeaderboardData(
   drillSessions: DrillSessionLike[] = [],
   libraryCompletions: LibraryCompletionLike[] = [],
   roundXpAwards: RoundXpAwardLike[] | null = null,
-  weeklyGoalXpAwards: RoundXpAwardLike[] = [],
+  bonusXpAwards: RoundXpAwardLike[] = [],
 ) {
   if (metric === "puttingCombine") {
     const allPractice = practiceSessions || [];
@@ -3095,7 +3095,7 @@ function getLeaderboardData(
       accumulateCombineXpByUser("allTime", practiceSessions || [], practiceLogs),
       accumulateLibraryXpByUser("allTime", libraryCompletions),
       accumulateRoundAwardXpByUser("allTime", roundXpAwards ?? []),
-      accumulateRoundAwardXpByUser("allTime", weeklyGoalXpAwards),
+      accumulateRoundAwardXpByUser("allTime", bonusXpAwards),
     ].reduce(
       mergePeriodXpMaps,
       accumulateLifetimeActivityXpByUser(practiceSessions || [], roundXpAwards ? [] : rounds, drillSessions),
@@ -3122,7 +3122,7 @@ function getLeaderboardData(
             accumulateDrillSessionXpByUser(timeFilter, drillSessions),
             accumulateCombineXpByUser(timeFilter, practiceSessions || [], practiceLogs),
             accumulateLibraryXpByUser(timeFilter, libraryCompletions),
-            accumulateRoundAwardXpByUser(timeFilter, weeklyGoalXpAwards),
+            accumulateRoundAwardXpByUser(timeFilter, bonusXpAwards),
           ].reduce(mergePeriodXpMaps, periodXpPractice || new Map<string, number>());
 
     if (userProfiles && userProfiles.size > 0) {

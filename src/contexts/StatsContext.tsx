@@ -125,8 +125,8 @@ interface StatsContextType {
   drillSessions: DrillSessionRow[];
   /** Null until loaded, or when `round_xp_awards` doesn't exist yet (leaderboards then count shared rounds). */
   roundXpAwards: RoundXpAwardRow[] | null;
-  /** Weekly goal bonuses (`weekly_goal_xp_awards`), same shape as round awards. */
-  weeklyGoalXpAwards: RoundXpAwardRow[];
+  /** Weekly goal and daily login bonuses (`weekly_goal_xp_awards`, `login_xp_awards`), same shape as round awards. */
+  bonusXpAwards: RoundXpAwardRow[];
   practiceSessions: PracticeSessionData[];
   practiceLogs: PracticeLogRow[];
   loading: boolean;
@@ -196,7 +196,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   const [drills, setDrills] = useState<DrillData[]>([]);
   const [drillSessions, setDrillSessions] = useState<DrillSessionRow[]>([]);
   const [roundXpAwards, setRoundXpAwards] = useState<RoundXpAwardRow[] | null>(null);
-  const [weeklyGoalXpAwards, setWeeklyGoalXpAwards] = useState<RoundXpAwardRow[]>([]);
+  const [bonusXpAwards, setBonusXpAwards] = useState<RoundXpAwardRow[]>([]);
   const [practiceSessions, setPracticeSessions] = useState<PracticeSessionData[]>([]);
   const [practiceLogs, setPracticeLogs] = useState<PracticeLogRow[]>([]);
   // Set loading to true initially
@@ -285,31 +285,36 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const loadWeeklyGoalXpAwards = async () => {
-    try {
-      const { createClient } = await import("@/lib/supabase/client");
-      const { data, error } = await createClient()
-        .from("weekly_goal_xp_awards")
-        .select("user_id, earned_at, xp")
-        .order("earned_at", { ascending: false })
-        .limit(20000);
-      if (error) {
-        if (!/weekly_goal_xp_awards/.test(error.message ?? "")) {
-          console.warn("StatsContext: weekly_goal_xp_awards:", error.message);
+  const loadBonusXpAwards = async () => {
+    const { createClient } = await import("@/lib/supabase/client");
+    const supabase = createClient();
+    const rows = await Promise.all(
+      ["weekly_goal_xp_awards", "login_xp_awards"].map(async (table) => {
+        try {
+          const { data, error } = await supabase
+            .from(table)
+            .select("user_id, earned_at, xp")
+            .order("earned_at", { ascending: false })
+            .limit(20000);
+          if (error) {
+            if (!error.message?.includes(table)) console.warn(`StatsContext: ${table}:`, error.message);
+            return [];
+          }
+          return (data ?? []) as RoundXpAwardRow[];
+        } catch (error) {
+          console.warn(`StatsContext: ${table}:`, error);
+          return [];
         }
-        return;
-      }
-      setWeeklyGoalXpAwards((data ?? []) as RoundXpAwardRow[]);
-    } catch (error) {
-      console.warn("StatsContext: weekly_goal_xp_awards:", error);
-    }
+      }),
+    );
+    setBonusXpAwards(rows.flat());
   };
 
   /** Leaderboards / community: all users' rounds (RLS permitting). */
   const loadCommunityRounds = async () => {
     if (communityRoundsFetched.current) return;
     void loadRoundXpAwards();
-    void loadWeeklyGoalXpAwards();
+    void loadBonusXpAwards();
 
     try {
       const { createClient } = await import("@/lib/supabase/client");
@@ -955,7 +960,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         drills,
         drillSessions,
         roundXpAwards,
-        weeklyGoalXpAwards,
+        bonusXpAwards,
         practiceSessions,
         practiceLogs,
         loading,
@@ -985,7 +990,7 @@ export function useStats() {
       drills: [], 
       drillSessions: [],
       roundXpAwards: null,
-      weeklyGoalXpAwards: [],
+      bonusXpAwards: [],
       practiceSessions: [], 
       practiceLogs: [],
       loading: false, 

@@ -11,6 +11,7 @@ import { DrillGuide, DrillHero, DrillSteps } from "@/components/drills/DrillIntr
 import { stableDrillKey } from "@/lib/drillPersonalBests";
 import { resolveDrillScoring } from "@/lib/drillScoring";
 import { runnerDrillKey } from "@/lib/drillRunners";
+import { realVideoUrl } from "@/lib/videoLinks";
 import { drillScoringOverride, useDrillScoringOverrides } from "@/lib/drillScoringOverrides";
 
 const LIBRARY_CATEGORIES = [
@@ -118,7 +119,7 @@ function dbToDrillRecord(db: Record<string, unknown>): DrillRecord {
     ""
   ) as string;
   const pdfUrl = ((db as any).pdf_url ?? "").toString().trim() || undefined;
-  const videoUrl = ((db as any).video_url ?? (db as any).youtube_url ?? "").toString().trim() || undefined;
+  const videoUrl = realVideoUrl((db as any).video_url ?? (db as any).youtube_url);
   const humanCode = (db as { drill_id?: string }).drill_id;
   return {
     id: String(db.id),

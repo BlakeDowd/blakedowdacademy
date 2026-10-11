@@ -6,6 +6,7 @@ import { StatsProvider } from "@/contexts/StatsContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ProfileGuard from "@/components/ProfileGuard";
+import LoginXpClaimer from "@/components/LoginXpClaimer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -45,6 +46,7 @@ export default function RootLayout({
             <ProfileGuard>
               <StatsProvider>
                 <AppFrame>{children}</AppFrame>
+                <LoginXpClaimer />
               </StatsProvider>
             </ProfileGuard>
           </AuthProvider>

@@ -23,6 +23,7 @@ import {
 import type { FacilityType } from "@/components/DrillCard";
 import { keepElementInView, useKeepInViewOnChange } from "@/hooks/useKeepInView";
 import { SHOW_PDFS } from "@/lib/drillResources";
+import { realVideoUrl } from "@/lib/videoLinks";
 
 export type GuidedSessionDrill = {
   id: string;
@@ -460,7 +461,8 @@ export function GuidedPracticeSession({
                           const key = `${d.id}-${number}`;
                           const expanded = expandedDrillKey === key;
                           const pdfUrl = SHOW_PDFS ? d.pdfUrl : undefined;
-                          const hasDetails = Boolean(d.description || d.goal || d.videoUrl || pdfUrl);
+                          const videoUrl = realVideoUrl(d.videoUrl);
+                          const hasDetails = Boolean(d.description || d.goal || videoUrl || pdfUrl);
                           return (
                             <li key={key} data-drill-key={key} className="scroll-mt-4 rounded-xl bg-gray-50">
                               <button
@@ -502,12 +504,12 @@ export function GuidedPracticeSession({
                                       <p className="whitespace-pre-wrap text-sm text-gray-800">{d.goal}</p>
                                     </div>
                                   ) : null}
-                                  {d.videoUrl || pdfUrl ? (
+                                  {videoUrl || pdfUrl ? (
                                     <div className="flex gap-2">
-                                      {d.videoUrl ? (
+                                      {videoUrl ? (
                                         <button
                                           type="button"
-                                          onClick={() => onOpenVideo(d.videoUrl!)}
+                                          onClick={() => onOpenVideo(videoUrl)}
                                           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
                                         >
                                           <PlayCircle className="h-4 w-4" aria-hidden />

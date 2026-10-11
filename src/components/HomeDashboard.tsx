@@ -37,6 +37,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { AddToHomeScreenGuide } from "@/components/AddToHomeScreenGuide";
+import { InstallAppPrompt } from "@/components/InstallAppPrompt";
 import { FeedbackBox } from "@/components/FeedbackBox";
 import { HomeWeekSchedule } from "@/components/HomeWeekSchedule";
 import { HomeCoachingCard } from "@/components/coaching/HomeCoachingCard";
@@ -663,6 +664,7 @@ export default function HomeDashboard() {
             onClose={() => setToast(null)}
           />
         )}
+        <InstallAppPrompt />
         <div className="flex-1 w-full flex flex-col bg-gray-50">
           <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-32 w-full">
             <div className="w-full max-w-md mx-auto">

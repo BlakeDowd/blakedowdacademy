@@ -22,7 +22,14 @@ import FingerDispersionDrill from "@/components/FingerDispersionDrill";
 import { FINGER_DISPERSION_DRILL_KEY, FINGER_DISPERSION_SCORE_TYPE } from "@/lib/fingerDispersionDrill";
 import TempoTownDrill from "@/components/TempoTownDrill";
 import { TEMPO_TOWN_DRILL_KEY, TEMPO_TOWN_SCORE_TYPE } from "@/lib/tempoTownDrill";
+import Par2Scorecard from "@/components/Par2Scorecard";
+import { PAR2_SCORE_TYPE, par2Game } from "@/lib/par2Drill";
+import AimpointReadDrill from "@/components/AimpointReadDrill";
+import { AIMPOINT_READ_SCORE_TYPE, isAimpointReadKey } from "@/lib/aimpointReadDrill";
+import EnvironmentalDrill from "@/components/EnvironmentalDrill";
+import { ENVIRONMENTAL_DRILL_KEY, ENVIRONMENTAL_SCORE_TYPE } from "@/lib/environmentalDrill";
 import { runnerDrillKey } from "@/lib/drillRunners";
+import { realVideoUrl } from "@/lib/videoLinks";
 import { DrillGuide, DrillHero, DrillSteps } from "@/components/drills/DrillIntro";
 import { DrillTimerCard, formatClock, useDrillTimer } from "@/components/drills/DrillTimer";
 import { isPerfectScore, resolveDrillScoring } from "@/lib/drillScoring";
@@ -158,6 +165,9 @@ export default function DrillCard({
   const isBallFlight = flightClub != null;
   const isFingerDispersion = runnerKey === FINGER_DISPERSION_DRILL_KEY;
   const isTempoTown = runnerKey === TEMPO_TOWN_DRILL_KEY;
+  const isEnvironmental = runnerKey === ENVIRONMENTAL_DRILL_KEY;
+  const par2 = par2Game(runnerKey);
+  const videoUrl = realVideoUrl(drill.youtube_url || drill.video_url);
   const scoreTypeOverride = isFaceStrike
     ? FACE_STRIKE_SCORE_TYPE
     : isBallFlight
@@ -166,7 +176,13 @@ export default function DrillCard({
         ? FINGER_DISPERSION_SCORE_TYPE
         : isTempoTown
           ? TEMPO_TOWN_SCORE_TYPE
-          : (coachScoreType ?? catalogScoring?.scoreType ?? null);
+          : par2
+            ? PAR2_SCORE_TYPE
+            : isAimpointReadKey(runnerKey)
+              ? AIMPOINT_READ_SCORE_TYPE
+              : isEnvironmental
+                ? ENVIRONMENTAL_SCORE_TYPE
+                : (coachScoreType ?? catalogScoring?.scoreType ?? null);
   const focus = catalogScoring?.focus ?? null;
   const scoring = useMemo(
     () => resolveDrillScoring({ override: scoreTypeOverride, goalText: goalRepsForUi, focus, title: drill.title }),
@@ -373,12 +389,12 @@ export default function DrillCard({
             />
           )}
 
-          {(drill.youtube_url || drill.video_url) || (SHOW_PDFS && drill.pdf_url) ? (
+          {videoUrl || (SHOW_PDFS && drill.pdf_url) ? (
             <div className="flex flex-wrap gap-2">
-              {(drill.youtube_url || drill.video_url) && (
+              {videoUrl && (
                 <button
                   type="button"
-                  onClick={() => onYoutubeOpen(drill.youtube_url || drill.video_url || "")}
+                  onClick={() => onYoutubeOpen(videoUrl)}
                   className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50"
                 >
                   <PlayCircle className="h-5 w-5 text-red-600" />
@@ -397,12 +413,7 @@ export default function DrillCard({
                 </a>
               ) : null}
             </div>
-          ) : (
-            <p className="inline-flex items-center gap-1.5 px-1 text-xs text-gray-400">
-              <PlayCircle className="h-3.5 w-3.5" aria-hidden />
-              Video coming soon
-            </p>
-          )}
+          ) : null}
 
           {(() => {
             const levels = drill.levels ?? [];
@@ -467,6 +478,24 @@ export default function DrillCard({
                   />
                 ) : isTempoTown ? (
                   <TempoTownDrill
+                    saving={progress.saving}
+                    onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
+                  />
+                ) : par2 ? (
+                  <Par2Scorecard
+                    game={par2}
+                    storageKey={`par2-card-${userId}-${drillKey}`}
+                    saving={progress.saving}
+                    onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
+                  />
+                ) : isAimpointReadKey(runnerKey) ? (
+                  <AimpointReadDrill
+                    drillKey={runnerKey}
+                    saving={progress.saving}
+                    onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
+                  />
+                ) : isEnvironmental ? (
+                  <EnvironmentalDrill
                     saving={progress.saving}
                     onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
                   />
