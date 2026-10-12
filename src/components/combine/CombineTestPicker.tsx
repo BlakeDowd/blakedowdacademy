@@ -25,8 +25,8 @@ const FEATURED_GROUP = "Full tests";
 function groupCards(cards: CombineTestCard[]): { group: string; cards: CombineTestCard[] }[] {
   const out: { group: string; cards: CombineTestCard[] }[] = [];
   for (const card of cards) {
-    const last = out[out.length - 1];
-    if (last && last.group === card.group) last.cards.push(card);
+    const existing = out.find((g) => g.group === card.group);
+    if (existing) existing.cards.push(card);
     else out.push({ group: card.group, cards: [card] });
   }
   return out;
