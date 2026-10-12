@@ -28,6 +28,8 @@ import AimpointReadDrill from "@/components/AimpointReadDrill";
 import { AIMPOINT_READ_SCORE_TYPE, isAimpointReadKey } from "@/lib/aimpointReadDrill";
 import EnvironmentalDrill from "@/components/EnvironmentalDrill";
 import { ENVIRONMENTAL_DRILL_KEY, ENVIRONMENTAL_SCORE_TYPE } from "@/lib/environmentalDrill";
+import Drives5sScorecard from "@/components/Drives5sScorecard";
+import { DRIVES_5S_DRILL_KEY, DRIVES_5S_SCORE_TYPE } from "@/lib/drives5sDrill";
 import { runnerDrillKey } from "@/lib/drillRunners";
 import { realVideoUrl } from "@/lib/videoLinks";
 import { DrillGuide, DrillHero, DrillSteps } from "@/components/drills/DrillIntro";
@@ -166,6 +168,7 @@ export default function DrillCard({
   const isFingerDispersion = runnerKey === FINGER_DISPERSION_DRILL_KEY;
   const isTempoTown = runnerKey === TEMPO_TOWN_DRILL_KEY;
   const isEnvironmental = runnerKey === ENVIRONMENTAL_DRILL_KEY;
+  const isDrives5s = runnerKey === DRIVES_5S_DRILL_KEY;
   const par2 = par2Game(runnerKey);
   const videoUrl = realVideoUrl(drill.youtube_url || drill.video_url);
   const scoreTypeOverride = isFaceStrike
@@ -182,7 +185,9 @@ export default function DrillCard({
               ? AIMPOINT_READ_SCORE_TYPE
               : isEnvironmental
                 ? ENVIRONMENTAL_SCORE_TYPE
-                : (coachScoreType ?? catalogScoring?.scoreType ?? null);
+                : isDrives5s
+                  ? DRIVES_5S_SCORE_TYPE
+                  : (coachScoreType ?? catalogScoring?.scoreType ?? null);
   const focus = catalogScoring?.focus ?? null;
   const scoring = useMemo(
     () =>
@@ -503,6 +508,12 @@ export default function DrillCard({
                   />
                 ) : isEnvironmental ? (
                   <EnvironmentalDrill
+                    saving={progress.saving}
+                    onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
+                  />
+                ) : isDrives5s ? (
+                  <Drives5sScorecard
+                    storageKey={`drives5s-card-${userId}`}
                     saving={progress.saving}
                     onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
                   />

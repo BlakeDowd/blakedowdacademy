@@ -171,6 +171,8 @@ function HallOfFameLeaderboardInner(
         practiceLogs || [],
         libraryCompletions,
         drillSessions,
+        roundXpAwards ?? [],
+        bonusXpAwards,
       );
 
       if (uniqueUserIds.length === 0) return;
@@ -187,6 +189,8 @@ function HallOfFameLeaderboardInner(
     practiceLogsIdentity,
     libraryCompletions,
     drillSessions?.length ?? 0,
+    roundXpAwards?.length ?? 0,
+    bonusXpAwards.length,
   ]);
 
   useEffect(() => {
@@ -199,6 +203,8 @@ function HallOfFameLeaderboardInner(
           practiceLogs || [],
           libraryCompletions,
           drillSessions,
+          roundXpAwards ?? [],
+          bonusXpAwards,
         );
 
         if (uniqueUserIds.length > 0) {
@@ -220,6 +226,8 @@ function HallOfFameLeaderboardInner(
     practiceLogsIdentity,
     libraryCompletions,
     drillSessions?.length ?? 0,
+    roundXpAwards?.length ?? 0,
+    bonusXpAwards.length,
   ]);
 
   useEffect(() => {

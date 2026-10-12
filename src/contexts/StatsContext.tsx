@@ -896,16 +896,22 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       loadPracticeLogs();
     };
 
+    const handleXpUpdate = () => {
+      void loadBonusXpAwards();
+    };
+
     window.addEventListener('roundsUpdated', handleRoundsUpdate);
     window.addEventListener('drillsUpdated', handleDrillsUpdate);
     window.addEventListener('practiceSessionsUpdated', handlePracticeSessionsUpdate);
     window.addEventListener('academyLeaderboardRefresh', handleAcademyLeaderboardRefresh);
+    window.addEventListener('xpUpdated', handleXpUpdate);
 
     return () => {
       window.removeEventListener('roundsUpdated', handleRoundsUpdate);
       window.removeEventListener('drillsUpdated', handleDrillsUpdate);
       window.removeEventListener('practiceSessionsUpdated', handlePracticeSessionsUpdate);
       window.removeEventListener('academyLeaderboardRefresh', handleAcademyLeaderboardRefresh);
+      window.removeEventListener('xpUpdated', handleXpUpdate);
     };
   }, []); // Empty dependency array - fetch once on mount, then listen for updates
 
@@ -926,6 +932,8 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     loadDrills();
     loadPracticeSessions();
     loadPracticeLogs();
+    void loadRoundXpAwards();
+    void loadBonusXpAwards();
   }, [user?.id]);
 
   // If the first practice_logs fetch ran before JWT hydration, refetch when Supabase auth settles.

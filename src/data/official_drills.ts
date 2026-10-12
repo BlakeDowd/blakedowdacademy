@@ -129,6 +129,7 @@ export const DESCRIPTION_BY_DRILL_ID: Record<string, string> = {
   "9HOL-TWCE-111": "Playing every shot with two clubs up to force you to get creative and smooth out your speed.",
   "9HOL-ODDC-112": "Only playing odd clubs excluding putter on course to get creative with distance control.",
   "9HOL-EVCL-113": "Only playing even clubs excluding putter on course to get creative with distance control.",
+  "9HOL-DR5S-122": "On-course combine over the 7 holes that aren't par 3s. Each hole: hit two tee shots (fairway 0, rough 1, hazard/bunker/OB 2 points), then hole out from a wedge (80–120 m), a pitch (40–79 m) and a greenside chip, counting strokes. The chip lie gets harder as the round goes on. Par is 6 a hole, 42 for the round. Lowest total wins.",
   "18HO-REDT-114": "Trying to go as low as possible off the red tees. To be comfortable being under par or under your handicap.",
   "18HO-YELT-115": "Trying to go as low as possible off the yellow tees. To be comfortable being under par or under your handicap.",
   "18HO-COMT-116": "Practicing decision making off the competition tees to gain confidence in the shot selection.",
@@ -1504,6 +1505,18 @@ export const OFFICIAL_DRILLS: DrillRecord[] = [
     "focus": "Gross Score",
     "description": "",
     "goal": "",
+    "estimatedMinutes": 15,
+    "xpValue": 10,
+    "contentType": "text"
+  },
+  {
+    "id": "eea0615a-c417-458b-b8aa-16e80a7140ac",
+    "drill_id": "9HOL-DR5S-122",
+    "title": "Drives & 5s",
+    "category": "9-Hole Round",
+    "focus": "Combine points",
+    "description": "",
+    "goal": "Under 42 points (6 a hole)",
     "estimatedMinutes": 15,
     "xpValue": 10,
     "contentType": "text"

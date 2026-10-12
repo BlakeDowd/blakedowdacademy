@@ -5,6 +5,7 @@ import { TEMPO_TOWN_DRILL_KEY } from "@/lib/tempoTownDrill";
 import { BUNKER_UP_DOWN_DRILL_KEY, PAR2_18_DRILL_KEY, PAR2_9_DRILL_KEY } from "@/lib/par2Drill";
 import { AIMPOINT_READ_DRILLS } from "@/lib/aimpointReadDrill";
 import { ENVIRONMENTAL_DRILL_KEY } from "@/lib/environmentalDrill";
+import { DRIVES_5S_DRILL_ID, DRIVES_5S_DRILL_KEY } from "@/lib/drives5sDrill";
 
 /** Drills with their own scoring screen. Planner rows can carry the code, the catalogue UUID or only the name. */
 const RUNNER_DRILLS: { key: string; ids: readonly string[]; title: string }[] = [
@@ -17,6 +18,7 @@ const RUNNER_DRILLS: { key: string; ids: readonly string[]; title: string }[] = 
   { key: PAR2_9_DRILL_KEY, ids: ["608a395b-ced2-4ab0-8c4e-9e4076fd1670"], title: "par 2 9 holes scoring" },
   { key: BUNKER_UP_DOWN_DRILL_KEY, ids: ["6bdaf738-3063-44c2-80a7-30f9426d5070"], title: "up and down 9 holes" },
   { key: ENVIRONMENTAL_DRILL_KEY, ids: ["95a7e861-8497-4ba3-8608-7777317edb3d"], title: "environmental" },
+  { key: DRIVES_5S_DRILL_KEY, ids: [DRIVES_5S_DRILL_ID], title: "drives & 5s" },
   ...Object.entries(AIMPOINT_READ_DRILLS).map(([key, d]) => ({ key, ids: [], title: d.match })),
 ];
 
