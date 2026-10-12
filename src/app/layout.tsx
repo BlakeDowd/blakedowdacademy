@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ProfileGuard from "@/components/ProfileGuard";
 import LoginXpClaimer from "@/components/LoginXpClaimer";
+import AppUpdateWatcher from "@/components/AppUpdateWatcher";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -51,6 +52,7 @@ export default function RootLayout({
             </ProfileGuard>
           </AuthProvider>
         </ErrorBoundary>
+        <AppUpdateWatcher />
       </body>
     </html>
   );
