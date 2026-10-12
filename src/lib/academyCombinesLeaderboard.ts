@@ -18,6 +18,9 @@ import { ironSafeSideConfig } from "@/lib/ironSafeSideConfig";
 import { ironFadeDrawConfig } from "@/lib/ironFadeDrawConfig";
 import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
 import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
+import { teeShotHazardConfig, TEE_SHOT_HAZARD_MAX_POINTS } from "@/lib/teeShotHazardConfig";
+import { driverFlightTestConfig } from "@/lib/driverFlightTestConfig";
+import { BUNKER_LIES_PAR, bunkerLiesConfig, formatToPar } from "@/lib/bunkerLiesConfig";
 
 export type CombineLeaderboardTestId =
   | "ironPrecisionProtocol"
@@ -38,7 +41,10 @@ export type CombineLeaderboardTestId =
   | "iron_safe_side"
   | "iron_fade_draw"
   | "three_strikes"
-  | "bunker_protocol";
+  | "bunker_protocol"
+  | "tee_shot_hazard"
+  | "driver_flight_control"
+  | "bunker_lies";
 
 /** Resolved in Academy via getLeaderboardData — practice table builder skips these. */
 const LEADERBOARD_DRIVEN_COMBINE_IDS: CombineLeaderboardTestId[] = [
@@ -197,6 +203,27 @@ export const COMBINE_LEADERBOARD_OPTIONS: CombineLeaderboardTestOption[] = [
     source: "practice_logs",
     higherIsBetter: true,
     scoreHeader: "Score",
+  },
+  {
+    id: "tee_shot_hazard",
+    label: teeShotHazardConfig.testName,
+    source: "practice_logs",
+    higherIsBetter: true,
+    scoreHeader: `Score (/${TEE_SHOT_HAZARD_MAX_POINTS})`,
+  },
+  {
+    id: "driver_flight_control",
+    label: driverFlightTestConfig.testName,
+    source: "practice_logs",
+    higherIsBetter: true,
+    scoreHeader: `Score (/${driverFlightTestConfig.maxSessionPoints})`,
+  },
+  {
+    id: "bunker_lies",
+    label: bunkerLiesConfig.testName,
+    source: "practice_logs",
+    higherIsBetter: false,
+    scoreHeader: `To par (${BUNKER_LIES_PAR})`,
   },
 ];
 
@@ -528,10 +555,20 @@ export function buildAcademyCombinesLeaderboard(
         });
       }
     }
-  } else if (testId === "iron_safe_side" || testId === "iron_fade_draw") {
-    const isSafeSide = testId === "iron_safe_side";
-    const want = isSafeSide ? ironSafeSideConfig.practiceLogType : ironFadeDrawConfig.practiceLogType;
-    const outOf = isSafeSide ? 90 : ironFadeDrawConfig.maxSessionPoints;
+  } else if (
+    testId === "iron_safe_side" ||
+    testId === "iron_fade_draw" ||
+    testId === "tee_shot_hazard" ||
+    testId === "driver_flight_control"
+  ) {
+    const { want, outOf } =
+      testId === "iron_safe_side"
+        ? { want: ironSafeSideConfig.practiceLogType, outOf: 90 }
+        : testId === "tee_shot_hazard"
+          ? { want: teeShotHazardConfig.practiceLogType, outOf: TEE_SHOT_HAZARD_MAX_POINTS }
+          : testId === "driver_flight_control"
+            ? { want: driverFlightTestConfig.practiceLogType, outOf: driverFlightTestConfig.maxSessionPoints }
+            : { want: ironFadeDrawConfig.practiceLogType, outOf: ironFadeDrawConfig.maxSessionPoints };
     for (const row of practiceLogs || []) {
       if (String(row?.log_type ?? "").trim().toLowerCase() !== want) continue;
       if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
@@ -589,6 +626,26 @@ export function buildAcademyCombinesLeaderboard(
         bestByUser.set(uid, {
           sortValue: tp,
           display: `${Math.round(tp)} Pts`,
+          dateMs,
+        });
+      }
+    }
+  } else if (testId === "bunker_lies") {
+    // Fewest strokes wins; the sort is highest-first so rank on negative strokes.
+    for (const row of practiceLogs || []) {
+      if (String(row?.log_type ?? "").trim().toLowerCase() !== bunkerLiesConfig.practiceLogType) continue;
+      if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
+      const uid = row.user_id;
+      if (!uid) continue;
+      const strokes = num(row.score) ?? num(row.total_points);
+      if (strokes == null || strokes < bunkerLiesConfig.holeCount) continue;
+      const sortValue = -strokes;
+      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
+      const prev = bestByUser.get(uid);
+      if (!prev || sortValue > prev.sortValue || (sortValue === prev.sortValue && dateMs > prev.dateMs)) {
+        bestByUser.set(uid, {
+          sortValue,
+          display: `${formatToPar(Math.round(strokes) - BUNKER_LIES_PAR)} (${Math.round(strokes)})`,
           dateMs,
         });
       }

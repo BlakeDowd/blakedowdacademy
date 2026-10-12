@@ -56,6 +56,10 @@ const COMBINE_PRACTICE_LOG_TYPES = [
   'iron_face_control',
   'iron_safe_side',
   'iron_fade_draw',
+  'tee_shot_hazard',
+  'driver_flight_control',
+  'bunker_lies',
+  'mobility_screen',
   'iron_skills',
 ];
 

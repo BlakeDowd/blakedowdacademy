@@ -12,6 +12,8 @@ import { chippingCombine9Config } from "@/lib/chippingCombine9Config";
 import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
 import { teeShotDispersionCombineConfig } from "@/lib/teeShotDispersionCombineConfig";
+import { teeShotHazardConfig } from "@/lib/teeShotHazardConfig";
+import { driverFlightTestConfig } from "@/lib/driverFlightTestConfig";
 import { bunker9HoleChallengeConfig } from "@/lib/bunker9HoleChallengeConfig";
 import { flopShotCombineConfig } from "@/lib/flopShotCombineConfig";
 import { standardChippingCombineConfig } from "@/lib/standardChippingCombineConfig";
@@ -22,6 +24,7 @@ import { ironSafeSideConfig } from "@/lib/ironSafeSideConfig";
 import { ironFadeDrawConfig } from "@/lib/ironFadeDrawConfig";
 import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
 import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
+import { bunkerLiesConfig } from "@/lib/bunkerLiesConfig";
 
 export const COMBINE_CATEGORY_IDS = [
   "Putting",
@@ -285,6 +288,26 @@ export const COMBINE_TEST_CARDS: CombineTestCard[] = [
     group: "Tests",
   },
   {
+    id: "tee-shot-hazard",
+    category: "Tee Shot",
+    href: "/practice/tee-shot-hazard",
+    label: teeShotHazardConfig.testName,
+    title: "Tee Shot Hazards",
+    blurb: "Random targets with a bunker or OB to one side. Keep it out of trouble.",
+    meta: ["14 shots", "3 tee clubs"],
+    group: "Tests",
+  },
+  {
+    id: "driver-flight-test",
+    category: "Tee Shot",
+    href: "/practice/driver-flight-test",
+    label: driverFlightTestConfig.testName,
+    title: "Driver Flight Control",
+    blurb: "Your normal shape, a low one, then the opposite shape.",
+    meta: ["3 drives", "Driver"],
+    group: "Tests",
+  },
+  {
     id: "bunker-9-hole-challenge",
     category: "Bunkers",
     href: "/practice/bunker-9-hole-challenge",
@@ -303,5 +326,15 @@ export const COMBINE_TEST_CARDS: CombineTestCard[] = [
     blurb: "Get it inside 1 m from three distances.",
     meta: ["12 shots", "5, 10, 20 m"],
     group: "Proximity",
+  },
+  {
+    id: "bunker-lies",
+    category: "Bunkers",
+    href: "/practice/bunker-lies",
+    label: bunkerLiesConfig.testName,
+    title: "Bunker Lies",
+    blurb: "Slopes, hard and soft sand, plugged. Play each one out.",
+    meta: ["9 lies", "5–10 m"],
+    group: "Scramble",
   },
 ];

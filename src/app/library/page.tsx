@@ -18,6 +18,7 @@ import {
   Search,
   BookOpen,
   Apple,
+  Brain,
   Calculator,
   ClipboardCheck,
 } from "lucide-react";
@@ -30,6 +31,7 @@ import { SHOW_PDFS } from "@/lib/drillResources";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
 import PuttingStrokeCalculator from "@/components/putting/PuttingStrokeCalculator";
 import TournamentChecklist from "@/components/oncourse/TournamentChecklist";
+import GolfIqQuiz from "@/components/oncourse/GolfIqQuiz";
 import { NutritionPlannerPanel } from "@/components/NutritionPlannerPanel";
 import {
   APP_VIDEO_COACH_NAME,
@@ -81,6 +83,7 @@ const countsTowardsProgress = (lesson: Lesson) => !isTool(lesson);
 function ToolIcon({ lesson, className }: { lesson: Lesson; className?: string }) {
   if (lesson.id === "tournament-checklist") return <ClipboardCheck className={className} aria-hidden />;
   if (lesson.id === "fuel-planner") return <Apple className={className} aria-hidden />;
+  if (lesson.id === "golf-iq-level-1") return <Brain className={className} aria-hidden />;
   return <Calculator className={className} aria-hidden />;
 }
 
@@ -1313,6 +1316,11 @@ function LibraryPageContent() {
               {activeLesson.id === "tournament-checklist" && (
                 <div className="mt-5 -mx-1">
                   <TournamentChecklist hideHeader />
+                </div>
+              )}
+              {activeLesson.id === "golf-iq-level-1" && (
+                <div className="mt-5 -mx-1">
+                  <GolfIqQuiz />
                 </div>
               )}
               {activeLesson.id === "fuel-planner" && (

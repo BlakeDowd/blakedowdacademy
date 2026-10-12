@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ClipboardCheck, X } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, ClipboardCheck, PersonStanding, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isCoachEmail } from "@/lib/coachEmails";
 import { CombineTestPicker } from "@/components/combine/CombineTestPicker";
@@ -40,12 +41,25 @@ function TestPlayerSheet({
             <h2 id="test-player-title" className="truncate text-lg font-bold text-stone-900">
               Test {playerName}
             </h2>
-            <p className="text-xs text-stone-500">Pick a combine. Their score saves to their profile.</p>
+            <p className="text-xs text-stone-500">Pick a test. Their score saves to their profile.</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full p-2 text-stone-500 hover:bg-stone-200" aria-label="Close">
             <X className="h-5 w-5" aria-hidden />
           </button>
         </div>
+        <Link
+          href={combineHrefForPlayer("/practice/mobility-screen", playerId)}
+          className="mb-4 flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-100 hover:bg-gray-50"
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#014421]/10 text-[#014421]">
+            <PersonStanding className="h-5 w-5" aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="block text-sm font-bold text-gray-900">Mobility Screen</span>
+            <span className="block text-xs text-gray-500">12 body tests. You mark each one off</span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+        </Link>
         <CombineTestPicker
           category={category}
           onCategoryChange={setCategory}

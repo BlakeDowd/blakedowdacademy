@@ -18,6 +18,7 @@ import { NewSpaceSheet, PendingInviteBanner } from "@/components/coaching/Coachi
 import { PlayerEmail } from "@/components/coaching/PlayerEmail";
 import { TestPlayerButton } from "@/components/coaching/TestPlayerButton";
 import { PlayerCombineScores } from "@/components/coaching/PlayerCombineScores";
+import { PlayerMobilityScreens } from "@/components/coaching/PlayerMobilityScreens";
 import { CoachingFamilies } from "@/components/coaching/CoachingFamilies";
 import { GamePlanCard } from "@/components/coaching/GamePlanCard";
 
@@ -250,6 +251,7 @@ export default function CoachingTab({
         />
         {!pending?.pending && <TestPlayerButton playerId={open.id} playerName={open.name} className="w-full" />}
         {!pending?.pending && <PlayerCombineScores key={`scores-${open.id}`} playerId={open.id} playerName={open.name} />}
+        {!pending?.pending && <PlayerMobilityScreens key={`mobility-${open.id}`} playerId={open.id} playerName={open.name} />}
         <AssignmentsPanel
           key={`assign-${open.id}`}
           studentId={open.id}

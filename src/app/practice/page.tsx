@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, BookOpen, Apple, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus } from "lucide-react";
+import Link from "next/link";
+import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, BookOpen, Apple, PersonStanding, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus } from "lucide-react";
 import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
 import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
@@ -492,6 +493,9 @@ const COMBINE_HREF_TO_LOG_TYPE: Record<string, string> = {
   "/practice/iron-safe-side": "iron_safe_side",
   "/practice/iron-fade-vs-draw": "iron_fade_draw",
   "/practice/bunker-proximity-protocol": "bunker_protocol",
+  "/practice/tee-shot-hazard": "tee_shot_hazard",
+  "/practice/driver-flight-test": "driver_flight_control",
+  "/practice/bunker-lies": "bunker_lies",
   "/combines/iron-skills": "iron_skills",
 };
 
@@ -515,6 +519,9 @@ const COMBINE_HREF_TO_LEADERBOARD_TEST: Partial<Record<string, CombineLeaderboar
   "/practice/iron-fade-vs-draw": "iron_fade_draw",
   "/practice/3-strikes-wedge-challenge": "three_strikes",
   "/practice/bunker-proximity-protocol": "bunker_protocol",
+  "/practice/tee-shot-hazard": "tee_shot_hazard",
+  "/practice/driver-flight-test": "driver_flight_control",
+  "/practice/bunker-lies": "bunker_lies",
 };
 
 const COMBINE_HREF_TO_EST_MINUTES: Record<string, number> = {
@@ -542,7 +549,10 @@ const COMBINE_HREF_TO_EST_MINUTES: Record<string, number> = {
   "/practice/bunker-proximity-protocol": 15,
   "/combines/iron-skills": 20,
   "/practice/tee-shot-dispersion-combine": 20,
+  "/practice/tee-shot-hazard": 20,
+  "/practice/driver-flight-test": 5,
   "/practice/bunker-9-hole-challenge": 20,
+  "/practice/bunker-lies": 20,
 };
 
 const PLANNER_COMBINE_TASKS: PlannerCombineTask[] = COMBINE_TEST_CARDS.map((card) => ({
@@ -3991,6 +4001,17 @@ export default function PracticePage() {
                 </div>
               )}
             </div>
+
+            <Link href="/practice/mobility-screen" className="flex items-center gap-3 rounded-xl bg-gray-50 p-3 text-left">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                <PersonStanding className="h-4 w-4 text-[#014421]" aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-gray-900">Mobility Screen</span>
+                <span className="block text-xs text-gray-500">12 body tests that show what&apos;s holding your swing back</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+            </Link>
           </div>
         </div>
 

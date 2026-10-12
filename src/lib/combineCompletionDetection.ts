@@ -14,6 +14,10 @@ import { survival20Config } from "@/lib/survival20Config";
 import { ironFaceControlConfig } from "@/lib/ironFaceControlConfig";
 import { ironSafeSideConfig } from "@/lib/ironSafeSideConfig";
 import { ironFadeDrawConfig } from "@/lib/ironFadeDrawConfig";
+import { teeShotHazardConfig } from "@/lib/teeShotHazardConfig";
+import { driverFlightTestConfig } from "@/lib/driverFlightTestConfig";
+import { bunkerLiesConfig } from "@/lib/bunkerLiesConfig";
+import { mobilityScreenConfig } from "@/lib/mobilityScreenConfig";
 
 /** `log_type` values written to `practice_logs` by combine protocol runners (leaderboard + completion stats). */
 export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
@@ -30,6 +34,10 @@ export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
   ironFaceControlConfig.practiceLogType,
   ironSafeSideConfig.practiceLogType,
   ironFadeDrawConfig.practiceLogType,
+  teeShotHazardConfig.practiceLogType,
+  driverFlightTestConfig.practiceLogType,
+  bunkerLiesConfig.practiceLogType,
+  mobilityScreenConfig.practiceLogType,
   "iron_skills",
 ];
 
@@ -60,6 +68,10 @@ const COMBINE_LOG_TYPE_LABELS: Record<string, string> = {
   [ironFaceControlConfig.practiceLogType]: ironFaceControlConfig.testName,
   [ironSafeSideConfig.practiceLogType]: ironSafeSideConfig.testName,
   [ironFadeDrawConfig.practiceLogType]: ironFadeDrawConfig.testName,
+  [teeShotHazardConfig.practiceLogType]: teeShotHazardConfig.testName,
+  [driverFlightTestConfig.practiceLogType]: driverFlightTestConfig.testName,
+  [bunkerLiesConfig.practiceLogType]: bunkerLiesConfig.testName,
+  [mobilityScreenConfig.practiceLogType]: mobilityScreenConfig.testName,
   iron_skills: "Iron Skills Challenge",
 };
 

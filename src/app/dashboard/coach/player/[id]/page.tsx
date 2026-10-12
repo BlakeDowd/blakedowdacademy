@@ -31,6 +31,7 @@ import type { AcademyTrophyDbRow } from "@/components/AcademyTrophyCasePanel";
 import { AdvancedApproachStatsPanel } from "@/components/stats/AdvancedApproachStatsPanel";
 import { CoachDeepDiveProfilePanels } from "@/components/coach/CoachDeepDiveProfilePanels";
 import { TestPlayerButton } from "@/components/coaching/TestPlayerButton";
+import { PlayerMobilityScreens } from "@/components/coaching/PlayerMobilityScreens";
 import { PlayerEmail } from "@/components/coaching/PlayerEmail";
 import { GamePlanCard } from "@/components/coaching/GamePlanCard";
 import { CoachDeepDiveRoundTrendCharts } from "@/components/coach/CoachDeepDiveRoundTrendCharts";
@@ -710,6 +711,8 @@ export default function PlayerDeepDivePage() {
             dateRangeLabel={dateRangeLabel}
             unlockedTrophies={playerUnlockedTrophies}
           />
+
+          <PlayerMobilityScreens key={`mobility-${playerId}`} playerId={playerId} playerName={name} />
 
           {user?.id && (
             <GamePlanCard

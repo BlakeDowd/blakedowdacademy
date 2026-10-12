@@ -179,6 +179,13 @@ export const LIBRARY_MODULES: readonly {
           "Hydration, carb and sodium targets for your weight and the weather, plus a food list to pack for the round.",
         chapter: "Checklists",
       },
+      {
+        id: "golf-iq-level-1",
+        label: "Golf IQ: Level 1",
+        description:
+          "20 quick questions on tournament prep, course management and the mental game. Get 16 right to pass.",
+        chapter: "Golf IQ",
+      },
     ],
   },
 ];

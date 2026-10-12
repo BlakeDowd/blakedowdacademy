@@ -19,6 +19,17 @@ import { IronFadeDrawReport, parseFadeDrawShots } from "@/components/IronFadeDra
 import { ironFadeDrawConfig } from "@/lib/ironFadeDrawConfig";
 import { ThreeStrikesReport, parseThreeStrikesShots } from "@/components/ThreeStrikesWedgeRunner";
 import { WedgeLateral9Report, parseWedgeLateral9Shots } from "@/components/WedgeLateral9Runner";
+import { TeeShotHazardReport } from "@/components/TeeShotHazardRunner";
+import { parseTeeHazardShots, teeShotHazardConfig } from "@/lib/teeShotHazardConfig";
+import { DriverFlightReport } from "@/components/DriverFlightTestRunner";
+import { driverFlightTestConfig, parseDriverFlightShots } from "@/lib/driverFlightTestConfig";
+import { BunkerLiesReport } from "@/components/BunkerLiesRunner";
+import { BUNKER_LIES_PAR, bunkerLiesConfig, formatToPar, parseBunkerLieHoles } from "@/lib/bunkerLiesConfig";
+import { MobilityScreenReport } from "@/components/mobility/MobilityScreenRunner";
+import { mobilityScreenConfig, parseMobilityChecks } from "@/lib/mobilityScreenConfig";
+
+/** Report ids: every combine leaderboard test plus non-leaderboard screens. */
+export type CombineReportId = CombineLeaderboardTestId | typeof mobilityScreenConfig.practiceLogType;
 
 type Session = { id: string; at: string; score: string; report: ReactNode | null };
 type Row = Record<string, unknown> & { id: string; created_at: string };
@@ -43,7 +54,22 @@ async function practiceLogs(supabase: SupabaseClient, playerId: string, logTypes
   return (data ?? []) as unknown as Row[];
 }
 
-const LOADERS: Partial<Record<CombineLeaderboardTestId, Loader>> = {
+const LOADERS: Partial<Record<CombineReportId, Loader>> = {
+  mobility_screen: async (supabase, playerId) => {
+    const rows = await practiceLogs(supabase, playerId, [mobilityScreenConfig.practiceLogType], "score, strike_data");
+    const pctOf = (r: Row | undefined) => {
+      const n = Number(r?.score);
+      return r?.score != null && Number.isFinite(n) ? Math.round(n) : null;
+    };
+    return rows.map((r, i) => {
+      const checks = parseMobilityChecks(r.strike_data);
+      const pct = pctOf(r);
+      const older = rows[i + 1];
+      const olderPct = pctOf(older);
+      const previous = older && olderPct != null ? { pct: olderPct, at: older.created_at } : null;
+      return { id: r.id, at: r.created_at, score: pct != null ? `${pct}%` : "", report: checks && <MobilityScreenReport checks={checks} previous={previous} /> };
+    });
+  },
   ironPrecisionProtocol: async (supabase, playerId) => {
     const rows = await practiceLogs(
       supabase,
@@ -77,6 +103,29 @@ const LOADERS: Partial<Record<CombineLeaderboardTestId, Loader>> = {
       return { id: r.id, at: r.created_at, score: points(r.total_points), report: shots && <IronFadeDrawReport shots={shots} /> };
     });
   },
+  tee_shot_hazard: async (supabase, playerId) => {
+    const rows = await practiceLogs(supabase, playerId, [teeShotHazardConfig.practiceLogType], "strike_data");
+    return rows.map((r) => {
+      const shots = parseTeeHazardShots(r.strike_data);
+      return { id: r.id, at: r.created_at, score: points(r.total_points), report: shots && <TeeShotHazardReport shots={shots} /> };
+    });
+  },
+  driver_flight_control: async (supabase, playerId) => {
+    const rows = await practiceLogs(supabase, playerId, [driverFlightTestConfig.practiceLogType], "strike_data");
+    return rows.map((r) => {
+      const shots = parseDriverFlightShots(r.strike_data);
+      return { id: r.id, at: r.created_at, score: points(r.total_points), report: shots && <DriverFlightReport shots={shots} /> };
+    });
+  },
+  bunker_lies: async (supabase, playerId) => {
+    const rows = await practiceLogs(supabase, playerId, [bunkerLiesConfig.practiceLogType], "strike_data");
+    return rows.map((r) => {
+      const holes = parseBunkerLieHoles(r.strike_data);
+      const strokes = Number(r.total_points);
+      const score = Number.isFinite(strokes) ? `${formatToPar(Math.round(strokes) - BUNKER_LIES_PAR)} (${Math.round(strokes)})` : "";
+      return { id: r.id, at: r.created_at, score, report: holes && <BunkerLiesReport holes={holes} /> };
+    });
+  },
   three_strikes: async (supabase, playerId) => {
     const rows = await practiceLogs(supabase, playerId, [threeStrikesWedgeConfig.practiceLogType], "notes");
     return rows.map((r) => {
@@ -101,7 +150,7 @@ const LOADERS: Partial<Record<CombineLeaderboardTestId, Loader>> = {
   },
 };
 
-export function hasCombineReport(testId: CombineLeaderboardTestId): boolean {
+export function hasCombineReport(testId: CombineReportId): boolean {
   return testId in LOADERS;
 }
 
@@ -124,7 +173,7 @@ export function CombineReportSheet({
 }: {
   playerId: string;
   playerName: string;
-  testId: CombineLeaderboardTestId;
+  testId: CombineReportId;
   label: string;
   onClose: () => void;
 }) {
