@@ -33,8 +33,9 @@ function announceDrillActivity() {
 }
 
 export function parseDrillScoreInput(raw: string): number | null {
-  const trimmed = raw.trim().replace(",", ".");
+  const trimmed = raw.trim().replace(",", ".").replace("−", "-");
   if (!trimmed) return null;
+  if (/^(e|even)$/i.test(trimmed)) return 0;
   const n = Number(trimmed);
   return Number.isFinite(n) ? n : null;
 }

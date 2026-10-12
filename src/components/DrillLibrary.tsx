@@ -155,6 +155,7 @@ function DrillScoringRow({ drill }: { drill: DrillRecord }) {
     goalText: drill.goal,
     focus: drill.focus,
     title: drill.drill_name ?? drill.title,
+    category: drill.category,
   });
   if (runnerDrillKey(drill)) return null;
   return (

@@ -2,13 +2,25 @@ import { formatDrillScore, summarizeDrillProgress, type DrillScoreLog } from "@/
 import { getTieredGoalItems, tierLineDisplayBody } from "@/lib/parseTieredGoal";
 
 /** How a drill is scored. Decides the input on the card and which way counts as beating your best. */
-export type DrillScoreType = "streak" | "makes" | "count" | "strokes" | "time" | "speed" | "completion";
+export type DrillScoreType =
+  | "streak"
+  | "makes"
+  | "count"
+  | "strokes"
+  | "gross"
+  | "topar"
+  | "time"
+  | "speed"
+  | "completion";
+
+/** Unit saved with "To par" scores; scores show as E, +3 or -2. */
+export const TO_PAR_UNIT = "to par";
 
 export type DrillScoring = {
   type: DrillScoreType;
   unit: string;
   lowerIsBetter: boolean;
-  /** Top score for "makes" drills (e.g. 10 for "/10"). */
+  /** Top score for "makes" drills (e.g. 10 for "/10"), or the holes played for "gross" (9 or 18). */
   max: number | null;
   /** "coach" when set in the drill catalog's Score Type column, otherwise the app's guess. */
   source: "coach" | "guess";
@@ -21,6 +33,8 @@ export const DRILL_SCORE_TYPE_LABELS: Record<DrillScoreType, string> = {
   makes: "Out of",
   count: "Count",
   strokes: "Lower is better",
+  gross: "Gross score",
+  topar: "To par",
   time: "Fastest time",
   speed: "Top speed",
   completion: "Sessions",
@@ -31,12 +45,15 @@ const LOWER_IS_BETTER: Record<DrillScoreType, boolean> = {
   makes: false,
   count: false,
   strokes: true,
+  gross: true,
+  topar: true,
   time: true,
   speed: false,
   completion: false,
 };
 
 const DEFAULT_MAKES_OUT_OF = 10;
+export const DEFAULT_GROSS_HOLES = 18;
 
 function scoring(type: DrillScoreType, unit: string, source: DrillScoring["source"], max: number | null = null): DrillScoring {
   return {
@@ -61,6 +78,10 @@ const OVERRIDE_TYPES: Record<string, DrillScoreType> = {
   strokes: "strokes",
   score: "strokes",
   putts: "strokes",
+  gross: "gross",
+  "gross score": "gross",
+  topar: "topar",
+  "to par": "topar",
   time: "time",
   seconds: "time",
   speed: "speed",
@@ -74,13 +95,15 @@ const DEFAULT_UNITS: Record<DrillScoreType, string> = {
   makes: "",
   count: "",
   strokes: "strokes",
+  gross: "strokes",
+  topar: TO_PAR_UNIT,
   time: "sec",
   speed: "mph",
   completion: "",
 };
 
 /**
- * Reads the catalog's Score Type column: `streak`, `makes/10`, `count: chip ins`, `strokes: putts`,
+ * Reads the catalog's Score Type column: `streak`, `makes/10`, `count: chip ins`, `strokes: putts`, `gross/18`,
  * `time: sec`, `speed: mph` or `completion`. Any of them can end in `+timer` to show the drill timer.
  */
 export function parseScoreTypeOverride(text: string | null | undefined): DrillScoring | null {
@@ -93,13 +116,21 @@ export function parseScoreTypeOverride(text: string | null | undefined): DrillSc
   if (!m) return null;
   const type = OVERRIDE_TYPES[m[1].trim()];
   if (!type) return null;
-  const max = type === "makes" ? Math.max(1, Number(m[2] ?? DEFAULT_MAKES_OUT_OF)) : null;
-  return { ...scoring(type, (m[3] ?? "").trim().slice(0, 24) || DEFAULT_UNITS[type], "coach", max), timer };
+  const max =
+    type === "makes"
+      ? Math.max(1, Number(m[2] ?? DEFAULT_MAKES_OUT_OF))
+      : type === "gross"
+        ? Math.max(1, Number(m[2] ?? DEFAULT_GROSS_HOLES))
+        : null;
+  const unit =
+    type === "gross" || type === "topar" ? DEFAULT_UNITS[type] : (m[3] ?? "").trim().slice(0, 24) || DEFAULT_UNITS[type];
+  return { ...scoring(type, unit, "coach", max), timer };
 }
 
 function baseScoreTypeText(s: Pick<DrillScoring, "type" | "unit" | "max">): string {
   if (s.type === "makes") return `makes/${s.max ?? DEFAULT_MAKES_OUT_OF}`;
-  if (s.type === "streak" || s.type === "completion") return s.type;
+  if (s.type === "gross") return `gross/${s.max ?? DEFAULT_GROSS_HOLES}`;
+  if (s.type === "streak" || s.type === "completion" || s.type === "topar") return s.type;
   const unit = s.unit.trim().slice(0, 24) || DEFAULT_UNITS[s.type];
   return unit ? `${s.type}: ${unit}` : s.type;
 }
@@ -120,6 +151,10 @@ export function describeScoring(s: DrillScoring): string {
       return s.unit ? `Count (${s.unit})` : "Count";
     case "strokes":
       return `Lower is better (${s.unit || "strokes"})`;
+    case "gross":
+      return `Gross score (${s.max ?? DEFAULT_GROSS_HOLES} holes)`;
+    case "topar":
+      return "Over / under par";
     case "time":
       return `Fastest time (${s.unit || "sec"})`;
     case "speed":
@@ -137,6 +172,10 @@ function guessFromGoalText(text: string): DrillScoring | null {
   if (/in a row|consecutive|straight/.test(t)) return scoring("streak", "in a row", "guess");
   const outOf = t.match(/(\d+)\s*(?:\/|out of)\s*(\d+)/);
   if (outOf) return scoring("makes", "", "guess", Number(outOf[2]));
+  const holes = t.match(/\b(9|18)\s*holes?\b/);
+  if (/\bgross\b/.test(t) || (holes && /\b(score|strokes?)\b/.test(t))) {
+    return scoring("gross", DEFAULT_UNITS.gross, "guess", holes ? Number(holes[1]) : DEFAULT_GROSS_HOLES);
+  }
   const strokes = t.match(/\b(putts|strokes?|shots?|score|under par|over par)\b/);
   if (strokes) return scoring("strokes", strokes[1] === "putts" ? "putts" : "strokes", "guess");
   const time = t.match(/\b(sec|secs|seconds|mins?|minutes)\b/);
@@ -146,9 +185,12 @@ function guessFromGoalText(text: string): DrillScoring | null {
   return null;
 }
 
-function guessFromDrill(focus: string, title: string): DrillScoring {
+function guessFromDrill(focus: string, title: string, category: string): DrillScoring {
   const f = focus.toLowerCase();
   const t = title.toLowerCase();
+  if (/gross score/.test(f)) {
+    return scoring("gross", DEFAULT_UNITS.gross, "guess", /\b9[\s-]*hole/i.test(category) ? 9 : DEFAULT_GROSS_HOLES);
+  }
   if (/speed training|swing speed|club ?head speed|ball speed|over ?speed|speed sticks?/.test(t)) {
     return scoring("speed", "mph", "guess");
   }
@@ -164,13 +206,17 @@ export function resolveDrillScoring(input: {
   goalText?: string | null;
   focus?: string | null;
   title?: string | null;
+  category?: string | null;
 }): DrillScoring {
   const fromOverride = parseScoreTypeOverride(input.override);
   if (fromOverride) return fromOverride;
   const goalText = String(input.goalText ?? "");
   const tiers = getTieredGoalItems(goalText);
   const firstGoal = tiers?.length ? tierLineDisplayBody(tiers[0].line) : goalText;
-  return guessFromGoalText(firstGoal) ?? guessFromDrill(String(input.focus ?? ""), String(input.title ?? ""));
+  return (
+    guessFromGoalText(firstGoal) ??
+    guessFromDrill(String(input.focus ?? ""), String(input.title ?? ""), String(input.category ?? ""))
+  );
 }
 
 const better = (s: DrillScoring, a: number, b: number) => (s.lowerIsBetter ? a < b : a > b);

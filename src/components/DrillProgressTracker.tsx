@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { ArrowDown, ArrowUp, Minus, Plus, Target, TrendingUp, Trophy } from "lucide-react";
 import { formatDrillScore, type DrillProgressSummary, type DrillScoreLog } from "@/lib/drillPersonalBests";
-import { DRILL_SCORE_TYPE_LABELS, isPerfectScore, type DrillScoring } from "@/lib/drillScoring";
+import { DRILL_SCORE_TYPE_LABELS, TO_PAR_UNIT, isPerfectScore, type DrillScoring } from "@/lib/drillScoring";
 import { parseDrillScoreInput, type DrillProgressState } from "@/hooks/useDrillProgress";
 
 const SPARK_POINTS = 12;
@@ -141,6 +141,36 @@ function ScoreInput({
     );
   }
 
+  if (scoring.type === "topar") {
+    const shown = value ?? 0;
+    const step = (delta: number) => setDraft(formatDrillScore(shown + delta, TO_PAR_UNIT));
+    return (
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        <button type="button" onClick={() => step(-1)} className={STEPPER_BTN} aria-label="One under">
+          <Minus className="h-4 w-4" aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={() => setDraft(formatDrillScore(shown, TO_PAR_UNIT))}
+          aria-label="Score to par"
+          className={`min-w-0 flex-1 rounded-lg border py-1.5 text-center tabular-nums ${
+            value == null ? "border-dashed border-gray-300 text-gray-300" : "border-gray-200 bg-white text-gray-900"
+          }`}
+        >
+          <span className={`block text-lg font-extrabold ${value != null && value < 0 ? "text-red-600" : ""}`}>
+            {formatDrillScore(shown, TO_PAR_UNIT)}
+          </span>
+          <span className="block text-[10px] font-semibold text-gray-400">
+            {value == null ? "Tap for even, or use − / +" : value === 0 ? "Even par" : value < 0 ? "Under par" : "Over par"}
+          </span>
+        </button>
+        <button type="button" onClick={() => step(1)} className={STEPPER_BTN} aria-label="One over">
+          <Plus className="h-4 w-4" aria-hidden />
+        </button>
+      </div>
+    );
+  }
+
   const stepper = scoring.type !== "time" && scoring.type !== "speed";
   const nudge = (delta: number) => {
     const base = value ?? (target != null ? target - delta : 0);
@@ -195,12 +225,16 @@ function scoreFieldLabel(s: DrillScoring): string {
   if (s.type === "streak") return "Consecutive";
   if (s.type === "time") return "Time";
   if (s.type === "speed") return "Top speed";
+  if (s.type === "gross") return `Gross score (${s.max ?? 18} holes)`;
+  if (s.type === "topar") return "Score to par";
   if ((s.type === "strokes" || s.type === "count") && s.unit) return s.unit;
   return "Score";
 }
 
 function scoringLabel(s: DrillScoring): string {
   if (s.type === "makes") return `Out of ${s.max ?? 10}`;
+  if (s.type === "gross") return `Gross score · ${s.max ?? 18} holes`;
+  if (s.type === "topar") return "Over / under par";
   if (s.type === "completion" || !s.unit) return DRILL_SCORE_TYPE_LABELS[s.type];
   return `${DRILL_SCORE_TYPE_LABELS[s.type]} · ${s.unit}`;
 }

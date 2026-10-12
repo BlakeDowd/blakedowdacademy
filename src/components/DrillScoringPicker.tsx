@@ -4,7 +4,13 @@ import { useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isCoachEmail } from "@/lib/coachEmails";
-import { describeScoring, scoreTypeText, type DrillScoreType, type DrillScoring } from "@/lib/drillScoring";
+import {
+  DEFAULT_GROSS_HOLES,
+  describeScoring,
+  scoreTypeText,
+  type DrillScoreType,
+  type DrillScoring,
+} from "@/lib/drillScoring";
 import { saveDrillScoring } from "@/lib/drillScoringOverrides";
 
 const OPTIONS: { type: DrillScoreType; label: string; hint: string }[] = [
@@ -12,12 +18,14 @@ const OPTIONS: { type: DrillScoreType; label: string; hint: string }[] = [
   { type: "streak", label: "Streak", hint: "How many in a row" },
   { type: "count", label: "Count", hint: "e.g. chip ins" },
   { type: "strokes", label: "Lower is better", hint: "Putts, strokes" },
+  { type: "gross", label: "Gross score", hint: "Strokes for 9 or 18 holes" },
+  { type: "topar", label: "Over / under par", hint: "E, +3, −2 counter" },
   { type: "time", label: "Fastest time", hint: "Seconds or minutes" },
   { type: "speed", label: "Top speed", hint: "Swing or ball speed" },
   { type: "completion", label: "Just done", hint: "No score" },
 ];
 
-const UNIT_DEFAULTS: Partial<Record<DrillScoreType, string>> = { strokes: "strokes", time: "sec", speed: "mph" };
+const UNIT_DEFAULTS: Partial<Record<DrillScoreType, string>> = { strokes: "strokes", gross: "strokes", time: "sec", speed: "mph" };
 
 const UNIT_CHOICES: Partial<Record<DrillScoreType, { value: string; label: string }[]>> = {
   time: [
@@ -54,6 +62,7 @@ export default function DrillScoringPicker({
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<DrillScoreType>(scoring.type);
   const [outOf, setOutOf] = useState("10");
+  const [holes, setHoles] = useState(DEFAULT_GROSS_HOLES);
   const [unit, setUnit] = useState("");
   const [timer, setTimer] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -65,7 +74,8 @@ export default function DrillScoringPicker({
 
   const startEditing = () => {
     setType(scoring.type);
-    setOutOf(String(scoring.max ?? 10));
+    setOutOf(String(scoring.type === "makes" ? (scoring.max ?? 10) : 10));
+    setHoles(scoring.type === "gross" && scoring.max === 9 ? 9 : DEFAULT_GROSS_HOLES);
     setUnit(unitFor(scoring.type));
     setTimer(scoring.timer);
     setError(null);
@@ -95,6 +105,7 @@ export default function DrillScoringPicker({
         return;
       }
     }
+    if (type === "gross") max = holes;
     void save(scoreTypeText({ type, unit, max, timer }));
   };
 
@@ -160,6 +171,24 @@ export default function DrillScoringPicker({
             aria-label="Out of how many"
           />
         </label>
+      )}
+      {type === "gross" && (
+        <div className="flex items-center gap-2 text-xs text-gray-700" role="group" aria-label="Holes played">
+          <span className="shrink-0 font-semibold">Holes</span>
+          {[9, 18].map((h) => (
+            <button
+              key={h}
+              type="button"
+              onClick={() => setHoles(h)}
+              aria-pressed={holes === h}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold ring-1 ${
+                holes === h ? "bg-[#014421] text-white ring-[#014421]" : "bg-white text-gray-700 ring-gray-200"
+              }`}
+            >
+              {h} holes
+            </button>
+          ))}
+        </div>
       )}
       {(type === "count" || type === "strokes") && (
         <label className="block text-xs text-gray-700">

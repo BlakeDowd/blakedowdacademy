@@ -185,8 +185,15 @@ export default function DrillCard({
                 : (coachScoreType ?? catalogScoring?.scoreType ?? null);
   const focus = catalogScoring?.focus ?? null;
   const scoring = useMemo(
-    () => resolveDrillScoring({ override: scoreTypeOverride, goalText: goalRepsForUi, focus, title: drill.title }),
-    [scoreTypeOverride, goalRepsForUi, focus, drill.title],
+    () =>
+      resolveDrillScoring({
+        override: scoreTypeOverride,
+        goalText: goalRepsForUi,
+        focus,
+        title: drill.title,
+        category: drill.category,
+      }),
+    [scoreTypeOverride, goalRepsForUi, focus, drill.title, drill.category],
   );
   const progress = useDrillProgress(userId, drillKey, scoring, !drill.isCombine, milestones);
   const timer = useDrillTimer(drill.estimatedMinutes, scoring.type === "time" ? "stopwatch" : "countdown");

@@ -325,6 +325,7 @@ export async function fetchAllDrillRecords(
 export function formatDrillScore(score: number, unit: string): string {
   const n = Number.isInteger(score) ? String(score) : String(Math.round(score * 100) / 100);
   const u = unit.trim();
+  if (u === "to par") return score === 0 ? "E" : score > 0 ? `+${n}` : n;
   if (!u) return n;
   return /^[/%]/.test(u) ? `${n}${u}` : `${n} ${u}`;
 }
