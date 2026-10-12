@@ -35,6 +35,7 @@ import {
   Camera,
   Loader2,
   ChevronRight,
+  PersonStanding,
 } from "lucide-react";
 import { AddToHomeScreenGuide } from "@/components/AddToHomeScreenGuide";
 import { InstallAppPrompt } from "@/components/InstallAppPrompt";
@@ -848,12 +849,13 @@ export default function HomeDashboard() {
             </button>
           </div>
           <WeeklyGoalsBar href="/goals" />
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {[
               { label: 'Combine Tests', icon: Crosshair, onClick: () => router.push('/practice?plan=combine') },
               { label: 'Drill Library', icon: BookOpen, onClick: () => router.push('/practice?plan=library') },
               { label: 'My Stats', icon: BarChart3, onClick: () => router.push('/stats') },
               { label: 'Fuel Planner', icon: Apple, onClick: () => router.push('/practice?plan=fuel') },
+              { label: 'Mobility Screen', icon: PersonStanding, onClick: () => router.push('/practice/mobility-screen') },
               { label: 'Virtual Caddie', icon: Bot, onClick: () => router.push('/virtual-caddie') },
               { label: 'Putt Calculator', icon: Ruler, onClick: () => router.push('/putting-calculator') },
               { label: 'Swing Tempo', icon: Timer, onClick: () => router.push('/full-swing-tempo') },
