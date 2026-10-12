@@ -31,6 +31,7 @@ import {
   type CombineCategoryId,
 } from "@/lib/combineTestsCatalog";
 import { PracticeCombinePicker } from "@/components/combine/TestingForSelect";
+import { FAVOURITE_DRILL_WEIGHT, drillInKeys, useDrillCollections } from "@/hooks/useDrillCollections";
 import {
   buildAcademyCombinesLeaderboard,
   type CombineLeaderboardTestId,
@@ -131,11 +132,15 @@ function durationMinutesForScheduling(drill: Drill): number {
   return DEFAULT_DRILL_DURATION_MINUTES;
 }
 
-/** Prefer drills not yet scheduled in this block; randomize among ties so we don't repeat one drill. */
+/**
+ * Prefer drills not yet scheduled in this block; randomize among ties so we don't repeat one drill.
+ * `weightOf` makes some drills (the player's favourites) more likely to be picked.
+ */
 function pickDrillForRemainingTime(
   pool: Drill[],
   usedIds: Set<string>,
   minutesLeft: number,
+  weightOf: (drill: Drill) => number = () => 1,
 ): { drill: Drill; est: number } | null {
   const fitting: { drill: Drill; est: number }[] = [];
   for (const drill of pool) {
@@ -147,7 +152,13 @@ function pickDrillForRemainingTime(
   if (fitting.length === 0) return null;
   const unused = fitting.filter((x) => !usedIds.has(x.drill.id));
   const pickFrom = unused.length > 0 ? unused : fitting;
-  return pickFrom[Math.floor(Math.random() * pickFrom.length)] ?? null;
+  const weights = pickFrom.map((x) => Math.max(0, weightOf(x.drill)));
+  let roll = Math.random() * weights.reduce((sum, w) => sum + w, 0);
+  for (let i = 0; i < pickFrom.length; i++) {
+    roll -= weights[i];
+    if (roll < 0) return pickFrom[i];
+  }
+  return pickFrom[pickFrom.length - 1] ?? null;
 }
 
 /** Calendar date in the user's local timezone (matches `selected_date` / planner `date`). */
@@ -594,6 +605,8 @@ async function updateUserXP(userId: string, points: number): Promise<void> {
 export default function PracticePage() {
   const { rounds, refreshPracticeSessions, refreshDrills, practiceLogs, practiceSessions, loading: statsLoading } = useStats();
   const { user, refreshUser } = useAuth();
+  const { favourites: favouriteDrills } = useDrillCollections();
+  const drillWeight = (d: Drill) => (drillInKeys(favouriteDrills, d) ? FAVOURITE_DRILL_WEIGHT : 1);
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({});
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [drills, setDrills] = useState<Drill[]>([]);
@@ -1968,7 +1981,7 @@ export default function PracticePage() {
     const fillArea = (area: FacilityType, minutes: number): number => {
       let minutesLeft = minutes;
       while (session.length < GUIDED_SESSION_MAX_DRILLS && minutesLeft >= GUIDED_SESSION_MIN_BLOCK_MINUTES) {
-        const hit = pickDrillForRemainingTime(poolFor(area), usedIds, minutesLeft);
+        const hit = pickDrillForRemainingTime(poolFor(area), usedIds, minutesLeft, drillWeight);
         if (!hit) break;
         add(hit.drill, area);
         minutesLeft -= hit.est;
@@ -2348,7 +2361,7 @@ export default function PracticePage() {
             facilityTime >= MIN_DRILL_SCHEDULE_BLOCK_MINUTES &&
             facilitySelectedDrills.length < MAX_DRILLS_PER_FACILITY_SLOT
           ) {
-            const next = pickDrillForRemainingTime(shuffled, usedDrillIds, facilityTime);
+            const next = pickDrillForRemainingTime(shuffled, usedDrillIds, facilityTime, drillWeight);
             if (!next) break;
             usedDrillIds.add(next.drill.id);
             facilitySelectedDrills.push({
@@ -2382,7 +2395,7 @@ export default function PracticePage() {
           remainingTime >= MIN_DRILL_SCHEDULE_BLOCK_MINUTES &&
           allSelectedDrills.length < MAX_DRILLS_PER_FACILITY_SLOT
         ) {
-          const next = pickDrillForRemainingTime(shuffled, usedDrillIds, remainingTime);
+          const next = pickDrillForRemainingTime(shuffled, usedDrillIds, remainingTime, drillWeight);
           if (!next) break;
           usedDrillIds.add(next.drill.id);
           allSelectedDrills.push({

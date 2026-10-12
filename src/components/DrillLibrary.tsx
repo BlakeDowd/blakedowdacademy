@@ -1,7 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { ChevronDown, ChevronUp, X, UserPlus, FileText, Youtube } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
+import { ChevronDown, ChevronUp, X, UserPlus, FileText, Youtube, Search, Star, ListChecks, Plus, Pencil, Trash2 } from "lucide-react";
+import {
+  createDrillList,
+  deleteDrillList,
+  dismissDrillCollectionsError,
+  drillInKeys,
+  renameDrillList,
+  useDrillCollections,
+} from "@/hooks/useDrillCollections";
+import { DrillListPicker, FavouriteButton, NewListInput } from "@/components/drills/DrillCollectionsUi";
 import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 import { keepElementInView } from "@/hooks/useKeepInView";
@@ -200,14 +209,17 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
             ]}
             category={drill.category}
             action={
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-full bg-white/15 p-1.5 text-white transition-colors hover:bg-white/25"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <FavouriteButton drill={drill} onDark />
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-full bg-white/15 p-1.5 text-white transition-colors hover:bg-white/25"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             }
           />
 
@@ -223,6 +235,7 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
             </DrillGuide>
           )}
           <DrillScoringRow drill={drill} />
+          <DrillListPicker drill={drill} />
 
           {(((SHOW_PDFS && drill.pdf_url) || drill.video_url || (drill as any).youtube_url)) && (
             <div className="flex flex-wrap gap-2">
@@ -289,6 +302,140 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function DrillRow({ drill, sub, onOpen }: { drill: DrillRecord; sub?: string; onOpen: () => void }) {
+  return (
+    <div className="flex items-center gap-1 rounded-lg pr-1 transition-colors hover:bg-gray-100">
+      <button type="button" onClick={onOpen} className="min-w-0 flex-1 px-3 py-2 text-left text-sm text-gray-700">
+        {drill.drill_name ?? drill.title ?? "Untitled"}
+        {sub && <span className="block text-[11px] text-gray-400">{sub}</span>}
+      </button>
+      <FavouriteButton drill={drill} />
+    </div>
+  );
+}
+
+function DrillRows({ drills, onOpen, keyPrefix = "" }: { drills: DrillRecord[]; onOpen: (d: DrillRecord) => void; keyPrefix?: string }) {
+  return (
+    <ul className="space-y-1">
+      {drills.map((drill) => (
+        <li key={`${keyPrefix}-${roundDrillDedupeKey(drill)}`}>
+          <DrillRow drill={drill} onOpen={() => onOpen(drill)} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function LibrarySection({
+  title,
+  icon,
+  count,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string;
+  icon?: ReactNode;
+  count: number;
+  expanded: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="scroll-mt-4">
+      <button
+        type="button"
+        onClick={(e) => {
+          const section = e.currentTarget.parentElement;
+          onToggle();
+          keepElementInView(section);
+        }}
+        aria-expanded={expanded}
+        className="w-full flex items-center justify-between gap-4 p-4 text-left hover:bg-gray-50 transition-colors"
+      >
+        <span className="flex min-w-0 items-center gap-2 font-semibold" style={{ color: "#014421" }}>
+          {icon}
+          <span className="truncate">{title}</span>
+        </span>
+        <span className="flex items-center gap-2 shrink-0 text-sm text-gray-500">
+          <span className="flex items-center justify-end gap-1 tabular-nums">
+            <span className="min-w-[2ch] text-right">{count}</span>
+            <span>drill{count !== 1 ? "s" : ""}</span>
+          </span>
+          {expanded ? <ChevronUp className="w-5 h-5 text-gray-500 shrink-0" /> : <ChevronDown className="w-5 h-5 text-gray-500 shrink-0" />}
+        </span>
+      </button>
+      {expanded && <div className="px-4 pb-4">{children}</div>}
+    </div>
+  );
+}
+
+/** Rename / delete controls at the top of an open list. */
+function ListToolbar({ listId, name }: { listId: string; name: string }) {
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(name);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  if (renaming) {
+    return (
+      <form
+        className="mb-2 flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void renameDrillList(listId, draft);
+          setRenaming(false);
+        }}
+      >
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          maxLength={60}
+          autoFocus
+          aria-label="List name"
+          className="min-w-0 flex-1 rounded-xl border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-[#014421]"
+        />
+        <button type="submit" disabled={!draft.trim()} className="rounded-xl bg-[#014421] px-3 text-xs font-semibold text-white disabled:opacity-40">
+          Save
+        </button>
+        <button type="button" onClick={() => setRenaming(false)} className="text-xs font-semibold text-gray-500">
+          Cancel
+        </button>
+      </form>
+    );
+  }
+
+  return (
+    <div className="mb-2 flex items-center gap-3 text-xs font-semibold">
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(name);
+          setRenaming(true);
+        }}
+        className="flex items-center gap-1 text-gray-500 hover:text-gray-800"
+      >
+        <Pencil className="h-3.5 w-3.5" aria-hidden />
+        Rename
+      </button>
+      {confirmDelete ? (
+        <span className="flex items-center gap-2">
+          <button type="button" onClick={() => void deleteDrillList(listId)} className="text-red-600 hover:underline">
+            Delete &ldquo;{name}&rdquo;?
+          </button>
+          <button type="button" onClick={() => setConfirmDelete(false)} className="text-gray-500">
+            Keep
+          </button>
+        </span>
+      ) : (
+        <button type="button" onClick={() => setConfirmDelete(true)} className="flex items-center gap-1 text-gray-500 hover:text-red-600">
+          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+          Delete list
+        </button>
+      )}
     </div>
   );
 }
@@ -474,74 +621,174 @@ export function DrillLibrary({ onAssignToDay, showHeader = true, initialDrillKey
     closeDrill();
   };
 
+  const collections = useDrillCollections();
+  const hasCollections = collections.userId != null && collections.status === "ready";
+  const [query, setQuery] = useState("");
+  const [creatingList, setCreatingList] = useState(false);
+  const q = query.trim().toLowerCase();
+
+  const uniqueDrills = useMemo(() => {
+    const seen = new Set<string>();
+    return drills.filter((d) => {
+      const k = roundDrillDedupeKey(d);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }, [drills]);
+
+  const searchResults = useMemo(() => {
+    if (!q) return [];
+    const words = q.split(/\s+/);
+    return uniqueDrills
+      .filter((d) => {
+        const text = [d.drill_name ?? d.title, d.category, d.focus].join(" ").toLowerCase();
+        return words.every((w) => text.includes(w));
+      })
+      .sort((a, b) => String(a.drill_name ?? a.title).localeCompare(String(b.drill_name ?? b.title)));
+  }, [q, uniqueDrills]);
+
+  const favouriteDrills = uniqueDrills.filter((d) => drillInKeys(collections.favourites, d));
+
   return (
     <div className="mb-6">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
         {showHeader && (
           <div className="p-4 border-b border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900">Drill Library</h2>
-            <p className="text-sm text-gray-500 mt-0.5">Browse and assign drills by category</p>
+            <p className="text-sm text-gray-500 mt-0.5">Search drills, save favourites and build your own lists</p>
           </div>
         )}
-        <div className="divide-y divide-gray-100">
-          {LIBRARY_CATEGORIES.map((category) => {
-            const categoryDrills = getDrillsForCategory(category);
-            const isExpanded = expandedCategory === category;
-
-            return (
-              <div key={category} className="scroll-mt-4">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    const section = e.currentTarget.parentElement;
-                    setExpandedCategory((prev) => (prev === category ? null : category));
-                    keepElementInView(section);
-                  }}
-                  className="w-full flex items-center justify-between gap-4 p-4 text-left hover:bg-gray-50 transition-colors"
-                >
-                  <span
-                    className="font-semibold shrink-0"
-                    style={{ color: "#014421" }}
-                  >
-                    {category}
-                  </span>
-                  <span className="flex items-center gap-2 shrink-0 text-sm text-gray-500">
-                    <span className="flex items-center justify-end gap-1 tabular-nums">
-                      <span className="min-w-[2ch] text-right">{categoryDrills.length}</span>
-                      <span>drill{categoryDrills.length !== 1 ? "s" : ""}</span>
-                    </span>
-                    {isExpanded ? (
-                      <ChevronUp className="w-5 h-5 text-gray-500 shrink-0" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5 text-gray-500 shrink-0" />
-                    )}
-                  </span>
-                </button>
-                {isExpanded && (
-                  <div className="px-4 pb-4">
-                    <ul className="space-y-1">
-                      {categoryDrills.length === 0 ? (
-                        <li className="text-sm text-gray-400 py-2">No drills in this category yet.</li>
-                      ) : (
-                        categoryDrills.map((drill) => (
-                          <li key={`${category}-${roundDrillDedupeKey(drill)}`}>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedDrill(drill)}
-                              className="w-full text-left text-sm py-2 px-3 rounded-lg hover:bg-gray-100 text-gray-700 transition-colors"
-                            >
-                              {drill.drill_name ?? drill.title ?? "Untitled"}
-                            </button>
-                          </li>
-                        ))
-                      )}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        <div className="border-b border-gray-200 p-3">
+          <label className="flex items-center gap-2 rounded-xl bg-gray-100 px-3 py-2">
+            <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search drills"
+              aria-label="Search drills"
+              className="min-w-0 flex-1 bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400"
+            />
+            {query && (
+              <button type="button" onClick={() => setQuery("")} className="rounded-full p-0.5 text-gray-400 hover:text-gray-600" aria-label="Clear search">
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            )}
+          </label>
+          {collections.error && (
+            <p className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+              {collections.error}
+              <button type="button" onClick={dismissDrillCollectionsError} className="font-semibold underline">
+                OK
+              </button>
+            </p>
+          )}
         </div>
+
+        {q ? (
+          <div className="p-3">
+            <p className="px-1 pb-2 text-xs font-semibold text-gray-500">
+              {searchResults.length} drill{searchResults.length === 1 ? "" : "s"} found
+            </p>
+            {searchResults.length === 0 ? (
+              <p className="py-4 text-center text-sm text-gray-400">No drills match &ldquo;{query.trim()}&rdquo;.</p>
+            ) : (
+              <ul className="space-y-1">
+                {searchResults.map((drill) => (
+                  <li key={roundDrillDedupeKey(drill)}>
+                    <DrillRow drill={drill} sub={drill.category} onOpen={() => setSelectedDrill(drill)} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {hasCollections && (
+              <>
+                <p className="bg-gray-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-gray-400">My drills</p>
+                <LibrarySection
+                  title="Favourites"
+                  icon={<Star className="h-4 w-4 text-[#FFA500]" fill="currentColor" aria-hidden />}
+                  count={favouriteDrills.length}
+                  expanded={expandedCategory === "fav"}
+                  onToggle={() => setExpandedCategory((p) => (p === "fav" ? null : "fav"))}
+                >
+                  {favouriteDrills.length === 0 ? (
+                    <p className="py-2 text-sm text-gray-400">
+                      Tap the star on any drill to save it here. Favourites come up more often when we build your practice plans.
+                    </p>
+                  ) : (
+                    <DrillRows drills={favouriteDrills} onOpen={setSelectedDrill} />
+                  )}
+                </LibrarySection>
+                {collections.lists.map((list) => {
+                  const listDrills = list.drillKeys
+                    .map((k) => uniqueDrills.find((d) => drillInKeys([k], d)))
+                    .filter((d): d is DrillRecord => d != null);
+                  const key = `list:${list.id}`;
+                  return (
+                    <LibrarySection
+                      key={list.id}
+                      title={list.name}
+                      icon={<ListChecks className="h-4 w-4 text-[#014421]" aria-hidden />}
+                      count={listDrills.length}
+                      expanded={expandedCategory === key}
+                      onToggle={() => setExpandedCategory((p) => (p === key ? null : key))}
+                    >
+                      <ListToolbar listId={list.id} name={list.name} />
+                      {listDrills.length === 0 ? (
+                        <p className="py-2 text-sm text-gray-400">Open any drill and tap this list under &ldquo;Save to a list&rdquo; to add it.</p>
+                      ) : (
+                        <DrillRows drills={listDrills} onOpen={setSelectedDrill} />
+                      )}
+                    </LibrarySection>
+                  );
+                })}
+                <div className="px-4 py-3">
+                  {creatingList ? (
+                    <NewListInput
+                      autoFocus
+                      onCreate={async (name) => {
+                        const id = await createDrillList(name);
+                        setCreatingList(false);
+                        if (id) setExpandedCategory(`list:${id}`);
+                      }}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setCreatingList(true)}
+                      className="flex items-center gap-1.5 text-sm font-semibold text-[#014421] hover:underline"
+                    >
+                      <Plus className="h-4 w-4" aria-hidden />
+                      New list
+                    </button>
+                  )}
+                </div>
+                <p className="bg-gray-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-gray-400">All drills</p>
+              </>
+            )}
+            {LIBRARY_CATEGORIES.map((category) => {
+              const categoryDrills = getDrillsForCategory(category);
+              return (
+                <LibrarySection
+                  key={category}
+                  title={category}
+                  count={categoryDrills.length}
+                  expanded={expandedCategory === category}
+                  onToggle={() => setExpandedCategory((p) => (p === category ? null : category))}
+                >
+                  {categoryDrills.length === 0 ? (
+                    <p className="py-2 text-sm text-gray-400">No drills in this category yet.</p>
+                  ) : (
+                    <DrillRows drills={categoryDrills} onOpen={setSelectedDrill} keyPrefix={category} />
+                  )}
+                </LibrarySection>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <DrillDetailModal
