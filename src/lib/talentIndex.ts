@@ -70,9 +70,11 @@ export type TournamentRound = {
   slope: number | null;
   /** Null for 9-hole rounds or when the rating, slope or score is missing. */
   differential: number | null;
+  /** Who last set the event details. */
+  taggedBy: "player" | "coach" | null;
 };
 
-/** A player's rounds, newest first, with any coach-set event details. */
+/** A player's rounds, newest first, with any event details. */
 export function playerRounds(p: TalentPlayer): TournamentRound[] {
   return p.rounds
     .map((r: Row) => {
@@ -97,13 +99,14 @@ export function playerRounds(p: TalentPlayer): TournamentRound[] {
           score != null && courseRating != null && slope != null && holes >= 18
             ? scoreDifferential(score, courseRating, slope)
             : null,
-      };
+        taggedBy: r.event_set_by ? (String(r.event_set_by) === p.id ? "player" : "coach") : null,
+      } satisfies TournamentRound;
     })
     .filter((r) => r.id && Number.isFinite(r.atMs))
     .sort((a, b) => b.atMs - a.atMs);
 }
 
-/** Tournament rounds that count: coach-tagged, 18 holes with a differential, inside the recency window. */
+/** Tournament rounds that count: tagged, 18 holes with a differential, inside the recency window. */
 export function countingRounds(p: TalentPlayer) {
   return playerRounds(p)
     .filter((r) => r.tier != null && r.differential != null)

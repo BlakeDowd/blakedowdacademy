@@ -51,6 +51,7 @@ function RoundEditor({ round, onSaved }: { round: TournamentRound; onSaved: (nex
       courseRating: tier ? ratingNum : null,
       slope: tier ? slopeNum : null,
       differential: tier ? preview : null,
+      taggedBy: "coach",
     });
   };
 
@@ -174,7 +175,7 @@ export function TournamentRoundsSheet({
       <div className="flex-1 overflow-y-auto px-4 pb-10 pt-3">
         <div className="mx-auto max-w-md">
           <p className="mb-2 text-xs leading-relaxed text-stone-500">
-            Tap a round to mark it as a competition. Untagged rounds are social and don&apos;t count. Rounds count less as they
+            Tap a round to mark it as a competition or check a player&apos;s tag. Untagged rounds are social and don&apos;t count. Rounds count less as they
             age and drop off after 6 months.
           </p>
           {list.length === 0 ? (
@@ -210,6 +211,11 @@ export function TournamentRoundsSheet({
                           {tier ? ` · ${tier.short}` : " · Social"}
                           {r.differential != null ? ` · Diff ${formatHandicap(r.differential)}` : ""}
                         </span>
+                        {tier && r.taggedBy === "player" && (
+                          <span className="mt-0.5 inline-block rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+                            Player tagged · check
+                          </span>
+                        )}
                       </span>
                       <ChevronDown className={`h-4 w-4 shrink-0 text-stone-400 transition ${open ? "rotate-180" : ""}`} aria-hidden />
                     </button>

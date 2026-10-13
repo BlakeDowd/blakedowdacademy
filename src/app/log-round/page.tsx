@@ -34,6 +34,12 @@ import {
 } from "@/components/logRound/RoundStatCounter";
 import { TrackedStatsSheet } from "@/components/logRound/TrackedStatsSheet";
 import {
+  EMPTY_ROUND_EVENT,
+  RoundEventPicker,
+  parseRoundEvent,
+  type RoundEventInput,
+} from "@/components/logRound/RoundEventPicker";
+import {
   ALL_ROUND_STATS,
   DEFAULT_TRACKED_ROUND_STATS,
   ROUND_STAT_GROUPS,
@@ -238,6 +244,10 @@ const OPTIONAL_ROUND_COLUMNS = [
   "fairways_possible",
   "putts_per_gir",
   "triple_bogeys",
+  "event_tier",
+  "event_name",
+  "course_rating",
+  "slope_rating",
 ] as const;
 
 const STAT_LABELS = new Map(ROUND_STAT_GROUPS.flatMap((g) => g.stats.map((s) => [s.key, s.label] as const)));
@@ -412,6 +422,7 @@ export default function LogRoundPage() {
   const [frontNineText, setFrontNineText] = useState("");
   const [backNineText, setBackNineText] = useState("");
   const [puttsPerGirText, setPuttsPerGirText] = useState("");
+  const [roundEvent, setRoundEvent] = useState<RoundEventInput>(EMPTY_ROUND_EVENT);
 
   const [showAdvancedApproachMatrix, setShowAdvancedApproachMatrix] = useState(false);
   const [selectedApproachHole, setSelectedApproachHole] = useState(1);
@@ -523,6 +534,12 @@ export default function LogRoundPage() {
       return;
     }
 
+    const eventFields = parseRoundEvent(roundEvent);
+    if (roundEvent.tier && eventFields.error) {
+      alert(eventFields.error);
+      return;
+    }
+
     if (!user?.id) {
       console.error('User not authenticated - user.id is missing:', user);
       alert('User not authenticated. Please log in and try again.');
@@ -595,6 +612,12 @@ export default function LogRoundPage() {
         share_on_community: share,
         tracked_stats: roundStats,
       };
+      if (roundEvent.tier) {
+        insertData.event_tier = roundEvent.tier;
+        insertData.event_name = roundEvent.eventName.trim() || null;
+        insertData.course_rating = eventFields.courseRating;
+        insertData.slope_rating = eventFields.slope;
+      }
 
       let insertPayload: Record<string, unknown> = { ...insertData };
       let { data, error } = await supabase.from("rounds").insert(insertPayload).select();
@@ -825,6 +848,8 @@ export default function LogRoundPage() {
               </div>
             </div>
           </StatCard>
+
+          <RoundEventPicker value={roundEvent} onChange={setRoundEvent} score={roundData.score} />
 
           {/* Scoring */}
           <StatCard

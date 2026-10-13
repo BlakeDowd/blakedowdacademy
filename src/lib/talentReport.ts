@@ -66,7 +66,7 @@ export const rowTime = (r: Row) => timeOf(r.completed_at ?? r.created_at);
 
 const ROUND_COLUMNS = "id, handicap, created_at, date, score, holes, course_name";
 /** Added by 20261013160000_round_event_tiers.sql; rounds still load without them before it's run. */
-const ROUND_EVENT_COLUMNS = "event_tier, event_name, course_rating, slope_rating";
+const ROUND_EVENT_COLUMNS = "event_tier, event_name, course_rating, slope_rating, event_set_by";
 
 /** Loads each member's practice, combines, rounds and profile. One query set per player keeps each under row limits. */
 export async function loadTalentPlayers(

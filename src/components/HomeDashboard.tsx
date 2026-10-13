@@ -63,6 +63,7 @@ import {
 } from "@/lib/bunnyStream";
 import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 import { HallOfFameLeaderboard } from "@/components/academy/HallOfFameLeaderboard";
+import { HomeCommunityCard } from "@/components/community/HomeCommunityCard";
 
 const INSTALL_BANNER_DISMISSED_KEY = 'homeInstallBannerDismissed';
 const RECENT_ITEMS_SHOWN = 3;
@@ -92,11 +93,7 @@ export default function HomeDashboard() {
   const { user, refreshUser, profileLoading } = useAuth();
   
   // Re-initialize simply: Define const { rounds = [] } = useStats();
-  const {
-    rounds = [],
-    communityRounds = [],
-    communityRoundsHydrated = false,
-  } = useStats();
+  const { rounds = [] } = useStats();
   
   // Verify User Object: Log user object to verify it's correctly identifying the user
   useEffect(() => {
@@ -150,7 +147,6 @@ export default function HomeDashboard() {
   
   /** Personal rounds from StatsContext (already scoped to the signed-in user). */
   const allRounds = (rounds || []) as any[];
-  const allCommunityRounds = (communityRounds || []) as any[];
   
   // Keep safeRounds for backward compatibility with other parts of the component
   const safeRounds = useMemo(() => {
@@ -380,8 +376,7 @@ export default function HomeDashboard() {
     ? null
     : buildBunnyThumbnailUrl(featuredHome.bunnyVideoId, bunnyVideoMetadata?.thumbnailFileName);
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
-  const [recentTab, setRecentTab] = useState<'activity' | 'myRounds' | 'community'>('activity');
-  const scoreTab: 'myRounds' | 'community' = recentTab === 'community' ? 'community' : 'myRounds';
+  const [recentTab, setRecentTab] = useState<'activity' | 'myRounds'>('activity');
   const [leaderboardExpanded, setLeaderboardExpanded] = useState(false);
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
   const [installBannerHidden, setInstallBannerHidden] = useState(true);
@@ -402,26 +397,6 @@ export default function HomeDashboard() {
     localStorage.setItem(INSTALL_BANNER_DISMISSED_KEY, '1');
     setInstallBannerHidden(true);
   };
-  // Add a useMemo Hook: Wrap the rounds display logic in a useMemo that depends on the activeTab state
-  // Strict Filtering: If activeTab === 'my-rounds', explicitly return rounds.filter(r => r.user_id === user?.id)
-  // If activeTab === 'community', return the full rounds array (Global)
-  const filteredRoundsByTab = useMemo(() => {
-    // Clear the Cache: Ensure that when the tab changes, the filtering logic re-runs
-    if (scoreTab === 'myRounds') {
-      // Strict Filtering: If activeTab === 'my-rounds', explicitly return rounds.filter(r => r.user_id === user?.id)
-      if (!user?.id) {
-        console.log('HomeDashboard: No user.id available for filtering My Rounds');
-        return [];
-      }
-      
-      console.log('HomeDashboard: My Rounds tab - showing', allRounds.length, 'personal rounds for user', user.id);
-      return allRounds;
-    } else {
-      console.log('HomeDashboard: Community tab - showing all', allCommunityRounds.length, 'rounds');
-      return allCommunityRounds;
-    }
-  }, [allRounds, allCommunityRounds, user?.id, scoreTab]); // Add scoreTab to dependencies to re-run when tab changes
-  
   // Fetch Guard removed
   
   // Calculate level and progress - Level 1 starts at 0 XP, Level 2 requires 100 XP
@@ -452,76 +427,6 @@ export default function HomeDashboard() {
   // Database Sync: Pull level directly from database columns
   const currentLevel = snapshotData?.current_level ?? profile?.currentLevel ?? user?.currentLevel ?? levelInfo.level;
   const xpRemaining = levelInfo.xpRemaining;
-  
-  // Replace Mock Data: Use real rounds from useStats() instead of hardcoded users like 'Alex Chen'
-  // Map Real Rounds: Use the rounds array from useStats(). Filter it to show the most recent 5-10 rounds from all users.
-  // Calculate Nett: For each round, display the Nett Score. If the database has score and handicap, calculate it as {round.score - round.handicap}.
-  // Add Labels: Display the user's name (or ID fallback), the course name, and a 'Nett' label next to their score.
-  
-  // Fetch user profiles for name lookup (similar to Academy page)
-  // Clear the Cache: Ensure that when the tab changes, the name-mapping logic re-runs so Luke's name doesn't stay stuck on my personal rounds
-  const [userProfiles, setUserProfiles] = useState<Map<string, { full_name?: string; preferred_icon_id?: string }>>(new Map());
-  
-  // Add Name Mapping: Create a way to fetch the full_name from the profiles table for every user_id found in the rounds
-  // Clear the Cache: Re-fetch profiles when tab changes or rounds change
-  useEffect(() => {
-    const sourceRounds =
-      scoreTab === 'myRounds' ? allRounds : allCommunityRounds;
-    if (!sourceRounds || sourceRounds.length === 0) {
-      setUserProfiles(new Map());
-      return;
-    }
-    
-    const fetchProfiles = async () => {
-      // Add Name Mapping: Extract all unique user_ids from rounds
-      // Clear the Cache: Use filteredRoundsByTab to get user_ids based on current tab
-      const roundsToUse = sourceRounds;
-      
-      const uniqueUserIds = Array.from(new Set(roundsToUse.map((item: any) => item?.user_id).filter(Boolean)));
-      if (uniqueUserIds.length === 0) {
-        setUserProfiles(new Map());
-        return;
-      }
-      
-      console.log('HomeDashboard: Fetching profiles for', uniqueUserIds.length, 'users (tab:', scoreTab, '):', uniqueUserIds);
-      
-      try {
-        const { createClient } = await import("@/lib/supabase/client");
-        const supabase = createClient();
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('id, full_name, preferred_icon_id')
-          .in('id', uniqueUserIds);
-        
-        if (error) {
-          console.error('Error fetching user profiles for Community:', error);
-          setUserProfiles(new Map());
-          return;
-        }
-        
-        // Add Name Mapping: Create a Map to store user_id -> full_name mappings
-        // Clear the Cache: Reset and rebuild the map when tab changes
-        const profileMap = new Map<string, { full_name?: string; preferred_icon_id?: string }>();
-        if (data) {
-          data.forEach((profile: any) => {
-            profileMap.set(profile.id, { full_name: profile.full_name, preferred_icon_id: profile.preferred_icon_id });
-            console.log('HomeDashboard: Mapped user', profile.id, 'to name:', profile.full_name);
-          });
-        }
-        console.log('HomeDashboard: Loaded', profileMap.size, 'profiles for tab:', scoreTab);
-        setUserProfiles(profileMap);
-      } catch (error) {
-        console.error('Error in fetchProfiles for Community:', error);
-        setUserProfiles(new Map());
-      }
-    };
-    
-    fetchProfiles();
-  }, [allRounds, allCommunityRounds, scoreTab, user?.id]); // Re-run when personal or community rounds change or tab switches
-  
-  // Delete all logic related to 'Alex Chen', 'Maria Rodriguez', and any hardcoded mock users
-  // Wipe the variable 'ec': Completely remove any mention of ec or ed from this file
-  // Note: recentRounds removed - now using filteredRoundsByTab which handles both tabs
   
   // Format time ago
   const formatTimeAgo = (dateString: string): string => {
@@ -991,11 +896,10 @@ export default function HomeDashboard() {
                 View All
               </Link>
             </div>
-            <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1">
+            <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1">
               {([
                 ['activity', 'Activity'],
                 ['myRounds', 'My Rounds'],
-                ['community', 'Community'],
               ] as const).map(([tab, label]) => (
                 <button
                   key={tab}
@@ -1056,10 +960,10 @@ export default function HomeDashboard() {
                   </button>
                 </div>
               )
-            ) : recentTab === 'myRounds' ? (
-              filteredRoundsByTab.length > 0 ? (
+            ) : (
+              allRounds.length > 0 ? (
                 <ul className="divide-y divide-gray-100">
-                  {[...filteredRoundsByTab]
+                  {[...allRounds]
                     .sort((a, b) => new Date(b.date || b.created_at || 0).getTime() - new Date(a.date || a.created_at || 0).getTime())
                     .slice(0, RECENT_ITEMS_SHOWN)
                     .map((round, index) => {
@@ -1106,43 +1010,11 @@ export default function HomeDashboard() {
                   </button>
                 </div>
               )
-            ) : !communityRoundsHydrated ? (
-              <p className="py-4 text-center text-sm text-gray-600">Loading rounds...</p>
-            ) : filteredRoundsByTab.length > 0 ? (
-              <ul className="divide-y divide-gray-100">
-                {[...filteredRoundsByTab]
-                  .sort((a: any, b: any) => new Date(b?.date || b?.created_at || 0).getTime() - new Date(a?.date || a?.created_at || 0).getTime())
-                  .slice(0, RECENT_ITEMS_SHOWN)
-                  .map((round: any, index: number) => {
-                    const nett = (round?.score || 0) - (round?.handicap || 0);
-                    const roundProfile = round?.user_id ? userProfiles.get(round.user_id) : null;
-                    const roundDate = round?.date || round?.created_at || new Date().toISOString();
-                    return (
-                      <li key={round?.id || `round-${roundDate}-${index}`} className="flex items-center gap-3 py-2.5">
-                        <ProfileAvatar picture={roundProfile?.preferred_icon_id} name={roundProfile?.full_name || 'Golfer'} size={32} />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-gray-800">{roundProfile?.full_name || 'Golfer'}</p>
-                          <p className="truncate text-xs text-gray-400">
-                            {round?.course || 'Unknown Course'} · {formatTimeAgo(roundDate)}
-                          </p>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <p className="text-xl font-bold leading-none" style={{ color: '#FFA500' }}>{nett.toFixed(0)}</p>
-                          <p className="text-[10px] text-gray-400">Nett</p>
-                        </div>
-                      </li>
-                    );
-                  })}
-              </ul>
-            ) : (
-              <div className="py-4 text-center">
-                <Users className="mx-auto mb-2 h-8 w-8 text-gray-300" />
-                <p className="mb-1 text-sm text-gray-600">No community rounds yet</p>
-                <p className="text-xs text-gray-400">Be the first to log a round!</p>
-              </div>
             )}
           </div>
         </div>
+
+        <HomeCommunityCard />
 
         <div className="w-full px-4 mb-4 space-y-3">
           {!installBannerHidden ? (
