@@ -4,6 +4,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { EMAIL_TAKEN_MESSAGE } from "@/lib/emailTaken";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 interface User {
@@ -1027,12 +1028,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: email.trim(),
       password,
     });
 
     if (error) {
+      if (/already (been )?registered|already exists/i.test(error.message || "")) {
+        throw new Error(EMAIL_TAKEN_MESSAGE);
+      }
       throw new Error(error.message || "Failed to create account");
+    }
+
+    // With email confirmation on, Supabase hides duplicates by returning a user with no identities.
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      throw new Error(EMAIL_TAKEN_MESSAGE);
     }
 
       if (data.user && supabase) {

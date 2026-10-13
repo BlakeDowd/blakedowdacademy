@@ -8,6 +8,7 @@ import IconPicker from "@/components/IconPicker";
 import ForgotPasswordPanel from "@/components/ForgotPasswordPanel";
 import HandicapField from "@/components/HandicapField";
 import { pendingInviteName, postLoginPath } from "@/lib/coachingSpaces";
+import { EMAIL_TAKEN_MESSAGE, isEmailRegistered } from "@/lib/emailTaken";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -22,6 +23,19 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showRetry, setShowRetry] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [takenEmail, setTakenEmail] = useState<string | null>(null);
+  const emailTaken = isSignUp && takenEmail !== null && takenEmail === email.trim().toLowerCase();
+
+  const checkEmail = async (value: string) => {
+    const taken = await isEmailRegistered(value);
+    setTakenEmail(taken ? value.trim().toLowerCase() : null);
+    return taken === true;
+  };
+
+  const goToLogin = () => {
+    setIsSignUp(false);
+    setError("");
+  };
 
   // Show success message when returning from password reset
   useEffect(() => {
@@ -97,6 +111,10 @@ export default function LoginPage() {
           setLoading(false);
           return;
         }
+        if (await checkEmail(email)) {
+          setLoading(false);
+          return;
+        }
         await Promise.race([
           signup(email, password, fullName, handicap, selectedIcon || undefined),
           timeoutPromise
@@ -140,8 +158,13 @@ export default function LoginPage() {
     } catch (err: any) {
       setLoading(false);
       
-      // Show error in alert for visibility on phone
       const errorMessage = err.message || "An error occurred. Please try again.";
+      if (errorMessage === EMAIL_TAKEN_MESSAGE) {
+        setTakenEmail(email.trim().toLowerCase());
+        return;
+      }
+
+      // Show error in alert for visibility on phone
       alert(`Login Error: ${errorMessage}`);
       
       // If timeout occurred, show retry button
@@ -276,11 +299,36 @@ export default function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  onBlur={() => {
+                    if (isSignUp && email.trim()) void checkEmail(email);
+                  }}
                   className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#054d2b] focus:border-[#054d2b] outline-none transition-all"
                   placeholder="your@email.com"
                   required
                 />
               </div>
+              {emailTaken && (
+                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3" role="alert">
+                  <p className="text-sm text-amber-900">{EMAIL_TAKEN_MESSAGE}</p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={goToLogin}
+                      className="flex-1 rounded-md py-2 text-sm font-semibold text-white"
+                      style={{ backgroundColor: '#054d2b' }}
+                    >
+                      Log in
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowForgotPassword(true); setError(""); }}
+                      className="flex-1 rounded-md border border-amber-300 bg-white py-2 text-sm font-semibold text-amber-900"
+                    >
+                      Reset password
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Password Field */}
