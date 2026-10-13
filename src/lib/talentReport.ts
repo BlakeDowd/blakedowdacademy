@@ -18,16 +18,27 @@ import {
   parseMobilityChecks,
   type MobilityArea,
 } from "@/lib/mobilityScreenConfig";
-import { ageFromDob, ageGroup, type AgeGroup, type GroupMember, type TalentProfile } from "@/lib/playerGroups";
+import { createClient } from "@/lib/supabase/client";
+import {
+  ageFromDob,
+  ageGroup,
+  fetchTalentProfiles,
+  type AgeGroup,
+  type GroupMember,
+  type Squad,
+  type TalentProfile,
+} from "@/lib/playerGroups";
 
-type Row = { user_id?: unknown } & Record<string, unknown>;
+export type Row = { user_id?: unknown } & Record<string, unknown>;
 
 /** Everything the talent reports need about one group member. */
 export type TalentPlayer = {
   id: string;
   name: string;
   age: number | null;
+  dob: string | null;
   ageGroup: AgeGroup;
+  squad: Squad | null;
   notes: string | null;
   startedOn: string | null;
   streak: number;
@@ -40,18 +51,22 @@ export type TalentPlayer = {
   roundStats: Row[];
 };
 
-const toNumber = (v: unknown): number | null => {
+export const toNumber = (v: unknown): number | null => {
   if (v == null || String(v).trim() === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 };
 
-const timeOf = (v: unknown): number => {
+export const timeOf = (v: unknown): number => {
   const t = typeof v === "string" ? new Date(v).getTime() : NaN;
   return Number.isFinite(t) ? t : NaN;
 };
 
-const rowTime = (r: Row) => timeOf(r.completed_at ?? r.created_at);
+export const rowTime = (r: Row) => timeOf(r.completed_at ?? r.created_at);
+
+const ROUND_COLUMNS = "id, handicap, created_at, date, score, holes, course_name";
+/** Added by 20261013160000_round_event_tiers.sql; rounds still load without them before it's run. */
+const ROUND_EVENT_COLUMNS = "event_tier, event_name, course_rating, slope_rating";
 
 /** Loads each member's practice, combines, rounds and profile. One query set per player keeps each under row limits. */
 export async function loadTalentPlayers(
@@ -71,15 +86,12 @@ export async function loadTalentPlayers(
   return Promise.all(
     members.map(async (m) => {
       const id = m.player_id;
+      const roundsQuery = (columns: string) =>
+        supabase.from("rounds").select(columns).eq("user_id", id).order("created_at", { ascending: false }).limit(300);
       const [practiceRes, logsRes, roundsRes, statsRes] = await Promise.all([
         supabase.from("practice").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(1000),
         supabase.from("practice_logs").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(900),
-        supabase
-          .from("rounds")
-          .select("handicap, created_at, date, score, holes")
-          .eq("user_id", id)
-          .order("created_at", { ascending: false })
-          .limit(300),
+        roundsQuery(`${ROUND_COLUMNS}, ${ROUND_EVENT_COLUMNS}`).then((res) => (res.error ? roundsQuery(ROUND_COLUMNS) : res)),
         supabase
           .from("round_stats")
           .select("handicap_index, played_at")
@@ -94,7 +106,9 @@ export async function loadTalentPlayers(
         id,
         name: String(profile?.full_name || "Unknown player"),
         age,
+        dob: t?.date_of_birth ?? null,
         ageGroup: ageGroup(age),
+        squad: m.squad ?? null,
         notes: t?.notes ?? null,
         startedOn: m.started_on,
         streak: toNumber(profile?.currentStreak) ?? 0,
@@ -103,11 +117,58 @@ export async function loadTalentPlayers(
         initialHandicap: toNumber(profile?.initial_handicap),
         practice: (practiceRes.data ?? []) as Row[],
         logs: (logsRes.data ?? []) as Row[],
-        rounds: (roundsRes.data ?? []) as Row[],
+        rounds: (roundsRes.data ?? []) as unknown as Row[],
         roundStats: (statsRes.data ?? []) as Row[],
       };
     }),
   );
+}
+
+const COHORT_TTL_MS = 5 * 60_000;
+const cohortCache = new Map<string, { at: number; pending: Promise<TalentPlayer[]> }>();
+
+export const cohortKey = (members: GroupMember[]) =>
+  members
+    .map((m) => `${m.player_id}:${m.started_on ?? ""}`)
+    .sort()
+    .join(",");
+
+/** Reverses `cohortKey` (group ids aren't needed to load a cohort). */
+export const membersFromKey = (key: string): GroupMember[] =>
+  key
+    .split(",")
+    .filter(Boolean)
+    .map((part) => {
+      const [player_id, started] = part.split(":");
+      return { group_id: "", player_id, started_on: started || null };
+    });
+
+/** Squads change without reloading anyone's data, so apply the latest ones from the group store. */
+export function withSquads(players: TalentPlayer[], members: GroupMember[], groupIds: Set<string>): TalentPlayer[] {
+  const squads = new Map<string, Squad | null>();
+  for (const m of members) {
+    if (groupIds.has(m.group_id) && !squads.get(m.player_id)) squads.set(m.player_id, m.squad ?? null);
+  }
+  return players.map((p) => ({ ...p, squad: squads.get(p.id) ?? null }));
+}
+
+/** Talent data for a set of players, shared between the group report and player cards for the session. */
+export function loadTalentCohort(members: GroupMember[]): Promise<TalentPlayer[]> {
+  const key = cohortKey(members);
+  const cached = cohortCache.get(key);
+  if (cached && Date.now() - cached.at < COHORT_TTL_MS) return cached.pending;
+  const pending = (async () => {
+    const talent = await fetchTalentProfiles(members.map((m) => m.player_id));
+    return loadTalentPlayers(createClient(), members, talent);
+  })();
+  cohortCache.set(key, { at: Date.now(), pending });
+  pending.catch(() => cohortCache.delete(key));
+  return pending;
+}
+
+/** Call after a date of birth changes so ages are reloaded. */
+export function clearTalentCohortCache() {
+  cohortCache.clear();
 }
 
 /** Playing handicap as it stood at `atMs` (now when omitted), from the latest rounds before then. */

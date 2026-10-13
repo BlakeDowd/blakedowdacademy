@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowDown, ArrowLeft, ArrowUp, Download, Loader2 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { ArrowDown, ArrowLeft, ArrowUp, Crown, Download, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isCoachEmail } from "@/lib/coachEmails";
 import { ReportEmpty, ReportSection } from "@/components/coach/CoachReportParts";
@@ -12,9 +11,9 @@ import { Segmented } from "@/components/profile/ProfileStatsParts";
 import {
   AGE_GROUPS,
   deletePlayerGroup,
-  fetchTalentProfiles,
   membersOfGroup,
   renamePlayerGroup,
+  squadLabel,
   usePlayerGroups,
   type AgeGroup,
 } from "@/lib/playerGroups";
@@ -29,16 +28,33 @@ import {
   buildCompareRows,
   buildMobilityRows,
   buildProgressRows,
-  loadTalentPlayers,
+  cohortKey,
+  loadTalentCohort,
+  membersFromKey,
+  withSquads,
   type CommitmentPeriod,
   type ProgressPeriod,
   type TalentPlayer,
 } from "@/lib/talentReport";
+import {
+  COHORT_ORDER,
+  MIN_DATA,
+  TALENT_PILLARS,
+  blindLabels,
+  buildTalentIndex,
+  type RankScope,
+  type TalentIndexRow,
+} from "@/lib/talentIndex";
+import { EVENT_TIERS } from "@/lib/eventTiers";
 
 const noopSubscribe = () => () => {};
 
-type Tab = "compare" | "progress" | "commitment" | "rankings" | "mobility";
+/** Player id → "Player A" etc. while blind review is on. */
+const BlindContext = createContext<Map<string, string> | null>(null);
+
+type Tab = "index" | "compare" | "progress" | "commitment" | "rankings" | "mobility";
 const TABS: { id: Tab; label: string }[] = [
+  { id: "index", label: "Talent index" },
   { id: "compare", label: "Compare" },
   { id: "progress", label: "Progress" },
   { id: "commitment", label: "Commitment" },
@@ -74,12 +90,25 @@ const shortDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "2-digit" }) : null;
 
 function PlayerCell({ player }: { player: TalentPlayer }) {
+  const blind = useContext(BlindContext);
+  const ageLine = (
+    <span className="block text-[10px] text-stone-500">
+      {player.age != null ? `Age ${player.age} · ${player.ageGroup}` : "No DOB"}
+      {player.squad && ` · ${squadLabel(player.squad)}`}
+    </span>
+  );
+  if (blind) {
+    return (
+      <span className="block min-w-0">
+        <span className="block truncate text-[13px] font-semibold text-stone-900">{blind.get(player.id) ?? "Player"}</span>
+        {ageLine}
+      </span>
+    );
+  }
   return (
     <Link href={`/dashboard/coach/player/${player.id}`} className="block min-w-0 hover:underline">
       <span className="block truncate text-[13px] font-semibold text-stone-900">{player.name}</span>
-      <span className="block text-[10px] text-stone-500">
-        {player.age != null ? `Age ${player.age} · ${player.ageGroup}` : "No DOB"}
-      </span>
+      {ageLine}
     </Link>
   );
 }
@@ -205,10 +234,12 @@ export default function GroupTalentReportPage() {
   const overrides = usePracticeHandicapOverrides();
   const group = groupsState.groups.find((g) => g.id === groupId) ?? null;
   const members = useMemo(() => membersOfGroup(groupsState, groupId), [groupsState, groupId]);
-  const membersKey = members.map((m) => `${m.player_id}:${m.started_on ?? ""}`).sort().join(",");
+  const membersKey = cohortKey(members);
 
   const [loaded, setLoaded] = useState<{ key: string; players: TalentPlayer[] } | null>(null);
-  const [tab, setTab] = useState<Tab>("compare");
+  const [tab, setTab] = useState<Tab>("index");
+  const [blind, setBlind] = useState(false);
+  const [rankScope, setRankScope] = useState<RankScope>("group");
   const [age, setAge] = useState<AgeGroup | "all">("all");
   const [progressPeriod, setProgressPeriod] = useState<ProgressPeriod>("6m");
   const [commitmentPeriod, setCommitmentPeriod] = useState<CommitmentPeriod>("90d");
@@ -218,26 +249,17 @@ export default function GroupTalentReportPage() {
   useEffect(() => {
     if (!isCoach || !groupsState.loaded) return;
     let cancelled = false;
-    const keyed = membersKey
-      .split(",")
-      .filter(Boolean)
-      .map((part) => {
-        const [player_id, started] = part.split(":");
-        return { group_id: groupId, player_id, started_on: started || null };
-      });
-    void (async () => {
-      const talent = await fetchTalentProfiles(keyed.map((m) => m.player_id));
-      const players = await loadTalentPlayers(createClient(), keyed, talent);
+    void loadTalentCohort(membersFromKey(membersKey)).then((players) => {
       if (!cancelled) setLoaded({ key: membersKey, players });
-    })();
+    });
     return () => {
       cancelled = true;
     };
   }, [isCoach, groupsState.loaded, groupId, membersKey]);
 
   const allPlayers = useMemo(
-    () => (loaded?.key === membersKey ? loaded.players : null),
-    [loaded, membersKey],
+    () => (loaded?.key === membersKey ? withSquads(loaded.players, members, new Set([groupId])) : null),
+    [loaded, membersKey, members, groupId],
   );
   const players = useMemo(
     () => (allPlayers ?? []).filter((p) => age === "all" || p.ageGroup === age),
@@ -245,6 +267,16 @@ export default function GroupTalentReportPage() {
   );
   const presentAges = AGE_GROUPS.filter((g) => allPlayers?.some((p) => p.ageGroup === g));
 
+  const blindMap = useMemo(() => (blind && allPlayers ? blindLabels(allPlayers.map((p) => p.id)) : null), [blind, allPlayers]);
+  const indexRows = useMemo(
+    () => (tab === "index" ? buildTalentIndex(players, overrides.byId, rankScope, group?.name ?? "the group") : []),
+    [tab, players, overrides.byId, rankScope, group?.name],
+  );
+  const indexCohorts = useMemo(() => {
+    const out = new Map<string, TalentIndexRow[]>();
+    for (const row of indexRows) out.set(row.cohort, [...(out.get(row.cohort) ?? []), row]);
+    return [...out].sort(([a], [b]) => COHORT_ORDER.indexOf(a) - COHORT_ORDER.indexOf(b));
+  }, [indexRows]);
   const compareRows = useMemo(() => buildCompareRows(players, overrides.byId), [players, overrides.byId]);
   const progressRows = useMemo(
     () => (tab === "progress" ? buildProgressRows(compareRows, overrides.byId, progressPeriod) : []),
@@ -275,6 +307,102 @@ export default function GroupTalentReportPage() {
       );
     }
     switch (tab) {
+      case "index": {
+        const indexColumns: Column<TalentIndexRow>[] = [
+          {
+            id: "index",
+            label: "Index",
+            value: (r) => r.index,
+            render: (r) =>
+              r.index == null ? (
+                "–"
+              ) : (
+                <span className="inline-flex items-center gap-1 font-bold">
+                  {r.rank === 1 && <Crown className="h-3.5 w-3.5 text-[#FFA500]" aria-hidden />}
+                  {r.index}
+                </span>
+              ),
+            best: true,
+          },
+          { id: "readiness", label: "Ready", value: (r) => r.readiness, best: true },
+          ...TALENT_PILLARS.map(
+            (p): Column<TalentIndexRow> => ({
+              id: p.id,
+              label: p.short,
+              value: (r) => r.pillars[p.id]?.pct ?? null,
+              render: (r) => {
+                const s = r.pillars[p.id];
+                if (!s) return "–";
+                return (
+                  <span title={s.detail} className={s.pct >= 80 ? "font-bold text-[#b86e00]" : s.pct <= 25 ? "text-stone-400" : ""}>
+                    {s.rank === 1 && !s.tied ? "1st" : `${s.tied ? "=" : "#"}${s.rank}`}
+                  </span>
+                );
+              },
+              best: true,
+            }),
+          ),
+          {
+            id: "leads",
+            label: "Combine #1s",
+            value: (r) => (r.combineLeads.length ? r.combineLeads.length : null),
+            best: true,
+          },
+        ];
+        return (
+          <div className="space-y-3">
+            <ReportSection
+              title="Talent index"
+              subtitle={
+                <span className="inline-flex items-start gap-1">
+                  <ShieldCheck className="mt-px h-3.5 w-3.5 shrink-0 text-[#014421]" aria-hidden />
+                  Data only: combines, practice and coach-tagged competition rounds. Turn on Blind review to hide names.
+                </span>
+              }
+              aside={
+                <Segmented
+                  label="Rank against"
+                  value={rankScope}
+                  onChange={setRankScope}
+                  options={[
+                    { id: "group", label: "Whole group" },
+                    { id: "age", label: "Age groups" },
+                    { id: "squad", label: "Squads" },
+                  ]}
+                />
+              }
+            >
+              {rankScope === "group" ? (
+                <SortTable key="group" rows={indexRows} initialSort="index" columns={indexColumns} />
+              ) : (
+                <p className="text-xs text-stone-500">
+                  Each player is ranked only against their own {rankScope === "age" ? "age group" : "squad"}.{" "}
+                  {rankScope === "age" ? "Age groups" : "Squads"} with fewer than {MIN_DATA} players can&apos;t be ranked.
+                  {rankScope === "squad" && " Set a player's squad on their Talent ID card."}
+                </p>
+              )}
+            </ReportSection>
+            {rankScope !== "group" &&
+              indexCohorts.map(([cohort, rows]) => (
+                <ReportSection key={cohort} title={cohort} subtitle={`${rows.length} ${rows.length === 1 ? "player" : "players"}`}>
+                  {rows.length < MIN_DATA ? (
+                    <ReportEmpty>Not enough players in {cohort} to rank (needs {MIN_DATA}).</ReportEmpty>
+                  ) : (
+                    <SortTable key={`${rankScope}-${cohort}`} rows={rows} initialSort="index" columns={indexColumns} />
+                  )}
+                </ReportSection>
+              ))}
+            <p className="px-1 text-[11px] leading-relaxed text-stone-500">
+              The index (0–100) is the weighted share of the cohort each player is ahead of:{" "}
+              {TALENT_PILLARS.map((p) => `${p.label.toLowerCase()} ${p.weight}%`).join(", ")}. Ready blends competitive,
+              skill and commitment. Competitive uses score differentials from coach-tagged comps (
+              {EVENT_TIERS.map((t) => `${t.label} ×${t.weight}`).join(", ")}) and needs {MIN_DATA} rounds. Social rounds
+              don&apos;t count. Recent results count most: full weight
+              for 30 days, 70% to 90 days, 40% to 6 months, then nothing. Gold is the top 20%.
+            </p>
+          </div>
+        );
+      }
       case "compare":
         return (
           <ReportSection title="Side by side" subtitle="Handicaps by area. Green is the best in the group. Tap a heading to sort.">
@@ -511,14 +639,27 @@ export default function GroupTalentReportPage() {
             <ArrowLeft className="h-4 w-4" aria-hidden />
             Players
           </Link>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 shadow-sm hover:bg-stone-50"
-          >
-            <Download className="h-3.5 w-3.5" aria-hidden />
-            Save PDF
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setBlind((b) => !b)}
+              aria-pressed={blind}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold shadow-sm ${
+                blind ? "bg-[#014421] text-white" : "border border-stone-200 bg-white text-stone-700 hover:bg-stone-50"
+              }`}
+            >
+              <EyeOff className="h-3.5 w-3.5" aria-hidden />
+              Blind review{blind ? " on" : ""}
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 shadow-sm hover:bg-stone-50"
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden />
+              Save PDF
+            </button>
+          </div>
         </div>
         <h1 className="mt-2 text-2xl font-bold tracking-tight text-stone-900">
           {group ? `${group.name} talent report` : groupsState.loaded && groupsState.available ? "Group not found" : "Talent report"}
@@ -589,7 +730,7 @@ export default function GroupTalentReportPage() {
                 Loading players…
               </p>
             ) : (
-              content()
+              <BlindContext.Provider value={blindMap}>{content()}</BlindContext.Provider>
             )}
           </div>
 

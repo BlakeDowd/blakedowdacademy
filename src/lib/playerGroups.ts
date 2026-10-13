@@ -5,7 +5,15 @@ import { createClient } from "@/lib/supabase/client";
 
 /** Coach-made player groups (Scholarship etc.); see supabase/migrations/20261013120000_player_groups.sql. */
 export type PlayerGroup = { id: string; name: string };
-export type GroupMember = { group_id: string; player_id: string; started_on: string | null };
+export type Squad = "emerging" | "development" | "elite";
+export const SQUADS: { id: Squad; label: string }[] = [
+  { id: "emerging", label: "Emerging" },
+  { id: "development", label: "Development" },
+  { id: "elite", label: "Elite" },
+];
+export const squadLabel = (s: Squad | null | undefined) => SQUADS.find((x) => x.id === s)?.label ?? "No squad";
+
+export type GroupMember = { group_id: string; player_id: string; started_on: string | null; squad?: Squad | null };
 export type TalentProfile = { player_id: string; date_of_birth: string | null; notes: string | null };
 
 const MIGRATION_HINT = "Run supabase/migrations/20261013120000_player_groups.sql in Supabase first.";
@@ -47,9 +55,13 @@ function errorMessage(message: string): string {
 function load(): Promise<void> {
   loading ??= (async () => {
     const supabase = createClient();
+    const members = (columns: string) => supabase.from("player_group_members").select(columns);
     const [groupsRes, membersRes] = await Promise.all([
       supabase.from("player_groups").select("id, name"),
-      supabase.from("player_group_members").select("group_id, player_id, started_on"),
+      // `squad` comes from 20261013170000_group_squads.sql; fall back if it hasn't been run.
+      members("group_id, player_id, started_on, squad").then((res) =>
+        res.error ? members("group_id, player_id, started_on") : res,
+      ),
     ]);
     if (groupsRes.error || membersRes.error) {
       emit({ ...EMPTY, loaded: true, available: false });
@@ -57,7 +69,7 @@ function load(): Promise<void> {
     }
     emit({
       groups: ((groupsRes.data ?? []) as PlayerGroup[]).sort(byName),
-      members: (membersRes.data ?? []) as GroupMember[],
+      members: (membersRes.data ?? []) as unknown as GroupMember[],
       loaded: true,
       available: true,
     });
@@ -154,6 +166,23 @@ export async function setGroupStartDate(groupId: string, playerId: string, start
     .eq("player_id", playerId);
   if (!error) return null;
   emit({ ...state, members: previous });
+  return errorMessage(error.message);
+}
+
+export async function setGroupSquad(groupId: string, playerId: string, squad: Squad | null): Promise<string | null> {
+  const previous = state.members;
+  emit({
+    ...state,
+    members: previous.map((m) => (m.group_id === groupId && m.player_id === playerId ? { ...m, squad } : m)),
+  });
+  const { error } = await createClient()
+    .from("player_group_members")
+    .update({ squad })
+    .eq("group_id", groupId)
+    .eq("player_id", playerId);
+  if (!error) return null;
+  emit({ ...state, members: previous });
+  if (/squad/i.test(error.message)) return "Run supabase/migrations/20261013170000_group_squads.sql in Supabase first.";
   return errorMessage(error.message);
 }
 
