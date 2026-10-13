@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, ChevronDown, ImageIcon, Loader2, Paperclip, Send, Video, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, GraduationCap, ImageIcon, Loader2, Paperclip, Send, Video, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   MAX_COACHING_PHOTO_BYTES,
@@ -22,6 +22,7 @@ import {
 } from "@/lib/coachingFeed";
 import { Avatar } from "@/components/coaching/coachingUi";
 import type { CoachingVideoKind } from "@/lib/bunnyCollections";
+import { LESSON_XP, lessonLoggedToday, logCoachLesson } from "@/lib/coachLessons";
 
 export type ToastState = { message: string; type: "success" | "error" | "info" | "warning" } | null;
 
@@ -469,6 +470,8 @@ export function PostComposer({
   const [notes, setNotes] = useState({ keyIssues: "", contact: "", directional: "" });
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState<Progress>(null);
+  const [lesson, setLesson] = useState(false);
+  const [lessonDoneFor, setLessonDoneFor] = useState<Record<string, boolean>>({});
   const files = useAttachments(onToast, viewerIsCoach);
 
   const toAll = !studentId && targetId === ALL_PLAYERS && Boolean(onAnnounced);
@@ -484,6 +487,19 @@ export function PostComposer({
   const chipButton =
     "inline-flex items-center gap-1.5 rounded-full bg-stone-100 px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-200";
   const idBase = `coaching-post-${studentId ?? "feed"}`;
+  const lessonTargetId = viewerIsCoach && open && !toAll && target ? target.id : null;
+  const lessonDone = lessonTargetId ? lessonDoneFor[lessonTargetId] : undefined;
+
+  useEffect(() => {
+    if (!lessonTargetId || lessonDoneFor[lessonTargetId] !== undefined) return;
+    let cancelled = false;
+    void lessonLoggedToday(createClient(), lessonTargetId).then((done) => {
+      if (!cancelled) setLessonDoneFor((m) => ({ ...m, [lessonTargetId]: done }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lessonTargetId, lessonDoneFor]);
 
   const reset = () => {
     setOpen(false);
@@ -491,6 +507,14 @@ export function PostComposer({
     files.clear();
     setShowNotes(false);
     setNotes({ keyIssues: "", contact: "", directional: "" });
+    setLesson(false);
+  };
+
+  const awardLesson = async (playerId: string, firstName: string) => {
+    const result = await logCoachLesson(createClient(), playerId);
+    setLessonDoneFor((m) => ({ ...m, [playerId]: result === "logged" || result === "already" || m[playerId] }));
+    if (result === "logged") onToast({ message: `Lesson logged: +${LESSON_XP} XP and 1 hour of practice for ${firstName}. ✓`, type: "success" });
+    else if (result !== "already") onToast({ message: `Posted, but the lesson XP didn't save: ${result}`, type: "warning" });
   };
 
   const sendAnnouncement = async () => {
@@ -543,7 +567,10 @@ export function PostComposer({
         onProgress: setProgress,
       });
       if (result.post) onPosted(result.post);
+      const awardingLesson = Boolean(result.post && lesson && lessonDone === false);
+      if (awardingLesson) setLesson(false);
       if (result.failed.length) {
+        if (awardingLesson) void awardLesson(target.id, target.name.split(" ")[0] || "the player");
         onToast({ message: failureMessage(result), type: result.post ? "warning" : "error" });
         if (result.post) {
           setBody("");
@@ -554,8 +581,10 @@ export function PostComposer({
       } else {
         const sent = files.videos.length;
         reset();
-        const where = viewerIsCoach ? `to ${target.name.split(" ")[0] || "the player"}'s feed` : "";
-        onToast({ message: postedMessage(sent, where), type: "success" });
+        const firstName = target.name.split(" ")[0] || "the player";
+        const where = viewerIsCoach ? `to ${firstName}'s feed` : "";
+        if (awardingLesson) await awardLesson(target.id, firstName);
+        else onToast({ message: postedMessage(sent, where), type: "success" });
       }
     } catch (err) {
       onToast({ message: err instanceof Error ? err.message : "Couldn't post that. Try again.", type: "error" });
@@ -706,6 +735,34 @@ export function PostComposer({
             </div>
           )}
         </div>
+      )}
+      {lessonTargetId && lessonDone === true && (
+        <p className="flex items-center gap-1.5 rounded-xl bg-[#014421]/5 px-3 py-2 text-xs font-semibold text-[#014421]">
+          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
+          Lesson already logged for {target?.name.split(" ")[0] || "this player"} today
+        </p>
+      )}
+      {lessonTargetId && lessonDone === false && (
+        <label
+          className={`flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 ring-1 transition-colors ${
+            lesson ? "bg-[#FFA500]/10 ring-[#FFA500]" : "bg-stone-50 ring-stone-200 hover:bg-stone-100"
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={lesson}
+            onChange={(e) => setLesson(e.target.checked)}
+            disabled={sending}
+            className="h-4 w-4 shrink-0 accent-[#014421]"
+          />
+          <GraduationCap className="h-5 w-5 shrink-0 text-[#014421]" aria-hidden />
+          <span className="min-w-0 leading-tight">
+            <span className="block text-sm font-semibold text-stone-800">Lesson today</span>
+            <span className="block text-[11px] text-stone-500">
+              Gives {target?.name.split(" ")[0] || "them"} +{LESSON_XP} XP and 1 hour of practice when you post
+            </span>
+          </span>
+        </label>
       )}
       <div className="flex items-center gap-2">
         <FileInputLabel

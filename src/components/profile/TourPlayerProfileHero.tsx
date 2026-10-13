@@ -1,6 +1,6 @@
 "use client";
 
-import { User } from "lucide-react";
+import { GraduationCap, User } from "lucide-react";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import { isPhotoPicture } from "@/lib/profilePicture";
 import { getEmblem } from "@/components/emblems/EmblemBadge";
@@ -12,6 +12,8 @@ type TourPlayerProfileHeroProps = {
   trophies: number;
   practiceHours: number;
   preferredIconId?: string | null;
+  /** Coach groups the player is in (e.g. Scholarship), shown as badges. */
+  groups?: string[];
 };
 
 function formatHandicap(h: number | null | undefined): string {
@@ -32,6 +34,7 @@ export function TourPlayerProfileHero({
   trophies,
   practiceHours,
   preferredIconId,
+  groups = [],
 }: TourPlayerProfileHeroProps) {
   const picture = preferredIconId === "flame" ? null : preferredIconId;
   const hasPicture = isPhotoPicture(picture) || !!getEmblem(picture);
@@ -79,9 +82,20 @@ export function TourPlayerProfileHero({
             <h1 className="mt-1 truncate text-2xl font-bold tracking-tight text-white sm:text-[1.75rem]">
               {playerName}
             </h1>
-            <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-1 text-xs font-semibold text-[#FFA500] ring-1 ring-white/10">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#FFA500]" aria-hidden />
-              Rank {formatRank(rank)}
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span className="inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-1 text-xs font-semibold text-[#FFA500] ring-1 ring-white/10">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#FFA500]" aria-hidden />
+                Rank {formatRank(rank)}
+              </span>
+              {groups.map((g) => (
+                <span
+                  key={g}
+                  className="inline-flex items-center gap-1 rounded-full bg-[#FFA500] px-3 py-1 text-xs font-bold text-[#013320] shadow-sm"
+                >
+                  <GraduationCap className="h-3.5 w-3.5" aria-hidden />
+                  {g}
+                </span>
+              ))}
             </div>
           </div>
         </div>

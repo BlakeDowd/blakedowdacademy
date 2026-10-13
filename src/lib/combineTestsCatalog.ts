@@ -25,6 +25,7 @@ import { ironFadeDrawConfig } from "@/lib/ironFadeDrawConfig";
 import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
 import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
 import { bunkerLiesConfig } from "@/lib/bunkerLiesConfig";
+import type { CombineLeaderboardTestId } from "@/lib/academyCombinesLeaderboard";
 
 export const COMBINE_CATEGORY_IDS = [
   "Putting",
@@ -50,6 +51,32 @@ export type CombineTestCard = {
   meta: string[];
   /** Sub-heading the card is grouped under within its category. */
   group: string;
+};
+
+/** Leaderboard id for each card whose results count toward the practice handicap. */
+export const CARD_HANDICAP_TEST_IDS: Partial<Record<string, CombineLeaderboardTestId>> = {
+  "putting-18": "puttingCombine",
+  "putting-9": "puttingTest9Holes",
+  "putting-3-6": "puttingTest3To6ft",
+  "putting-8-20": "puttingTest8To20",
+  "putting-20-40": "puttingTest20To40",
+  "aimpoint-6ft": "aimpoint_6ft_combine",
+  "aimpoint-8-20": "slope_mid_20ft",
+  "aimpoint-long-20-40": "aimpoint_long_40ft",
+  "chipping-combine-9": "chipping_combine_9",
+  "standard-chipping-combine": "chipping",
+  "flop-shot-combine": "flop_shot",
+  "wedge-lateral-9": "wedge_lateral_9",
+  "survival-20": "survival_20",
+  "three-strikes-wedge-challenge": "three_strikes",
+  "iron-precision-protocol": "ironPrecisionProtocol",
+  "iron-face-control-protocol": "iron_face_control",
+  "iron-safe-side": "iron_safe_side",
+  "iron-fade-vs-draw": "iron_fade_draw",
+  "tee-shot-hazard": "tee_shot_hazard",
+  "driver-flight-test": "driver_flight_control",
+  "bunker-proximity-protocol": "bunker_protocol",
+  "bunker-lies": "bunker_lies",
 };
 
 /**

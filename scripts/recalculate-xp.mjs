@@ -97,7 +97,7 @@ function combineXpForPracticeRow(p) {
   return 0;
 }
 
-const FACILITIES = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy', 'On-Course', 'range-mat', 'putting-green', 'chipping-green', 'home', 'mental'];
+const FACILITIES = ['Driving', 'Irons', 'Wedges', 'Chipping', 'Bunkers', 'Putting', 'Mental/Strategy', 'On-Course', 'range-mat', 'putting-green', 'chipping-green', 'home', 'mental', 'lesson'];
 
 async function recalculateXP(username) {
   // 1. Find user (profiles.full_name contains username)

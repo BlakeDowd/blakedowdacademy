@@ -30,6 +30,7 @@ import {
 import { fetchMyLibraryCompletions, type LibraryCompletionRow } from "@/lib/libraryCompletions";
 import { buildPracticeActivity, localDayKey, type DrillCatalogEntry } from "@/lib/practiceActivity";
 import { logActivity } from "@/lib/activity";
+import { usePracticeHandicapOverrides } from "@/lib/practiceHandicapOverrides";
 
 type AcademyDbTrophyRow = {
   achievement_id: string;
@@ -47,6 +48,8 @@ const EMPTY_CATALOG: ReadonlyMap<string, DrillCatalogEntry> = new Map();
 export function AcademyProfileSection() {
   const { rounds, practiceSessions, practiceLogs, loading: statsLoading } = useStats();
   const { user } = useAuth();
+  const benchmarks = usePracticeHandicapOverrides();
+  const benchmarkOverrides = benchmarks.loaded ? benchmarks.byId : null;
 
   const [selectedTrophy, setSelectedTrophy] = useState<AcademySelectedTrophy | null>(null);
   const [dbTrophies, setDbTrophies] = useState<AcademyDbTrophyRow[]>([]);
@@ -145,8 +148,19 @@ export function AcademyProfileSection() {
       userId: user?.id,
       practiceSessions: myPracticeSessions,
       practiceLogs: practiceLogs || [],
+      benchmarkOverrides,
     };
-  }, [user?.id, user?.totalXP, rounds, practiceSessions, practiceLogs, currentHandicap, libraryCompletions, activity]);
+  }, [
+    user?.id,
+    user?.totalXP,
+    rounds,
+    practiceSessions,
+    practiceLogs,
+    currentHandicap,
+    libraryCompletions,
+    activity,
+    benchmarkOverrides,
+  ]);
 
   const qualifiedAt = useCallback(
     (trophyId: string) =>

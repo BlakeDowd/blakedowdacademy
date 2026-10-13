@@ -348,21 +348,28 @@ function formatDateLabel(ms: number): string {
   });
 }
 
-export function buildAcademyCombinesLeaderboard(
+export type CombineAttempt = {
+  userId: string;
+  /** Higher is better (Bunker Lies stores negative strokes). */
+  sortValue: number;
+  display: string;
+  dateMs: number;
+};
+
+/** Every logged attempt at a combine. Putting tests are scored elsewhere and return none. */
+export function collectCombineAttempts(
   testId: CombineLeaderboardTestId,
   practiceSessions: any[] | undefined,
   practiceLogs: any[] | undefined,
-  userProfiles: Map<string, { full_name?: string; preferred_icon_id?: string; xp?: number }>,
   timeFilter: LeaderboardTimeFilter,
-  currentUserId: string | undefined,
-): AcademyCombineLeaderboardRow[] {
-  const bestByUser = new Map<
-    string,
-    { sortValue: number; display: string; dateMs: number }
-  >();
+): CombineAttempt[] {
+  const attempts: CombineAttempt[] = [];
+  const add = (userId: string, sortValue: number, display: string, dateMs: number) => {
+    attempts.push({ userId, sortValue, display, dateMs });
+  };
 
   if (isLeaderboardDrivenCombineId(testId)) {
-    return [];
+    return attempts;
   }
 
   if (testId === "ironPrecisionProtocol") {
@@ -401,19 +408,7 @@ export function buildAcademyCombinesLeaderboard(
         if (avg != null) tp = avg * ironPrecisionProtocolConfig.clubSequence.length;
       }
       if (tp == null) continue;
-      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
-      const prev = bestByUser.get(uid);
-      const better =
-        !prev ||
-        tp > prev.sortValue ||
-        (tp === prev.sortValue && dateMs > prev.dateMs);
-      if (better) {
-        bestByUser.set(uid, {
-          sortValue: tp,
-          display: `${tp.toFixed(1)} Pts`,
-          dateMs,
-        });
-      }
+      add(uid, tp, `${tp.toFixed(1)} Pts`, parseLeaderboardEventMs(row.created_at) ?? 0);
     }
     // Backward-compatible fallback: some older deployments stored iron protocol sessions in `practice`.
     const practiceRows = (practiceSessions || []).filter((r) => {
@@ -442,15 +437,7 @@ export function buildAcademyCombinesLeaderboard(
         parseLeaderboardEventMs((row as { completed_at?: string }).completed_at) ??
         parseLeaderboardEventMs(row.created_at) ??
         0;
-      const prev = bestByUser.get(uid);
-      const better = !prev || tp > prev.sortValue || (tp === prev.sortValue && dateMs > prev.dateMs);
-      if (better) {
-        bestByUser.set(uid, {
-          sortValue: tp,
-          display: `${tp.toFixed(1)} Pts`,
-          dateMs,
-        });
-      }
+      add(uid, tp, `${tp.toFixed(1)} Pts`, dateMs);
     }
   } else if (testId === "flop_shot") {
     const rows = (practiceLogs || []).filter(
@@ -462,19 +449,7 @@ export function buildAcademyCombinesLeaderboard(
       if (!uid) continue;
       const tp = num(row.score) ?? num(row.total_points);
       if (tp == null) continue;
-      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
-      const prev = bestByUser.get(uid);
-      const better =
-        !prev ||
-        tp > prev.sortValue ||
-        (tp === prev.sortValue && dateMs > prev.dateMs);
-      if (better) {
-        bestByUser.set(uid, {
-          sortValue: tp,
-          display: `${tp.toFixed(1)} Pts`,
-          dateMs,
-        });
-      }
+      add(uid, tp, `${tp.toFixed(1)} Pts`, parseLeaderboardEventMs(row.created_at) ?? 0);
     }
   } else if (testId === "chipping") {
     const rows = (practiceLogs || []).filter((r) => {
@@ -491,19 +466,7 @@ export function buildAcademyCombinesLeaderboard(
       if (!uid) continue;
       const tp = num(row.score) ?? num(row.total_points);
       if (tp == null) continue;
-      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
-      const prev = bestByUser.get(uid);
-      const better =
-        !prev ||
-        tp > prev.sortValue ||
-        (tp === prev.sortValue && dateMs > prev.dateMs);
-      if (better) {
-        bestByUser.set(uid, {
-          sortValue: tp,
-          display: `${tp.toFixed(1)} Pts`,
-          dateMs,
-        });
-      }
+      add(uid, tp, `${tp.toFixed(1)} Pts`, parseLeaderboardEventMs(row.created_at) ?? 0);
     }
   } else if (testId === "survival_20") {
     const want = survival20Config.practiceLogType.toLowerCase();
@@ -516,19 +479,7 @@ export function buildAcademyCombinesLeaderboard(
       if (!uid) continue;
       const tp = num(row.score) ?? num(row.total_points);
       if (tp == null || tp < 0) continue;
-      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
-      const prev = bestByUser.get(uid);
-      const better =
-        !prev ||
-        tp > prev.sortValue ||
-        (tp === prev.sortValue && dateMs > prev.dateMs);
-      if (better) {
-        bestByUser.set(uid, {
-          sortValue: tp,
-          display: `${Math.round(tp)} shots`,
-          dateMs,
-        });
-      }
+      add(uid, tp, `${Math.round(tp)} shots`, parseLeaderboardEventMs(row.created_at) ?? 0);
     }
   } else if (testId === "iron_face_control") {
     const want = ironFaceControlConfig.practiceLogType.toLowerCase();
@@ -541,19 +492,7 @@ export function buildAcademyCombinesLeaderboard(
       if (!uid) continue;
       const tp = num(row.score) ?? num(row.total_points);
       if (tp == null || tp < 0 || tp > ironFaceControlConfig.maxSessionPoints) continue;
-      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
-      const prev = bestByUser.get(uid);
-      const better =
-        !prev ||
-        tp > prev.sortValue ||
-        (tp === prev.sortValue && dateMs > prev.dateMs);
-      if (better) {
-        bestByUser.set(uid, {
-          sortValue: tp,
-          display: `${Math.round(tp)} / 100`,
-          dateMs,
-        });
-      }
+      add(uid, tp, `${Math.round(tp)} / 100`, parseLeaderboardEventMs(row.created_at) ?? 0);
     }
   } else if (
     testId === "iron_safe_side" ||
@@ -577,11 +516,7 @@ export function buildAcademyCombinesLeaderboard(
       // Penalties (crossing the flag, double crosses) mean totals can be negative.
       const tp = num(row.score) ?? num(row.total_points);
       if (tp == null) continue;
-      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
-      const prev = bestByUser.get(uid);
-      if (!prev || tp > prev.sortValue || (tp === prev.sortValue && dateMs > prev.dateMs)) {
-        bestByUser.set(uid, { sortValue: tp, display: `${Math.round(tp)} / ${outOf}`, dateMs });
-      }
+      add(uid, tp, `${Math.round(tp)} / ${outOf}`, parseLeaderboardEventMs(row.created_at) ?? 0);
     }
   } else if (testId === "three_strikes") {
     const want = threeStrikesWedgeConfig.practiceLogType.toLowerCase();
@@ -594,19 +529,7 @@ export function buildAcademyCombinesLeaderboard(
       if (!uid) continue;
       const tp = num(row.score) ?? num(row.total_points);
       if (tp == null || tp < 0) continue;
-      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
-      const prev = bestByUser.get(uid);
-      const better =
-        !prev ||
-        tp > prev.sortValue ||
-        (tp === prev.sortValue && dateMs > prev.dateMs);
-      if (better) {
-        bestByUser.set(uid, {
-          sortValue: tp,
-          display: `${Math.round(tp)} Hits`,
-          dateMs,
-        });
-      }
+      add(uid, tp, `${Math.round(tp)} Hits`, parseLeaderboardEventMs(row.created_at) ?? 0);
     }
   } else if (testId === "bunker_protocol") {
     const want = bunkerProximityProtocolConfig.practiceLogType.toLowerCase();
@@ -619,16 +542,7 @@ export function buildAcademyCombinesLeaderboard(
       if (!uid) continue;
       const tp = num(row.score) ?? num(row.total_points);
       if (tp == null) continue;
-      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
-      const prev = bestByUser.get(uid);
-      const better = !prev || tp > prev.sortValue || (tp === prev.sortValue && dateMs > prev.dateMs);
-      if (better) {
-        bestByUser.set(uid, {
-          sortValue: tp,
-          display: `${Math.round(tp)} Pts`,
-          dateMs,
-        });
-      }
+      add(uid, tp, `${Math.round(tp)} Pts`, parseLeaderboardEventMs(row.created_at) ?? 0);
     }
   } else if (testId === "bunker_lies") {
     // Fewest strokes wins; the sort is highest-first so rank on negative strokes.
@@ -639,16 +553,12 @@ export function buildAcademyCombinesLeaderboard(
       if (!uid) continue;
       const strokes = num(row.score) ?? num(row.total_points);
       if (strokes == null || strokes < bunkerLiesConfig.holeCount) continue;
-      const sortValue = -strokes;
-      const dateMs = parseLeaderboardEventMs(row.created_at) ?? 0;
-      const prev = bestByUser.get(uid);
-      if (!prev || sortValue > prev.sortValue || (sortValue === prev.sortValue && dateMs > prev.dateMs)) {
-        bestByUser.set(uid, {
-          sortValue,
-          display: `${formatToPar(Math.round(strokes) - BUNKER_LIES_PAR)} (${Math.round(strokes)})`,
-          dateMs,
-        });
-      }
+      add(
+        uid,
+        -strokes,
+        `${formatToPar(Math.round(strokes) - BUNKER_LIES_PAR)} (${Math.round(strokes)})`,
+        parseLeaderboardEventMs(row.created_at) ?? 0,
+      );
     }
   } else {
     for (const row of practiceSessions || []) {
@@ -658,18 +568,26 @@ export function buildAcademyCombinesLeaderboard(
       const extracted = extractPracticeScore(testId as PracticeMetadataCombineId, row);
       if (!extracted) continue;
       const dateMs = parseLeaderboardEventMs(row.completed_at) ?? parseLeaderboardEventMs(row.created_at) ?? 0;
-      const prev = bestByUser.get(uid);
-      const better =
-        !prev ||
-        extracted.sortValue > prev.sortValue ||
-        (extracted.sortValue === prev.sortValue && dateMs > prev.dateMs);
-      if (better) {
-        bestByUser.set(uid, {
-          sortValue: extracted.sortValue,
-          display: extracted.display,
-          dateMs,
-        });
-      }
+      add(uid, extracted.sortValue, extracted.display, dateMs);
+    }
+  }
+
+  return attempts;
+}
+
+export function buildAcademyCombinesLeaderboard(
+  testId: CombineLeaderboardTestId,
+  practiceSessions: any[] | undefined,
+  practiceLogs: any[] | undefined,
+  userProfiles: Map<string, { full_name?: string; preferred_icon_id?: string; xp?: number }>,
+  timeFilter: LeaderboardTimeFilter,
+  currentUserId: string | undefined,
+): AcademyCombineLeaderboardRow[] {
+  const bestByUser = new Map<string, CombineAttempt>();
+  for (const a of collectCombineAttempts(testId, practiceSessions, practiceLogs, timeFilter)) {
+    const prev = bestByUser.get(a.userId);
+    if (!prev || a.sortValue > prev.sortValue || (a.sortValue === prev.sortValue && a.dateMs > prev.dateMs)) {
+      bestByUser.set(a.userId, a);
     }
   }
 

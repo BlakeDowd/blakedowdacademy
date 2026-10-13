@@ -9,10 +9,12 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   Clock,
   FileText,
   Flag,
   FlagTriangleRight,
+  Gauge,
   History,
   PlayCircle,
   RefreshCw,
@@ -20,10 +22,16 @@ import {
   Target,
   type LucideIcon,
 } from "lucide-react";
+import Link from "next/link";
 import type { FacilityType } from "@/components/DrillCard";
+import { useAuth } from "@/contexts/AuthContext";
 import { keepElementInView, useKeepInViewOnChange } from "@/hooks/useKeepInView";
+import { usePracticeHandicap } from "@/hooks/usePracticeHandicap";
 import { SHOW_PDFS } from "@/lib/drillResources";
 import { realVideoUrl } from "@/lib/videoLinks";
+import { CARD_HANDICAP_TEST_IDS, COMBINE_TEST_CARDS, type CombineCategoryId } from "@/lib/combineTestsCatalog";
+import { formatHandicap, weakestArea, type PracticeHandicap } from "@/lib/practiceHandicap";
+import { GAME_AREAS, type GameArea } from "@/lib/practiceHandicapBenchmarks";
 
 export type GuidedSessionDrill = {
   id: string;
@@ -39,8 +47,18 @@ export type GuidedSessionDrill = {
 
 export type GuidedSessionBlock = { area: FacilityType; minutes: number };
 
-type Mode = "log" | "build";
-type Step = "mode" | "area" | "time" | "day" | "preview" | "done";
+type Mode = "log" | "build" | "test";
+type Step = "mode" | "area" | "time" | "day" | "preview" | "test" | "done";
+
+/** Combine tab for each area of the practice handicap. */
+const TEST_AREA_CATEGORY: Record<GameArea, CombineCategoryId> = {
+  driving: "Tee Shot",
+  irons: "Irons",
+  wedges: "Wedges",
+  chipping: "Chipping",
+  bunkers: "Bunkers",
+  putting: "Putting",
+};
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const MIN_ROUNDS_FOR_STATS = 3;
@@ -103,6 +121,65 @@ type Props = {
   onOpenVideo: (url: string) => void;
 };
 
+/** Combines for one area, the ones that set the practice handicap first, with the player's level on each. */
+function TestPicker({ area, practice }: { area: GameArea; practice: PracticeHandicap | null }) {
+  const label = GAME_AREAS.find((a) => a.id === area)?.label ?? area;
+  const areaResult = practice?.areas.find((a) => a.area === area) ?? null;
+  const cards = COMBINE_TEST_CARDS.filter((c) => c.category === TEST_AREA_CATEGORY[area]).sort(
+    (a, b) => Number(Boolean(CARD_HANDICAP_TEST_IDS[b.id])) - Number(Boolean(CARD_HANDICAP_TEST_IDS[a.id])),
+  );
+
+  return (
+    <div>
+      <p className="text-sm font-semibold text-gray-800">Pick a {label.toLowerCase()} test</p>
+      <p className="mb-3 text-xs text-gray-500">
+        {areaResult?.handicap != null
+          ? `Your ${label.toLowerCase()} plays to ${formatHandicap(areaResult.handicap)}. Each test uses your last 3 attempts.`
+          : `You haven't tested ${label.toLowerCase()} yet. One test sets your level.`}
+      </p>
+      <div className="space-y-2">
+        {cards.map((card) => {
+          const testId = CARD_HANDICAP_TEST_IDS[card.id];
+          const result = testId ? areaResult?.combines.find((c) => c.id === testId) : undefined;
+          return (
+            <Link
+              key={card.id}
+              href={card.href}
+              className="flex items-center gap-3 rounded-xl border-2 border-gray-200 bg-white p-3 transition-colors hover:border-[#014421] hover:bg-[#014421]/5"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-gray-900">{card.title}</span>
+                <span className="block text-xs leading-snug text-gray-500">{card.blurb}</span>
+                <span className="mt-1.5 flex flex-wrap gap-1">
+                  {testId ? (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        result ? "bg-[#014421]/10 text-[#014421]" : "bg-[#FFA500]/15 text-orange-700"
+                      }`}
+                    >
+                      {result ? `Your level ${formatHandicap(result.handicap)}` : "Sets your level"}
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
+                      Practice only
+                    </span>
+                  )}
+                  {card.meta.map((m) => (
+                    <span key={m} className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
+                      {m}
+                    </span>
+                  ))}
+                </span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" aria-hidden />
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function GuidedPracticeSession({
   statsAreas,
   roundsCount,
@@ -124,6 +201,10 @@ export function GuidedPracticeSession({
   const [busy, setBusy] = useState(false);
   const [loggedXp, setLoggedXp] = useState<number | null>(null);
   const [expandedDrillKey, setExpandedDrillKey] = useState<string | null>(null);
+  const [testArea, setTestArea] = useState<GameArea | null>(null);
+  const { user } = useAuth();
+  const handicapData = usePracticeHandicap(mode === "test" ? user?.id : null);
+  const practiceHcp = handicapData.status === "ready" ? handicapData.practice : null;
   const cardRef = useRef<HTMLDivElement>(null);
   useKeepInViewOnChange(cardRef, step);
 
@@ -136,7 +217,11 @@ export function GuidedPracticeSession({
 
   const statsUnlocked = !statsLoading && roundsCount >= MIN_ROUNDS_FOR_STATS;
   const steps: Step[] =
-    mode === "log" ? ["mode", "area", "time"] : ["mode", "area", "time", "day", "preview"];
+    mode === "log"
+      ? ["mode", "area", "time"]
+      : mode === "test"
+        ? ["mode", "area", "test"]
+        : ["mode", "area", "time", "day", "preview"];
   const stepNumber = Math.max(0, steps.indexOf(step));
 
   const dayOptions = useMemo(() => {
@@ -160,6 +245,19 @@ export function GuidedPracticeSession({
     setSession([]);
     setLoggedXp(null);
     setExpandedDrillKey(null);
+    setTestArea(null);
+  };
+
+  const chooseTestArea = (a: GameArea) => {
+    setTestArea(a);
+    setStep("test");
+  };
+
+  /** Untested areas first, so every part of the game gets a level; then the weakest. */
+  const suggestedTestArea = (): GameArea | null => {
+    if (!practiceHcp) return null;
+    const untested = practiceHcp.areas.find((a) => a.handicap == null);
+    return untested?.area ?? weakestArea(practiceHcp)?.area ?? null;
   };
 
   const practiceAnotherArea = () => {
@@ -312,10 +410,68 @@ export function GuidedPracticeSession({
                 </span>
               </span>
             </button>
+            <button type="button" className={optionBtn} onClick={() => chooseMode("test")}>
+              <span className="flex items-center gap-3">
+                <Gauge className="h-5 w-5 shrink-0 text-[#014421]" aria-hidden />
+                <span>
+                  Test my level
+                  <span className="block text-xs font-normal text-gray-500">
+                    Do a combine to see what handicap each part of your game plays to
+                  </span>
+                </span>
+              </span>
+            </button>
           </div>
         )}
 
-        {step === "area" && (
+        {step === "area" && mode === "test" && (
+          <div>
+            <p className="mb-3 text-sm font-semibold text-gray-800">Which part of your game do you want to test?</p>
+            <button
+              type="button"
+              className={`${optionBtn} mb-3`}
+              disabled={!practiceHcp}
+              onClick={() => {
+                const a = suggestedTestArea();
+                if (a) chooseTestArea(a);
+              }}
+            >
+              <span className="flex items-center gap-3">
+                <BarChart3 className="h-5 w-5 shrink-0 text-[#014421]" aria-hidden />
+                <span>
+                  Not sure? Pick for me
+                  <span className="block text-xs font-normal text-gray-500">
+                    {!practiceHcp
+                      ? "Loading your results…"
+                      : practiceHcp.testedAreas < GAME_AREAS.length
+                        ? "We'll start with an area you haven't tested yet"
+                        : "We'll retest your weakest area"}
+                  </span>
+                </span>
+              </span>
+            </button>
+            <div className="grid grid-cols-2 gap-2">
+              {GAME_AREAS.map((a) => {
+                const hcp = practiceHcp?.areas.find((x) => x.area === a.id)?.handicap ?? null;
+                return (
+                  <button key={a.id} type="button" className={gridBtn} onClick={() => chooseTestArea(a.id)}>
+                    <Gauge className="h-5 w-5 text-[#014421]" aria-hidden />
+                    {a.label}
+                    <span className="text-[11px] font-medium text-gray-500">
+                      {!practiceHcp ? "…" : hcp == null ? "Not tested yet" : `Level ${formatHandicap(hcp)}`}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {step === "test" && testArea && (
+          <TestPicker area={testArea} practice={practiceHcp} />
+        )}
+
+        {step === "area" && mode !== "test" && (
           <div>
             <p className="mb-3 text-sm font-semibold text-gray-800">
               {mode === "log" ? "What part of your game did you practise?" : "What part of your game are you working on?"}

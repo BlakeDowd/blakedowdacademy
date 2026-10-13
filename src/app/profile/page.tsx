@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
-import { AdvancedApproachStatsPanel } from "@/components/stats/AdvancedApproachStatsPanel";
 import type { AcademyTrophyDbRow } from "@/components/AcademyTrophyCasePanel";
 import {
   TourPlayerProfileHero,
@@ -31,12 +30,15 @@ import {
   sortMetricMatrix,
 } from "@/lib/deepDiveRoundMetrics";
 import { TROPHY_LIST } from "@/lib/academyTrophies";
+import { useMyPlayerGroups } from "@/lib/playerGroups";
 import { fetchTrophyCollectionRankForUser } from "@/lib/trophyCollectionLeaderboard";
 import { fetchUserTrophiesForUser } from "@/lib/userTrophiesDb";
 import { resolveAuthUserId } from "@/lib/resolveAuthUserId";
 import type { PlayerGoalRow } from "@/types/playerGoals";
 import { AcademyProfileSection } from "@/components/academy/AcademyProfileSection";
 import { ProfilePracticeOverview } from "@/components/profile/ProfilePracticeOverview";
+import { PlayerMobilityScreens } from "@/components/coaching/PlayerMobilityScreens";
+import { PracticeHandicapCard } from "@/components/coaching/PracticeHandicapCard";
 import { getBenchmarkGoals } from "@/lib/benchmarkGoals";
 import {
   SCORE_DISTRIBUTION_COLORS,
@@ -73,6 +75,7 @@ export default function ProfilePage() {
   // Context hooks
   const { rounds, practiceSessions, practiceLogs, loading: statsLoading, refreshRounds } = useStats();
   const { user, loading: authLoading } = useAuth();
+  const myGroups = useMyPlayerGroups(user?.id);
   
   // Filter by User ID: StatsContext `rounds` are already loaded with `.eq("user_id", authUser.id)`.
   // Still filter when `user_id` is present (e.g. if context ever merges sources). If `user_id` is missing
@@ -273,7 +276,6 @@ export default function ProfilePage() {
     strokeOpportunities: false,
     driving: false,
     approach: false,
-    advancedApproach: true,
     shortGame: false,
     putting: false,
     penalties: false,
@@ -496,10 +498,6 @@ export default function ProfilePage() {
   );
 
   const hasRoundData = scopedPlayerStatsRounds.length > 0;
-  const hasDirectionalShots = scopedPlayerStatsRounds.some(
-    (r) => Array.isArray(r.approachDirectionalShots) && r.approachDirectionalShots.length > 0,
-  );
-
   const statsProfileDisplayName = useMemo(() => {
     if (user?.fullName?.trim()) return user.fullName.trim();
     const em = user?.email?.trim();
@@ -775,6 +773,7 @@ export default function ProfilePage() {
           trophies={statsTrophySummary.total}
           practiceHours={practiceHoursTotal}
           preferredIconId={user?.preferredIconId}
+          groups={myGroups}
         />
 
         <div className="mt-4 mb-5">
@@ -1286,22 +1285,6 @@ export default function ProfilePage() {
               </StatsCard>
             )}
 
-            {hasDirectionalShots && (
-              <StatsCard
-                id="stats-advanced-approach"
-                title="Approach detail"
-                subtitle="Misses and GIR map from Add Directional Misses"
-                open={!collapsedCards.advancedApproach}
-                onToggle={() => toggleCard("advancedApproach")}
-              >
-                <AdvancedApproachStatsPanel
-                  rounds={scopedPlayerStatsRounds}
-                  showHeader={false}
-                  className="border-0! p-0! shadow-none! sm:p-0!"
-                />
-              </StatsCard>
-            )}
-
             <StatsCard
               id="full-metric-matrix"
               title="Every stat"
@@ -1368,6 +1351,12 @@ export default function ProfilePage() {
         {profileTab === "practice" ? (
           <div className="mb-6 space-y-4">
             <ProfilePracticeOverview playerGoalRow={playerGoalRow} />
+            {user?.id && (
+              <PracticeHandicapCard key={`practice-hcp-${user.id}`} playerId={user.id} playerName={statsProfileDisplayName} self />
+            )}
+            {user?.id && (
+              <PlayerMobilityScreens key={`mobility-${user.id}`} playerId={user.id} playerName={statsProfileDisplayName} self />
+            )}
             <AcademyProfileSection />
           </div>
         ) : null}

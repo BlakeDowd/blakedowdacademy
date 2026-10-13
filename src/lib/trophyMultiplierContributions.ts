@@ -1,5 +1,6 @@
 import { listUserCombineCompletionEvents } from "@/lib/combineCompletionDetection";
 import { practiceSessionMinutesFromRow } from "@/lib/practiceSessionDuration";
+import { ROUND_TROPHY_CHECKS } from "@/lib/trophyRoundChecks";
 
 /**
  * Trophy Case multiplier: how many times the user has met a trophy's threshold,
@@ -443,7 +444,62 @@ export function getTrophyMultiplierContributions(
       }));
       return { count: Math.max(events.length, 0), contributions: contrib };
     }
+    case "combine-regular":
+    case "combine-machine": {
+      const T = trophyId === "combine-regular" ? 10 : 25;
+      const events = listUserCombineCompletionEvents({
+        userId: uid,
+        practiceSessions: stats.practiceSessions,
+        practiceLogs,
+      });
+      const milestones = [...events].reverse().filter((_, i) => (i + 1) % T === 0);
+      return {
+        count: Math.floor(events.length / T),
+        contributions: milestones
+          .slice(0, MAX_LINES)
+          .map((e) => ({ label: `Every ${T} combines`, dateLabel: fmt(e.at) })),
+      };
+    }
+    case "practice-icon": {
+      const T = 250;
+      const dates = practiceHourMilestoneDates(stats.practiceSessions, uid, T);
+      return {
+        count: Math.max(0, Math.floor(stats.practiceHours / T)),
+        contributions: dates.slice(0, MAX_LINES).map((d) => ({ label: `≥${T}h cumulative`, dateLabel: d })),
+      };
+    }
+    case "round-machine": {
+      const T = 50;
+      const milestones = rounds.filter((_, i) => (i + 1) % T === 0);
+      return {
+        count: Math.max(0, Math.floor(rounds.length / T)),
+        contributions: linesFromRoundDates(milestones, `Every ${T} rounds`),
+      };
+    }
+    case "hall-of-famer": {
+      const T = 25000;
+      const dates = xpMilestoneDatesFromHistory(stats.practiceHistory, T);
+      return {
+        count: Math.max(0, Math.floor(stats.totalXP / T)),
+        contributions: dates.slice(0, MAX_LINES).map((d) => ({ label: `+${T} XP milestone`, dateLabel: d })),
+      };
+    }
+    case "breaking-100":
+    case "fairway-finder":
+    case "hot-putter":
+    case "clean-card": {
+      const check = ROUND_TROPHY_CHECKS[trophyId];
+      const hit = rounds.filter((r: any) => check(r));
+      return { count: hit.length, contributions: linesFromRoundDates(hit, ROUND_TROPHY_LABELS[trophyId]) };
+    }
     default:
       return { count: 0, contributions: [] };
   }
 }
+
+const ROUND_TROPHY_LABELS: Record<string, string> = {
+  "breaking-100": "18-hole round under 100",
+  "fairway-finder": "Round with 10+ fairways",
+  "hot-putter": "18 holes with 28 putts or fewer",
+  "clean-card": "18 holes without a double bogey",
+};

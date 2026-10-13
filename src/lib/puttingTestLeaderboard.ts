@@ -101,6 +101,19 @@ export function bestClusteredPuttingTestScoreAndSessionEndMs(
   return { score: bestScore, sessionEndMs };
 }
 
+/** Score and finish time of every complete clustered session, oldest first. */
+export function clusteredPuttingSessionTotals(
+  holes: ParsedPuttingHole[],
+  isCompleteSession: (session: ParsedPuttingHole[]) => boolean,
+): { score: number; sessionEndMs: number }[] {
+  return clusterPuttingCombineSessions(holes)
+    .filter(isCompleteSession)
+    .map((session) => ({
+      score: session.reduce((acc, h) => acc + h.points, 0),
+      sessionEndMs: Math.max(...session.map((h) => h.createdMs)),
+    }));
+}
+
 export function parsePutting9HoleSession(session: any): ParsedPuttingHole | null {
   try {
     const notes = session.notes;

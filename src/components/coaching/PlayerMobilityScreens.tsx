@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { ChevronRight, PersonStanding } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { mobilityScreenConfig } from "@/lib/mobilityScreenConfig";
@@ -12,8 +13,19 @@ type State = { status: "loading" } | { status: "error" } | { status: "ready"; sc
 
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 
-/** A player's saved mobility screens, newest first, with the full report for each. */
-export function PlayerMobilityScreens({ playerId, playerName }: { playerId: string; playerName: string }) {
+/**
+ * A player's saved mobility screens, newest first, with the full report for each. `self` is the player's own
+ * Profile view (profile card style, with a link to do a screen) rather than the coach report.
+ */
+export function PlayerMobilityScreens({
+  playerId,
+  playerName,
+  self = false,
+}: {
+  playerId: string;
+  playerName: string;
+  self?: boolean;
+}) {
   const [state, setState] = useState<State>({ status: "loading" });
   const [open, setOpen] = useState(false);
 
@@ -46,16 +58,20 @@ export function PlayerMobilityScreens({ playerId, playerName }: { playerId: stri
   const latest = screens[0];
   const diff = latest && screens[1] ? latest.pct - screens[1].pct : null;
 
-  return (
-    <ReportSection title="Mobility screens" subtitle="Tests passed on each screen, newest first">
+  const body = (
+    <>
       {state.status === "loading" ? (
         <p className="text-xs text-stone-500">Loading…</p>
       ) : state.status === "error" ? (
         <p className="text-xs text-stone-500">Couldn&apos;t load screens right now.</p>
       ) : !latest ? (
-        <ReportEmpty>
-          No mobility screens yet. Tap Test {playerName.split(" ")[0] || "player"} and pick Mobility Screen to run one.
-        </ReportEmpty>
+        self ? (
+          <ReportEmpty>No screens yet. 12 quick body tests that show what&apos;s holding your swing back.</ReportEmpty>
+        ) : (
+          <ReportEmpty>
+            No mobility screens yet. Tap Test {playerName.split(" ")[0] || "player"} and pick Mobility Screen to run one.
+          </ReportEmpty>
+        )
       ) : (
         <button
           type="button"
@@ -93,6 +109,29 @@ export function PlayerMobilityScreens({ playerId, playerName }: { playerId: stri
           onClose={() => setOpen(false)}
         />
       )}
-    </ReportSection>
+    </>
+  );
+
+  if (!self) {
+    return (
+      <ReportSection title="Mobility screens" subtitle="Tests passed on each screen, newest first">
+        {body}
+      </ReportSection>
+    );
+  }
+
+  return (
+    <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6" aria-labelledby="mobility-screens-heading">
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <h3 id="mobility-screens-heading" className="text-base font-semibold text-stone-900">
+          Mobility screens
+        </h3>
+        <Link href="/practice/mobility-screen" className="inline-flex items-center gap-0.5 text-xs font-semibold text-[#014421] hover:underline">
+          {latest ? "Do a new screen" : "Do your first screen"}
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+        </Link>
+      </div>
+      {body}
+    </section>
   );
 }

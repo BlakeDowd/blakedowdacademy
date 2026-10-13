@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ChevronRight, Loader2, Search } from "lucide-react";
+import { ArrowLeft, ChevronRight, Loader2, Plus, Search, Sparkles, UserPlus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { initials } from "@/components/coach/CoachReportParts";
+import { createPlayerGroup, groupsForPlayer, membersOfGroup, usePlayerGroups } from "@/lib/playerGroups";
+import { GroupMembersSheet } from "@/components/coaching/GroupMembersSheet";
 
 interface PlayerProfile {
   id: string;
@@ -45,6 +47,29 @@ export default function CoachesDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const groupsState = usePlayerGroups();
+  const [groupFilter, setGroupFilter] = useState<string | null>(null);
+  const activeGroup = groupsState.groups.find((g) => g.id === groupFilter) ?? null;
+  const activeMemberIds = activeGroup
+    ? new Set(membersOfGroup(groupsState, activeGroup.id).map((m) => m.player_id))
+    : null;
+  const [managingGroup, setManagingGroup] = useState(false);
+  const closeManaging = useCallback(() => setManagingGroup(false), []);
+  const [addingGroup, setAddingGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [groupError, setGroupError] = useState<string | null>(null);
+
+  const addGroup = async () => {
+    setGroupError(null);
+    const res = await createPlayerGroup(newGroupName);
+    if ("error" in res) {
+      setGroupError(res.error);
+      return;
+    }
+    setAddingGroup(false);
+    setNewGroupName("");
+    setGroupFilter(res.group.id);
+  };
 
   useEffect(() => {
     if (loading || profileLoading) return;
@@ -88,6 +113,7 @@ export default function CoachesDashboard() {
 
   const filteredPlayers = players.filter((player) => {
     if (!player.id) return false;
+    if (activeMemberIds && !activeMemberIds.has(player.id)) return false;
     if (!searchQuery) return true;
     const term = searchQuery.toLowerCase();
     return (
@@ -132,6 +158,106 @@ export default function CoachesDashboard() {
           />
         </div>
 
+        {groupsState.loaded && !groupsState.available && (
+          <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+            Player groups and talent reports are off. Run supabase/migrations/20261013120000_player_groups.sql in
+            Supabase, then reload this page.
+          </p>
+        )}
+
+        {groupsState.groups.length > 0 && (
+          <div className="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1" role="radiogroup" aria-label="Filter by group">
+            {[{ id: null as string | null, name: "All players" }, ...groupsState.groups].map((g) => {
+              const on = groupFilter === g.id;
+              const count = g.id ? membersOfGroup(groupsState, g.id).length : null;
+              return (
+                <button
+                  key={g.id ?? "all"}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => setGroupFilter(g.id)}
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                    on ? "bg-[#014421] text-white shadow-sm" : "border border-stone-200 bg-white text-stone-700"
+                  }`}
+                >
+                  {g.name}
+                  {count != null && <span className={on ? "ml-1 text-white/70" : "ml-1 text-stone-400"}>{count}</span>}
+                </button>
+              );
+            })}
+            {!addingGroup && (
+              <button
+                type="button"
+                onClick={() => setAddingGroup(true)}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-dashed border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-500 hover:text-stone-800"
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden />
+                New group
+              </button>
+            )}
+          </div>
+        )}
+
+        {addingGroup && (
+          <div className="mt-2 flex gap-2">
+            <input
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void addGroup();
+              }}
+              placeholder="e.g. Development squad"
+              maxLength={40}
+              autoFocus
+              className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#014421]"
+            />
+            <button
+              type="button"
+              onClick={() => void addGroup()}
+              className="rounded-xl bg-[#014421] px-3 py-2 text-xs font-semibold text-white"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAddingGroup(false);
+                setNewGroupName("");
+                setGroupError(null);
+              }}
+              className="px-2 text-xs font-semibold text-stone-500"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+        {groupError && <p className="mt-2 text-xs font-medium text-red-600">{groupError}</p>}
+
+        {activeGroup && (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setManagingGroup(true)}
+              className="flex items-center justify-center gap-2 rounded-2xl bg-[#014421] px-3 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#01331a]"
+            >
+              <UserPlus className="h-4 w-4" aria-hidden />
+              Add players
+            </button>
+            <Link
+              href={`/dashboard/coach/groups/${activeGroup.id}`}
+              className="flex items-center justify-center gap-2 rounded-2xl border border-[#014421]/20 bg-white px-3 py-3 text-sm font-semibold text-[#014421] shadow-sm hover:bg-[#014421]/5"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden />
+              Talent reports
+            </Link>
+          </div>
+        )}
+
+        {activeGroup && managingGroup && (
+          <GroupMembersSheet group={activeGroup} players={players} onClose={closeManaging} />
+        )}
+
         {error && (
           <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</p>
         )}
@@ -144,7 +270,11 @@ export default function CoachesDashboard() {
             </p>
           ) : filteredPlayers.length === 0 ? (
             <p className="py-10 text-center text-sm text-stone-500">
-              {searchQuery ? "No players match that search." : "No players yet."}
+              {searchQuery
+                ? "No players match that search."
+                : activeGroup
+                  ? `No one in ${activeGroup.name} yet. Tap Add players to pick them.`
+                  : "No players yet."}
             </p>
           ) : (
             <ul className="divide-y divide-stone-100">
@@ -166,6 +296,18 @@ export default function CoachesDashboard() {
                         <span className="block truncate text-[15px] font-semibold text-stone-900">{name}</span>
                         {player.email && <span className="block truncate text-xs text-stone-500">{player.email}</span>}
                         <span className="block truncate text-xs text-stone-500">{playerMeta(player)}</span>
+                        {groupsForPlayer(groupsState, player.id).length > 0 && (
+                          <span className="mt-1 flex flex-wrap gap-1">
+                            {groupsForPlayer(groupsState, player.id).map((g) => (
+                              <span
+                                key={g.id}
+                                className="rounded-full bg-[#014421]/10 px-2 py-0.5 text-[11px] font-semibold text-[#014421]"
+                              >
+                                {g.name}
+                              </span>
+                            ))}
+                          </span>
+                        )}
                         {duplicateNames.has(nameKey(player.full_name)) && (
                           <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
                             Same name as another account

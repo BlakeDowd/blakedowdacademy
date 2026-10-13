@@ -42,6 +42,7 @@ import { InstallAppPrompt } from "@/components/InstallAppPrompt";
 import { FeedbackBox } from "@/components/FeedbackBox";
 import { HomeWeekSchedule } from "@/components/HomeWeekSchedule";
 import { HomeCoachingCard } from "@/components/coaching/HomeCoachingCard";
+import { HomePracticeHandicapCard } from "@/components/HomePracticeHandicapCard";
 import { WeeklyGoalsBar } from "@/components/goals/WeeklyGoalsBar";
 import IconPicker from "@/components/IconPicker";
 import ProfileAvatar from "@/components/ProfileAvatar";
@@ -974,6 +975,8 @@ export default function HomeDashboard() {
           expanded={leaderboardExpanded}
           onExpandedChange={setLeaderboardExpanded}
         />
+
+        <HomePracticeHandicapCard />
 
         {/* Recent activity and scores */}
         <div className="px-4 mb-6 w-full">

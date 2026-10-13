@@ -11,10 +11,27 @@ import {
   Star,
   Flame,
   Crosshair,
+  Gauge,
+  Gem,
+  GraduationCap,
+  Activity,
+  Flag,
+  CircleDot,
 } from "lucide-react";
 import { puttingTestConfig } from "@/lib/puttingTestConfig";
 import { userIsPuttingTestLeader } from "@/lib/puttingTestLeaderboard";
 import { countUserCombineCompletions } from "@/lib/combineCompletionDetection";
+import { LESSON_PRACTICE_TYPE } from "@/lib/coachLessons";
+import { mobilityScreenConfig } from "@/lib/mobilityScreenConfig";
+import {
+  formatHandicap,
+  recentCombineAverages,
+  scorePracticeHandicap,
+  type BenchmarkOverrides,
+  type PracticeHandicap,
+} from "@/lib/practiceHandicap";
+import { GAME_AREAS } from "@/lib/practiceHandicapBenchmarks";
+import { ROUND_TROPHY_CHECKS, isFullRound, roundNum, roundTracks } from "@/lib/trophyRoundChecks";
 
 /** Display name; catalog label for `achievement_id` stored in `user_trophies`. */
 export const PUTTING_TEST_CHAMPION_TROPHY_NAME = `Champion: ${puttingTestConfig.testName}`;
@@ -43,6 +60,8 @@ export interface TrophyData {
     userId?: string;
     practiceSessions?: any[];
     practiceLogs?: any[];
+    /** Coach benchmark overrides; null until loaded, which keeps practice handicap trophies locked. */
+    benchmarkOverrides?: BenchmarkOverrides | null;
   }) => boolean;
   getProgress: (stats: {
     totalXP: number;
@@ -56,6 +75,7 @@ export interface TrophyData {
     userId?: string;
     practiceSessions?: any[];
     practiceLogs?: any[];
+    benchmarkOverrides?: BenchmarkOverrides | null;
   }) => { current: number; target: number; percentage: number };
   isRare?: boolean; // For special styling (e.g., Eagle Eye)
 }
@@ -90,6 +110,92 @@ function completedRecommendedDrillCount(
     return 0;
   }
 }
+
+type TrophyStats = Parameters<TrophyData["checkUnlocked"]>[0];
+
+const progressTo = (current: number, target: number) => ({
+  current,
+  target,
+  percentage: Math.min(100, Math.max(0, (current / target) * 100)),
+});
+
+function longestPracticeStreak(history: any[] | undefined): number {
+  const days = [
+    ...new Set(
+      (history || []).map((entry: any) => new Date(entry.timestamp || entry.date).toISOString().split("T")[0]),
+    ),
+  ].sort();
+  let best = days.length > 0 ? 1 : 0;
+  let run = 1;
+  for (let i = 1; i < days.length; i++) {
+    const next = new Date(days[i - 1]);
+    next.setDate(next.getDate() + 1);
+    run = next.toISOString().split("T")[0] === days[i] ? run + 1 : 1;
+    best = Math.max(best, run);
+  }
+  return best;
+}
+
+let practiceHandicapCache: { key: unknown[]; value: PracticeHandicap | null } | null = null;
+
+/** Same practice handicap the profile card shows; null until coach benchmarks have loaded. */
+function trophyPracticeHandicap(stats: TrophyStats): PracticeHandicap | null {
+  if (!stats.userId || !stats.benchmarkOverrides) return null;
+  const key = [stats.userId, stats.practiceSessions, stats.practiceLogs, stats.benchmarkOverrides];
+  if (practiceHandicapCache && key.every((k, i) => k === practiceHandicapCache!.key[i])) {
+    return practiceHandicapCache.value;
+  }
+  const value = scorePracticeHandicap(
+    recentCombineAverages(stats.userId, stats.practiceSessions, stats.practiceLogs),
+    stats.benchmarkOverrides,
+  );
+  practiceHandicapCache = { key, value };
+  return value;
+}
+
+const PRACTICE_HANDICAP_START = 28;
+
+function practiceHandicapProgress(stats: TrophyStats, goal: number) {
+  const overall = trophyPracticeHandicap(stats)?.overall ?? null;
+  if (overall == null) return { current: PRACTICE_HANDICAP_START, target: goal, percentage: 0 };
+  const percentage =
+    overall <= goal ? 100 : ((PRACTICE_HANDICAP_START - overall) / (PRACTICE_HANDICAP_START - goal)) * 100;
+  return { current: overall, target: goal, percentage: Math.min(100, Math.max(0, percentage)) };
+}
+
+function lessonCount(stats: TrophyStats): number {
+  return (stats.practiceSessions || []).filter(
+    (row: any) =>
+      String(row?.type ?? "") === LESSON_PRACTICE_TYPE && (!stats.userId || !row?.user_id || row.user_id === stats.userId),
+  ).length;
+}
+
+function mobilityScreenCount(stats: TrophyStats): number {
+  if (!stats.userId) return 0;
+  return (stats.practiceLogs || []).filter(
+    (row: any) => row?.user_id === stats.userId && row?.log_type === mobilityScreenConfig.practiceLogType,
+  ).length;
+}
+
+function hasRoundFor(stats: TrophyStats, trophyId: string): boolean {
+  const check = ROUND_TROPHY_CHECKS[trophyId];
+  return !!check && (stats.roundsData || []).some((r: any) => check(r));
+}
+
+/** Best value of `pick` across rounds that pass `eligible`, or null when none do. */
+function bestRoundValue(
+  stats: TrophyStats,
+  eligible: (r: any) => boolean,
+  pick: (r: any) => number,
+  better: "high" | "low",
+): number | null {
+  const values = (stats.roundsData || []).filter(eligible).map(pick);
+  if (values.length === 0) return null;
+  return better === "high" ? Math.max(...values) : Math.min(...values);
+}
+
+const fullRoundTracking = (key: Parameters<typeof roundTracks>[1]) => (r: any) =>
+  isFullRound(r) && roundTracks(r, key);
 
 export const TROPHY_LIST: TrophyData[] = [
   // Practice Trophies
@@ -685,6 +791,177 @@ export const TROPHY_LIST: TrophyData[] = [
       };
     },
   },
+  {
+    id: "on-a-roll",
+    name: "On a Roll",
+    requirement: "Practice 7 days in a row",
+    category: "Practice",
+    icon: Flame,
+    checkUnlocked: (stats) => longestPracticeStreak(stats.practiceHistory) >= 7,
+    getProgress: (stats) => progressTo(longestPracticeStreak(stats.practiceHistory), 7),
+  },
+  {
+    id: "practice-icon",
+    name: "Practice Icon",
+    requirement: "Complete 250 hours of practice",
+    category: "Practice",
+    icon: Crown,
+    checkUnlocked: (stats) => stats.practiceHours >= 250,
+    getProgress: (stats) => progressTo(stats.practiceHours, 250),
+  },
+  {
+    id: "combine-regular",
+    name: "Combine Regular",
+    requirement: "Finish 10 combine tests",
+    category: "Practice",
+    icon: Crosshair,
+    checkUnlocked: (stats) => countUserCombineCompletions(stats) >= 10,
+    getProgress: (stats) => progressTo(countUserCombineCompletions(stats), 10),
+  },
+  {
+    id: "combine-machine",
+    name: "Combine Machine",
+    requirement: "Finish 25 combine tests",
+    category: "Practice",
+    icon: Crosshair,
+    checkUnlocked: (stats) => countUserCombineCompletions(stats) >= 25,
+    getProgress: (stats) => progressTo(countUserCombineCompletions(stats), 25),
+  },
+  {
+    id: "all-rounder",
+    name: "All-Rounder",
+    requirement: `Get a practice level in all ${GAME_AREAS.length} areas`,
+    category: "Practice",
+    icon: Gauge,
+    checkUnlocked: (stats) => (trophyPracticeHandicap(stats)?.testedAreas ?? 0) >= GAME_AREAS.length,
+    getProgress: (stats) => progressTo(trophyPracticeHandicap(stats)?.testedAreas ?? 0, GAME_AREAS.length),
+  },
+  {
+    id: "single-figures",
+    name: "Single Figures",
+    requirement: "Reach a practice handicap under 10",
+    category: "Practice",
+    icon: Gauge,
+    checkUnlocked: (stats) => {
+      const overall = trophyPracticeHandicap(stats)?.overall;
+      return overall != null && overall < 10;
+    },
+    getProgress: (stats) => practiceHandicapProgress(stats, 9.9),
+  },
+  {
+    id: "practice-scratch",
+    name: "Scratch in Practice",
+    requirement: "Reach a practice handicap of 0 or better",
+    category: "Practice",
+    icon: Gem,
+    isRare: true,
+    checkUnlocked: (stats) => {
+      const overall = trophyPracticeHandicap(stats)?.overall;
+      return overall != null && overall <= 0;
+    },
+    getProgress: (stats) => practiceHandicapProgress(stats, 0),
+  },
+  {
+    id: "coached-up",
+    name: "Coached Up",
+    requirement: "Have 5 lessons with your coach",
+    category: "Practice",
+    icon: GraduationCap,
+    checkUnlocked: (stats) => lessonCount(stats) >= 5,
+    getProgress: (stats) => progressTo(lessonCount(stats), 5),
+  },
+  {
+    id: "body-check",
+    name: "Body Check",
+    requirement: "Complete a Mobility Screen",
+    category: "Practice",
+    icon: Activity,
+    checkUnlocked: (stats) => mobilityScreenCount(stats) >= 1,
+    getProgress: (stats) => progressTo(Math.min(1, mobilityScreenCount(stats)), 1),
+  },
+  {
+    id: "breaking-100",
+    name: "Breaking 100",
+    requirement: "Score below 100 in an 18-hole round",
+    category: "Scoring Milestones",
+    icon: Trophy,
+    checkUnlocked: (stats) => hasRoundFor(stats, "breaking-100"),
+    getProgress: (stats) => {
+      const best = bestRoundValue(
+        stats,
+        (r) => isFullRound(r) && roundNum(r.score) > 0,
+        (r) => roundNum(r.score),
+        "low",
+      );
+      return { current: best ?? 100, target: 99, percentage: best != null && best < 100 ? 100 : 0 };
+    },
+  },
+  {
+    id: "fairway-finder",
+    name: "Fairway Finder",
+    requirement: "Hit 10 fairways in a round",
+    category: "Scoring Milestones",
+    icon: Flag,
+    checkUnlocked: (stats) => hasRoundFor(stats, "fairway-finder"),
+    getProgress: (stats) =>
+      progressTo(
+        bestRoundValue(stats, (r) => roundTracks(r, "fairways"), (r) => roundNum(r.firHit), "high") ?? 0,
+        10,
+      ),
+  },
+  {
+    id: "hot-putter",
+    name: "Hot Putter",
+    requirement: "28 putts or fewer in an 18-hole round",
+    category: "Scoring Milestones",
+    icon: CircleDot,
+    checkUnlocked: (stats) => hasRoundFor(stats, "hot-putter"),
+    getProgress: (stats) => {
+      const best = bestRoundValue(
+        stats,
+        (r) => fullRoundTracking("putts")(r) && roundNum(r.totalPutts) > 0,
+        (r) => roundNum(r.totalPutts),
+        "low",
+      );
+      if (best == null) return { current: 0, target: 28, percentage: 0 };
+      return { current: best, target: 28, percentage: Math.min(100, Math.max(0, ((40 - best) / 12) * 100)) };
+    },
+  },
+  {
+    id: "clean-card",
+    name: "Clean Card",
+    requirement: "Finish an 18-hole round without a double bogey",
+    category: "Scoring Milestones",
+    icon: Medal,
+    checkUnlocked: (stats) => hasRoundFor(stats, "clean-card"),
+    getProgress: (stats) => {
+      const fewest = bestRoundValue(
+        stats,
+        fullRoundTracking("distribution"),
+        (r) => roundNum(r.doubleBogeys),
+        "low",
+      );
+      return { current: fewest ?? 0, target: 0, percentage: hasRoundFor(stats, "clean-card") ? 100 : 0 };
+    },
+  },
+  {
+    id: "round-machine",
+    name: "Round Machine",
+    requirement: "Log 50 rounds",
+    category: "Performance",
+    icon: Trophy,
+    checkUnlocked: (stats) => stats.rounds >= 50,
+    getProgress: (stats) => progressTo(stats.rounds, 50),
+  },
+  {
+    id: "hall-of-famer",
+    name: "Hall of Famer",
+    requirement: "Earn 25,000 XP",
+    category: "Milestone",
+    icon: Crown,
+    checkUnlocked: (stats) => stats.totalXP >= 25000,
+    getProgress: (stats) => progressTo(stats.totalXP, 25000),
+  },
 ];
 
 export type TrophyGroup = "practice" | "learning" | "rounds" | "xp";
@@ -708,12 +985,23 @@ const PRACTICE_GROUP = new Set([
   "wedge-wizard",
   "coachs-pet",
   "champion-putting-test-18",
+  "on-a-roll",
+  "practice-icon",
+  "combine-regular",
+  "combine-machine",
+  "all-rounder",
+  "single-figures",
+  "practice-scratch",
+  "coached-up",
+  "body-check",
 ]);
+
+const XP_GROUP = new Set(["rising-star", "champion", "elite", "hall-of-famer"]);
 
 export function trophyGroupForId(id: string): TrophyGroup {
   if (PRACTICE_GROUP.has(id)) return "practice";
   if (id === "student" || id === "scholar" || id === "expert") return "learning";
-  if (id === "rising-star" || id === "champion" || id === "elite") return "xp";
+  if (XP_GROUP.has(id)) return "xp";
   return "rounds";
 }
 
@@ -723,7 +1011,17 @@ export type TrophyEarnLink = { href: string; label: string };
 export function trophyEarnLink(id: string): TrophyEarnLink {
   switch (id) {
     case "combine-finisher":
+    case "combine-regular":
+    case "combine-machine":
       return { href: "/practice?plan=combine", label: "Pick a combine test" };
+    case "all-rounder":
+    case "single-figures":
+    case "practice-scratch":
+      return { href: "/practice?plan=combine", label: "Do a combine to set your level" };
+    case "body-check":
+      return { href: "/practice/mobility-screen", label: "Do a Mobility Screen" };
+    case "coached-up":
+      return { href: "/profile?tab=practice", label: "Ask your coach to log your lessons" };
     case "putting-professor":
       return { href: "/practice?plan=library", label: "Find putting drills" };
     case "wedge-wizard":
@@ -748,7 +1046,7 @@ export function trophyEarnLink(id: string): TrophyEarnLink {
 export type UnlockedAccent = "gold" | "emerald" | "silver";
 
 export function unlockedAccentForTrophy(t: TrophyData): UnlockedAccent {
-  if (t.id === "elite" || t.id === "champion" || t.isRare === true) return "gold";
+  if (t.id === "elite" || t.id === "champion" || t.id === "hall-of-famer" || t.isRare === true) return "gold";
   if (t.category === "Practice") return "emerald";
   return "silver";
 }
@@ -824,6 +1122,39 @@ export function formatTrophyProgressLine(
       return hasRounds ? `Most pars in a round: ${p.current}` : "No rounds logged yet";
     case "combine-finisher":
       return p.current > 0 ? `${plural(p.current, "combine")} finished` : "No combines finished yet";
+    case "practice-icon":
+      return `${Math.round(p.current * 10) / 10} of ${p.target} hours`;
+    case "on-a-roll":
+      return `Best streak: ${plural(p.current, "day")} in a row`;
+    case "combine-regular":
+    case "combine-machine":
+      return `${p.current} of ${plural(p.target, "combine")} finished`;
+    case "all-rounder":
+      return `${p.current} of ${p.target} areas have a level`;
+    case "single-figures":
+    case "practice-scratch": {
+      const overall = trophyPracticeHandicap(stats)?.overall;
+      return overall != null ? `Practice handicap ${formatHandicap(overall)}` : "No practice handicap yet";
+    }
+    case "coached-up":
+      return `${p.current} of ${plural(p.target, "lesson")}`;
+    case "round-machine":
+      return `${p.current} of ${plural(p.target, "round")} logged`;
+    case "hall-of-famer":
+      return `${p.current.toLocaleString()} of ${p.target.toLocaleString()} XP`;
+    case "breaking-100": {
+      const best = bestRoundValue(stats, (r) => isFullRound(r) && roundNum(r.score) > 0, (r) => roundNum(r.score), "low");
+      return best != null ? `Best 18-hole score: ${best}` : "No 18-hole rounds logged yet";
+    }
+    case "fairway-finder":
+      return hasRounds ? `Most fairways in a round: ${p.current}` : "No rounds logged yet";
+    case "hot-putter":
+      return p.current > 0 ? `Fewest putts in 18 holes: ${p.current}` : "No 18-hole rounds with putts yet";
+    case "clean-card": {
+      const fewest = bestRoundValue(stats, fullRoundTracking("distribution"), (r) => roundNum(r.doubleBogeys), "low");
+      if (fewest == null) return "No 18-hole rounds with a score breakdown yet";
+      return `Fewest double bogeys in 18 holes: ${fewest}`;
+    }
   }
   return p.percentage >= 100 ? "Done" : "Not done yet";
 }

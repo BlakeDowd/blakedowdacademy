@@ -12,6 +12,12 @@ import {
   Medal, 
   Award,
   Crosshair,
+  Gauge,
+  Gem,
+  GraduationCap,
+  Activity,
+  Flag,
+  CircleDot,
 } from "lucide-react";
 
 interface TrophyCardProps {
@@ -53,6 +59,21 @@ const getTrophyIcon = (trophyId: string) => {
     'coachs-pet': Award,
     'champion-putting-test-18': Crown,
     'combine-finisher': Crosshair,
+    'on-a-roll': Flame,
+    'practice-icon': Crown,
+    'combine-regular': Crosshair,
+    'combine-machine': Crosshair,
+    'all-rounder': Gauge,
+    'single-figures': Gauge,
+    'practice-scratch': Gem,
+    'coached-up': GraduationCap,
+    'body-check': Activity,
+    'breaking-100': Trophy,
+    'fairway-finder': Flag,
+    'hot-putter': CircleDot,
+    'clean-card': Medal,
+    'round-machine': Trophy,
+    'hall-of-famer': Crown,
   };
   return iconMap[trophyId] || Trophy;
 };

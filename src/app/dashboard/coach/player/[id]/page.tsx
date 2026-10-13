@@ -28,10 +28,11 @@ import { buildCoachPlayerCombineSnapshot } from "@/lib/coachPlayerCombineSnapsho
 import { TROPHY_LIST } from "@/lib/academyTrophies";
 import { fetchUserTrophiesForUser } from "@/lib/userTrophiesDb";
 import type { AcademyTrophyDbRow } from "@/components/AcademyTrophyCasePanel";
-import { AdvancedApproachStatsPanel } from "@/components/stats/AdvancedApproachStatsPanel";
 import { CoachDeepDiveProfilePanels } from "@/components/coach/CoachDeepDiveProfilePanels";
 import { TestPlayerButton } from "@/components/coaching/TestPlayerButton";
 import { PlayerMobilityScreens } from "@/components/coaching/PlayerMobilityScreens";
+import { PracticeHandicapCard } from "@/components/coaching/PracticeHandicapCard";
+import { PlayerGroupsCard } from "@/components/coaching/PlayerGroupsCard";
 import { PlayerEmail } from "@/components/coaching/PlayerEmail";
 import { GamePlanCard } from "@/components/coaching/GamePlanCard";
 import { CoachDeepDiveRoundTrendCharts } from "@/components/coach/CoachDeepDiveRoundTrendCharts";
@@ -500,14 +501,6 @@ export default function PlayerDeepDivePage() {
 
   const strokeOpportunityRows = useMemo(() => computeStrokeOpportunityTop3(metricMatrix), [metricMatrix]);
 
-  const hasDirectionalShots = useMemo(
-    () =>
-      roundsData.some(
-        (r) => Array.isArray(r.approach_directional_shots) && r.approach_directional_shots.length > 0,
-      ),
-    [roundsData],
-  );
-
   const sortedMetricMatrix = useMemo(
     () => sortMetricMatrix(metricMatrix, metricMatrixWorstFirst),
     [metricMatrix, metricMatrixWorstFirst],
@@ -712,6 +705,10 @@ export default function PlayerDeepDivePage() {
             unlockedTrophies={playerUnlockedTrophies}
           />
 
+          <PlayerGroupsCard key={`groups-${playerId}`} playerId={playerId} playerName={name} />
+
+          <PracticeHandicapCard key={`practice-hcp-${playerId}`} playerId={playerId} playerName={name} />
+
           <PlayerMobilityScreens key={`mobility-${playerId}`} playerId={playerId} playerName={name} />
 
           {user?.id && (
@@ -862,20 +859,6 @@ export default function PlayerDeepDivePage() {
             handicapPoints={roundTrendChartPoints.handicap}
             rangeCaption={dateRangeLabel}
           />
-
-          {hasDirectionalShots && (
-            <ReportSection
-              id="coach-deepdive-advanced-approach"
-              title="Approach detail"
-              subtitle="Misses and greens from Add Directional Misses on their rounds"
-            >
-              <AdvancedApproachStatsPanel
-                rounds={roundsData}
-                showHeader={false}
-                className="border-0! p-0! shadow-none! sm:p-0!"
-              />
-            </ReportSection>
-          )}
 
           <div className="mt-8 hidden border-t border-gray-200 pt-4 text-center text-xs text-gray-500 print:block">
             Blake Dowd Golf — blakedowdgolf.com

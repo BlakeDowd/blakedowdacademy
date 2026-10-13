@@ -1,5 +1,7 @@
 import { localDayKey, type PracticeActivityItem } from "@/lib/practiceActivity";
 import { practiceSessionMinutesFromRow } from "@/lib/practiceSessionDuration";
+import { LESSON_PRACTICE_TYPE } from "@/lib/coachLessons";
+import { ROUND_TROPHY_CHECKS } from "@/lib/trophyRoundChecks";
 
 /**
  * When a trophy's requirement was first met, taken from the entry that crossed the line.
@@ -54,17 +56,17 @@ function nextDayKey(key: string): string {
   return localDayKey(d);
 }
 
-function threeDayStreakAt(activity: readonly PracticeActivityItem[]): string | null {
+function streakAt(activity: readonly PracticeActivityItem[], length: number): string | null {
   const firstAtByDay = new Map<string, string>();
   for (const { item, at } of ascending(activity.filter((i) => i.kind !== "video"), (i) => i.at)) {
     const key = localDayKey(item.at);
     if (!firstAtByDay.has(key)) firstAtByDay.set(key, at);
   }
   const days = [...firstAtByDay.keys()];
-  for (let i = 2; i < days.length; i++) {
-    if (nextDayKey(days[i - 2]) === days[i - 1] && nextDayKey(days[i - 1]) === days[i]) {
-      return firstAtByDay.get(days[i]) ?? null;
-    }
+  let run = days.length > 0 ? 1 : 0;
+  for (let i = 0; i < days.length; i++) {
+    if (i > 0) run = nextDayKey(days[i - 1]) === days[i] ? run + 1 : 1;
+    if (run >= length) return firstAtByDay.get(days[i]) ?? null;
   }
   return null;
 }
@@ -85,11 +87,23 @@ const PRACTICE_HOUR_TARGETS: Record<string, number> = {
   dedicated: 10,
   "practice-master": 50,
   "practice-legend": 100,
+  "practice-icon": 250,
 };
 
 const LESSON_TARGETS: Record<string, number> = { student: 5, scholar: 20, expert: 50 };
 
-const ROUND_COUNT_TARGETS: Record<string, number> = { "first-round": 1, consistent: 10, tracker: 25 };
+const ROUND_COUNT_TARGETS: Record<string, number> = {
+  "first-round": 1,
+  consistent: 10,
+  tracker: 25,
+  "round-machine": 50,
+};
+
+const COMBINE_COUNT_TARGETS: Record<string, number> = {
+  "combine-finisher": 1,
+  "combine-regular": 10,
+  "combine-machine": 25,
+};
 
 const ROUND_CONDITIONS: Record<string, (r: Row) => boolean> = {
   "birdie-hunter": (r) => Number(r.birdies || 0) >= 1,
@@ -115,14 +129,25 @@ export function trophyQualifiedAt(trophyId: string, input: TrophyQualifyInput): 
   const roundCount = ROUND_COUNT_TARGETS[trophyId];
   if (roundCount != null) return nthAt(ascending(input.roundsData as Row[], roundEnteredAt), roundCount);
 
-  const roundCondition = ROUND_CONDITIONS[trophyId];
+  const roundCondition = ROUND_CONDITIONS[trophyId] ?? ROUND_TROPHY_CHECKS[trophyId];
   if (roundCondition) {
     return ascending(input.roundsData as Row[], roundEnteredAt).find((x) => roundCondition(x.item))?.at ?? null;
   }
 
+  const combines = COMBINE_COUNT_TARGETS[trophyId];
+  if (combines != null) {
+    return nthAt(ascending(input.activity.filter((i) => i.kind === "combine"), (i) => i.at), combines);
+  }
+
   switch (trophyId) {
     case "week-warrior":
-      return threeDayStreakAt(input.activity);
+      return streakAt(input.activity, 3);
+    case "on-a-roll":
+      return streakAt(input.activity, 7);
+    case "coached-up": {
+      const lessons = (input.practiceSessions as Row[]).filter((r) => r.type === LESSON_PRACTICE_TYPE);
+      return nthAt(ascending(lessons, practiceEnteredAt), 5);
+    }
     case "monthly-legend":
       return monthMinutesCrossedAt(input.activity, 20 * 60);
     case "putting-professor":
@@ -131,8 +156,6 @@ export function trophyQualifiedAt(trophyId: string, input: TrophyQualifyInput): 
       const drills = input.activity.filter((i) => i.kind === "drill" && i.area === area);
       return nthAt(ascending(drills, (i) => i.at), 5);
     }
-    case "combine-finisher":
-      return nthAt(ascending(input.activity.filter((i) => i.kind === "combine"), (i) => i.at), 1);
     default:
       return null;
   }

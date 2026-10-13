@@ -28,6 +28,7 @@ import {
   practiceSessionsForUser,
 } from "@/lib/practiceSessionDuration";
 import { listUserCombineCompletionEvents } from "@/lib/combineCompletionDetection";
+import { LESSON_PRACTICE_TYPE } from "@/lib/coachLessons";
 import { XP_AWARD_COMBINE_SESSION } from "@/lib/combineXp";
 import { XP_AWARD_LIBRARY_LESSON } from "@/lib/libraryCompletions";
 import { parsePuttingHoleRow } from "@/lib/combinePageLeaderboard";
@@ -296,6 +297,7 @@ function isPuttingOrFreestylePracticeRow(session: any): boolean {
     "bunkers",
     "putting",
     "mental/strategy",
+    LESSON_PRACTICE_TYPE,
   ]);
   if (freestyleExact.has(tl)) return true;
 
