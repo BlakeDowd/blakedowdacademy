@@ -11,6 +11,10 @@ const GoalAccountabilityModule = dynamic(
   () => import("@/components/Dashboard").then((m) => m.GoalAccountabilityModule),
   { ssr: false },
 );
+const HandicapHoursGuide = dynamic(
+  () => import("@/components/goals/HandicapHoursGuide").then((m) => m.HandicapHoursGuide),
+  { ssr: false },
+);
 
 export default function GoalsPage() {
   return (
@@ -32,6 +36,7 @@ export default function GoalsPage() {
       <div className="w-full flex-1 space-y-3 px-4 pb-32 pt-4">
         <WeeklyGoalsBar />
         <GoalAccountabilityModule />
+        <HandicapHoursGuide />
       </div>
     </div>
   );
