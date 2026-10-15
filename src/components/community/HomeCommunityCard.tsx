@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Clock, Flag, Flame, HandFist, Sparkles, Trophy, Users } from "lucide-react";
+import { ChevronRight, Clock, Flag, Flame, HandFist, PartyPopper, Sparkles, Trophy, Users } from "lucide-react";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import { postSummary } from "@/components/community/CommunityPostCard";
 import { useAuth } from "@/contexts/AuthContext";
@@ -113,6 +113,7 @@ export function HomeCommunityCard() {
 
   const live = challenges.find((c) => challengeState(c) === "live") ?? null;
   const upcoming = challenges.filter((c) => challengeState(c) === "upcoming").sort((a, b) => a.startsOn.localeCompare(b.startsOn))[0] ?? null;
+  const lastDrawn = challenges.find((c) => c.winnerId) ?? null;
 
   const week = useMemo(() => {
     const from = weekStartMs();
@@ -167,6 +168,7 @@ export function HomeCommunityCard() {
     ...latestRounds.map((r) => str(r.user_id)),
     ...week.topPractice.map(([id]) => id),
     ...board.slice(0, 3).map((r) => r.userId),
+    lastDrawn?.winnerId ?? "",
   ]
     .filter(Boolean)
     .sort()
@@ -255,6 +257,9 @@ export function HomeCommunityCard() {
               <p className="mt-2 text-xs text-white/75">No scores yet. Get in early!</p>
             )}
             {myRank >= 3 && <p className="mt-1.5 text-xs font-semibold text-[#FFC966]">You&apos;re #{myRank + 1}</p>}
+            <p className="mt-2 border-t border-white/15 pt-1.5 text-[11px] text-white/70">
+              Winner drawn at random from everyone who takes part.
+            </p>
           </Link>
         ) : (
           <div className="flex items-center gap-3 rounded-xl border border-dashed border-[#014421]/25 bg-[#014421]/[0.03] p-3">
@@ -275,6 +280,19 @@ export function HomeCommunityCard() {
               </Link>
             )}
           </div>
+        )}
+        {lastDrawn?.winnerId && (
+          <Link
+            href="/community?tab=challenges"
+            className="mt-2 flex items-center gap-2 rounded-xl bg-[#FFA500]/10 px-3 py-2 text-xs text-orange-900"
+          >
+            <PartyPopper className="h-4 w-4 shrink-0 text-[#FFA500]" aria-hidden />
+            <ProfileAvatar picture={person(lastDrawn.winnerId)?.picture} name={person(lastDrawn.winnerId)?.name} size={22} />
+            <span className="min-w-0 flex-1 truncate">
+              <span className="font-bold">{lastDrawn.winnerId === me ? "You" : (person(lastDrawn.winnerId)?.name ?? "Golfer")}</span>{" "}
+              won {lastDrawn.title}
+            </span>
+          </Link>
         )}
 
         {/* Latest rounds */}

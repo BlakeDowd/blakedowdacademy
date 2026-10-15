@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, Loader2, Megaphone, Plus, Trash2, Trophy } from "lucide-react";
+import { ChevronDown, Dices, Loader2, PartyPopper, Plus, Trash2, Trophy } from "lucide-react";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import { loadPeople, type CommunityPerson } from "@/lib/community";
 import {
@@ -10,10 +10,10 @@ import {
   challengeState,
   createChallenge,
   deleteChallenge,
+  drawChallengeWinner,
   fetchChallengeBoard,
   fetchMyEntry,
   formatChallengeValue,
-  postChallengeResults,
   submitChallengeEntry,
   sydneyToday,
   type BoardRow,
@@ -267,7 +267,9 @@ function ChallengeCard({
     if (!wantBoard) return;
     let cancelled = false;
     void fetchChallengeBoard(challenge).then(async ({ rows, error: err }) => {
-      const names = await loadPeople(rows.map((r) => r.userId));
+      const ids = rows.map((r) => r.userId);
+      if (challenge.winnerId) ids.push(challenge.winnerId);
+      const names = await loadPeople(ids);
       if (cancelled) return;
       setError(err);
       setBoard(rows);
@@ -281,14 +283,18 @@ function ChallengeCard({
   const myIndex = board?.findIndex((r) => r.userId === me) ?? -1;
   const shown = board ? board.slice(0, 10) : [];
 
-  const announce = async () => {
-    if (!board) return;
+  const draw = async () => {
+    if (!board || board.length === 0) return;
+    const n = board.length;
+    if (!window.confirm(`Draw a random winner from ${n} player${n === 1 ? "" : "s"}? This can only be done once.`)) return;
     setBusy(true);
-    const err = await postChallengeResults(challenge, board);
+    const { error: err } = await drawChallengeWinner(challenge, board);
     setBusy(false);
     if (err) setError(err);
     else onResultsPosted();
   };
+
+  const winner = challenge.winnerId ? people.get(challenge.winnerId) : undefined;
 
   const remove = async () => {
     if (!window.confirm(`Delete "${challenge.title}" and its feed posts?`)) return;
@@ -333,6 +339,31 @@ function ChallengeCard({
       {open && (
         <div className="border-t border-stone-100 px-4 pb-4 pt-3">
           {challenge.description && <p className="mb-3 whitespace-pre-wrap text-sm text-stone-700">{challenge.description}</p>}
+
+          {challenge.winnerId ? (
+            <div className="mb-3 flex items-center gap-3 rounded-xl bg-[#014421] px-3 py-2.5 text-white">
+              <PartyPopper className="h-5 w-5 shrink-0 text-[#FFC966]" aria-hidden />
+              <ProfileAvatar picture={winner?.picture} name={winner?.name} size={32} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[10px] font-bold uppercase tracking-wide text-[#FFC966]">Winner</span>
+                <span className="block truncate text-sm font-bold">
+                  {challenge.winnerId === me ? "You!" : (winner?.name ?? "Golfer")}
+                </span>
+              </span>
+              {challenge.entrantCount != null && (
+                <span className="shrink-0 text-[11px] text-white/70">
+                  Drawn from {challenge.entrantCount} player{challenge.entrantCount === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+          ) : (
+            state !== "finished" && (
+              <p className="mb-3 flex items-center gap-1.5 rounded-xl bg-[#FFA500]/10 px-3 py-2 text-xs font-medium text-orange-800">
+                <Dices className="h-4 w-4 shrink-0" aria-hidden />
+                The winner is drawn at random from everyone who takes part. Get on the board to be in it!
+              </p>
+            )
+          )}
 
           {board === null ? (
             <p className="py-3 text-center text-xs text-stone-400">Loading leaderboard…</p>
@@ -381,15 +412,23 @@ function ChallengeCard({
 
           {isCoach && (
             <div className="mt-3 flex gap-2 border-t border-stone-100 pt-3">
-              <button
-                type="button"
-                onClick={() => void announce()}
-                disabled={busy || !board || board.length === 0}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#FFA500] py-2 text-sm font-semibold text-white disabled:opacity-40"
-              >
-                <Megaphone className="h-4 w-4" aria-hidden />
-                {challenge.resultsPostedAt ? "Post results again" : "Post results to feed"}
-              </button>
+              {challenge.winnerId ? (
+                <p className="flex flex-1 items-center text-xs text-stone-500">Winner drawn and posted to the feed.</p>
+              ) : state === "finished" ? (
+                <button
+                  type="button"
+                  onClick={() => void draw()}
+                  disabled={busy || !board || board.length === 0}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#FFA500] py-2 text-sm font-semibold text-white disabled:opacity-40"
+                >
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Dices className="h-4 w-4" aria-hidden />}
+                  Draw winner
+                </button>
+              ) : (
+                <p className="flex flex-1 items-center text-xs text-stone-500">
+                  You can draw a winner after it ends on {niceDate(challenge.endsOn)}.
+                </p>
+              )}
               <button
                 type="button"
                 onClick={() => void remove()}

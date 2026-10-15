@@ -297,6 +297,7 @@ function isPuttingOrFreestylePracticeRow(session: any): boolean {
     "bunkers",
     "putting",
     "mental/strategy",
+    "on-course",
     LESSON_PRACTICE_TYPE,
   ]);
   if (freestyleExact.has(tl)) return true;

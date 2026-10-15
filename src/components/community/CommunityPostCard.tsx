@@ -125,9 +125,29 @@ function PostContent({
     }
     case "challenge_result": {
       const podium = Array.isArray(m.podium) ? (m.podium as Record<string, unknown>[]) : [];
+      const winnerId = str(m.winner);
+      const winner = winnerId ? people.get(winnerId) : undefined;
+      const entrants = num(m.entrants);
       return (
         <Highlight icon={Trophy} tone="bg-[#FFA500]/10 text-orange-900">
           <p className="font-semibold">{str(m.title)} results</p>
+          {winnerId && (
+            <div className="mt-1.5 flex items-center gap-2.5 rounded-lg bg-[#014421] px-2.5 py-2 text-white">
+              <ProfileAvatar picture={winner?.picture} name={winner?.name} size={30} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[10px] font-bold uppercase tracking-wide text-[#FFC966]">Winner 🎉</span>
+                <span className="block truncate text-sm font-bold">{winner?.name ?? "Golfer"}</span>
+              </span>
+              {entrants != null && (
+                <span className="shrink-0 text-[10px] text-white/70">
+                  Drawn from {entrants} player{entrants === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+          )}
+          {winnerId && podium.length > 0 && (
+            <p className="mt-2 text-[10px] font-bold uppercase tracking-wide text-orange-700/70">Top of the board</p>
+          )}
           <ol className="mt-1 space-y-0.5">
             {podium.map((p, i) => (
               <li key={i} className="flex items-center justify-between gap-2 text-xs">
@@ -169,7 +189,7 @@ export function postSummary(post: CommunityPost, challenges?: Map<string, Challe
     case "challenge":
       return `New challenge: ${challenges?.get(str(m.challenge_id))?.title ?? "check it out"}`;
     case "challenge_result":
-      return `${str(m.title)} results are in`;
+      return m.winner ? `${str(m.title)}: winner drawn!` : `${str(m.title)} results are in`;
     default:
       return "";
   }

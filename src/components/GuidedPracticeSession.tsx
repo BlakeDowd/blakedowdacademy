@@ -29,6 +29,7 @@ import { keepElementInView, useKeepInViewOnChange } from "@/hooks/useKeepInView"
 import { usePracticeHandicap } from "@/hooks/usePracticeHandicap";
 import { SHOW_PDFS } from "@/lib/drillResources";
 import { realVideoUrl } from "@/lib/videoLinks";
+import { bunnyVideoIdForDrill } from "@/lib/bunnyStream";
 import { CARD_HANDICAP_TEST_IDS, COMBINE_TEST_CARDS, type CombineCategoryId } from "@/lib/combineTestsCatalog";
 import { formatHandicap, weakestArea, type PracticeHandicap } from "@/lib/practiceHandicap";
 import { GAME_AREAS, type GameArea } from "@/lib/practiceHandicapBenchmarks";
@@ -617,7 +618,8 @@ export function GuidedPracticeSession({
                           const key = `${d.id}-${number}`;
                           const expanded = expandedDrillKey === key;
                           const pdfUrl = SHOW_PDFS ? d.pdfUrl : undefined;
-                          const videoUrl = realVideoUrl(d.videoUrl);
+                          const bunnyId = bunnyVideoIdForDrill({ title: d.title, video_url: d.videoUrl });
+                          const videoUrl = bunnyId ? `bunny:${bunnyId}` : realVideoUrl(d.videoUrl);
                           const hasDetails = Boolean(d.description || d.goal || videoUrl || pdfUrl);
                           return (
                             <li key={key} data-drill-key={key} className="scroll-mt-4 rounded-xl bg-gray-50">

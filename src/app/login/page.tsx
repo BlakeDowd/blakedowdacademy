@@ -107,7 +107,7 @@ export default function LoginPage() {
       if (isSignUp) {
         const handicap = parseFloat(initialHandicap);
         if (isNaN(handicap) || handicap < -5 || handicap > 54) {
-          setError("Please enter a valid handicap (-5 to 54)");
+          setError("Please enter a valid handicap (+5.0 to 54)");
           setLoading(false);
           return;
         }

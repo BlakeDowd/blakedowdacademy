@@ -146,7 +146,8 @@ export async function fetchCommunityFeed(limit = 30): Promise<{ feed: CommunityF
 
 function podiumIds(p: CommunityPost): string[] {
   const podium = p.meta.podium;
-  return Array.isArray(podium) ? podium.map((x) => str((x as Row).user_id)) : [];
+  const ids = Array.isArray(podium) ? podium.map((x) => str((x as Row).user_id)) : [];
+  return p.meta.winner ? [...ids, str(p.meta.winner)] : ids;
 }
 
 export async function createCommunityPost(body: string): Promise<{ post: CommunityPost | null; error: string | null }> {

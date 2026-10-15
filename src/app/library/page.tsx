@@ -192,7 +192,9 @@ const ONLINE_LEARNING_LIBRARY = "Online Learning Library";
 const COURSE_TITLE = "Video Lessons";
 const CATEGORIES = [
   "All",
-  ...LIBRARY_MODULES.filter((m) => m.videos.length > 0 || (m.tools?.length ?? 0) > 0).map((m) => m.category),
+  ...new Set(
+    LIBRARY_MODULES.filter((m) => m.videos.length > 0 || (m.tools?.length ?? 0) > 0).map((m) => m.category),
+  ),
 ];
 const HERO_IMAGE = "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?q=80&w=1200&auto=format&fit=crop";
 

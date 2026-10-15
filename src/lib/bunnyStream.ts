@@ -125,8 +125,91 @@ export type LibraryVideo = {
   description?: string;
 };
 
+export const THREE_FOOT_PUTTS_BUNNY_VIDEO_ID = "0e30ae0e-9624-4dc3-8ca9-ea76c8178e2b";
+export const TWO_PUTT_GAME_BUNNY_VIDEO_ID = "d61b894f-a363-4f8a-b497-794946fbfe49";
+export const GATE_DRILL_PUTTING_BUNNY_VIDEO_ID = "ee74b4ad-daef-4164-a430-a1f97ca44548";
+
+/** Putting Basics lessons (portrait, Bunny "Drills" collection). */
+export const LIBRARY_PUTTING_BASICS_VIDEOS: readonly LibraryVideo[] = [
+  {
+    key: "three-foot-putts",
+    libraryDrillId: "putting-three-foot-putts",
+    bunnyVideoId: THREE_FOOT_PUTTS_BUNNY_VIDEO_ID,
+    label: "3 Foot Putts",
+  },
+  {
+    key: "gate-drill-putting",
+    libraryDrillId: "putting-gate-drill",
+    bunnyVideoId: GATE_DRILL_PUTTING_BUNNY_VIDEO_ID,
+    label: "Gate Drill",
+  },
+  {
+    key: "two-putt-game",
+    libraryDrillId: "putting-two-putt-game",
+    bunnyVideoId: TWO_PUTT_GAME_BUNNY_VIDEO_ID,
+    label: "2 Putt Game",
+  },
+];
+
+/** Practice Guides: setup fundamentals to check before every session. */
+export const LIBRARY_PRACTICE_GUIDE_VIDEOS: readonly LibraryVideo[] = [
+  { key: "grip-basics", libraryDrillId: "guide-grip-basics", bunnyVideoId: "94edf1a6-46ce-42d9-aac5-c87137dd1b06", label: "Grip Basics" },
+  {
+    key: "addressing-the-ball",
+    libraryDrillId: "guide-addressing-the-ball",
+    bunnyVideoId: "0d4005b7-16fc-437c-bfca-10b164c1ae65",
+    label: "Addressing the Ball",
+  },
+  { key: "ball-position", libraryDrillId: "guide-ball-position", bunnyVideoId: "59b2b74e-0ace-4ff5-8472-52f2f719ec2c", label: "Ball Position" },
+  { key: "set-up-tilt", libraryDrillId: "guide-set-up-tilt", bunnyVideoId: "1a3a3df2-235b-4751-8e2f-cb0e4fc5091d", label: "Set Up Tilt" },
+  { key: "balance-points", libraryDrillId: "guide-balance-points", bunnyVideoId: "7a366f3e-d835-41f0-bf90-1e95a06e0b05", label: "Balance Points" },
+  {
+    key: "alignment-stick-set-up",
+    libraryDrillId: "guide-alignment-stick-set-up",
+    bunnyVideoId: "6541f883-18b1-4aa1-9cde-5411a443d001",
+    label: "Alignment Stick Set Up",
+  },
+];
+
 /** Putting Speed Control lessons. Add each video here once it's uploaded to Bunny. */
 export const LIBRARY_PUTTING_SPEED_VIDEOS: readonly LibraryVideo[] = [];
+
+/** Drill cards that play a Bunny video, keyed by drill name (case-insensitive). */
+const DRILL_BUNNY_VIDEOS: Record<string, string> = {
+  "3 foot putts": THREE_FOOT_PUTTS_BUNNY_VIDEO_ID,
+  "2 putt game": TWO_PUTT_GAME_BUNNY_VIDEO_ID,
+};
+
+/** Drill families that share one video, matched on the start of the drill name. */
+const DRILL_BUNNY_VIDEO_PREFIXES: [string, string][] = [
+  ["gate drill", GATE_DRILL_PUTTING_BUNNY_VIDEO_ID],
+  ["start line gate drill", GATE_DRILL_PUTTING_BUNNY_VIDEO_ID],
+];
+
+const BUNNY_VIDEO_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Bunny video ID from a stored link: `bunny:<id>`, a bare ID, or a mediadelivery embed URL. */
+export function bunnyVideoIdFromLink(link: string | null | undefined): string | null {
+  const value = String(link ?? "").trim();
+  if (!value) return null;
+  const bare = value.startsWith("bunny:") ? value.slice(6).trim() : value;
+  if (BUNNY_VIDEO_ID_RE.test(bare)) return bare;
+  return value.match(/mediadelivery\.net\/(?:embed|play)\/[^/]+\/([0-9a-f-]{36})/i)?.[1] ?? null;
+}
+
+/** The Bunny video for a drill card: the drill's own video link if it's a Bunny one, else the name lookup. */
+export function bunnyVideoIdForDrill(drill: {
+  drill_name?: string | null;
+  title?: string | null;
+  video_url?: string | null;
+  youtube_url?: string | null;
+}): string | null {
+  const fromLink = bunnyVideoIdFromLink(drill.video_url) ?? bunnyVideoIdFromLink(drill.youtube_url);
+  if (fromLink) return fromLink;
+  const name = String(drill.drill_name ?? drill.title ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!name) return null;
+  return DRILL_BUNNY_VIDEOS[name] ?? DRILL_BUNNY_VIDEO_PREFIXES.find(([prefix]) => name.startsWith(prefix))?.[1] ?? null;
+}
 
 /** Interactive tools shown inside a module. They don't count towards lesson progress or XP. */
 export type LibraryTool = {
@@ -145,6 +228,8 @@ export const LIBRARY_MODULES: readonly {
   tools?: readonly LibraryTool[];
 }[] = [
   { name: "Swing Drills", chapter: "Swing Videos", category: "Swing", videos: LIBRARY_SWING_VIDEOS },
+  { name: "Practice Guides", chapter: "Setup Basics", category: "Practice", videos: LIBRARY_PRACTICE_GUIDE_VIDEOS },
+  { name: "Putting Basics", chapter: "Putting Basics", category: "Putting", videos: LIBRARY_PUTTING_BASICS_VIDEOS },
   {
     name: "Putting Speed Control",
     chapter: "Speed Control",

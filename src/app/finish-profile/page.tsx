@@ -41,9 +41,9 @@ export default function FinishProfile() {
     try {
       const supabase = createClient();
       
-      const parsedHandicap = parseInt(handicap, 10);
-      if (isNaN(parsedHandicap)) {
-        throw new Error("Please enter a valid number for your handicap.");
+      const parsedHandicap = Math.round(parseFloat(handicap) * 10) / 10;
+      if (isNaN(parsedHandicap) || parsedHandicap < -5 || parsedHandicap > 54) {
+        throw new Error("Please enter a valid handicap (+5.0 to 54).");
       }
 
       // Update the profile row
@@ -156,7 +156,7 @@ export default function FinishProfile() {
               </div>
             </div>
 
-            <HandicapField value={handicap} onChange={setHandicap} required min={0} />
+            <HandicapField value={handicap} onChange={setHandicap} required />
 
             <button
               type="submit"

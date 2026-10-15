@@ -10,6 +10,8 @@ import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
 import { DrillLibrary } from "@/components/DrillLibrary";
 import { GuidedPracticeSession, type GuidedSessionDrill } from "@/components/GuidedPracticeSession";
+import DrillBunnyVideo from "@/components/DrillBunnyVideo";
+import { bunnyVideoIdFromLink } from "@/lib/bunnyStream";
 import { WeekDayStrip } from "@/components/WeekDayStrip";
 import { NutritionPlannerPanel } from "@/components/NutritionPlannerPanel";
 import { getBenchmarkGoals } from "@/lib/benchmarkGoals";
@@ -4048,6 +4050,9 @@ export default function PracticePage() {
                   <X className="w-5 h-5 text-gray-600" />
                 </button>
               </div>
+              {bunnyVideoIdFromLink(youtubeModal.url) ? (
+                <DrillBunnyVideo videoId={bunnyVideoIdFromLink(youtubeModal.url)!} autoplay />
+              ) : (
               <div className="aspect-video w-full">
                 {(() => {
                   // Convert YouTube URL to embed format
@@ -4070,6 +4075,7 @@ export default function PracticePage() {
                   );
                 })()}
               </div>
+              )}
             </div>
           </div>
         )}

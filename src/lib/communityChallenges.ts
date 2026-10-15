@@ -27,6 +27,9 @@ export type Challenge = {
   startsOn: string;
   endsOn: string;
   resultsPostedAt: string | null;
+  winnerId: string | null;
+  winnerDrawnAt: string | null;
+  entrantCount: number | null;
 };
 
 export type ChallengeEntry = {
@@ -61,6 +64,9 @@ function toChallenge(r: Row): Challenge {
     startsOn: str(r.starts_on),
     endsOn: str(r.ends_on),
     resultsPostedAt: r.results_posted_at ? str(r.results_posted_at) : null,
+    winnerId: r.winner_id ? str(r.winner_id) : null,
+    winnerDrawnAt: r.winner_drawn_at ? str(r.winner_drawn_at) : null,
+    entrantCount: num(r.entrant_count),
   };
 }
 
@@ -224,19 +230,33 @@ export async function reviewChallengeEntry(
   return communityError(error);
 }
 
-/** Posts the top three to the feed and marks the challenge as announced. */
-export async function postChallengeResults(c: Challenge, rows: BoardRow[]): Promise<string | null> {
+const DRAW_ERRORS: Record<string, string> = {
+  already_drawn: "A winner has already been drawn for this challenge.",
+  not_finished: "You can draw a winner once the challenge has finished.",
+  no_entrants: "Nobody took part, so there's no one to draw.",
+  coach_only: "Only coaches can draw a winner.",
+};
+
+/**
+ * Draws a random winner from everyone on the leaderboard, records it and posts it (with the top three) to the feed.
+ * The draw happens in the database so it can only be done once.
+ */
+export async function drawChallengeWinner(
+  c: Challenge,
+  rows: BoardRow[],
+): Promise<{ winnerId: string | null; error: string | null }> {
   const podium = rows
     .filter((r) => r.value != null || r.done)
     .slice(0, 3)
     .map((r) => ({ user_id: r.userId, display: formatChallengeValue(c, r.value, r.done) }));
-  if (podium.length === 0) return "No results to post yet.";
-  const supabase = createClient();
-  const { error } = await supabase.from("community_posts").insert({
-    kind: "challenge_result",
-    meta: { challenge_id: c.id, title: c.title, podium },
-  });
-  if (error) return communityError(error);
-  await supabase.from("community_challenges").update({ results_posted_at: new Date().toISOString() }).eq("id", c.id);
-  return null;
+  const { data, error } = await createClient().rpc("community_draw_winner", { p_challenge: c.id, p_podium: podium });
+  if (error) {
+    const known = Object.keys(DRAW_ERRORS).find((k) => error.message?.includes(k));
+    if (known) return { winnerId: null, error: DRAW_ERRORS[known] };
+    if (error.code === "PGRST202" || /community_draw_winner/.test(error.message ?? "")) {
+      return { winnerId: null, error: "Run supabase/migrations/20261013200000_challenge_draw.sql in Supabase first." };
+    }
+    return { winnerId: null, error: communityError(error) };
+  }
+  return { winnerId: data ? str(data) : null, error: null };
 }

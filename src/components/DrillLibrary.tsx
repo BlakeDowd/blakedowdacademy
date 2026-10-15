@@ -21,6 +21,8 @@ import { stableDrillKey } from "@/lib/drillPersonalBests";
 import { resolveDrillScoring } from "@/lib/drillScoring";
 import { runnerDrillKey } from "@/lib/drillRunners";
 import { realVideoUrl } from "@/lib/videoLinks";
+import { bunnyVideoIdForDrill } from "@/lib/bunnyStream";
+import DrillBunnyVideo from "@/components/DrillBunnyVideo";
 import { drillScoringOverride, useDrillScoringOverrides } from "@/lib/drillScoringOverrides";
 
 const LIBRARY_CATEGORIES = [
@@ -183,6 +185,8 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
 
   if (!drill) return null;
 
+  const bunnyVideoId = bunnyVideoIdForDrill(drill);
+
   const handleAssign = (dayIndex: number) => {
     onAssignToDay(drill, dayIndex);
     setShowDayPicker(false);
@@ -237,9 +241,11 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
           <DrillScoringRow drill={drill} />
           <DrillListPicker drill={drill} />
 
-          {(((SHOW_PDFS && drill.pdf_url) || drill.video_url || (drill as any).youtube_url)) && (
+          {bunnyVideoId && <DrillBunnyVideo videoId={bunnyVideoId} />}
+
+          {(((SHOW_PDFS && drill.pdf_url) || (!bunnyVideoId && (drill.video_url || (drill as any).youtube_url)))) && (
             <div className="flex flex-wrap gap-2">
-              {(drill.video_url || (drill as any).youtube_url) && (
+              {!bunnyVideoId && (drill.video_url || (drill as any).youtube_url) && (
                 <a
                   href={drill.video_url || (drill as any).youtube_url}
                   target="_blank"

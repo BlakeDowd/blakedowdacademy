@@ -32,6 +32,7 @@ import Drives5sScorecard from "@/components/Drives5sScorecard";
 import { DRIVES_5S_DRILL_KEY, DRIVES_5S_SCORE_TYPE } from "@/lib/drives5sDrill";
 import { runnerDrillKey } from "@/lib/drillRunners";
 import { realVideoUrl } from "@/lib/videoLinks";
+import { bunnyVideoIdForDrill } from "@/lib/bunnyStream";
 import { DrillGuide, DrillHero, DrillSteps } from "@/components/drills/DrillIntro";
 import { DrillTimerCard, formatClock, useDrillTimer } from "@/components/drills/DrillTimer";
 import { isPerfectScore, resolveDrillScoring } from "@/lib/drillScoring";
@@ -170,7 +171,8 @@ export default function DrillCard({
   const isEnvironmental = runnerKey === ENVIRONMENTAL_DRILL_KEY;
   const isDrives5s = runnerKey === DRIVES_5S_DRILL_KEY;
   const par2 = par2Game(runnerKey);
-  const videoUrl = realVideoUrl(drill.youtube_url || drill.video_url);
+  const bunnyVideoId = bunnyVideoIdForDrill(drill);
+  const videoUrl = bunnyVideoId ? `bunny:${bunnyVideoId}` : realVideoUrl(drill.youtube_url || drill.video_url);
   const scoreTypeOverride = isFaceStrike
     ? FACE_STRIKE_SCORE_TYPE
     : isBallFlight
