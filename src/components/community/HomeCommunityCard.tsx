@@ -123,7 +123,9 @@ export function HomeCommunityCard() {
       const uid = str(p.user_id);
       if (uid) minutes.set(uid, (minutes.get(uid) ?? 0) + (num(p.duration_minutes) ?? 0));
     }
-    const roundsThisWeek = ((communityRounds ?? []) as unknown as Row[]).filter((r) => timeOf(r.created_at ?? r.date) >= from);
+    const roundsThisWeek = ((communityRounds ?? []) as unknown as Row[]).filter(
+      (r) => timeOf(r.date || r.created_at) >= from,
+    );
     const drillsThisWeek = ((drillSessions ?? []) as unknown as Row[]).filter((d) => timeOf(d.first_logged_at ?? d.day) >= from);
     const active = new Set<string>([
       ...[...minutes.entries()].filter(([, m]) => m > 0).map(([id]) => id),
@@ -149,7 +151,7 @@ export function HomeCommunityCard() {
     () =>
       ((communityRounds ?? []) as unknown as Row[])
         .filter((r) => num(r.score) != null && r.user_id)
-        .sort((a, b) => timeOf(b.created_at ?? b.date) - timeOf(a.created_at ?? a.date))
+        .sort((a, b) => timeOf(b.date) - timeOf(a.date) || timeOf(b.created_at) - timeOf(a.created_at))
         .slice(0, ROUNDS_SHOWN),
     [communityRounds],
   );
@@ -315,7 +317,7 @@ export function HomeCommunityCard() {
                     <p className="flex items-center gap-1 truncate text-xs text-gray-400">
                       <Flag className="h-3 w-3 shrink-0" aria-hidden />
                       <span className="truncate">{str(r.course) || "Round"}</span>
-                      <span className="shrink-0">· {timeAgo(str(r.created_at ?? r.date))}</span>
+                      <span className="shrink-0">· {timeAgo(str(r.date || r.created_at))}</span>
                     </p>
                   </div>
                   <div className="shrink-0 text-right">
