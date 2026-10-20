@@ -9,7 +9,7 @@ import {
 
 export type Putting9HoleRecord = PuttingCombineHoleRecord;
 
-const FORMAT: PuttingCombineFormat = {
+export const putting9HoleFormat: PuttingCombineFormat = {
   holeCount: 9,
   gradeVariant: 9,
   title: "9-Hole Putting Test",
@@ -24,5 +24,5 @@ const FORMAT: PuttingCombineFormat = {
 };
 
 export function PuttingTest9Runner() {
-  return <PuttingCombineRunner format={FORMAT} />;
+  return <PuttingCombineRunner format={putting9HoleFormat} />;
 }

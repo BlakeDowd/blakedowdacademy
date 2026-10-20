@@ -153,6 +153,7 @@ export function PracticeCombinePicker({
         category={category}
         onCategoryChange={onCategoryChange}
         hrefFor={player ? (href) => combineHrefForPlayer(href, player.id) : undefined}
+        historyFor={player ? { id: player.id, name: player.name } : null}
       />
     </div>
   );

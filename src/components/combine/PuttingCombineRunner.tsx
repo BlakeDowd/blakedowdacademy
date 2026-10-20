@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { flushSync } from "react-dom";
 import { CircleDot, Crosshair, Eye, Gauge, ListChecks, Trophy } from "lucide-react";
 import { useCombineUser } from "@/hooks/useCombineUser";
@@ -265,6 +265,213 @@ function holeDetail(h: PuttingCombineHoleRecord): string {
 }
 
 const SHAPES: ShapeKey[] = ["Straight", "Left-to-Right", "Right-to-Left"];
+const MISS_KEYS = new Set<string>(["highLong", "highShort", "lowLong", "lowShort", "lipOut"]);
+const REASON_KEYS = new Set<string>(["read", "speed", "startLine"]);
+
+/** Rebuild one saved hole from the JSON written to practice.notes. */
+export function parsePuttingSavedHole(notes: unknown): PuttingCombineHoleRecord | null {
+  let parsed: Record<string, unknown> | null = null;
+  if (typeof notes === "string") {
+    try {
+      const value = JSON.parse(notes) as unknown;
+      if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  } else if (notes && typeof notes === "object" && !Array.isArray(notes)) {
+    parsed = notes as Record<string, unknown>;
+  }
+  if (!parsed) return null;
+  const { holeIndex, points, distance, shape } = parsed;
+  if (typeof holeIndex !== "number" || typeof points !== "number" || typeof distance !== "number") return null;
+  if (typeof shape !== "string" || !SHAPES.includes(shape as ShapeKey)) return null;
+  const outcome = parsed.outcome === "miss" || parsed.outcome === "make" ? parsed.outcome : null;
+  if (!outcome) return null;
+  const missReason =
+    typeof parsed.missReason === "string" && MISS_KEYS.has(parsed.missReason) ? (parsed.missReason as MissCategory) : null;
+  const primaryMissReason =
+    typeof parsed.primaryMissReason === "string" && REASON_KEYS.has(parsed.primaryMissReason)
+      ? (parsed.primaryMissReason as PrimaryMissReason)
+      : null;
+  const putts = parsed.putts === 1 || parsed.putts === 2 || parsed.putts === 3 ? parsed.putts : outcome === "make" ? 1 : 2;
+  const second = parsed.secondPuttDistanceFt;
+  return {
+    holeIndex,
+    distance,
+    shape: shape as ShapeKey,
+    outcome,
+    missReason: outcome === "make" ? null : missReason,
+    primaryMissReason: outcome === "make" ? null : primaryMissReason,
+    missCategoryLabel: typeof parsed.missCategoryLabel === "string" ? parsed.missCategoryLabel : null,
+    secondPuttDistanceFt: typeof second === "number" && Number.isFinite(second) ? second : null,
+    putts,
+    points,
+    isThreePutt: putts === 3 || parsed.isThreePutt === true,
+  };
+}
+
+/** The results screen, from either a test just finished or holes loaded from history. */
+export function PuttingSessionReport({
+  format,
+  holes,
+  onPlayAgain,
+}: {
+  format: PuttingCombineFormat;
+  holes: PuttingCombineHoleRecord[];
+  onPlayAgain?: () => void;
+}) {
+  const ordered = [...holes].sort((a, b) => a.holeIndex - b.holeIndex);
+  const HOLES = format.holeCount;
+  const MAX_POINTS = PUTTING_TEST_MAX_POINTS[format.gradeVariant];
+  const TOUR_AVERAGE = PUTTING_TEST_PGA_TOUR_AVERAGE_POINTS[format.gradeVariant];
+  const totalPoints = ordered.reduce((s, h) => s + h.points, 0);
+  const totalPutts = ordered.reduce((s, h) => s + h.putts, 0);
+  const { grade, showTrophy } = getPuttingTestSkillGrade(totalPoints, format.gradeVariant);
+  const pct = Math.max(0, Math.min(1, totalPoints / MAX_POINTS));
+  const tourGap = totalPoints - TOUR_AVERAGE;
+  const threePutts = ordered.filter((h) => h.isThreePutt).length;
+  const b = puttingBreakdown(ordered, HOLES);
+  const nineTotal = (from: number, to: number) => ordered.slice(from, to).reduce((s, h) => s + h.points, 0);
+  const finished = ordered.length === HOLES && ordered.every((h, i) => h.holeIndex === i);
+  const trackResults: HoleResult[] = Array.from({ length: HOLES }, (_, i) => {
+    const r = ordered.find((h) => h.holeIndex === i);
+    return r ? { points: r.points, putts: r.putts } : null;
+  });
+
+  return (
+    <div className="space-y-4">
+      {!finished && (
+        <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-100">
+          This run stopped after {ordered.length} of {HOLES} holes. The score below is only the holes that were saved.
+        </p>
+      )}
+      <ResultHero>
+        <ScoreRing pct={pct} value={totalPoints} caption={`of ${MAX_POINTS} pts`} />
+        <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-bold text-[#014421]">
+          {showTrophy && <Trophy className="h-4 w-4 text-[#FFA500]" aria-hidden />}
+          {grade}
+        </span>
+        <p className="mt-2 text-sm text-white/80">
+          {tourGap >= 0
+            ? `${signed(tourGap)} on the Tour average (${TOUR_AVERAGE})`
+            : `${Math.abs(tourGap)} pts off the Tour average (${TOUR_AVERAGE})`}
+        </p>
+        {format.scratch && <p className="mt-0.5 text-xs text-white/60">Scratch benchmark {format.scratch.points} pts</p>}
+      </ResultHero>
+
+      <StatTiles
+        stats={[
+          { label: "Putts", value: totalPutts, sub: format.scratch ? `Scratch ${format.scratch.putts}` : null },
+          { label: "Holed first time", value: `${b.holed}/${ordered.length || HOLES}` },
+          { label: "Three putts", value: threePutts },
+        ]}
+      />
+
+      <FocusCard title={b.focus.title} lines={b.focus.lines} />
+
+      {b.totalLost > 0 && (
+        <BreakdownCard title="Where you dropped points" aside={`${b.totalLost} pts`}>
+          <BreakdownBar
+            segments={LEAKS.filter((l) => format.allowLipOut || l.key !== "lipOut").map((l) => ({
+              label: l.label,
+              value: b.lost[l.key],
+              tone: l.tone,
+            }))}
+          />
+          <p className="mt-2 text-[11px] text-gray-400">Points short of holing every putt first time.</p>
+        </BreakdownCard>
+      )}
+
+      <BreakdownCard
+        title="Hole by hole"
+        aside={HOLES === 18 ? `Front ${signed(nineTotal(0, 9))} · Back ${signed(nineTotal(9, 18))}` : undefined}
+      >
+        <HoleTrack results={trackResults} current={-1} />
+      </BreakdownCard>
+
+      <BreakdownCard title="Holed first time" aside="Made / putts">
+        <div className="space-y-3">
+          {b.bands.map((band) => (
+            <RateRow
+              key={band.label}
+              label={band.label}
+              made={band.made}
+              total={band.n}
+              flag={band.label === b.weakBand?.label ? "Work on" : null}
+            />
+          ))}
+        </div>
+        {b.byShape.length > 1 && (
+          <>
+            <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-gray-400">By break</p>
+            <div className="space-y-3">
+              {b.byShape.map((s) => (
+                <RateRow key={s.shape} label={puttShapeLabel(s.shape)} made={s.made} total={s.n} />
+              ))}
+            </div>
+          </>
+        )}
+      </BreakdownCard>
+
+      {b.misses > 0 && (
+        <BreakdownCard title="Your misses" aside={`${b.misses} ${b.misses === 1 ? "miss" : "misses"}`}>
+          <div className="space-y-3">
+            <BreakdownBar
+              label="Pace"
+              segments={[
+                { label: "Short", value: b.short, tone: "bg-red-400" },
+                { label: "Past", value: b.past, tone: "bg-[#014421]" },
+                ...(format.allowLipOut ? [{ label: "Lip out", value: b.lipOuts, tone: "bg-green-300" }] : []),
+              ]}
+            />
+            {b.highSide + b.lowSide > 0 && (
+              <BreakdownBar
+                label="Side, on breaking putts"
+                segments={[
+                  { label: "High side", value: b.highSide, tone: "bg-[#014421]" },
+                  { label: "Low side", value: b.lowSide, tone: "bg-amber-500" },
+                ]}
+              />
+            )}
+            {b.causes.read + b.causes.speed + b.causes.startLine > 0 && (
+              <BreakdownBar
+                label="What caused it"
+                segments={[
+                  { label: "Read", value: b.causes.read, tone: "bg-sky-400" },
+                  { label: "Speed", value: b.causes.speed, tone: "bg-[#FFA500]" },
+                  { label: "Start line", value: b.causes.startLine, tone: "bg-violet-400" },
+                ]}
+              />
+            )}
+            <RateRow label="Holed the next putt" made={b.nextHoled} total={b.misses} />
+            {b.avgLeave != null && (
+              <p className="text-xs text-gray-600">
+                After a miss you left yourself <span className="font-bold tabular-nums">{b.avgLeave.toFixed(1)} ft</span> on average.
+              </p>
+            )}
+          </div>
+        </BreakdownCard>
+      )}
+
+      <EveryShotList title="Every hole">
+        {ordered.map((h) => (
+          <li key={h.holeIndex} className="flex items-center gap-3 py-2">
+            <span className="w-9 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">{h.holeIndex + 1}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-gray-800">
+                {h.distance} ft · {puttShapeShort(h.shape)}
+              </span>
+              <span className="block text-xs text-gray-500">{holeDetail(h)}</span>
+            </span>
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${scoreTone(h)}`}>{signed(h.points)}</span>
+          </li>
+        ))}
+      </EveryShotList>
+
+      {onPlayAgain && <PlayAgainButton onClick={onPlayAgain} />}
+    </div>
+  );
+}
 
 /** Everything the putting results screen shows, including the "focus next" tip. */
 function puttingBreakdown(holes: PuttingCombineHoleRecord[], holeCount: number) {
@@ -507,14 +714,6 @@ export function PuttingCombineRunner({ format }: { format: PuttingCombineFormat 
     }
   }, [phase]);
 
-  const summary = useMemo(() => {
-    if (holeLog.length === 0) return null;
-    return {
-      points: holeLog.reduce((s, h) => s + h.points, 0),
-      putts: holeLog.reduce((s, h) => s + h.putts, 0),
-    };
-  }, [holeLog]);
-
   const trackResults: HoleResult[] = Array.from({ length: HOLES }, (_, i) => {
     const r = holeLog[i];
     return r ? { points: r.points, putts: r.putts } : null;
@@ -570,143 +769,8 @@ export function PuttingCombineRunner({ format }: { format: PuttingCombineFormat 
     );
   }
 
-  if (status === "complete" && summary) {
-    const { grade, showTrophy } = getPuttingTestSkillGrade(summary.points, format.gradeVariant);
-    const pct = Math.max(0, Math.min(1, summary.points / MAX_POINTS));
-    const tourGap = summary.points - TOUR_AVERAGE;
-    const threePutts = holeLog.filter((h) => h.isThreePutt).length;
-    const b = puttingBreakdown(holeLog, HOLES);
-    const nineTotal = (from: number, to: number) => holeLog.slice(from, to).reduce((s, h) => s + h.points, 0);
-    return (
-      <div className="space-y-4">
-        <ResultHero>
-          <ScoreRing pct={pct} value={summary.points} caption={`of ${MAX_POINTS} pts`} />
-          <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-bold text-[#014421]">
-            {showTrophy && <Trophy className="h-4 w-4 text-[#FFA500]" aria-hidden />}
-            {grade}
-          </span>
-          <p className="mt-2 text-sm text-white/80">
-            {tourGap >= 0
-              ? `${signed(tourGap)} on the Tour average (${TOUR_AVERAGE})`
-              : `${Math.abs(tourGap)} pts off the Tour average (${TOUR_AVERAGE})`}
-          </p>
-          {format.scratch && (
-            <p className="mt-0.5 text-xs text-white/60">Scratch benchmark {format.scratch.points} pts</p>
-          )}
-        </ResultHero>
-
-        <StatTiles
-          stats={[
-            { label: "Putts", value: summary.putts, sub: format.scratch ? `Scratch ${format.scratch.putts}` : null },
-            { label: "Holed first time", value: `${b.holed}/${HOLES}` },
-            { label: "Three putts", value: threePutts },
-          ]}
-        />
-
-        <FocusCard title={b.focus.title} lines={b.focus.lines} />
-
-        {b.totalLost > 0 && (
-          <BreakdownCard title="Where you dropped points" aside={`${b.totalLost} pts`}>
-            <BreakdownBar
-              segments={LEAKS.filter((l) => format.allowLipOut || l.key !== "lipOut").map((l) => ({
-                label: l.label,
-                value: b.lost[l.key],
-                tone: l.tone,
-              }))}
-            />
-            <p className="mt-2 text-[11px] text-gray-400">Points short of holing every putt first time.</p>
-          </BreakdownCard>
-        )}
-
-        <BreakdownCard
-          title="Hole by hole"
-          aside={HOLES === 18 ? `Front ${signed(nineTotal(0, 9))} · Back ${signed(nineTotal(9, 18))}` : undefined}
-        >
-          <HoleTrack results={trackResults} current={-1} />
-        </BreakdownCard>
-
-        <BreakdownCard title="Holed first time" aside="Made / putts">
-          <div className="space-y-3">
-            {b.bands.map((band) => (
-              <RateRow
-                key={band.label}
-                label={band.label}
-                made={band.made}
-                total={band.n}
-                flag={band.label === b.weakBand?.label ? "Work on" : null}
-              />
-            ))}
-          </div>
-          {b.byShape.length > 1 && (
-            <>
-              <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-gray-400">By break</p>
-              <div className="space-y-3">
-                {b.byShape.map((s) => (
-                  <RateRow key={s.shape} label={puttShapeLabel(s.shape)} made={s.made} total={s.n} />
-                ))}
-              </div>
-            </>
-          )}
-        </BreakdownCard>
-
-        {b.misses > 0 && (
-          <BreakdownCard title="Your misses" aside={`${b.misses} ${b.misses === 1 ? "miss" : "misses"}`}>
-            <div className="space-y-3">
-              <BreakdownBar
-                label="Pace"
-                segments={[
-                  { label: "Short", value: b.short, tone: "bg-red-400" },
-                  { label: "Past", value: b.past, tone: "bg-[#014421]" },
-                  ...(format.allowLipOut ? [{ label: "Lip out", value: b.lipOuts, tone: "bg-green-300" }] : []),
-                ]}
-              />
-              {b.highSide + b.lowSide > 0 && (
-                <BreakdownBar
-                  label="Side, on breaking putts"
-                  segments={[
-                    { label: "High side", value: b.highSide, tone: "bg-[#014421]" },
-                    { label: "Low side", value: b.lowSide, tone: "bg-amber-500" },
-                  ]}
-                />
-              )}
-              {b.causes.read + b.causes.speed + b.causes.startLine > 0 && (
-                <BreakdownBar
-                  label="What caused it"
-                  segments={[
-                    { label: "Read", value: b.causes.read, tone: "bg-sky-400" },
-                    { label: "Speed", value: b.causes.speed, tone: "bg-[#FFA500]" },
-                    { label: "Start line", value: b.causes.startLine, tone: "bg-violet-400" },
-                  ]}
-                />
-              )}
-              <RateRow label="Holed the next putt" made={b.nextHoled} total={b.misses} />
-              {b.avgLeave != null && (
-                <p className="text-xs text-gray-600">
-                  After a miss you left yourself <span className="font-bold tabular-nums">{b.avgLeave.toFixed(1)} ft</span> on average.
-                </p>
-              )}
-            </div>
-          </BreakdownCard>
-        )}
-
-        <EveryShotList title="Every hole">
-          {holeLog.map((h) => (
-            <li key={h.holeIndex} className="flex items-center gap-3 py-2">
-              <span className="w-9 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">{h.holeIndex + 1}</span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-gray-800">
-                  {h.distance} ft · {puttShapeShort(h.shape)}
-                </span>
-                <span className="block text-xs text-gray-500">{holeDetail(h)}</span>
-              </span>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${scoreTone(h)}`}>{signed(h.points)}</span>
-            </li>
-          ))}
-        </EveryShotList>
-
-        <PlayAgainButton onClick={startTest} />
-      </div>
-    );
+  if (status === "complete" && holeLog.length > 0) {
+    return <PuttingSessionReport format={format} holes={holeLog} onPlayAgain={startTest} />;
   }
 
   if (!currentHole) {

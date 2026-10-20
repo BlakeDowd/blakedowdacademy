@@ -64,6 +64,7 @@ function TestPlayerSheet({
           category={category}
           onCategoryChange={setCategory}
           hrefFor={(href) => combineHrefForPlayer(href, playerId)}
+          historyFor={{ id: playerId, name: playerName }}
         />
       </div>
     </div>,
