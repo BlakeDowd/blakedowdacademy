@@ -190,12 +190,15 @@ function VideoComingSoon() {
 /** Shown in the header on the main library screen and in lesson breadcrumbs. */
 const ONLINE_LEARNING_LIBRARY = "Online Learning Library";
 const COURSE_TITLE = "Video Lessons";
-const CATEGORIES = [
-  "All",
-  ...new Set(
-    LIBRARY_MODULES.filter((m) => m.videos.length > 0 || (m.tools?.length ?? 0) > 0).map((m) => m.category),
-  ),
-];
+/** One tab per module category, in module order. Read at render so a new module can't leave the server HTML behind. */
+function libraryCategories(): string[] {
+  return [
+    "All",
+    ...new Set(
+      LIBRARY_MODULES.filter((m) => m.videos.length > 0 || (m.tools?.length ?? 0) > 0).map((m) => m.category),
+    ),
+  ];
+}
 const HERO_IMAGE = "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?q=80&w=1200&auto=format&fit=crop";
 
 function getLessonTypeTag(type: LessonType) {
@@ -297,7 +300,7 @@ function LibraryCategoryScroller({
           canScrollLeft ? "pl-8" : ""
         } ${canScrollRight ? "pr-8" : ""}`}
       >
-        {CATEGORIES.map((cat) => (
+        {libraryCategories().map((cat) => (
           <button
             key={cat}
             type="button"

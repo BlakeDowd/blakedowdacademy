@@ -115,6 +115,18 @@ export const LIBRARY_SWING_VIDEOS = [
     bunnyVideoId: HUG_DRILL_BUNNY_VIDEO_ID,
     label: "Hug Drill",
   },
+  {
+    key: "carrying-the-baby",
+    libraryDrillId: "swing-carrying-the-baby",
+    bunnyVideoId: "523081ac-9b04-4ebf-8895-c15462144618",
+    label: "Carrying the Baby",
+  },
+  {
+    key: "tilting-and-turning",
+    libraryDrillId: "swing-tilting-and-turning",
+    bunnyVideoId: "eb0f4c24-b44a-49b0-b94a-b19884890a04",
+    label: "Tilting and Turning",
+  },
 ] as const;
 
 export type LibraryVideo = {
@@ -168,6 +180,46 @@ export const LIBRARY_PRACTICE_GUIDE_VIDEOS: readonly LibraryVideo[] = [
     libraryDrillId: "guide-alignment-stick-set-up",
     bunnyVideoId: "6541f883-18b1-4aa1-9cde-5411a443d001",
     label: "Alignment Stick Set Up",
+  },
+];
+
+/** Basic Chipping lessons (portrait, Bunny "Drills" collection). */
+export const LIBRARY_CHIPPING_BASICS_VIDEOS: readonly LibraryVideo[] = [
+  {
+    key: "chipping-set-up",
+    libraryDrillId: "chip-set-up-basics",
+    bunnyVideoId: "f93867cc-8e4c-4170-8c3a-80ad5d6ec930",
+    label: "Chipping Set Up Basics",
+  },
+  {
+    key: "three-power-sources",
+    libraryDrillId: "chip-three-power-sources",
+    bunnyVideoId: "42065719-7ff0-4dd1-b924-c0079b5fc5db",
+    label: "3 Power Sources",
+  },
+  {
+    key: "ground-contact",
+    libraryDrillId: "chip-ground-contact",
+    bunnyVideoId: "981d9cfb-2fab-40b4-9560-27f708de4805",
+    label: "Ground Contact",
+  },
+  {
+    key: "unloading-the-wrists",
+    libraryDrillId: "chip-unloading-the-wrists",
+    bunnyVideoId: "cc23c201-f7a6-4aaf-b94e-c85f01e26ad6",
+    label: "Unloading the Wrists",
+  },
+  {
+    key: "finish-chipping",
+    libraryDrillId: "chip-finish",
+    bunnyVideoId: "e8c79d7d-7738-484b-97d2-8d8ef1365804",
+    label: "Finish",
+  },
+  {
+    key: "chipping-options",
+    libraryDrillId: "chip-options",
+    bunnyVideoId: "c981043f-2fbf-4ba5-9bc0-22d2d55586e5",
+    label: "Options",
   },
 ];
 
@@ -230,6 +282,7 @@ export const LIBRARY_MODULES: readonly {
   { name: "Swing Drills", chapter: "Swing Videos", category: "Swing", videos: LIBRARY_SWING_VIDEOS },
   { name: "Practice Guides", chapter: "Setup Basics", category: "Practice", videos: LIBRARY_PRACTICE_GUIDE_VIDEOS },
   { name: "Putting Basics", chapter: "Putting Basics", category: "Putting", videos: LIBRARY_PUTTING_BASICS_VIDEOS },
+  { name: "Basic Chipping", chapter: "Chipping Basics", category: "Chipping", videos: LIBRARY_CHIPPING_BASICS_VIDEOS },
   {
     name: "Putting Speed Control",
     chapter: "Speed Control",
