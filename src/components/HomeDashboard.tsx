@@ -56,7 +56,7 @@ import Toast from "@/components/Toast";
 import { BunnyVideoPlayer } from "@/components/BunnyVideoPlayer";
 import {
   APP_VIDEO_COACH_NAME,
-  buildBunnyThumbnailUrl,
+  libraryThumbnailPath,
   formatBunnyDuration,
   isBunnyPortraitVideo,
   resolveFeaturedHomeVideo,
@@ -363,7 +363,7 @@ export default function HomeDashboard() {
   // Remove Hardcoding: Delete any const totalXP = 0 placeholders that might be overriding the real data
   // Data Source: Use profile?.totalXP from the profile object instead of hardcoded state
   const [featuredHome] = useState(() => resolveFeaturedHomeVideo());
-  const { metadata: bunnyVideoMetadata, loading: bunnyVideoMetadataLoading } = useBunnyVideoMetadata(
+  const { metadata: bunnyVideoMetadata } = useBunnyVideoMetadata(
     featuredHome.bunnyVideoId,
   );
   const dailyVideoIsPortrait = isBunnyPortraitVideo(bunnyVideoMetadata);
@@ -372,9 +372,7 @@ export default function HomeDashboard() {
     ? formatBunnyDuration(bunnyVideoMetadata.lengthSeconds)
     : "";
   const [featuredVideoExpanded, setFeaturedVideoExpanded] = useState(false);
-  const featuredThumbUrl = bunnyVideoMetadataLoading
-    ? null
-    : buildBunnyThumbnailUrl(featuredHome.bunnyVideoId, bunnyVideoMetadata?.thumbnailFileName);
+  const featuredThumbUrl = libraryThumbnailPath(featuredHome.bunnyVideoId);
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [recentTab, setRecentTab] = useState<'activity' | 'myRounds'>('activity');
   const [leaderboardExpanded, setLeaderboardExpanded] = useState(false);
@@ -821,7 +819,7 @@ export default function HomeDashboard() {
                   <img
                     src={featuredThumbUrl}
                     alt=""
-                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                    className="absolute inset-0 h-full w-full object-cover object-[center_42%] transition-transform duration-300 group-hover:scale-[1.03]"
                   />
                 ) : (
                   <div className="absolute inset-0 bg-gradient-to-br from-[#014421] to-stone-900" />

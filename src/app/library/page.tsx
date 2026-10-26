@@ -36,12 +36,13 @@ import { NutritionPlannerPanel } from "@/components/NutritionPlannerPanel";
 import {
   APP_VIDEO_COACH_NAME,
   LIBRARY_MODULES,
-  buildBunnyThumbnailUrl,
   formatBunnyDuration,
   isBunnyPortraitVideo,
   cleanBunnyVideoTitle,
+  libraryModuleCoverVideoId,
+  libraryThumbnailPath,
 } from "@/lib/bunnyStream";
-import { useBunnyThumbnailUrl, useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
+import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 // Drills / video authoring field guide: `src/lib/academyContentSchema.ts`
 
 type LessonType = "video" | "text" | "pdf" | "quiz" | "drill" | "tool";
@@ -116,8 +117,7 @@ const LIBRARY_CURRICULUM_LESSONS: Lesson[] = LIBRARY_MODULES.flatMap((mod) => [
 ]);
 
 const CURRICULUM_LESSON_IDS = new Set(LIBRARY_CURRICULUM_LESSONS.map((l) => l.id));
-/** First swing video; its thumbnail is the Swing Drills module cover. */
-const SWING_COVER_BUNNY_ID = LIBRARY_MODULES.find((m) => m.videos.length > 0)?.videos[0]?.bunnyVideoId ?? null;
+const HERO_VIDEO_ID = libraryModuleCoverVideoId("Full Swing Basics");
 const CURRICULUM_BUNNY_IDS = new Set(
   LIBRARY_MODULES.flatMap((m) => m.videos.map((v) => v.bunnyVideoId.toLowerCase())),
 );
@@ -167,12 +167,6 @@ function extractBunnyVideoId(source: string | undefined | null): string | null {
   return embedMatch?.[1] ?? null;
 }
 
-function getThumbnailUrl(source: string) {
-  if (!isPlayableVideoSource(source)) return null;
-  const id = extractYoutubeVideoId(source);
-  return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
-}
-
 function VideoComingSoon() {
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-gradient-to-b from-gray-900 to-black px-6 text-center">
@@ -199,8 +193,6 @@ function libraryCategories(): string[] {
     ),
   ];
 }
-const HERO_IMAGE = "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?q=80&w=1200&auto=format&fit=crop";
-
 function getLessonTypeTag(type: LessonType) {
   if (type === "video") return { label: "Video", icon: Video };
   if (type === "quiz") return { label: "Quiz", icon: HelpCircle };
@@ -385,8 +377,7 @@ function LibrarySearchFilters({
 
 function LibraryPageContent() {
   const { user } = useAuth();
-  const swingCoverThumb = useBunnyThumbnailUrl(SWING_COVER_BUNNY_ID);
-  
+
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
@@ -922,11 +913,13 @@ function LibraryPageContent() {
           <div className="w-full flex flex-col pb-24">
             {/* Hero */}
             <div className="relative mx-4 mt-4 overflow-hidden rounded-2xl shadow-md">
-              <img
-                src={HERO_IMAGE}
-                alt=""
-                className="absolute inset-0 h-full w-full object-cover"
-              />
+              {HERO_VIDEO_ID && (
+                <img
+                  src={libraryThumbnailPath(HERO_VIDEO_ID)}
+                  alt=""
+                  className="absolute inset-0 h-full w-full object-cover object-[center_42%]"
+                />
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-[#014421]/95 via-[#014421]/55 to-[#014421]/25" />
               <div className="relative flex flex-col items-center gap-4 px-5 py-8 text-center">
                 <img
@@ -1039,19 +1032,11 @@ function LibraryPageContent() {
               ) : (
               <div className="flex flex-col gap-4">
                 {modules.map((mod) => {
-                  const firstBunnyId = mod.lessons
-                    .map((l) => (l.type === "video" ? extractBunnyVideoId(l.source) : null))
-                    .find(Boolean);
-                  const firstLesson = mod.lessons.find((l) => l.type === "video") || mod.lessons[0];
-                  const bunnyThumb =
-                    firstBunnyId && firstBunnyId.toLowerCase() === SWING_COVER_BUNNY_ID?.toLowerCase()
-                      ? swingCoverThumb
-                      : firstBunnyId && buildBunnyThumbnailUrl(firstBunnyId);
-                  const thumbUrl =
-                    bunnyThumb ||
-                    (firstLesson && firstLesson.type === "video" && isPlayableVideoSource(firstLesson.source)
-                      ? getThumbnailUrl(firstLesson.source)
-                      : HERO_IMAGE);
+                  const firstBunnyId =
+                    mod.lessons
+                      .map((l) => (l.type === "video" ? extractBunnyVideoId(l.source) : null))
+                      .find(Boolean) || libraryModuleCoverVideoId(mod.name);
+                  const thumbUrl = firstBunnyId ? libraryThumbnailPath(firstBunnyId) : null;
                   const chapterCount = mod.chapters.length;
                   const modProgress = mod.total
                     ? Math.round((mod.completedCount / mod.total) * 100)
@@ -1063,15 +1048,14 @@ function LibraryPageContent() {
                       onClick={() => selectModule(mod.name)}
                       className="group w-full overflow-hidden rounded-2xl border border-gray-100 bg-white text-left shadow-sm transition-all hover:border-[#014421]/25 hover:shadow-md"
                     >
-                      <div className="relative aspect-[2.2/1] overflow-hidden bg-gray-200">
-                        <img
-                          src={thumbUrl ?? HERO_IMAGE}
-                          onError={(e) => {
-                            if (e.currentTarget.src !== HERO_IMAGE) e.currentTarget.src = HERO_IMAGE;
-                          }}
-                          alt=""
-                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                        />
+                      <div className="relative aspect-[2.2/1] overflow-hidden bg-[#01331a]">
+                        {thumbUrl && (
+                          <img
+                            src={thumbUrl}
+                            alt=""
+                            className="h-full w-full object-cover object-[center_42%] transition-transform duration-300 group-hover:scale-[1.03]"
+                          />
+                        )}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
                         <div className="absolute bottom-0 left-0 right-0 p-3">
                           <span className="line-clamp-2 text-base font-bold leading-snug text-white">

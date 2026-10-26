@@ -221,6 +221,70 @@ export const LIBRARY_CHIPPING_BASICS_VIDEOS: readonly LibraryVideo[] = [
     bunnyVideoId: "c981043f-2fbf-4ba5-9bc0-22d2d55586e5",
     label: "Options",
   },
+  {
+    key: "towel-landing-spot",
+    libraryDrillId: "chip-towel-landing-spot",
+    bunnyVideoId: "be1580f1-665a-499a-8ad4-6bbe4be28cf3",
+    label: "Towel Landing Spot",
+  },
+  {
+    key: "trex-drill",
+    libraryDrillId: "chip-trex-drill",
+    bunnyVideoId: "94ee0a60-a577-49dc-9f64-e1b7eece4576",
+    label: "T-Rex Drill",
+  },
+  {
+    key: "towel-drill-chipping",
+    libraryDrillId: "chip-towel-drill",
+    bunnyVideoId: "b2d14b8f-145f-44a7-a0f6-5efc1786cf5a",
+    label: "Towel Drill Chipping",
+  },
+];
+
+/** Full Swing Basics: low point and the sand-line setup (portrait, Bunny "Drills" collection). */
+export const LIBRARY_FULL_SWING_BASICS_VIDEOS: readonly LibraryVideo[] = [
+  {
+    key: "low-point-explanation",
+    libraryDrillId: "swing-low-point-explanation",
+    bunnyVideoId: "9243ad82-d38a-473e-a7dd-ea3959cdd011",
+    label: "Low Point Explanation",
+  },
+  {
+    key: "dig-it-out-of-the-dirt",
+    libraryDrillId: "swing-dig-it-out-of-the-dirt",
+    bunnyVideoId: "aa88048c-aba2-4ca1-a893-4d9e0faa3c34",
+    label: "Dig It Out of the Dirt",
+  },
+  {
+    key: "sand-line-drill",
+    libraryDrillId: "swing-sand-line-drill",
+    bunnyVideoId: "69581d61-7230-4bbe-b846-bed8c7782c8a",
+    label: "Sand Line Drill",
+  },
+  {
+    key: "sand-line-ball-position",
+    libraryDrillId: "swing-sand-line-ball-position",
+    bunnyVideoId: "013d5d68-1fc0-4f98-a6cf-5ea5a8fca705",
+    label: "Sand Line Drill Ball Position",
+  },
+  {
+    key: "sand-line-divot-depth",
+    libraryDrillId: "swing-sand-line-divot-depth",
+    bunnyVideoId: "66be5848-0414-478a-8fcf-69f7675a23af",
+    label: "Sand Line Drill Ball Divot Depth",
+  },
+  {
+    key: "sand-line-swing-length",
+    libraryDrillId: "swing-sand-line-swing-length",
+    bunnyVideoId: "8ee5f3c1-d7da-41f0-9f9f-b95ee582c712",
+    label: "Sand Line Drill Swing Length",
+  },
+  {
+    key: "sand-line-tempo",
+    libraryDrillId: "swing-sand-line-tempo",
+    bunnyVideoId: "f048aebe-2cf1-4656-8ac3-aa51d8c27954",
+    label: "Sand Line Drill Tempo",
+  },
 ];
 
 /** Putting Speed Control lessons. Add each video here once it's uploaded to Bunny. */
@@ -278,7 +342,10 @@ export const LIBRARY_MODULES: readonly {
   category: string;
   videos: readonly LibraryVideo[];
   tools?: readonly LibraryTool[];
+  /** Screenshot for a module that has no lesson video of its own. */
+  coverBunnyVideoId?: string;
 }[] = [
+  { name: "Full Swing Basics", chapter: "Full Swing Basics", category: "Swing", videos: LIBRARY_FULL_SWING_BASICS_VIDEOS },
   { name: "Swing Drills", chapter: "Swing Videos", category: "Swing", videos: LIBRARY_SWING_VIDEOS },
   { name: "Practice Guides", chapter: "Setup Basics", category: "Practice", videos: LIBRARY_PRACTICE_GUIDE_VIDEOS },
   { name: "Putting Basics", chapter: "Putting Basics", category: "Putting", videos: LIBRARY_PUTTING_BASICS_VIDEOS },
@@ -288,6 +355,7 @@ export const LIBRARY_MODULES: readonly {
     chapter: "Speed Control",
     category: "Putting",
     videos: LIBRARY_PUTTING_SPEED_VIDEOS,
+    coverBunnyVideoId: THREE_FOOT_PUTTS_BUNNY_VIDEO_ID,
     tools: [
       {
         id: "putting-stroke-calculator",
@@ -302,6 +370,7 @@ export const LIBRARY_MODULES: readonly {
     chapter: "Checklists",
     category: "On-Course",
     videos: [],
+    coverBunnyVideoId: "0d4005b7-16fc-437c-bfca-10b164c1ae65",
     tools: [
       {
         id: "tournament-checklist",
@@ -356,6 +425,18 @@ export function resolveFeaturedHomeVideo(now: Date = new Date()): LibraryVideo {
  * Videos with a custom thumbnail use a hashed file name (e.g. `thumbnail_2839bdd3.jpg`), so pass
  * `fileName` from the video's metadata when it's known.
  */
+/** Same-origin screenshot for a public library video. The CDN blocks direct hotlinks. */
+export function libraryThumbnailPath(videoId: string): string {
+  return `/api/bunny/thumbnail?videoId=${encodeURIComponent(videoId.trim())}`;
+}
+
+/** Cover frame for a module card: its own first lesson, or a chosen screenshot. */
+export function libraryModuleCoverVideoId(moduleName: string): string | null {
+  const mod = LIBRARY_MODULES.find((item) => item.name === moduleName);
+  if (!mod) return null;
+  return mod.coverBunnyVideoId ?? mod.videos[0]?.bunnyVideoId ?? null;
+}
+
 export function buildBunnyThumbnailUrl(videoId: string, fileName?: string | null): string | null {
   const id = videoId.trim();
   if (!id) return null;
