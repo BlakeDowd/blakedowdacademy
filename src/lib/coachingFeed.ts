@@ -540,6 +540,26 @@ export async function authJsonHeaders(): Promise<Record<string, string>> {
     : { "Content-Type": "application/json" };
 }
 
+/** Download a coaching Bunny video the signed-in user can see (game plan or swing). */
+export async function downloadCoachingVideo(videoId: string, filename: string): Promise<void> {
+  const res = await fetch(`/api/coaching/video/${encodeURIComponent(videoId)}/download`, {
+    cache: "no-store",
+    headers: await authJsonHeaders(),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || "Download failed");
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.endsWith(".mp4") ? filename : `${filename}.mp4`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function isLikelyVideoFile(file: File): boolean {
   if (file.type.startsWith("video/")) return true;
   // iOS Photos often leaves the type empty.

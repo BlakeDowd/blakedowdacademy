@@ -299,7 +299,12 @@ export default function CoachingTab({
       ) : view === "assigned" ? (
         <AssignedOverview viewerId={user.id} spaces={spaces} onOpenSpace={openSpace} />
       ) : view === "usage" ? (
-        <CoachingUsage viewerId={user.id} spaces={spaces} onOpenSpace={openSpace} />
+        <CoachingUsage
+          viewerId={user.id}
+          spaces={spaces}
+          rosterLoading={spacesLoading}
+          onOpenSpace={openSpace}
+        />
       ) : view === "families" ? (
         <CoachingFamilies
           coachName={viewerName}

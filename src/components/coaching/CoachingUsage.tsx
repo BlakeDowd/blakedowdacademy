@@ -11,8 +11,10 @@ import {
   fetchUsageEvents,
   isScreenView,
   itemOf,
+  loggedPracticeMinutes,
   TOOL_LABELS,
   toolKeyOf,
+  usageCount,
   type DrillTitles,
   type ToolKey,
   type UsageEvent,
@@ -24,6 +26,15 @@ const TREND_WEEKS = 8;
 const FEED_PAGE = 30;
 
 type Range = 7 | 30;
+
+/** Start of the local calendar week (Monday 00:00). */
+function startOfWeek(d = new Date()): Date {
+  const day = d.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() + mondayOffset);
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
 
 function Card({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
@@ -93,7 +104,7 @@ function tally(events: UsageEvent[], keyOf: (e: UsageEvent) => string | null, li
     const key = keyOf(e);
     if (!key) continue;
     const row = map.get(key) ?? { count: 0, players: new Set<string>() };
-    row.count += 1;
+    row.count += usageCount(e);
     row.players.add(e.user_id);
     map.set(key, row);
   }
@@ -103,13 +114,20 @@ function tally(events: UsageEvent[], keyOf: (e: UsageEvent) => string | null, li
     .slice(0, limit);
 }
 
+function sumCounts(events: UsageEvent[]): number {
+  return events.reduce((sum, e) => sum + usageCount(e), 0);
+}
+
 export function CoachingUsage({
   viewerId,
   spaces,
+  rosterLoading = false,
   onOpenSpace,
 }: {
   viewerId: string;
   spaces: CoachingSpaceSummary[];
+  /** True while coaching spaces are still loading, so Active players doesn't flash X/0. */
+  rosterLoading?: boolean;
   onOpenSpace: (studentId: string, name: string) => void;
 }) {
   const [events, setEvents] = useState<UsageEvent[]>([]);
@@ -117,6 +135,8 @@ export function CoachingUsage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<Range>(7);
+  /** Frozen when data loads so totals don't drift while the page sits open. */
+  const [loadedAt, setLoadedAt] = useState(() => Date.now());
   const [player, setPlayer] = useState<string | null>(null);
   const [showScreens, setShowScreens] = useState(false);
   const [feedLimit, setFeedLimit] = useState(FEED_PAGE);
@@ -126,10 +146,12 @@ export function CoachingUsage({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const since = new Date(Date.now() - TREND_WEEKS * 7 * DAY_MS);
+      const now = Date.now();
+      const since = new Date(now - TREND_WEEKS * 7 * DAY_MS);
       const [list, titles] = await Promise.all([fetchUsageEvents(createClient(), since), fetchDrillTitles()]);
       setDrills(titles);
       setEvents(list.filter((e) => e.user_id !== viewerId));
+      setLoadedAt(now);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load app usage.");
@@ -149,12 +171,14 @@ export function CoachingUsage({
     [spaceNames, names],
   );
 
-  const inRange = useMemo(() => {
-    const cutoff = Date.now() - range * DAY_MS;
-    return events.filter((e) => Date.parse(e.at) >= cutoff);
-  }, [events, range]);
+  const rangeCutoff = loadedAt - range * DAY_MS;
+  const inRange = useMemo(
+    () => events.filter((e) => Date.parse(e.at) >= rangeCutoff),
+    [events, rangeCutoff],
+  );
   const actions = useMemo(() => inRange.filter((e) => !isScreenView(e)), [inRange]);
   const screens = useMemo(() => inRange.filter(isScreenView), [inRange]);
+  const actionTotal = useMemo(() => sumCounts(actions), [actions]);
   const tools = useMemo<ToolRow[]>(
     () =>
       (Object.keys(TOOL_LABELS) as ToolKey[]).map((key) => {
@@ -162,9 +186,9 @@ export function CoachingUsage({
         return {
           key,
           label: TOOL_LABELS[key],
-          uses: uses.length,
+          uses: sumCounts(uses),
           players: new Set(uses.map((e) => e.user_id)).size,
-          opens: screens.filter((e) => e.detail === key).length,
+          opens: sumCounts(screens.filter((e) => e.detail === key)),
         };
       }),
     [actions, screens],
@@ -173,17 +197,20 @@ export function CoachingUsage({
     () => events.reduce<string | null>((min, e) => (toolKeyOf(e) && (!min || e.at < min) ? e.at : min), null),
     [events],
   );
+  // Active = opened any screen (login / refresh / browse). That's the minimum "looked at the app" signal.
   const activeIds = useMemo(() => new Set(inRange.map((e) => e.user_id)), [inRange]);
   const practiceMinutes = useMemo(
-    () => actions.reduce((sum, e) => sum + (e.source === "practice" ? e.minutes : 0), 0),
+    () => actions.reduce((sum, e) => sum + loggedPracticeMinutes(e), 0),
     [actions],
   );
 
   const weekly = useMemo(() => {
+    const thisWeek = startOfWeek().getTime();
     const buckets = Array.from({ length: TREND_WEEKS }, () => new Set<string>());
-    const now = Date.now();
     for (const e of events) {
-      const i = Math.floor((now - Date.parse(e.at)) / (7 * DAY_MS));
+      const at = Date.parse(e.at);
+      if (!Number.isFinite(at)) continue;
+      const i = Math.floor((thisWeek - startOfWeek(new Date(at)).getTime()) / (7 * DAY_MS));
       if (i >= 0 && i < TREND_WEEKS) buckets[TREND_WEEKS - 1 - i].add(e.user_id);
     }
     return buckets.map((b) => b.size);
@@ -194,12 +221,12 @@ export function CoachingUsage({
   const topItems = useMemo(
     () =>
       tally(
-        actions.filter(
-          (e) =>
-            (e.source === "practice" && featureOf(e) !== "Practice sessions") ||
-            e.source === "skills_log" ||
-            e.source === "drill_score",
-        ),
+        actions.filter((e) => {
+          if (e.source === "skills_log" || e.source === "drill_score") return true;
+          if (e.source !== "practice") return false;
+          const feature = featureOf(e);
+          return feature === "Planner drills completed" || feature === "Combines & tests";
+        }),
         (e) => itemOf(e, drills),
         10,
       ),
@@ -217,9 +244,9 @@ export function CoachingUsage({
       const row = map.get(e.user_id) ?? { last: e.at, count: 0, features: new Map<string, number>() };
       if (e.at > row.last) row.last = e.at;
       if (!isScreenView(e)) {
-        row.count += 1;
+        row.count += usageCount(e);
         const f = featureOf(e);
-        row.features.set(f, (row.features.get(f) ?? 0) + 1);
+        row.features.set(f, (row.features.get(f) ?? 0) + usageCount(e));
       }
       map.set(e.user_id, row);
     }
@@ -261,7 +288,13 @@ export function CoachingUsage({
     return <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</p>;
   }
 
+  const rosterReady = !rosterLoading;
   const totalPlayers = spaces.filter((s) => !s.space?.pending).length;
+  const activeLabel = !rosterReady
+    ? String(activeIds.size)
+    : totalPlayers
+      ? `${activeIds.size}/${totalPlayers}`
+      : String(activeIds.size);
 
   return (
     <div className="space-y-4">
@@ -295,8 +328,8 @@ export function CoachingUsage({
 
       <div className="grid grid-cols-3 gap-2 text-center">
         {[
-          { label: "Active players", value: totalPlayers ? `${activeIds.size}/${totalPlayers}` : String(activeIds.size) },
-          { label: "Actions", value: String(actions.length) },
+          { label: "Active players", value: activeLabel },
+          { label: "Actions", value: String(actionTotal) },
           { label: "Practice hrs", value: String(Math.round((practiceMinutes / 60) * 10) / 10) },
         ].map((s) => (
           <div key={s.label} className="rounded-2xl bg-white px-2 py-3 shadow-sm ring-1 ring-stone-200">
@@ -305,8 +338,12 @@ export function CoachingUsage({
           </div>
         ))}
       </div>
+      <p className="px-1 text-[11px] text-stone-500">
+        Active players opened the app (any screen). Actions are drills, tests, sessions, rounds and tools.
+        Practice hrs are freestyle sessions and coach lessons only.
+      </p>
 
-      <Card title="Weekly active players" note={`Players who did anything in the app, last ${TREND_WEEKS} weeks`}>
+      <Card title="Weekly active players" note={`Players who opened the app, Monday–Sunday, last ${TREND_WEEKS} weeks`}>
         <div className="flex h-24 items-end gap-1.5">
           {weekly.map((n, i) => (
             <div key={i} className="flex flex-1 flex-col items-center justify-end gap-1">
@@ -375,7 +412,7 @@ export function CoachingUsage({
                       <span className="block truncate text-sm font-semibold text-stone-900">{name}</span>
                       <span className="block truncate text-xs text-stone-500">
                         {p.count} {p.count === 1 ? "action" : "actions"}
-                        {p.top ? ` · mostly ${p.top.toLowerCase()}` : " · browsing only"}
+                        {p.top ? ` · mostly ${p.top.toLowerCase()}` : " · opened the app only"}
                       </span>
                     </span>
                     <span className="shrink-0 text-[11px] text-stone-400">{timeAgo(p.last, true)}</span>

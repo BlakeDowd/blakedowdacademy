@@ -25,6 +25,7 @@ import { APP_VIDEO_COACH_NAME, buildBunnyThumbnailUrl } from "@/lib/bunnyStream"
 import { createClient } from "@/lib/supabase/client";
 import {
   authJsonHeaders,
+  downloadCoachingVideo,
   isCoachPost,
   postVideos,
   signedPhotoUrl,
@@ -57,16 +58,56 @@ export function PostVideo({
   compact,
   createdAt,
   studentId,
+  downloadName,
 }: {
   video: CoachingPostVideo;
   compact?: boolean;
   createdAt?: string;
   studentId?: string | null;
+  /** Suggested filename when the student (or coach) downloads this video. */
+  downloadName?: string;
 }) {
   const [analyzing, setAnalyzing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [drawingsVersion, setDrawingsVersion] = useState(0);
   const [aspect, setAspect] = useState(PHONE_VIDEO_ASPECT);
   const hasDrawings = useHasVideoAnnotations(videoAnnotationKey(video), drawingsVersion);
+
+  const canDownload = Boolean(video.bunny_video_id) || Boolean(video.storage_bucket && video.storage_path);
+
+  const download = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      if (video.bunny_video_id) {
+        await downloadCoachingVideo(
+          video.bunny_video_id,
+          downloadName || `golf-video-${video.bunny_video_id.slice(0, 8)}.mp4`,
+        );
+        return;
+      }
+      if (!video.storage_bucket || !video.storage_path) throw new Error("This video can't be downloaded.");
+      const { data, error } = await createClient()
+        .storage.from(video.storage_bucket)
+        .createSignedUrl(video.storage_path, 120);
+      if (error || !data?.signedUrl) throw new Error(error?.message || "Download failed");
+      const res = await fetch(data.signedUrl);
+      if (!res.ok) throw new Error("Download failed");
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = downloadName || "golf-video.mp4";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Download failed");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const content = (
     <>
       <PostVideoPlayer
@@ -89,6 +130,24 @@ export function PostVideo({
         <PenLine className="h-3.5 w-3.5" aria-hidden />
         {!compact && (hasDrawings ? "Coach drawings" : "Analyse")}
       </button>
+      {canDownload && (
+        <button
+          type="button"
+          onClick={() => void download()}
+          disabled={downloading}
+          className={`absolute bottom-2 right-2 z-10 inline-flex items-center gap-1 rounded-full bg-black/60 font-bold text-white shadow disabled:opacity-60 ${
+            compact ? "p-1.5" : "px-2.5 py-1 text-[11px]"
+          }`}
+          aria-label="Download video"
+        >
+          {downloading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          ) : (
+            <Download className="h-3.5 w-3.5" aria-hidden />
+          )}
+          {!compact && (downloading ? "Saving…" : "Download")}
+        </button>
+      )}
       {analyzing && (
         <CoachingVideoAnalyzer
           video={video}
@@ -245,24 +304,41 @@ export function PostVideos({
   compact,
   createdAt,
   studentId,
+  downloadBaseName,
 }: {
   videos: CoachingPostVideo[];
   compact?: boolean;
   createdAt?: string;
   studentId?: string | null;
+  /** Base filename for downloads; index is appended when there are several videos. */
+  downloadBaseName?: string;
 }) {
   const [index, setIndex] = useState(0);
   const trackRef = useRef<HTMLDivElement | null>(null);
+  const nameFor = (i: number) =>
+    downloadBaseName
+      ? `${downloadBaseName}${videos.length > 1 ? `-${i + 1}` : ""}.mp4`
+      : undefined;
 
   if (!videos.length) return null;
-  if (videos.length === 1) return <PostVideo video={videos[0]!} compact={compact} createdAt={createdAt} studentId={studentId} />;
+  if (videos.length === 1) {
+    return (
+      <PostVideo
+        video={videos[0]!}
+        compact={compact}
+        createdAt={createdAt}
+        studentId={studentId}
+        downloadName={nameFor(0)}
+      />
+    );
+  }
 
   if (compact) {
     return (
       <div className="flex gap-2 overflow-x-auto pb-1">
         {videos.map((v, i) => (
           <div key={`${v.bunny_video_id ?? v.storage_path}-${i}`} className="shrink-0">
-            <PostVideo video={v} compact createdAt={createdAt} studentId={studentId} />
+            <PostVideo video={v} compact createdAt={createdAt} studentId={studentId} downloadName={nameFor(i)} />
           </div>
         ))}
       </div>
@@ -288,7 +364,7 @@ export function PostVideos({
       >
         {videos.map((v, i) => (
           <div key={`${v.bunny_video_id ?? v.storage_path}-${i}`} className="w-full shrink-0 snap-center snap-always">
-            <PostVideo video={v} createdAt={createdAt} studentId={studentId} />
+            <PostVideo video={v} createdAt={createdAt} studentId={studentId} downloadName={nameFor(i)} />
           </div>
         ))}
       </div>
@@ -450,31 +526,43 @@ function PostMenu({
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
 
-  const downloadable = isCoachPost(post)
-    ? []
-    : postVideos(post)
-        .map((v) => v.bunny_video_id)
-        .filter((id): id is string => Boolean(id));
+  const videos = postVideos(post);
+  const downloadable = videos
+    .map((v) => v.bunny_video_id)
+    .filter((id): id is string => Boolean(id));
+  // Coach downloading a student's own swing: prefer the raw original via the swings API.
+  const useOriginalApi = !isCoachPost(post);
+  const fileBase = `${(post.is_game_plan ? post.title || "game-plan" : authorName).replace(/[^\w-]+/g, "_")}-${post.created_at.slice(0, 10)}`;
 
   const download = async (videoId: string, n: number) => {
     setBusy("download");
     try {
-      const res = await fetch(`/api/bunny/swings/${encodeURIComponent(videoId)}`, {
-        cache: "no-store",
-        headers: await authJsonHeaders(),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error || "Download failed");
+      const filename = `${fileBase}${downloadable.length > 1 ? `-${n}` : ""}.mp4`;
+      if (useOriginalApi) {
+        const res = await fetch(`/api/bunny/swings/${encodeURIComponent(videoId)}`, {
+          cache: "no-store",
+          headers: await authJsonHeaders(),
+        });
+        if (!res.ok) {
+          // Coach-only original API can fail for students — fall through to the shared path.
+          if (res.status === 403) {
+            await downloadCoachingVideo(videoId, filename);
+            return;
+          }
+          const data = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(data.error || "Download failed");
+        }
+        const url = URL.createObjectURL(await res.blob());
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } else {
+        await downloadCoachingVideo(videoId, filename);
       }
-      const url = URL.createObjectURL(await res.blob());
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${authorName.replace(/[^\w-]+/g, "_")}-${post.created_at.slice(0, 10)}${downloadable.length > 1 ? `-${n}` : ""}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
     } catch (err) {
       onToast({ message: err instanceof Error ? err.message : "Download failed", type: "error" });
     } finally {
@@ -522,7 +610,11 @@ function PostMenu({
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-stone-700 hover:bg-stone-50"
             >
               <Download className="h-4 w-4" aria-hidden />
-              {downloadable.length > 1 ? `Download video ${i + 1}` : "Download original"}
+              {downloadable.length > 1
+                ? `Download video ${i + 1}`
+                : useOriginalApi
+                  ? "Download original"
+                  : "Download video"}
             </button>
           ))}
           <button
@@ -533,6 +625,79 @@ function PostMenu({
             <Trash2 className="h-4 w-4" aria-hidden />
             Delete
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StudentDownloadMenu({
+  post,
+  authorName,
+  onToast,
+}: {
+  post: CoachingPost;
+  authorName: string;
+  onToast: (t: ToastState) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const downloadable = postVideos(post)
+    .map((v) => v.bunny_video_id)
+    .filter((id): id is string => Boolean(id));
+  const fileBase = `${(post.is_game_plan ? post.title || "game-plan" : authorName).replace(/[^\w-]+/g, "_")}-${post.created_at.slice(0, 10)}`;
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  if (!downloadable.length) return null;
+
+  const download = async (videoId: string, n: number) => {
+    setBusy(true);
+    try {
+      await downloadCoachingVideo(
+        videoId,
+        `${fileBase}${downloadable.length > 1 ? `-${n}` : ""}.mp4`,
+      );
+    } catch (err) {
+      onToast({ message: err instanceof Error ? err.message : "Download failed", type: "error" });
+    } finally {
+      setBusy(false);
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="rounded-full p-1.5 text-stone-500 hover:bg-stone-100"
+        aria-label="Download options"
+        aria-expanded={open}
+      >
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Download className="h-4 w-4" aria-hidden />}
+      </button>
+      {open && (
+        <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-2xl border border-stone-200 bg-white py-1 shadow-lg">
+          {downloadable.map((videoId, i) => (
+            <button
+              key={videoId}
+              type="button"
+              onClick={() => void download(videoId, i + 1)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-stone-700 hover:bg-stone-50"
+            >
+              <Download className="h-4 w-4" aria-hidden />
+              {downloadable.length > 1 ? `Download video ${i + 1}` : "Download video"}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -623,6 +788,7 @@ export function GamePlanRow({ plan }: { plan: CoachingPost }) {
   const [open, setOpen] = useState(false);
   const videos = postVideos(plan);
   const Icon = videos.length ? Play : ClipboardList;
+  const downloadBase = `${(plan.title || "game-plan").replace(/[^\w-]+/g, "_")}-${plan.created_at.slice(0, 10)}`;
   return (
     <div className="overflow-hidden rounded-2xl bg-white ring-1 ring-stone-200">
       <button
@@ -646,7 +812,12 @@ export function GamePlanRow({ plan }: { plan: CoachingPost }) {
       {open && (
         <div className="space-y-2 border-t border-stone-100 pb-3">
           {videos.length > 0 && (
-            <PostVideos videos={videos} createdAt={plan.created_at} studentId={plan.student_id} />
+            <PostVideos
+              videos={videos}
+              createdAt={plan.created_at}
+              studentId={plan.student_id}
+              downloadBaseName={downloadBase}
+            />
           )}
           {plan.body && (
             <p className={`whitespace-pre-wrap px-3 text-sm leading-relaxed text-stone-800 ${videos.length ? "" : "pt-3"}`}>
@@ -725,7 +896,11 @@ export function CoachingPostCard({
           )}
         </div>
         <span className="pt-0.5 text-xs text-stone-500">{timeAgo(post.created_at)}</span>
-        {viewerIsCoach && <PostMenu post={post} authorName={authorName} onDeleted={onDeleted} onToast={onToast} />}
+        {viewerIsCoach ? (
+          <PostMenu post={post} authorName={authorName} onDeleted={onDeleted} onToast={onToast} />
+        ) : (
+          <StudentDownloadMenu post={post} authorName={authorName} onToast={onToast} />
+        )}
       </header>
 
       {post.is_game_plan ? (
@@ -749,7 +924,12 @@ export function CoachingPostCard({
           )}
           {videos.length > 0 && (
             <div className={post.image_path ? "mt-1" : "mt-3"}>
-              <PostVideos videos={videos} createdAt={post.created_at} studentId={post.student_id} />
+              <PostVideos
+                videos={videos}
+                createdAt={post.created_at}
+                studentId={post.student_id}
+                downloadBaseName={`${(fromCoach ? "coach" : authorName).replace(/[^\w-]+/g, "_")}-${post.created_at.slice(0, 10)}`}
+              />
             </div>
           )}
         </>

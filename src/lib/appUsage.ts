@@ -158,6 +158,29 @@ const PRACTICE_AREAS = new Set([
   "On-Course",
 ]);
 
+/** Practice types that store a real duration. Planner drills store an estimate and tests store 0. */
+const TIMED_PRACTICE = new Set([...PRACTICE_AREAS, "lesson"]);
+
+/**
+ * How many times this row counts.
+ * Screen and tool rows are folded by hour (or day) and `qty` is the real number of uses.
+ * Drill-score rows are folded the same way. Practice `qty` is a hole count, so a test stays one action.
+ */
+export function usageCount(e: UsageEvent): number {
+  if (e.source === "screen" || e.source === "drill_score") {
+    const n = Math.round(Number(e.qty));
+    return n > 0 ? n : 1;
+  }
+  return 1;
+}
+
+/** Minutes from a logged practice session or a coach lesson. Estimates on planner drills are left out. */
+export function loggedPracticeMinutes(e: UsageEvent): number {
+  if (e.source !== "practice" || !e.detail || !TIMED_PRACTICE.has(e.detail)) return 0;
+  const minutes = Number(e.minutes);
+  return minutes > 0 ? minutes : 0;
+}
+
 const TEST_LABELS: Record<string, string> = {
   "putting-test": "Putting test (18 holes)",
   PuttingTest9Holes: "Putting test (9 holes)",
@@ -221,6 +244,7 @@ export function featureOf(e: UsageEvent): string {
   switch (e.source) {
     case "practice":
       if (e.detail && PRACTICE_AREAS.has(e.detail)) return "Practice sessions";
+      if (e.detail === "lesson") return "Coach lessons";
       if (e.detail && TEST_LABELS[e.detail]) return "Combines & tests";
       return "Planner drills completed";
     case "skills_log":
@@ -252,6 +276,7 @@ export function itemOf(e: UsageEvent, drills: DrillTitles): string | null {
   }
   if (!d) return null;
   if (e.source === "practice" || e.source === "skills_log") {
+    if (d === "lesson") return "Coach lesson";
     return TEST_LABELS[d] ?? (PRACTICE_AREAS.has(d) ? d : (drills.get(d) ?? humanize(d)));
   }
   if (e.source === "drill_score") return drills.get(d) ?? humanize(d);
@@ -267,6 +292,9 @@ export function describeUsage(e: UsageEvent, drills: DrillTitles): string {
     case "practice":
       if (e.detail && PRACTICE_AREAS.has(e.detail)) {
         return e.minutes > 0 ? `logged ${e.minutes} min of ${item}` : `logged a ${item} session`;
+      }
+      if (e.detail === "lesson") {
+        return e.minutes > 0 ? `had a ${e.minutes} min coach lesson` : "had a coach lesson";
       }
       if (e.detail && TEST_LABELS[e.detail]) return `played ${item}`;
       return `completed ${item}`;
@@ -285,6 +313,7 @@ export function describeUsage(e: UsageEvent, drills: DrillTitles): string {
     case "swing_upload":
       return "uploaded a swing";
     case "screen":
-      return isToolUse(e) ? `used the ${item}` : `opened ${item}`;
+      if (isToolUse(e)) return e.qty > 1 ? `used the ${item} ${e.qty} times` : `used the ${item}`;
+      return e.qty > 1 ? `opened ${item} ${e.qty} times` : `opened ${item}`;
   }
 }
