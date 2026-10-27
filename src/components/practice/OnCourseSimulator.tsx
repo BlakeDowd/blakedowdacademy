@@ -21,6 +21,7 @@ import {
   formatAimOffline,
   landFromCarryOffline,
   lieAt,
+  normalize,
   puttMakeChance,
   randomInDispersion,
   simulatePutt,
