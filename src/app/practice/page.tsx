@@ -4,7 +4,10 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
-import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, BookOpen, Apple, PersonStanding, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus } from "lucide-react";
+import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, BookOpen, Apple, PersonStanding, Gauge, Gamepad2, Crosshair, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus } from "lucide-react";
+import SpeedLogging from "@/components/speed/SpeedLogging";
+import OnCourseSimulator from "@/components/practice/OnCourseSimulator";
+import ApproachShotSimulator from "@/components/practice/ApproachShotSimulator";
 import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
 import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
@@ -643,7 +646,7 @@ export default function PracticePage() {
   });
   const [totalPracticeMinutes, setTotalPracticeMinutes] = useState<number>(0);
   const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(true); // Weekly schedule expanded state
-  const [openTool, setOpenTool] = useState<"planner" | "insights" | "library" | "combine" | "fuel" | null>(null);
+  const [openTool, setOpenTool] = useState<"planner" | "insights" | "library" | "combine" | "fuel" | "speed" | "arcade" | "approach" | null>(null);
   useEffect(() => {
     if (openTool) trackScreen(`practice-${openTool}`);
   }, [openTool]);
@@ -4013,6 +4016,105 @@ export default function PracticePage() {
               {openTool === "fuel" && (
                 <div className="border-t border-gray-200 px-3 pb-3 pt-3">
                   <NutritionPlannerPanel userId={user?.id} />
+                </div>
+              )}
+            </div>
+
+            <div id="speed-logging-section" className="scroll-mt-24 rounded-xl bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setOpenTool((t) => (t === "speed" ? null : "speed"))}
+                aria-expanded={openTool === "speed"}
+                className="flex w-full items-center gap-3 p-3 text-left"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                  <Gauge className="h-4 w-4 text-[#014421]" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-900">Speed Logging</span>
+                  <span className="block text-xs text-gray-500">Driver on-course &amp; max speed with carry estimate</span>
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${openTool === "speed" ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
+              </button>
+              {openTool === "speed" && (
+                <div className="border-t border-gray-200 px-3 pb-3 pt-3">
+                  <SpeedLogging hideHeader />
+                </div>
+              )}
+            </div>
+
+            <div id="on-course-arcade-section" className="scroll-mt-24 rounded-xl bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setOpenTool((t) => (t === "arcade" ? null : "arcade"))}
+                aria-expanded={openTool === "arcade"}
+                className="flex w-full items-center gap-3 p-3 text-left"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                  <Gamepad2 className="h-4 w-4 text-[#014421]" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
+                    On-Course Simulator
+                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                      Beta
+                    </span>
+                  </span>
+                  <span className="block text-xs text-gray-500">Stonecutters Ridge · layouts still being refined</span>
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${openTool === "arcade" ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
+              </button>
+              {openTool === "arcade" && (
+                <div className="border-t border-gray-200 px-2 pb-3 pt-3">
+                  <OnCourseSimulator compact />
+                  <Link
+                    href="/practice/on-course-simulator"
+                    className="mt-2 flex items-center justify-center gap-1 py-2 text-xs font-semibold text-[#014421] hover:underline"
+                  >
+                    Open full screen
+                    <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                  </Link>
+                </div>
+              )}
+            </div>
+
+            <div id="approach-shot-section" className="scroll-mt-24 rounded-xl bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setOpenTool((t) => (t === "approach" ? null : "approach"))}
+                aria-expanded={openTool === "approach"}
+                className="flex w-full items-center gap-3 p-3 text-left"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                  <Crosshair className="h-4 w-4 text-[#014421]" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-900">Approach Shot Simulator</span>
+                  <span className="block text-xs text-gray-500">
+                    Random greens &amp; hazards · radar or touch · scored handicap
+                  </span>
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${openTool === "approach" ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
+              </button>
+              {openTool === "approach" && (
+                <div className="border-t border-gray-200 px-2 pb-3 pt-3">
+                  <ApproachShotSimulator compact />
+                  <Link
+                    href="/practice/approach-shot-simulator"
+                    className="mt-2 flex items-center justify-center gap-1 py-2 text-xs font-semibold text-[#014421] hover:underline"
+                  >
+                    Open full screen
+                    <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                  </Link>
                 </div>
               )}
             </div>

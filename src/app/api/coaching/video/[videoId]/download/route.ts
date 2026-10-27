@@ -109,7 +109,10 @@ export async function GET(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "You can't download this video." }, { status: 403 });
     }
 
-    const safeName = `golf-video-${videoId.slice(0, 8)}.mp4`;
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const safeName = `${stamp}-golf-video.mp4`;
 
     const fromStorage = await tryStorageCopy(videoId);
     if (fromStorage) {

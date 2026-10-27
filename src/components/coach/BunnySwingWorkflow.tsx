@@ -439,15 +439,11 @@ export default function BunnySwingWorkflow({
         const data = await res.json().catch(() => ({}));
         throw new Error(formatApiError(data, "Raw download failed"));
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${(selected?.title || "swing").replace(/[^\w\-]+/g, "_")}-original.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      const { saveStampedVideoDownloadSync } = await import("@/lib/stampMp4Download");
+      saveStampedVideoDownloadSync(
+        await res.arrayBuffer(),
+        `${(selected?.title || "swing").replace(/[^\w\-]+/g, "_")}-original`,
+      );
       setToast({
         message: "Raw footage download started — save to Photos/Files on your phone.",
         type: "success",

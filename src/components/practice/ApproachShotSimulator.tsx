@@ -1,0 +1,807 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Crosshair, Play, Radar, RefreshCw, Target, Volume2, VolumeX } from "lucide-react";
+import {
+  SHOTS_PER_SET,
+  approachRoll,
+  cameraForApproach,
+  fairwayPolygon,
+  generateApproachScenario,
+  greenPolygon,
+  scoreApproachShot,
+  summarizeSession,
+  type ApproachMode,
+  type ApproachScenario,
+  type ApproachShotResult,
+} from "@/lib/approachShotSim";
+import {
+  aimVsPin,
+  formatAimOffline,
+  landFromCarryOffline,
+  randomInDispersion,
+  sub,
+} from "@/lib/onCourseSimulator/physics";
+import type { Vec2 } from "@/lib/onCourseSimulator/types";
+import { playBallHit, playCup, playSand, playSplash, playSwing } from "@/lib/onCourseSimulator/sounds";
+import { trackToolUse } from "@/lib/appUsage";
+import { useAuth } from "@/contexts/AuthContext";
+import { isCoachEmail } from "@/lib/coachEmails";
+import { TestingForSelect } from "@/components/combine/TestingForSelect";
+import type { PlayerOption } from "@/lib/coachingSpaces";
+
+type FlightAnim = { from: Vec2; to: Vec2; progress: number; done: boolean };
+type Phase = "setup" | "playing" | "complete";
+
+function worldToScreen(
+  p: Vec2,
+  cam: { cx: number; cy: number; scale: number },
+  w: number,
+  h: number,
+): Vec2 {
+  return {
+    x: w / 2 + (p.x - cam.cx) * cam.scale,
+    y: h / 2 - (p.y - cam.cy) * cam.scale,
+  };
+}
+
+function screenToWorld(
+  p: Vec2,
+  cam: { cx: number; cy: number; scale: number },
+  w: number,
+  h: number,
+): Vec2 {
+  return {
+    x: cam.cx + (p.x - w / 2) / cam.scale,
+    y: cam.cy - (p.y - h / 2) / cam.scale,
+  };
+}
+
+function pathPoly(
+  ctx: CanvasRenderingContext2D,
+  pts: Vec2[],
+  cam: { cx: number; cy: number; scale: number },
+  w: number,
+  h: number,
+) {
+  if (pts.length < 3) return;
+  const s0 = worldToScreen(pts[0]!, cam, w, h);
+  ctx.beginPath();
+  ctx.moveTo(s0.x, s0.y);
+  for (let i = 1; i < pts.length; i++) {
+    const s = worldToScreen(pts[i]!, cam, w, h);
+    ctx.lineTo(s.x, s.y);
+  }
+  ctx.closePath();
+}
+
+const BALL: Vec2 = { x: 0, y: 0 };
+const RESULT_KEY = "approach_shot_sim_last_v1";
+
+type SavedResult = {
+  at: string;
+  playerId: string | null;
+  playerName: string | null;
+  mode: ApproachMode;
+  stats: ReturnType<typeof summarizeSession>;
+};
+
+function saveLastResult(entry: SavedResult) {
+  try {
+    localStorage.setItem(RESULT_KEY, JSON.stringify(entry));
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadLastResult(): SavedResult | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RESULT_KEY) || "null");
+    return raw && typeof raw.at === "string" ? (raw as SavedResult) : null;
+  } catch {
+    return null;
+  }
+}
+
+export default function ApproachShotSimulator({ compact }: { compact?: boolean }) {
+  const { user } = useAuth();
+  const isCoach = isCoachEmail(user?.email) || user?.role === "coach";
+
+  const [phase, setPhase] = useState<Phase>("setup");
+  const [testingFor, setTestingFor] = useState<PlayerOption | null>(null);
+  const [scenario, setScenario] = useState<ApproachScenario | null>(null);
+  const [mode, setMode] = useState<ApproachMode>("launch_monitor");
+  const [unit, setUnit] = useState<"m" | "yd">("m");
+  const [carryIn, setCarryIn] = useState("");
+  const [offlineIn, setOfflineIn] = useState("0");
+  const [dispersionM, setDispersionM] = useState(8);
+  const [aim, setAim] = useState<Vec2 | null>(null);
+  const [soundOn, setSoundOn] = useState(true);
+  const [results, setResults] = useState<ApproachShotResult[]>([]);
+  const [flight, setFlight] = useState<FlightAnim | null>(null);
+  const [lastMsg, setLastMsg] = useState<string | null>(null);
+  const [lastSaved, setLastSaved] = useState<SavedResult | null>(null);
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const dragAim = useRef(false);
+  const camRef = useRef({ cx: 0, cy: 100, scale: 4 });
+
+  const toDisplay = (metres: number) =>
+    unit === "m" ? Math.round(metres * 10) / 10 : Math.round(metres * 1.09361 * 10) / 10;
+  const fromDisplay = (v: number) => (unit === "m" ? v : v / 1.09361);
+  const unitLabel = unit === "m" ? "m" : "yd";
+
+  const stats = useMemo(() => summarizeSession(results), [results]);
+  const shotNum = results.length + 1;
+  const playerLabel = testingFor?.name ?? (isCoach ? "Yourself" : null);
+
+  const aimInfo = useMemo(() => {
+    if (!aim || !scenario) return null;
+    return aimVsPin(BALL, scenario.pin, aim);
+  }, [aim, scenario]);
+
+  useEffect(() => {
+    setLastSaved(loadLastResult());
+  }, []);
+
+  useEffect(() => {
+    if (!scenario || phase !== "playing") return;
+    setCarryIn(String(toDisplay(scenario.distanceM)));
+    setOfflineIn("0");
+    setAim(null);
+    setFlight(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenario?.id]);
+
+  const sfx = useCallback(
+    (fn: () => void) => {
+      if (soundOn) fn();
+    },
+    [soundOn],
+  );
+
+  const startTest = () => {
+    trackToolUse("approach-shot-sim");
+    const next = generateApproachScenario();
+    setScenario(next);
+    setResults([]);
+    setLastMsg(null);
+    setFlight(null);
+    setAim(null);
+    setPhase("playing");
+  };
+
+  const backToSetup = () => {
+    setPhase("setup");
+    setScenario(null);
+    setResults([]);
+    setFlight(null);
+    setAim(null);
+    setLastMsg(null);
+    setLastSaved(loadLastResult());
+  };
+
+  const nextScenario = useCallback(() => {
+    setScenario(generateApproachScenario());
+  }, []);
+
+  const finishLanding = useCallback(
+    (land: Vec2, current: ApproachScenario) => {
+      const rest = approachRoll(current, land, BALL);
+      const scored = scoreApproachShot(current, rest);
+      const entry: ApproachShotResult = {
+        ...scored,
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      };
+
+      setFlight({ from: BALL, to: land, progress: 0, done: false });
+      sfx(playSwing);
+      sfx(playBallHit);
+      window.setTimeout(() => {
+        if (entry.lie === "water") sfx(playSplash);
+        else if (entry.lie === "bunker") sfx(playSand);
+        else if (entry.lie === "green" && (entry.proximityM ?? 99) < 3) sfx(playCup);
+      }, 400);
+
+      const prox =
+        entry.proximityM != null
+          ? `${toDisplay(entry.proximityM)}${unitLabel} from pin`
+          : entry.lie === "water"
+            ? "Water"
+            : entry.lie === "bunker"
+              ? "Bunker"
+              : "Missed green";
+      setLastMsg(`${prox} · ${entry.points}/100`);
+
+      setResults((prev) => {
+        const next = [...prev, entry];
+        if (next.length >= SHOTS_PER_SET) {
+          const summary = summarizeSession(next);
+          const saved: SavedResult = {
+            at: new Date().toISOString(),
+            playerId: testingFor?.id ?? null,
+            playerName: testingFor?.name ?? null,
+            mode,
+            stats: summary,
+          };
+          saveLastResult(saved);
+          setLastSaved(saved);
+          setPhase("complete");
+        } else {
+          window.setTimeout(() => nextScenario(), 700);
+        }
+        return next;
+      });
+    },
+    [sfx, toDisplay, unitLabel, nextScenario, testingFor, mode],
+  );
+
+  const fireRadar = () => {
+    if (!scenario || flight || phase !== "playing") return;
+    const carryDisp = Number(carryIn);
+    const offlineDisp = Number(offlineIn);
+    if (!Number.isFinite(carryDisp) || carryDisp <= 0) return;
+    const carryM = fromDisplay(carryDisp);
+    const offlineM = fromDisplay(Number.isFinite(offlineDisp) ? offlineDisp : 0);
+    const aimPt = aim ?? scenario.pin;
+    const land = landFromCarryOffline(BALL, sub(aimPt, BALL), carryM, offlineM);
+    finishLanding(land, scenario);
+  };
+
+  const fireTouch = () => {
+    if (!scenario || flight || phase !== "playing" || !aim) return;
+    const target = randomInDispersion(aim, BALL, dispersionM);
+    finishLanding(target, scenario);
+  };
+
+  useEffect(() => {
+    let raf = 0;
+    if (flight && !flight.done) {
+      const tick = () => {
+        setFlight((f) => {
+          if (!f || f.done) return f;
+          const next = f.progress + 0.045;
+          if (next >= 1) return { ...f, progress: 1, done: true };
+          return { ...f, progress: next };
+        });
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    }
+    return () => cancelAnimationFrame(raf);
+  }, [flight?.done, !!flight]);
+
+  useEffect(() => {
+    if (flight?.done) {
+      const t = window.setTimeout(() => setFlight(null), 180);
+      return () => clearTimeout(t);
+    }
+  }, [flight?.done]);
+
+  useEffect(() => {
+    if (phase !== "playing" || !scenario) return;
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    let raf = 0;
+
+    const draw = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = wrap.clientWidth;
+      const h = Math.max(compact ? 260 : 340, Math.min(480, w * 0.9));
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      camRef.current = cameraForApproach(scenario, w, h);
+      const cam = camRef.current;
+
+      const sky = ctx.createLinearGradient(0, 0, 0, h);
+      sky.addColorStop(0, "#8ebad4");
+      sky.addColorStop(0.4, "#c8dcb8");
+      sky.addColorStop(1, "#5a8f48");
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, w, h);
+
+      const b0 = worldToScreen({ x: scenario.bounds.minX, y: scenario.bounds.maxY }, cam, w, h);
+      const b1 = worldToScreen({ x: scenario.bounds.maxX, y: scenario.bounds.minY }, cam, w, h);
+      ctx.fillStyle = "#3d6e38";
+      ctx.fillRect(b0.x, b0.y, b1.x - b0.x, b1.y - b0.y);
+
+      pathPoly(ctx, fairwayPolygon(scenario), cam, w, h);
+      const fw = ctx.createLinearGradient(0, h, 0, 0);
+      fw.addColorStop(0, "#5aaa50");
+      fw.addColorStop(1, "#6ec860");
+      ctx.fillStyle = fw;
+      ctx.fill();
+
+      for (const hz of scenario.hazards) {
+        pathPoly(ctx, hz.polygon, cam, w, h);
+        if (hz.kind === "water") {
+          const g = ctx.createLinearGradient(0, 0, w, h);
+          g.addColorStop(0, "#5eb8e8");
+          g.addColorStop(1, "#1a6fa0");
+          ctx.fillStyle = g;
+        } else {
+          const g = ctx.createLinearGradient(0, 0, w, h);
+          g.addColorStop(0, "#ead7b0");
+          g.addColorStop(1, "#c9a878");
+          ctx.fillStyle = g;
+        }
+        ctx.fill();
+        ctx.strokeStyle = hz.kind === "water" ? "#1e6fa8" : "#b89a6e";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      pathPoly(ctx, greenPolygon(scenario), cam, w, h);
+      const gg = ctx.createRadialGradient(w / 2, h * 0.35, 10, w / 2, h * 0.35, h * 0.4);
+      gg.addColorStop(0, "#a8e8a0");
+      gg.addColorStop(1, "#5cb85a");
+      ctx.fillStyle = gg;
+      ctx.fill();
+      ctx.strokeStyle = "#4a9a48";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      const pinS = worldToScreen(scenario.pin, cam, w, h);
+      ctx.fillStyle = "rgba(0,0,0,0.2)";
+      ctx.beginPath();
+      ctx.ellipse(pinS.x + 1, pinS.y + 2, 4, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#f1f5f9";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(pinS.x, pinS.y);
+      ctx.lineTo(pinS.x, pinS.y - 18);
+      ctx.stroke();
+      ctx.fillStyle = "#e53935";
+      ctx.beginPath();
+      ctx.moveTo(pinS.x, pinS.y - 18);
+      ctx.lineTo(pinS.x + 12, pinS.y - 13);
+      ctx.lineTo(pinS.x, pinS.y - 8);
+      ctx.fill();
+      ctx.fillStyle = "#111";
+      ctx.beginPath();
+      ctx.arc(pinS.x, pinS.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      const entryScreen = { x: w / 2, y: h + 8 };
+      if (aim && mode === "touch") {
+        const a = worldToScreen(aim, cam, w, h);
+        ctx.strokeStyle = "rgba(255,170,40,0.85)";
+        ctx.setLineDash([6, 5]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(entryScreen.x, entryScreen.y);
+        ctx.lineTo(a.x, a.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(255,170,40,0.15)";
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, Math.max(14, dispersionM * cam.scale), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,170,40,0.7)";
+        ctx.stroke();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(a.x - 8, a.y);
+        ctx.lineTo(a.x + 8, a.y);
+        ctx.moveTo(a.x, a.y - 8);
+        ctx.lineTo(a.x, a.y + 8);
+        ctx.stroke();
+      }
+
+      if (mode === "launch_monitor") {
+        const target = aim ?? scenario.pin;
+        const t = worldToScreen(target, cam, w, h);
+        ctx.strokeStyle = "rgba(1,68,33,0.45)";
+        ctx.setLineDash([5, 6]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(entryScreen.x, entryScreen.y);
+        ctx.lineTo(t.x, t.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      if (flight) {
+        const e = worldToScreen(flight.to, cam, w, h);
+        const b = entryScreen;
+        const mx = (b.x + e.x) / 2;
+        const my = Math.min(b.y, e.y) - 36 * Math.sin(flight.progress * Math.PI);
+        ctx.strokeStyle = "rgba(255,255,255,0.9)";
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y);
+        for (let i = 1; i <= 20; i++) {
+          const t = (i / 20) * flight.progress;
+          ctx.lineTo(
+            (1 - t) * (1 - t) * b.x + 2 * (1 - t) * t * mx + t * t * e.x,
+            (1 - t) * (1 - t) * b.y + 2 * (1 - t) * t * my + t * t * e.y,
+          );
+        }
+        ctx.stroke();
+        const t = flight.progress;
+        const bx = (1 - t) * (1 - t) * b.x + 2 * (1 - t) * t * mx + t * t * e.x;
+        const by = (1 - t) * (1 - t) * b.y + 2 * (1 - t) * t * my + t * t * e.y;
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(bx, by, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [phase, scenario, aim, mode, dispersionM, flight, compact]);
+
+  const onPointer = (e: React.PointerEvent<HTMLCanvasElement>, down?: boolean) => {
+    if (phase !== "playing" || !scenario) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const sp = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const wp = screenToWorld(sp, camRef.current, rect.width, rect.height);
+    if (mode === "touch") {
+      if (down) dragAim.current = true;
+      if (dragAim.current || down) setAim(wp);
+    } else if (down) {
+      setAim(wp);
+    }
+  };
+
+  return (
+    <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-md">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 bg-gradient-to-r from-[#014421] to-[#0b6634] px-3 py-2.5 text-white">
+        <div className="min-w-0">
+          <p className="text-sm font-bold tracking-tight">Approach Shot Simulator</p>
+          <p className="text-[11px] text-white/75">
+            {phase === "setup"
+              ? "Set up the test, then start"
+              : phase === "complete"
+                ? "Set complete"
+                : `Shot ${Math.min(shotNum, SHOTS_PER_SET)} of ${SHOTS_PER_SET}${
+                    playerLabel ? ` · ${playerLabel}` : ""
+                  }`}
+          </p>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setSoundOn((s) => !s)}
+            className="rounded-full bg-white/10 p-1.5 hover:bg-white/20"
+            aria-label={soundOn ? "Mute" : "Unmute"}
+          >
+            {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+          </button>
+          {phase !== "setup" && (
+            <button
+              type="button"
+              onClick={backToSetup}
+              className="rounded-full bg-white/10 p-1.5 hover:bg-white/20"
+              aria-label="Back to setup"
+              title="Back to setup"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {phase === "playing" && lastMsg && (
+        <div className="bg-stone-50 px-3 py-2 text-center text-xs font-medium text-stone-700">{lastMsg}</div>
+      )}
+
+      <div className="space-y-3 p-3">
+        {phase === "setup" && (
+          <>
+            {isCoach && (
+              <TestingForSelect
+                value={testingFor}
+                onChange={setTestingFor}
+                promptTitle="Who is taking this test?"
+                promptHint="Yourself, or search a player in your lesson"
+                selectedTitle={(name) => `Testing ${name}`}
+                selectedHint="Their approach set score saves on this phone."
+              />
+            )}
+
+            <div>
+              <p className="mb-1.5 text-xs font-semibold text-stone-600">Input mode</p>
+              <div className="flex rounded-full bg-stone-100 p-0.5" role="radiogroup" aria-label="Input mode">
+                {(
+                  [
+                    { id: "launch_monitor" as const, label: "Radar", icon: Radar },
+                    { id: "touch" as const, label: "Touch aim", icon: Crosshair },
+                  ] as const
+                ).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === m.id}
+                    onClick={() => setMode(m.id)}
+                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-2 py-2.5 text-xs font-semibold transition ${
+                      mode === m.id ? "bg-[#014421] text-white shadow-sm" : "text-stone-600"
+                    }`}
+                  >
+                    <m.icon className="h-3.5 w-3.5" aria-hidden />
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-stone-600">Units</p>
+              <div className="flex rounded-full bg-stone-100 p-0.5">
+                {(["m", "yd"] as const).map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => setUnit(u)}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                      unit === u ? "bg-[#FFA500] text-[#3d2600]" : "text-stone-600"
+                    }`}
+                  >
+                    {u === "m" ? "Metres" : "Yards"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-stone-50 p-3 text-xs text-stone-600 ring-1 ring-stone-100">
+              <p className="font-semibold text-stone-800">{SHOTS_PER_SET} random approaches</p>
+              <p className="mt-1">
+                Each shot gets a new distance, green size, pin and hazards. Score is out of 100
+                (closer to the pin = higher). Finish the set for an average score
+                {isCoach && testingFor ? ` for ${testingFor.name}` : ""}.
+              </p>
+            </div>
+
+            {lastSaved && (
+              <div className="rounded-2xl border border-stone-100 bg-white px-3 py-2.5 text-xs text-stone-600">
+                <p className="font-semibold text-stone-800">Last set on this phone</p>
+                <p className="mt-0.5">
+                  {lastSaved.playerName ? lastSaved.playerName : "Yourself"} ·{" "}
+                  <span className="font-bold text-[#014421]">{lastSaved.stats.score}/100</span> · GIR{" "}
+                  {lastSaved.stats.girPct}%
+                  {lastSaved.stats.avgProximityM != null
+                    ? ` · avg ${toDisplay(lastSaved.stats.avgProximityM)}${unitLabel}`
+                    : ""}
+                </p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={startTest}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#014421] py-3.5 text-sm font-bold text-white"
+            >
+              <Play className="h-4 w-4 fill-current" aria-hidden />
+              Start test
+              {isCoach && testingFor ? ` · ${testingFor.name}` : ""}
+            </button>
+          </>
+        )}
+
+        {phase === "playing" && scenario && (
+          <>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-2xl bg-stone-50 p-2.5">
+                <p className="text-[10px] font-medium text-stone-500">Distance</p>
+                <p className="text-base font-bold tabular-nums text-stone-900">
+                  {toDisplay(scenario.distanceM)}
+                  {unitLabel}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-stone-50 p-2.5">
+                <p className="text-[10px] font-medium text-stone-500">Green</p>
+                <p className="text-base font-bold tabular-nums text-stone-900">
+                  {Math.round(scenario.greenRx * 2)}×{Math.round(scenario.greenRy * 2)}
+                  {unitLabel}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-stone-50 p-2.5">
+                <p className="text-[10px] font-medium text-stone-500">Hazards</p>
+                <p className="text-base font-bold text-stone-900">
+                  {scenario.hazards.filter((h) => h.kind === "bunker").length}B
+                  {scenario.hazards.some((h) => h.kind === "water") ? " · H2O" : ""}
+                </p>
+              </div>
+            </div>
+
+            <div ref={wrapRef} className="relative overflow-hidden rounded-2xl ring-1 ring-stone-200/80">
+              <canvas
+                ref={canvasRef}
+                className="block w-full touch-none"
+                onPointerDown={(e) => {
+                  (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+                  onPointer(e, true);
+                }}
+                onPointerMove={(e) => onPointer(e)}
+                onPointerUp={() => {
+                  dragAim.current = false;
+                }}
+                onPointerCancel={() => {
+                  dragAim.current = false;
+                }}
+              />
+              <div className="pointer-events-none absolute left-2 top-2 max-w-[85%] rounded-2xl bg-white/95 px-2.5 py-1.5 text-[11px] font-semibold text-stone-800 shadow-sm">
+                {aimInfo ? (
+                  <span>
+                    Aim: {formatAimOffline(aimInfo.offlineM, toDisplay, unitLabel)}
+                    {Math.abs(aimInfo.longM) >= 0.15 && (
+                      <span className="font-medium text-stone-500">
+                        {" "}
+                        · {toDisplay(Math.abs(aimInfo.longM))}
+                        {unitLabel} {aimInfo.longM > 0 ? "long" : "short"}
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <span>Aim for the pin · drag to see offline</span>
+                )}
+              </div>
+            </div>
+
+            {mode === "launch_monitor" ? (
+              <div className="space-y-2 rounded-2xl bg-stone-50 p-3 ring-1 ring-stone-100">
+                <p className="text-xs text-stone-500">Enter carry &amp; offline from your launch monitor</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block text-xs font-semibold text-stone-700">
+                    Carry ({unitLabel})
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={carryIn}
+                      onChange={(e) => setCarryIn(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-lg font-bold tabular-nums outline-none focus:border-[#014421]"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-stone-700">
+                    Offline L− / R+ ({unitLabel})
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={offlineIn}
+                      onChange={(e) => setOfflineIn(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-lg font-bold tabular-nums outline-none focus:border-[#FFA500]"
+                    />
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  onClick={fireRadar}
+                  disabled={!!flight}
+                  className="w-full rounded-2xl bg-[#014421] py-3.5 text-sm font-bold text-white disabled:opacity-40"
+                >
+                  Hit approach
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2 rounded-2xl bg-stone-50 p-3 ring-1 ring-stone-100">
+                <p className="text-xs text-stone-500">Tap or drag aim on the map, then swing</p>
+                <label className="block text-xs font-semibold text-stone-700">
+                  Dispersion ±{toDisplay(dispersionM)}
+                  {unitLabel}
+                  <input
+                    type="range"
+                    min={3}
+                    max={22}
+                    step={1}
+                    value={dispersionM}
+                    onChange={(e) => setDispersionM(Number(e.target.value))}
+                    className="mt-2 w-full accent-[#014421]"
+                  />
+                </label>
+                {aimInfo && (
+                  <p className="text-center text-xs font-semibold text-stone-700">
+                    {formatAimOffline(aimInfo.offlineM, toDisplay, unitLabel)}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={fireTouch}
+                  disabled={!aim || !!flight}
+                  className="w-full rounded-2xl bg-[#FFA500] py-3.5 text-sm font-bold text-[#3d2600] disabled:opacity-40"
+                >
+                  {aim ? "Swing" : "Set aim first"}
+                </button>
+              </div>
+            )}
+
+            {results.length > 0 && (
+              <>
+                <div className="flex items-center justify-between gap-2 rounded-xl bg-stone-50 px-3 py-2 text-xs">
+                  <span className="text-stone-500">
+                    Running · GIR {stats.gir}/{stats.shots} ·{" "}
+                    {stats.avgProximityM != null
+                      ? `avg ${toDisplay(stats.avgProximityM)}${unitLabel}`
+                      : "no GIR yet"}
+                  </span>
+                  <span className="font-bold tabular-nums text-[#014421]">{stats.score}/100</span>
+                </div>
+                <ul className="max-h-32 space-y-1 overflow-y-auto text-xs text-stone-500">
+                  {[...results].reverse().map((r, idx) => (
+                    <li key={r.id} className="flex justify-between gap-2 border-b border-stone-100 py-1.5">
+                      <span>
+                        #{results.length - idx} · {toDisplay(r.distanceM)}
+                        {unitLabel} ·{" "}
+                        {r.proximityM != null
+                          ? `${toDisplay(r.proximityM)}${unitLabel} to pin`
+                          : r.lie}
+                      </span>
+                      <span className="font-bold tabular-nums text-[#014421]">{r.points}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </>
+        )}
+
+        {phase === "complete" && (
+          <div className="space-y-3 rounded-2xl bg-[#014421]/5 p-4 ring-1 ring-[#014421]/15">
+            <div className="flex items-center gap-2 text-[#014421]">
+              <Target className="h-5 w-5" aria-hidden />
+              <h3 className="text-sm font-bold">
+                Set scorecard{playerLabel ? ` · ${playerLabel}` : ""}
+              </h3>
+            </div>
+            <div className="rounded-2xl bg-[#014421] p-4 text-center text-white shadow-sm">
+              <p className="text-[11px] font-medium text-white/75">Score</p>
+              <p className="text-4xl font-extrabold tabular-nums tracking-tight">
+                {stats.score}
+                <span className="text-lg font-bold text-white/70">/100</span>
+              </p>
+              <p className="mt-1 text-xs font-semibold text-[#FFA500]">{stats.band}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl bg-white p-2.5 text-center shadow-sm">
+                <p className="text-[10px] text-stone-500">GIR</p>
+                <p className="text-lg font-bold tabular-nums text-stone-900">{stats.girPct}%</p>
+              </div>
+              <div className="rounded-xl bg-white p-2.5 text-center shadow-sm">
+                <p className="text-[10px] text-stone-500">Avg prox.</p>
+                <p className="text-lg font-bold tabular-nums text-stone-900">
+                  {stats.avgProximityM != null ? `${toDisplay(stats.avgProximityM)}${unitLabel}` : "—"}
+                </p>
+              </div>
+            </div>
+            <p className="text-center text-[11px] text-stone-400">
+              Average of each shot&apos;s points. Closer to the pin scores higher; misses and water
+              score low.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={backToSetup}
+                className="flex-1 rounded-2xl bg-stone-100 py-3 text-sm font-bold text-stone-800"
+              >
+                Setup
+              </button>
+              <button
+                type="button"
+                onClick={startTest}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-[#014421] py-3 text-sm font-bold text-white"
+              >
+                <Play className="h-4 w-4 fill-current" aria-hidden />
+                Play another 9
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

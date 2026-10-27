@@ -541,7 +541,8 @@ export async function authJsonHeaders(): Promise<Record<string, string>> {
 }
 
 /** Download a coaching Bunny video the signed-in user can see (game plan or swing). */
-export async function downloadCoachingVideo(videoId: string, filename: string): Promise<void> {
+export async function downloadCoachingVideo(videoId: string, label = "golf-video"): Promise<void> {
+  const { saveStampedVideoDownloadSync } = await import("@/lib/stampMp4Download");
   const res = await fetch(`/api/coaching/video/${encodeURIComponent(videoId)}/download`, {
     cache: "no-store",
     headers: await authJsonHeaders(),
@@ -550,14 +551,8 @@ export async function downloadCoachingVideo(videoId: string, filename: string): 
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(data.error || "Download failed");
   }
-  const url = URL.createObjectURL(await res.blob());
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename.endsWith(".mp4") ? filename : `${filename}.mp4`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  const base = label.replace(/\.mp4$/i, "").replace(/^\d{4}-\d{2}-\d{2}[_T-]?\d{0,6}-?/, "") || "golf-video";
+  saveStampedVideoDownloadSync(await res.arrayBuffer(), base);
 }
 
 export function isLikelyVideoFile(file: File): boolean {

@@ -60,13 +60,14 @@ function minutesCoach(filtered: PracticeVsGoalsRow[], category: string, altTypes
 
 /**
  * Practice minutes by facility bucket for rolling week / month / all-time (same windows as Stats).
+ * Pass a frozen `now` so totals don't drift while a page sits open.
  */
 export function buildPracticeAllocationByRange(
   rows: PracticeVsGoalsRow[],
   typeMatch: "strict" | "coach" = "strict",
+  now: Date = new Date(),
 ): PracticeAllocationByRange {
   const build = (mode: "WEEK" | "MONTH" | "ALL"): PracticeAllocationBuckets => {
-    const now = new Date();
     let startDate = new Date(0);
     if (mode === "WEEK") {
       startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
@@ -75,8 +76,10 @@ export function buildPracticeAllocationByRange(
     }
 
     const filtered = rows.filter((p) => {
-      const pDate = new Date(p.created_at || p.practice_date || new Date());
-      return pDate >= startDate;
+      const raw = p.created_at || p.practice_date;
+      if (!raw) return false;
+      const pDate = new Date(raw);
+      return Number.isFinite(pDate.getTime()) && pDate >= startDate;
     });
 
     const m = (category: string, alts?: string[]) =>
@@ -94,9 +97,8 @@ export function buildPracticeAllocationByRange(
     };
   };
 
-  const nowForMonth = new Date();
-  const monthStart = new Date(nowForMonth.getFullYear(), nowForMonth.getMonth() - 1, nowForMonth.getDate());
-  const monthDays = Math.max(1, (nowForMonth.getTime() - monthStart.getTime()) / 86_400_000);
+  const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+  const monthDays = Math.max(1, (now.getTime() - monthStart.getTime()) / 86_400_000);
   const monthCommitmentWeeks = monthDays / 7;
 
   return {

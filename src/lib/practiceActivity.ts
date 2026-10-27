@@ -192,8 +192,13 @@ export function rangeStartMs(range: PracticeRange, now = new Date()): number {
   return startOfToday - (range === "week" ? 6 : 29) * DAY_MS;
 }
 
-export function itemsInRange(items: readonly PracticeActivityItem[], range: PracticeRange): PracticeActivityItem[] {
-  const start = rangeStartMs(range);
+/** Filter activity to the range. Pass a frozen `now` so totals don't drift while the page sits open. */
+export function itemsInRange(
+  items: readonly PracticeActivityItem[],
+  range: PracticeRange,
+  now: Date = new Date(),
+): PracticeActivityItem[] {
+  const start = rangeStartMs(range, now);
   return items.filter((i) => new Date(i.at).getTime() >= start);
 }
 

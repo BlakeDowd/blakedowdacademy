@@ -564,17 +564,53 @@ export function StatsProvider({ children }: { children: ReactNode }) {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+      const myId = session?.user?.id ?? null;
+
+      // Always load the signed-in player's full history. The academy RPC only keeps the newest
+      // ~100k rows academy-wide, which drops older personal sessions and makes profile hours jump.
+      const loadMine = async (): Promise<PracticeSessionData[]> => {
+        if (!myId) return [];
+        const { data, error } = await supabase
+          .from("practice")
+          .select("*")
+          .eq("user_id", myId)
+          .order("created_at", { ascending: false });
+        if (error) {
+          console.warn("StatsContext: Couldn't load own practice rows:", error.message);
+          return [];
+        }
+        return mapPracticeRowsForLeaderboard(data);
+      };
+
+      const mergeById = (primary: PracticeSessionData[], mine: PracticeSessionData[]) => {
+        const byId = new Map<string, PracticeSessionData>();
+        for (const row of primary) {
+          const id = String((row as { id?: string }).id ?? "");
+          if (id) byId.set(id, row);
+        }
+        for (const row of mine) {
+          const id = String((row as { id?: string }).id ?? "");
+          if (id) byId.set(id, row);
+        }
+        return [...byId.values()].sort((a, b) => {
+          const at = String(a.created_at ?? "");
+          const bt = String(b.created_at ?? "");
+          return bt.localeCompare(at);
+        });
+      };
 
       // SECURITY DEFINER RPC — same pattern as academy_combine_leaderboard_logs (see migrations).
-      if (session?.user?.id) {
-        const rpcRes = await supabase.rpc("academy_combine_leaderboard_practice", {
-          p_limit: 100000,
-        });
+      if (myId) {
+        const [rpcRes, mine] = await Promise.all([
+          supabase.rpc("academy_combine_leaderboard_practice", { p_limit: 100000 }),
+          loadMine(),
+        ]);
         if (!rpcRes.error && rpcRes.data != null) {
-          const mappedData = mapPracticeRowsForLeaderboard(rpcRes.data);
+          const mappedData = mergeById(mapPracticeRowsForLeaderboard(rpcRes.data), mine);
           console.log(
-            "StatsContext: Loaded practice sessions via academy_combine_leaderboard_practice RPC:",
+            "StatsContext: Loaded practice sessions via RPC + own history:",
             mappedData?.length ?? 0,
+            `(own ${mine.length})`,
           );
           setPracticeSessions(mappedData);
           practiceSessionsFetched.current = true;
@@ -585,6 +621,11 @@ export function StatsProvider({ children }: { children: ReactNode }) {
             "StatsContext: academy_combine_leaderboard_practice RPC unavailable — falling back to practice table:",
             rpcRes.error.message ?? JSON.stringify(rpcRes.error),
           );
+        }
+        if (mine.length) {
+          setPracticeSessions(mine);
+          practiceSessionsFetched.current = true;
+          return;
         }
       }
 
@@ -621,7 +662,9 @@ export function StatsProvider({ children }: { children: ReactNode }) {
         );
       }
 
-      setPracticeSessions(mapPracticeRowsForLeaderboard(data));
+      const mapped = mapPracticeRowsForLeaderboard(data);
+      const mine = myId ? await loadMine() : [];
+      setPracticeSessions(mine.length ? mergeById(mapped, mine) : mapped);
       practiceSessionsFetched.current = true;
     } catch (error) {
       console.error("StatsContext: Error loading practice sessions:", error);

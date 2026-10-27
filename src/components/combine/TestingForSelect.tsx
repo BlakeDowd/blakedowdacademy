@@ -31,13 +31,21 @@ function writeTestingFor(player: PlayerOption | null) {
   }
 }
 
-/** Coach-only: choose whether a combine is for yourself or a player in a lesson. */
+/** Coach-only: choose yourself or a player in a lesson (combines, speed logging, etc.). */
 export function TestingForSelect({
   value,
   onChange,
+  promptTitle = "Who are you testing?",
+  promptHint = "Yourself, or search a player in your lesson",
+  selectedTitle = (name: string) => `Testing ${name}`,
+  selectedHint = "Pick a combine. Their score saves to their profile.",
 }: {
   value: PlayerOption | null;
   onChange: (player: PlayerOption | null) => void;
+  promptTitle?: string;
+  promptHint?: string;
+  selectedTitle?: (name: string) => string;
+  selectedHint?: string;
 }) {
   const [players, setPlayers] = useState<PlayerOption[] | null>(null);
   const [query, setQuery] = useState("");
@@ -74,8 +82,8 @@ export function TestingForSelect({
       <div className="flex items-center gap-2.5 rounded-2xl bg-[#FFA500] px-3 py-2.5 text-[#3d2600]">
         <ClipboardCheck className="h-5 w-5 shrink-0" aria-hidden />
         <div className="min-w-0 flex-1 leading-tight">
-          <p className="truncate text-sm font-extrabold">Testing {value.name}</p>
-          <p className="text-[11px] font-semibold opacity-80">Pick a combine. Their score saves to their profile.</p>
+          <p className="truncate text-sm font-extrabold">{selectedTitle(value.name)}</p>
+          <p className="text-[11px] font-semibold opacity-80">{selectedHint}</p>
         </div>
         <button
           type="button"
@@ -96,8 +104,8 @@ export function TestingForSelect({
           <User className="h-4 w-4" aria-hidden />
         </span>
         <div className="min-w-0 leading-tight">
-          <p className="text-sm font-bold text-gray-900">Who are you testing?</p>
-          <p className="text-[11px] text-gray-500">Yourself, or search a player in your lesson</p>
+          <p className="text-sm font-bold text-gray-900">{promptTitle}</p>
+          <p className="text-[11px] text-gray-500">{promptHint}</p>
         </div>
       </div>
       <label className="flex items-center gap-2 rounded-xl bg-gray-100 px-3 py-2">

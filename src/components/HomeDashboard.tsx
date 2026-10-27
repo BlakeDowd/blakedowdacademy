@@ -32,6 +32,7 @@ import {
   MessageSquare,
   Ruler,
   Timer,
+  Gauge,
   Camera,
   Loader2,
   ChevronRight,
@@ -764,6 +765,7 @@ export default function HomeDashboard() {
               { label: 'Putt Calculator', icon: Ruler, onClick: () => router.push('/putting-calculator') },
               { label: 'Swing Tempo', icon: Timer, onClick: () => router.push('/full-swing-tempo') },
               { label: 'Chip Tempo', icon: Flag, onClick: () => router.push('/short-game-tempo') },
+              { label: 'Speed Logging', icon: Gauge, onClick: () => router.push('/speed-logging') },
             ].map(({ label, icon: Icon, onClick }) => (
               <button
                 key={label}

@@ -43,6 +43,7 @@ import {
 } from "@/lib/practiceActivity";
 import { buildGoalPracticePlan } from "@/lib/practiceVsGoalsModel";
 import type { PlayerGoalRow } from "@/types/playerGoals";
+import { SpeedTrendChart } from "@/components/profile/SpeedTrendChart";
 
 const CARD = "rounded-3xl border border-stone-200 bg-white p-5 shadow-md sm:p-6";
 
@@ -186,6 +187,8 @@ export function ProfilePracticeOverview({ playerGoalRow }: { playerGoalRow: Play
   const userId = user?.id ?? null;
 
   const [range, setRange] = useState<PracticeRange>("week");
+  /** Frozen when practice data loads so 7/30-day totals don't drift while the page sits open. */
+  const [rangeNow, setRangeNow] = useState(() => new Date());
   const [feedFilter, setFeedFilter] = useState<PracticeActivityKind | "all">("all");
   const [feedLimit, setFeedLimit] = useState(FEED_PAGE);
   const [showAllDrills, setShowAllDrills] = useState(false);
@@ -195,6 +198,10 @@ export function ProfilePracticeOverview({ playerGoalRow }: { playerGoalRow: Play
   const [lessons, setLessons] = useState<LibraryCompletionRow[]>([]);
   const [catalog, setCatalog] = useState<Map<string, DrillCatalogEntry>>(new Map());
   const [records, setRecords] = useState<DrillRecord[]>([]);
+
+  useEffect(() => {
+    setRangeNow(new Date());
+  }, [practiceSessions]);
 
   useEffect(() => {
     if (!userId) return;
@@ -239,10 +246,10 @@ export function ProfilePracticeOverview({ playerGoalRow }: { playerGoalRow: Play
         : [],
     [userId, practiceSessions, practiceLogs, lessons, catalog],
   );
-  const rangeItems = useMemo(() => itemsInRange(allItems, range), [allItems, range]);
+  const rangeItems = useMemo(() => itemsInRange(allItems, range, rangeNow), [allItems, range, rangeNow]);
   const summary = useMemo(() => summarizePractice(rangeItems), [rangeItems]);
   const areaMinutes = useMemo(() => minutesByArea(rangeItems), [rangeItems]);
-  const streak = useMemo(() => practiceStreakDays(allItems), [allItems]);
+  const streak = useMemo(() => practiceStreakDays(allItems, rangeNow), [allItems, rangeNow]);
   const goalPlan = useMemo(() => buildGoalPracticePlan(playerGoalRow), [playerGoalRow]);
   const goalWeeks = range === "week" ? 1 : range === "month" ? 30 / 7 : 0;
   const goalMinutes = goalPlan && goalWeeks ? goalPlan.weeklyHours * 60 * goalWeeks : 0;
@@ -782,6 +789,21 @@ export function ProfilePracticeOverview({ playerGoalRow }: { playerGoalRow: Play
                 )}
               </div>
             )}
+          </section>
+
+          <section className={CARD} aria-labelledby="driver-speed-heading">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 id="driver-speed-heading" className="text-base font-semibold text-stone-900">
+                Driver speed
+              </h3>
+              <Link href="/practice" className="text-xs font-semibold text-[#014421] hover:underline">
+                Log speeds
+              </Link>
+            </div>
+            <p className="mb-3 text-xs text-stone-500">
+              On-course and max club speed over time — see if you&apos;re gaining or losing mph.
+            </p>
+            <SpeedTrendChart userId={userId} />
           </section>
 
           {drillRows.length > 0 && (

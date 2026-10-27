@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   buildGoalPracticePlan,
   buildPracticeAllocationByRange,
@@ -40,7 +40,14 @@ export function PracticeVsGoalsSection({
   /** `coach` uses the same type aliases as the legacy coach allocation block. */
   typeMatch?: "strict" | "coach";
 }) {
-  const byRange = useMemo(() => buildPracticeAllocationByRange(practiceRows, typeMatch), [practiceRows, typeMatch]);
+  const [rangeNow, setRangeNow] = useState(() => new Date());
+  useEffect(() => {
+    setRangeNow(new Date());
+  }, [practiceRows]);
+  const byRange = useMemo(
+    () => buildPracticeAllocationByRange(practiceRows, typeMatch, rangeNow),
+    [practiceRows, typeMatch, rangeNow],
+  );
   const plan = useMemo(() => buildGoalPracticePlan(playerGoalRow), [playerGoalRow]);
 
   const { week, month, all, monthCommitmentWeeks } = byRange;

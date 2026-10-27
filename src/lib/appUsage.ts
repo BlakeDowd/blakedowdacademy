@@ -92,6 +92,9 @@ export const TOOL_LABELS = {
   "full-swing-tempo": "Full swing tempo",
   "short-game-tempo": "Short game tempo",
   "putting-calculator": "Putting stroke calculator",
+  "speed-logging": "Speed logging",
+  "on-course-sim": "On-course simulator",
+  "approach-shot-sim": "Approach shot simulator",
 } as const;
 
 export type ToolKey = keyof typeof TOOL_LABELS;
@@ -142,6 +145,12 @@ const SCREEN_LABELS: Record<string, string> = {
   "short-game-tempo": "Short game tempo",
   "full-swing-tempo": "Full swing tempo",
   "putting-calculator": "Putting calculator",
+  "speed-logging": "Speed logging",
+  "practice-speed": "Speed Logging",
+  "practice-arcade": "On-course simulator",
+  "practice-approach": "Approach shot simulator",
+  "on-course-sim": "On-course simulator",
+  "approach-shot-sim": "Approach shot simulator",
   "handicap-history": "Handicap history",
   "skill-history": "Skill history",
   "dashboard-coach": "Coach dashboard",

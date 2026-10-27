@@ -80,10 +80,7 @@ export function PostVideo({
     setDownloading(true);
     try {
       if (video.bunny_video_id) {
-        await downloadCoachingVideo(
-          video.bunny_video_id,
-          downloadName || `golf-video-${video.bunny_video_id.slice(0, 8)}.mp4`,
-        );
+        await downloadCoachingVideo(video.bunny_video_id, downloadName || "golf-video");
         return;
       }
       if (!video.storage_bucket || !video.storage_path) throw new Error("This video can't be downloaded.");
@@ -93,14 +90,8 @@ export function PostVideo({
       if (error || !data?.signedUrl) throw new Error(error?.message || "Download failed");
       const res = await fetch(data.signedUrl);
       if (!res.ok) throw new Error("Download failed");
-      const url = URL.createObjectURL(await res.blob());
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = downloadName || "golf-video.mp4";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      const { saveStampedVideoDownloadSync } = await import("@/lib/stampMp4Download");
+      saveStampedVideoDownloadSync(await res.arrayBuffer(), downloadName || "golf-video");
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Download failed");
     } finally {
@@ -316,9 +307,7 @@ export function PostVideos({
   const [index, setIndex] = useState(0);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const nameFor = (i: number) =>
-    downloadBaseName
-      ? `${downloadBaseName}${videos.length > 1 ? `-${i + 1}` : ""}.mp4`
-      : undefined;
+    downloadBaseName ? `${downloadBaseName}${videos.length > 1 ? `-${i + 1}` : ""}` : undefined;
 
   if (!videos.length) return null;
   if (videos.length === 1) {
@@ -532,12 +521,12 @@ function PostMenu({
     .filter((id): id is string => Boolean(id));
   // Coach downloading a student's own swing: prefer the raw original via the swings API.
   const useOriginalApi = !isCoachPost(post);
-  const fileBase = `${(post.is_game_plan ? post.title || "game-plan" : authorName).replace(/[^\w-]+/g, "_")}-${post.created_at.slice(0, 10)}`;
+  const fileLabel = (post.is_game_plan ? post.title || "game-plan" : authorName).replace(/[^\w-]+/g, "_");
 
   const download = async (videoId: string, n: number) => {
     setBusy("download");
     try {
-      const filename = `${fileBase}${downloadable.length > 1 ? `-${n}` : ""}.mp4`;
+      const label = `${fileLabel}${downloadable.length > 1 ? `-${n}` : ""}`;
       if (useOriginalApi) {
         const res = await fetch(`/api/bunny/swings/${encodeURIComponent(videoId)}`, {
           cache: "no-store",
@@ -546,22 +535,16 @@ function PostMenu({
         if (!res.ok) {
           // Coach-only original API can fail for students — fall through to the shared path.
           if (res.status === 403) {
-            await downloadCoachingVideo(videoId, filename);
+            await downloadCoachingVideo(videoId, label);
             return;
           }
           const data = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(data.error || "Download failed");
         }
-        const url = URL.createObjectURL(await res.blob());
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+        const { saveStampedVideoDownloadSync } = await import("@/lib/stampMp4Download");
+        saveStampedVideoDownloadSync(await res.arrayBuffer(), label);
       } else {
-        await downloadCoachingVideo(videoId, filename);
+        await downloadCoachingVideo(videoId, label);
       }
     } catch (err) {
       onToast({ message: err instanceof Error ? err.message : "Download failed", type: "error" });
@@ -646,7 +629,7 @@ function StudentDownloadMenu({
   const downloadable = postVideos(post)
     .map((v) => v.bunny_video_id)
     .filter((id): id is string => Boolean(id));
-  const fileBase = `${(post.is_game_plan ? post.title || "game-plan" : authorName).replace(/[^\w-]+/g, "_")}-${post.created_at.slice(0, 10)}`;
+  const fileLabel = (post.is_game_plan ? post.title || "game-plan" : authorName).replace(/[^\w-]+/g, "_");
 
   useEffect(() => {
     if (!open) return;
@@ -662,10 +645,7 @@ function StudentDownloadMenu({
   const download = async (videoId: string, n: number) => {
     setBusy(true);
     try {
-      await downloadCoachingVideo(
-        videoId,
-        `${fileBase}${downloadable.length > 1 ? `-${n}` : ""}.mp4`,
-      );
+      await downloadCoachingVideo(videoId, `${fileLabel}${downloadable.length > 1 ? `-${n}` : ""}`);
     } catch (err) {
       onToast({ message: err instanceof Error ? err.message : "Download failed", type: "error" });
     } finally {
@@ -788,7 +768,7 @@ export function GamePlanRow({ plan }: { plan: CoachingPost }) {
   const [open, setOpen] = useState(false);
   const videos = postVideos(plan);
   const Icon = videos.length ? Play : ClipboardList;
-  const downloadBase = `${(plan.title || "game-plan").replace(/[^\w-]+/g, "_")}-${plan.created_at.slice(0, 10)}`;
+  const downloadBase = (plan.title || "game-plan").replace(/[^\w-]+/g, "_");
   return (
     <div className="overflow-hidden rounded-2xl bg-white ring-1 ring-stone-200">
       <button
@@ -928,7 +908,7 @@ export function CoachingPostCard({
                 videos={videos}
                 createdAt={post.created_at}
                 studentId={post.student_id}
-                downloadBaseName={`${(fromCoach ? "coach" : authorName).replace(/[^\w-]+/g, "_")}-${post.created_at.slice(0, 10)}`}
+                downloadBaseName={(fromCoach ? "coach" : authorName).replace(/[^\w-]+/g, "_")}
               />
             </div>
           )}
