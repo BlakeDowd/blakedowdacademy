@@ -6,17 +6,26 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  CircleDot,
   Loader2,
   Minus,
   Pause,
   PenLine,
   Play,
+  Square,
   Trash2,
   Undo2,
   X,
+  FlipHorizontal2,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import {
+  downloadRecordingBlob,
+  recorderSupported,
+  startAnalyzerRecording,
+  type AnalyzerRecorder,
+} from "@/lib/swingAnalyzerRecord";
 
 export type ShapeKind = "line" | "angle" | "circle" | "pen";
 export type Pt = [number, number];
@@ -246,18 +255,24 @@ export function SwingAnalyzer({
   source,
   error,
   initialShapes,
+  lockedShapes,
   canSave,
   onSave,
   onClose,
   title = "Swing analysis",
+  saveSuccessMessage = "Saved.",
 }: {
   source: AnalyzerSource | null;
   error?: string | null;
+  /** Shapes the user can edit and save. */
   initialShapes?: Shape[];
+  /** Read-only drawings (e.g. coach layer when a player is analysing). */
+  lockedShapes?: Shape[];
   canSave?: boolean;
   onSave?: (shapes: Shape[]) => Promise<string | null>;
   onClose: () => void;
   title?: string;
+  saveSuccessMessage?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [ratio, setRatio] = useState(9 / 16);
@@ -276,11 +291,22 @@ export function SwingAnalyzer({
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [view, setView] = useState<View>(NO_ZOOM);
+  const [recording, setRecording] = useState(false);
+  const [recSecs, setRecSecs] = useState(0);
+  const [recBusy, setRecBusy] = useState(false);
+  const [canRecord] = useState(() => recorderSupported());
   const rootRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const pointers = useRef(new Map<number, [number, number]>());
   const gesture = useRef<Gesture | null>(null);
   const panned = useRef(false);
+  const recorderRef = useRef<AnalyzerRecorder | null>(null);
+  const shapesRef = useRef(shapes);
+  const lockedRef = useRef(lockedShapes);
+  const draftRef = useRef(draft);
+  shapesRef.current = shapes;
+  lockedRef.current = lockedShapes;
+  draftRef.current = draft;
   const vbH = VB_W / ratio;
   const u = VB_W / Math.max(1, stageW * view.z);
 
@@ -342,9 +368,91 @@ export function SwingAnalyzer({
     return () => cancelAnimationFrame(raf);
   }, [playing]);
 
+  useEffect(() => {
+    if (!recording) return;
+    const id = window.setInterval(() => setRecSecs((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [recording]);
+
+  useEffect(() => {
+    if (!recording || !recorderRef.current) return;
+    let raf = 0;
+    const tick = () => {
+      const v = videoRef.current;
+      const rec = recorderRef.current;
+      if (v && rec) {
+        const live = [
+          ...(lockedRef.current ?? []),
+          ...shapesRef.current,
+          ...(draftRef.current ? [draftRef.current] : []),
+        ];
+        rec.paintFrame(v, live);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [recording]);
+
+  useEffect(() => {
+    return () => {
+      const rec = recorderRef.current;
+      if (rec) {
+        recorderRef.current = null;
+        void rec.stop();
+      }
+    };
+  }, []);
+
+  const stopRecording = async () => {
+    const rec = recorderRef.current;
+    if (!rec) return;
+    setRecBusy(true);
+    recorderRef.current = null;
+    setRecording(false);
+    try {
+      const blob = await rec.stop();
+      downloadRecordingBlob(blob, rec.mimeType);
+      setSaveMsg("Recording downloaded to this device — no upload, no extra cost.");
+    } catch (e) {
+      setSaveMsg(e instanceof Error ? e.message : "Couldn't finish the recording.");
+    } finally {
+      setRecBusy(false);
+      setRecSecs(0);
+    }
+  };
+
+  const startRecording = async () => {
+    if (recBusy || recording) return;
+    setRecBusy(true);
+    setSaveMsg(null);
+    try {
+      const rec = await startAnalyzerRecording();
+      recorderRef.current = rec;
+      setRecSecs(0);
+      setRecording(true);
+      setSaveMsg("Recording video + mic. Draw and talk — Stop downloads the file.");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Couldn't start recording.";
+      if (/Permission|NotAllowed|denied/i.test(msg)) {
+        setSaveMsg("Microphone permission is needed for voiceover.");
+      } else {
+        setSaveMsg(msg);
+      }
+    } finally {
+      setRecBusy(false);
+    }
+  };
+
   const close = () => {
-    if (canSave && dirty && !window.confirm("Close without saving your drawings?")) return;
-    onClose();
+    void (async () => {
+      if (recording) {
+        if (!window.confirm("Stop recording and download, then close?")) return;
+        await stopRecording();
+      }
+      if (canSave && dirty && !window.confirm("Close without saving your drawings?")) return;
+      onClose();
+    })();
   };
 
   const onCloseRef = useRef(close);
@@ -556,6 +664,11 @@ export function SwingAnalyzer({
     if (shapes.length) commit([]);
   };
 
+  const mirror = () => {
+    if (!shapes.length) return;
+    commit(shapes.map((s) => ({ ...s, pts: s.pts.map(([x, y]) => [1 - x, y] as Pt) })));
+  };
+
   const save = async () => {
     if (!onSave || saving) return;
     setSaving(true);
@@ -564,7 +677,7 @@ export function SwingAnalyzer({
     if (err) setSaveMsg(err);
     else {
       setDirty(false);
-      setSaveMsg("Saved. Your player can see these drawings.");
+      setSaveMsg(saveSuccessMessage);
     }
   };
 
@@ -579,7 +692,9 @@ export function SwingAnalyzer({
             : null
           : view.z > 1
           ? null
-          : "Pick a tool to draw. Tap to play, pinch to zoom.";
+          : lockedShapes?.length
+            ? "Coach drawings are locked underneath. Draw your own, then Save."
+            : "Pick a tool to draw. Tap to play, pinch to zoom.";
 
   return createPortal(
     <div
@@ -594,6 +709,29 @@ export function SwingAnalyzer({
           <X className="h-5 w-5" aria-hidden />
         </button>
         <p className="min-w-0 flex-1 truncate text-sm font-bold">{title}</p>
+        {canRecord && (
+          <button
+            type="button"
+            onClick={() => void (recording ? stopRecording() : startRecording())}
+            disabled={recBusy || !source}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold disabled:opacity-40 ${
+              recording ? "bg-red-500 text-white" : "bg-white/15 text-white hover:bg-white/25"
+            }`}
+            aria-label={recording ? "Stop recording" : "Record with voiceover"}
+          >
+            {recording ? (
+              <>
+                <Square className="h-3.5 w-3.5 fill-current" aria-hidden />
+                {Math.floor(recSecs / 60)}:{String(recSecs % 60).padStart(2, "0")}
+              </>
+            ) : (
+              <>
+                <CircleDot className="h-3.5 w-3.5 text-red-400" aria-hidden />
+                Record
+              </>
+            )}
+          </button>
+        )}
         {canSave && (
           <button
             type="button"
@@ -605,6 +743,11 @@ export function SwingAnalyzer({
           </button>
         )}
       </div>
+      {recording && (
+        <p className="shrink-0 px-4 pb-1 text-center text-[11px] font-semibold text-red-300">
+          ● Recording · mic on · stays on this device
+        </p>
+      )}
       {saveMsg && <p className="shrink-0 px-4 pb-1 text-center text-xs text-white/70">{saveMsg}</p>}
 
       <div className="relative flex min-h-0 flex-1 touch-none items-center justify-center px-2 [container-type:size]">
@@ -655,6 +798,11 @@ export function SwingAnalyzer({
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
               >
+                {(lockedShapes ?? []).map((s) => (
+                  <g key={`lock-${s.id}`} opacity={0.55}>
+                    <ShapeView shape={s} vbH={vbH} u={u} handles={false} />
+                  </g>
+                ))}
                 {shapes.map((s) => (
                   <ShapeView key={s.id} shape={s} vbH={vbH} u={u} handles={Boolean(tool)} />
                 ))}
@@ -764,6 +912,9 @@ export function SwingAnalyzer({
             ))}
           </div>
           <div className="flex gap-0.5">
+            <ToolButton label="Flip" onClick={mirror} disabled={!shapes.length}>
+              <FlipHorizontal2 className="h-5 w-5" aria-hidden />
+            </ToolButton>
             <ToolButton label="Undo" onClick={undo} disabled={!history.length}>
               <Undo2 className="h-5 w-5" aria-hidden />
             </ToolButton>

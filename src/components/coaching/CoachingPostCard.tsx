@@ -116,10 +116,10 @@ export function PostVideo({
         className={`absolute left-2 top-2 z-10 inline-flex items-center gap-1 rounded-full font-bold text-white shadow ${
           hasDrawings ? "bg-[#FFA500]/95 text-[#3d2600]" : "bg-black/60"
         } ${compact ? "p-1.5" : "px-2.5 py-1 text-[11px]"}`}
-        aria-label={hasDrawings ? "Open coach drawings" : "Analyse swing"}
+        aria-label={hasDrawings ? "Open swing analysis" : "Analyse swing"}
       >
         <PenLine className="h-3.5 w-3.5" aria-hidden />
-        {!compact && (hasDrawings ? "Coach drawings" : "Analyse")}
+        {!compact && (hasDrawings ? "Drawings" : "Analyse")}
       </button>
       {canDownload && (
         <button

@@ -4,7 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { Eye, Footprints, Ruler } from "lucide-react";
 import { useCombineUser } from "@/hooks/useCombineUser";
 import { pointsForAbsoluteError } from "@/lib/aimpoint6ftCombineScoring";
-import { parsePercentOneDecimal } from "@/lib/slopeReadingParse";
+import { isPercentInputPartial, parsePercentOneDecimal } from "@/lib/slopeReadingParse";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import {
   CombineHero,
@@ -236,21 +236,28 @@ function PercentInput({
   onChange: (v: string) => void;
   label: string;
 }) {
-  const invalid = value.trim() !== "" && parsePercentOneDecimal(value) === null;
+  const invalid =
+    value.trim() !== "" &&
+    parsePercentOneDecimal(value) === null &&
+    !isPercentInputPartial(value);
   return (
     <label className="relative block min-w-0 flex-1">
-      <span className="sr-only">{label}</span>
-      <input
-        type="text"
-        inputMode="decimal"
-        placeholder="0.0"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded-xl border-2 py-2.5 pl-3 pr-8 text-lg font-extrabold tabular-nums focus:outline-none ${
-          invalid ? "border-red-300 focus:border-red-400" : "border-gray-200 focus:border-[#014421]"
-        }`}
-      />
-      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">%</span>
+      <span className="mb-1 block text-xs font-semibold text-gray-700">{label}</span>
+      <span className="relative block">
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder="0.00"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`w-full rounded-xl border-2 py-2.5 pl-3 pr-8 text-lg font-extrabold tabular-nums focus:outline-none ${
+            invalid ? "border-red-300 focus:border-red-400" : "border-gray-200 focus:border-[#014421]"
+          }`}
+        />
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">
+          %
+        </span>
+      </span>
     </label>
   );
 }
@@ -262,7 +269,6 @@ export function AimpointCombineRunner<R>({ format }: { format: AimpointFormat<R>
   const maxPerPutt = marks.length * 10;
 
   const [status, setStatus] = useState<"intro" | "active" | "complete">("intro");
-  const [phase, setPhase] = useState<"read" | "measure">("read");
   const [distances, setDistances] = useState<number[]>([]);
   const [puttIndex, setPuttIndex] = useState(0);
   const [reads, setReads] = useState<Inputs>(EMPTY);
@@ -282,7 +288,6 @@ export function AimpointCombineRunner<R>({ format }: { format: AimpointFormat<R>
   const startTest = useCallback(() => {
     setDistances(format.buildDistances());
     setStatus("active");
-    setPhase("read");
     setPuttIndex(0);
     setReads(EMPTY);
     setActuals(EMPTY);
@@ -291,6 +296,8 @@ export function AimpointCombineRunner<R>({ format }: { format: AimpointFormat<R>
     setSaved(false);
     persistAttemptedRef.current = false;
   }, [format]);
+
+  const puttReady = readsValid && actualsValid;
 
   const save = useCallback(
     async (rows: R[]) => {
@@ -320,7 +327,6 @@ export function AimpointCombineRunner<R>({ format }: { format: AimpointFormat<R>
     const nextLog = [...log, format.toRow(puttDisplay, targetFt, readings)];
     setReads(EMPTY);
     setActuals(EMPTY);
-    setPhase("read");
     setLog(nextLog);
 
     if (puttDisplay >= total) {
@@ -344,7 +350,6 @@ export function AimpointCombineRunner<R>({ format }: { format: AimpointFormat<R>
     }
     setReads(r);
     setActuals(a);
-    setPhase("measure");
   }, [status, log, format, marks]);
 
   const summary = useMemo(() => {
@@ -361,8 +366,16 @@ export function AimpointCombineRunner<R>({ format }: { format: AimpointFormat<R>
         <IntroSteps
           steps={[
             { icon: <Footprints className="h-5 w-5" aria-hidden />, title: "Find the marks", hint: `${markList} of the way from the ball to the hole` },
-            { icon: <Eye className="h-5 w-5" aria-hidden />, title: "Read the slope at each mark", hint: "Enter your AimPoint read before you check it" },
-            { icon: <Ruler className="h-5 w-5" aria-hidden />, title: "Measure the real slope", hint: "With your level or slope app" },
+            {
+              icon: <Eye className="h-5 w-5" aria-hidden />,
+              title: "Enter your guess %",
+              hint: "The slope you read at each mark (e.g. 1.5%)",
+            },
+            {
+              icon: <Ruler className="h-5 w-5" aria-hidden />,
+              title: "Enter the actual %",
+              hint: "What your level or slope app measured at that same mark",
+            },
           ]}
         />
         <ScoringGuide title="How points work">
@@ -535,67 +548,65 @@ export function AimpointCombineRunner<R>({ format }: { format: AimpointFormat<R>
       </div>
 
       <div className="flex items-center justify-between">
-        {phase === "measure" ? (
-          <CombineFlowBackControl onBack={() => setPhase("read")} label="Back to your reads" />
-        ) : log.length > 0 ? (
+        {log.length > 0 ? (
           <CombineFlowBackControl onBack={undoLastPutt} label="Undo last putt" />
         ) : (
           <span />
         )}
-        <StepDots step={phase === "read" ? 1 : 2} total={2} />
+        <StepDots step={puttDisplay} total={total} />
       </div>
 
-      {phase === "read" ? (
-        <div key="read" className="space-y-3">
-          <div>
-            <p className="text-base font-bold text-gray-900">What do you read?</p>
-            <p className="text-xs text-gray-500">Slope in %, one decimal (e.g. 1.5)</p>
-          </div>
-          {marks.map((m) => (
-            <div key={m} className="flex items-center gap-3">
-              <span className="w-24 shrink-0">
-                <span className="block text-sm font-extrabold text-gray-900">{m}% mark</span>
-                <span className="block text-[11px] text-gray-400">{m === "33" ? "Near the ball" : m === "66" ? "Near the hole" : "Halfway"}</span>
-              </span>
-              <PercentInput label={`Your read at ${m}%`} value={reads[m]} onChange={(v) => setReads((s) => ({ ...s, [m]: v }))} />
-            </div>
-          ))}
-          <PrimaryButton onClick={() => setPhase("measure")} disabled={!readsValid}>
-            Now measure it
-          </PrimaryButton>
+      <div className="space-y-3">
+        <div>
+          <p className="text-base font-bold text-gray-900">Guess % and actual %</p>
+          <p className="text-xs text-gray-500">
+            At each mark, enter the slope you read, then what it actually measured (up to two
+            decimals, e.g. 2.65)
+          </p>
         </div>
-      ) : (
-        <div key="measure" className="space-y-3">
-          <div>
-            <p className="text-base font-bold text-gray-900">What did it measure?</p>
-            <p className="text-xs text-gray-500">Enter the real slope at each mark</p>
-          </div>
-          {marks.map((m) => {
-            const g = parsePercentOneDecimal(reads[m]);
-            const a = parsePercentOneDecimal(actuals[m]);
-            const pts = g != null && a != null ? pointsForAbsoluteError(Math.abs(g - a)) : null;
-            return (
-              <div key={m} className="flex items-center gap-3">
-                <span className="w-24 shrink-0">
-                  <span className="block text-sm font-extrabold text-gray-900">{m}% mark</span>
-                  <span className="block text-[11px] text-gray-400">You read {reads[m]}%</span>
-                </span>
-                <PercentInput label={`Measured slope at ${m}%`} value={actuals[m]} onChange={(v) => setActuals((s) => ({ ...s, [m]: v }))} />
+        {marks.map((m) => {
+          const g = parsePercentOneDecimal(reads[m]);
+          const a = parsePercentOneDecimal(actuals[m]);
+          const pts = g != null && a != null ? pointsForAbsoluteError(Math.abs(g - a)) : null;
+          return (
+            <div
+              key={m}
+              className="space-y-2 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-100"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-extrabold text-gray-900">{m}% mark</p>
+                  <p className="text-[11px] text-gray-400">
+                    {m === "33" ? "Near the ball" : m === "66" ? "Near the hole" : "Halfway"}
+                  </p>
+                </div>
                 <span
-                  className={`w-12 shrink-0 rounded-full py-1 text-center text-xs font-bold tabular-nums ${
+                  className={`rounded-full px-2.5 py-1 text-xs font-bold tabular-nums ${
                     pts == null ? "bg-gray-100 text-gray-300" : pointsTone(pts / 10)
                   }`}
                 >
                   {pts == null ? "–" : `+${pts}`}
                 </span>
               </div>
-            );
-          })}
-          <PrimaryButton onClick={() => void recordPutt()} disabled={!actualsValid}>
-            {puttDisplay >= total ? "Finish the test" : "Next putt"}
-          </PrimaryButton>
-        </div>
-      )}
+              <div className="grid grid-cols-2 gap-2">
+                <PercentInput
+                  label="Your guess"
+                  value={reads[m]}
+                  onChange={(v) => setReads((s) => ({ ...s, [m]: v }))}
+                />
+                <PercentInput
+                  label="Actual"
+                  value={actuals[m]}
+                  onChange={(v) => setActuals((s) => ({ ...s, [m]: v }))}
+                />
+              </div>
+            </div>
+          );
+        })}
+        <PrimaryButton onClick={() => void recordPutt()} disabled={!puttReady}>
+          {puttDisplay >= total ? "Finish the test" : "Next putt"}
+        </PrimaryButton>
+      </div>
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { MapPin, RotateCcw, Undo2 } from "lucide-react";
 import { BreakdownBar, BreakdownCard, EveryShotList, FocusCard, ValueRow } from "@/components/combine/CombineBreakdown";
-import { parsePercentOneDecimal } from "@/lib/slopeReadingParse";
+import { isPercentInputPartial, parsePercentOneDecimal } from "@/lib/slopeReadingParse";
 import {
   AIMPOINT_READ_DRILLS,
   AIMPOINT_READ_MAX_SCORE,
@@ -28,14 +28,17 @@ function pointsTone(pts: number): string {
 const signedPct = (n: number) => `${n > 0 ? "+" : ""}${n.toFixed(1)}%`;
 
 function PercentInput({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
-  const invalid = value.trim() !== "" && parsePercentOneDecimal(value) === null;
+  const invalid =
+    value.trim() !== "" &&
+    parsePercentOneDecimal(value) === null &&
+    !isPercentInputPartial(value);
   return (
     <label className="relative block">
       <span className="mb-1 block text-xs font-semibold text-gray-700">{label}</span>
       <input
         type="text"
         inputMode="decimal"
-        placeholder="0.0"
+        placeholder="0.00"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className={`w-full rounded-xl border-2 py-2.5 pl-3 pr-8 text-xl font-extrabold tabular-nums focus:outline-none ${

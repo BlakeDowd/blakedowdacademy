@@ -15,24 +15,32 @@ export function videoAnnotationKey(video: CoachingPostVideo): string | null {
   return null;
 }
 
-/** Whether a coach has saved drawings on this video (shown as a badge on the post). */
+/** Player layer key — keeps coach drawings intact. */
+export function videoAnnotationPlayerKey(coachKey: string, userId: string): string {
+  return `${coachKey}#u:${userId}`;
+}
+
+async function loadShapes(key: string): Promise<Shape[]> {
+  const { data } = await createClient().from(TABLE).select("shapes").eq("video_key", key).maybeSingle();
+  return Array.isArray(data?.shapes) ? (data.shapes as Shape[]) : [];
+}
+
+/** Whether anyone has saved drawings on this video (coach or the signed-in player). */
 export function useHasVideoAnnotations(key: string | null, refreshKey = 0): boolean {
+  const { user } = useAuth();
   const [state, setState] = useState<{ key: string | null; has: boolean }>({ key: null, has: false });
   useEffect(() => {
     if (!key) return;
     let cancelled = false;
-    void createClient()
-      .from(TABLE)
-      .select("shapes")
-      .eq("video_key", key)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled) setState({ key, has: Array.isArray(data?.shapes) && data.shapes.length > 0 });
-      });
+    const keys = [key];
+    if (user?.id) keys.push(videoAnnotationPlayerKey(key, user.id));
+    void Promise.all(keys.map((k) => loadShapes(k))).then((layers) => {
+      if (!cancelled) setState({ key, has: layers.some((s) => s.length > 0) });
+    });
     return () => {
       cancelled = true;
     };
-  }, [key, refreshKey]);
+  }, [key, refreshKey, user?.id]);
   return state.key === key && state.has;
 }
 
@@ -53,7 +61,10 @@ async function loadSource(video: CoachingPostVideo): Promise<AnalyzerSource> {
   return { url: data.signedUrl, type: "mp4" };
 }
 
-/** Full-screen analysis for a coaching video. Coaches can save drawings for the player. */
+/**
+ * Full-screen analysis for a coaching video.
+ * Coaches save the shared layer; players save their own layer on top (coach drawings stay locked).
+ */
 export function CoachingVideoAnalyzer({
   video,
   studentId,
@@ -67,10 +78,14 @@ export function CoachingVideoAnalyzer({
 }) {
   const { user } = useAuth();
   const isCoach = isCoachEmail(user?.email) || user?.role === "coach";
-  const key = videoAnnotationKey(video);
+  const coachKey = videoAnnotationKey(video);
+  const playerKey = coachKey && user?.id ? videoAnnotationPlayerKey(coachKey, user.id) : null;
+  const saveKey = isCoach ? coachKey : playerKey;
+
   const [source, setSource] = useState<AnalyzerSource | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [shapes, setShapes] = useState<Shape[] | undefined>(undefined);
+  const [editable, setEditable] = useState<Shape[] | undefined>(undefined);
+  const [locked, setLocked] = useState<Shape[]>([]);
 
   const { bunny_video_id: bunnyId, storage_bucket: bucket, storage_path: path } = video;
   useEffect(() => {
@@ -78,26 +93,40 @@ export function CoachingVideoAnalyzer({
     loadSource({ bunny_video_id: bunnyId, storage_bucket: bucket, storage_path: path })
       .then((s) => !cancelled && setSource(s))
       .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : "This video couldn't be loaded."));
-    if (key) {
-      void createClient()
-        .from(TABLE)
-        .select("shapes")
-        .eq("video_key", key)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (!cancelled && Array.isArray(data?.shapes)) setShapes(data.shapes as Shape[]);
-        });
+
+    if (coachKey) {
+      void (async () => {
+        const coachShapes = await loadShapes(coachKey);
+        const playerShapes = playerKey ? await loadShapes(playerKey) : [];
+        if (cancelled) return;
+        if (isCoach) {
+          setEditable(coachShapes);
+          setLocked(playerShapes);
+        } else {
+          setEditable(playerShapes);
+          setLocked(coachShapes);
+        }
+      })();
+    } else {
+      setEditable([]);
+      setLocked([]);
     }
+
     return () => {
       cancelled = true;
     };
-  }, [bunnyId, bucket, path, key]);
+  }, [bunnyId, bucket, path, coachKey, playerKey, isCoach]);
 
   const save = async (next: Shape[]): Promise<string | null> => {
-    if (!key) return "This video can't hold drawings.";
+    if (!saveKey || !user?.id) return "Sign in to save drawings.";
     const { error: saveError } = await createClient()
       .from(TABLE)
-      .upsert({ video_key: key, student_id: studentId ?? null, shapes: next, updated_at: new Date().toISOString() });
+      .upsert({
+        video_key: saveKey,
+        student_id: isCoach ? (studentId ?? null) : user.id,
+        shapes: next,
+        updated_at: new Date().toISOString(),
+      });
     if (saveError) return saveError.message;
     onSaved?.();
     return null;
@@ -107,10 +136,21 @@ export function CoachingVideoAnalyzer({
     <SwingAnalyzer
       source={source}
       error={error}
-      initialShapes={shapes}
-      canSave={isCoach && Boolean(key)}
+      initialShapes={editable}
+      lockedShapes={locked}
+      canSave={Boolean(saveKey && user?.id)}
       onSave={save}
       onClose={onClose}
+      title={isCoach ? "Swing analysis" : "Analyse your swing"}
+      saveSuccessMessage={
+        isCoach
+          ? locked.length
+            ? "Saved. Your drawings sit on top of the player’s layer."
+            : "Saved. Your player can see these drawings."
+          : locked.length
+            ? "Saved. Coach drawings stay underneath yours."
+            : "Saved to your layer."
+      }
     />
   );
 }

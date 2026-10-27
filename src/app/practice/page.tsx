@@ -4,10 +4,11 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
-import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, BookOpen, Apple, PersonStanding, Gauge, Gamepad2, Crosshair, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus } from "lucide-react";
+import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, BookOpen, Apple, PersonStanding, Gauge, Gamepad2, Crosshair, PenLine, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus } from "lucide-react";
 import SpeedLogging from "@/components/speed/SpeedLogging";
 import OnCourseSimulator from "@/components/practice/OnCourseSimulator";
 import ApproachShotSimulator from "@/components/practice/ApproachShotSimulator";
+import LocalSwingAnalyzer from "@/components/practice/LocalSwingAnalyzer";
 import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
 import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
@@ -649,7 +650,7 @@ export default function PracticePage() {
   });
   const [totalPracticeMinutes, setTotalPracticeMinutes] = useState<number>(0);
   const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(true); // Weekly schedule expanded state
-  const [openTool, setOpenTool] = useState<"planner" | "insights" | "library" | "combine" | "fuel" | "speed" | "arcade" | "approach" | null>(null);
+  const [openTool, setOpenTool] = useState<"planner" | "insights" | "library" | "combine" | "fuel" | "speed" | "arcade" | "approach" | "analyzer" | null>(null);
   useEffect(() => {
     if (openTool) trackScreen(`practice-${openTool}`);
   }, [openTool]);
@@ -4019,6 +4020,41 @@ export default function PracticePage() {
               {openTool === "fuel" && (
                 <div className="border-t border-gray-200 px-3 pb-3 pt-3">
                   <NutritionPlannerPanel userId={user?.id} />
+                </div>
+              )}
+            </div>
+
+            <div id="swing-analyzer-section" className="scroll-mt-24 rounded-xl bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setOpenTool((t) => (t === "analyzer" ? null : "analyzer"))}
+                aria-expanded={openTool === "analyzer"}
+                className="flex w-full items-center gap-3 p-3 text-left"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                  <PenLine className="h-4 w-4 text-[#014421]" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-900">Swing Analyser</span>
+                  <span className="block text-xs text-gray-500">
+                    Frame scrub, draw lines &amp; angles — open any video from your phone
+                  </span>
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${openTool === "analyzer" ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
+              </button>
+              {openTool === "analyzer" && (
+                <div className="border-t border-gray-200 px-3 pb-3 pt-3">
+                  <LocalSwingAnalyzer compact />
+                  <Link
+                    href="/practice/swing-analyzer"
+                    className="mt-2 flex items-center justify-center gap-1 py-2 text-xs font-semibold text-[#014421] hover:underline"
+                  >
+                    Open full screen
+                    <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                  </Link>
                 </div>
               )}
             </div>

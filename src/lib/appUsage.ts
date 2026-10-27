@@ -95,6 +95,7 @@ export const TOOL_LABELS = {
   "speed-logging": "Speed logging",
   "on-course-sim": "On-course simulator",
   "approach-shot-sim": "Approach shot simulator",
+  "swing-analyzer": "Swing analyser",
 } as const;
 
 export type ToolKey = keyof typeof TOOL_LABELS;
@@ -149,8 +150,10 @@ const SCREEN_LABELS: Record<string, string> = {
   "practice-speed": "Speed Logging",
   "practice-arcade": "On-course simulator",
   "practice-approach": "Approach shot simulator",
+  "practice-analyzer": "Swing analyser",
   "on-course-sim": "On-course simulator",
   "approach-shot-sim": "Approach shot simulator",
+  "swing-analyzer": "Swing analyser",
   "handicap-history": "Handicap history",
   "skill-history": "Skill history",
   "dashboard-coach": "Coach dashboard",
