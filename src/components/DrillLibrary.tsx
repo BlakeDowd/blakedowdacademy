@@ -15,7 +15,8 @@ import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/da
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 import { keepElementInView } from "@/hooks/useKeepInView";
 import { SHOW_PDFS } from "@/lib/drillResources";
-import DrillScoringPicker from "@/components/DrillScoringPicker";
+import DrillScoringPicker, { useIsCoach } from "@/components/DrillScoringPicker";
+import { CoachAddDrillForm } from "@/components/drills/CoachAddDrillForm";
 import { DrillGuide, DrillHero, DrillSteps } from "@/components/drills/DrillIntro";
 import { stableDrillKey } from "@/lib/drillPersonalBests";
 import { resolveDrillScoring } from "@/lib/drillScoring";
@@ -454,6 +455,7 @@ interface DrillLibraryProps {
 }
 
 export function DrillLibrary({ onAssignToDay, showHeader = true, initialDrillKey = null }: DrillLibraryProps) {
+  const isCoach = useIsCoach();
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [selectedDrill, setSelectedDrill] = useState<DrillRecord | null>(null);
   const [drills, setDrills] = useState<DrillRecord[]>(OFFICIAL_DRILLS);
@@ -660,12 +662,17 @@ export function DrillLibrary({ onAssignToDay, showHeader = true, initialDrillKey
     <div className="mb-6">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
         {showHeader && (
-          <div className="p-4 border-b border-gray-200">
+          <div className="border-b border-gray-200 p-4">
             <h2 className="text-lg font-semibold text-gray-900">Drill Library</h2>
-            <p className="text-sm text-gray-500 mt-0.5">Search drills, save favourites and build your own lists</p>
+            <p className="mt-0.5 text-sm text-gray-500">Search drills, save favourites and build your own lists</p>
           </div>
         )}
         <div className="border-b border-gray-200 p-3">
+          {isCoach && (
+            <div className="mb-3">
+              <CoachAddDrillForm />
+            </div>
+          )}
           <label className="flex items-center gap-2 rounded-xl bg-gray-100 px-3 py-2">
             <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
             <input

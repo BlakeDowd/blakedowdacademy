@@ -51,6 +51,17 @@ export type HoleData = {
   /** World bounds for camera framing (metres). */
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
   zones: TerrainZone[];
+  /** Official top-down layout art under ball / aim overlays. */
+  layoutImage?: string;
+  /**
+   * Fraction of the source image that is the map (excludes the scorecard strip).
+   * Defaults to top ~62% when omitted.
+   */
+  layoutMapFraction?: number;
+  /** Blue tee marker in map-crop UV (0–1, origin top-left). */
+  layoutTeeUv?: { u: number; v: number };
+  /** Pin / green centre in map-crop UV (0–1). */
+  layoutPinUv?: { u: number; v: number };
 };
 
 export type LieKind = Exclude<TerrainKind, "tee"> | "tee" | "oob";

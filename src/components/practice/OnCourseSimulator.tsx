@@ -13,6 +13,13 @@ import {
 } from "lucide-react";
 import { STONECUTTERS_HOLES, cameraForHole } from "@/lib/onCourseSimulator/courseData";
 import {
+  hasLayoutAnchors,
+  makeLayoutDraw,
+  screenToWorldLayout,
+  worldToScreenLayout,
+  type LayoutDraw,
+} from "@/lib/onCourseSimulator/layoutMap";
+import {
   applyRoll,
   dist,
   dropNearHazard,
@@ -72,13 +79,17 @@ function freshHole(hole: HoleData): HoleRoundState {
   };
 }
 
+type Cam = { cx: number; cy: number; scale: number };
+
 function worldToScreen(
   p: Vec2,
   hole: HoleData,
-  cam: { cx: number; cy: number; scale: number },
+  cam: Cam,
   w: number,
   h: number,
+  layout: LayoutDraw | null = null,
 ): Vec2 {
+  if (layout) return worldToScreenLayout(p, hole, layout);
   return {
     x: w / 2 + (p.x - cam.cx) * cam.scale,
     y: h / 2 - (p.y - cam.cy) * cam.scale,
@@ -88,10 +99,12 @@ function worldToScreen(
 function screenToWorld(
   p: Vec2,
   hole: HoleData,
-  cam: { cx: number; cy: number; scale: number },
+  cam: Cam,
   w: number,
   h: number,
+  layout: LayoutDraw | null = null,
 ): Vec2 {
+  if (layout) return screenToWorldLayout(p, hole, layout);
   return {
     x: cam.cx + (p.x - w / 2) / cam.scale,
     y: cam.cy - (p.y - h / 2) / cam.scale,
@@ -102,16 +115,17 @@ function pathPoly(
   ctx: CanvasRenderingContext2D,
   pts: Vec2[],
   hole: HoleData,
-  cam: { cx: number; cy: number; scale: number },
+  cam: Cam,
   w: number,
   h: number,
+  layout: LayoutDraw | null = null,
 ) {
   if (pts.length < 3) return false;
   ctx.beginPath();
-  const s0 = worldToScreen(pts[0]!, hole, cam, w, h);
+  const s0 = worldToScreen(pts[0]!, hole, cam, w, h, layout);
   ctx.moveTo(s0.x, s0.y);
   for (let i = 1; i < pts.length; i++) {
-    const s = worldToScreen(pts[i]!, hole, cam, w, h);
+    const s = worldToScreen(pts[i]!, hole, cam, w, h, layout);
     ctx.lineTo(s.x, s.y);
   }
   ctx.closePath();
@@ -122,15 +136,16 @@ function drawTerrainZone(
   ctx: CanvasRenderingContext2D,
   pts: Vec2[],
   hole: HoleData,
-  cam: { cx: number; cy: number; scale: number },
+  cam: Cam,
   w: number,
   h: number,
   kind: TerrainKind,
+  layout: LayoutDraw | null = null,
 ) {
-  if (!pathPoly(ctx, pts, hole, cam, w, h)) return;
+  if (!pathPoly(ctx, pts, hole, cam, w, h, layout)) return;
 
-  const xs = pts.map((p) => worldToScreen(p, hole, cam, w, h).x);
-  const ys = pts.map((p) => worldToScreen(p, hole, cam, w, h).y);
+  const xs = pts.map((p) => worldToScreen(p, hole, cam, w, h, layout).x);
+  const ys = pts.map((p) => worldToScreen(p, hole, cam, w, h, layout).y);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
   const minY = Math.min(...ys);
@@ -222,6 +237,9 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const camRef = useRef(cameraForHole(STONECUTTERS_HOLES[0]!, 360, 400));
+  const layoutImgRef = useRef<HTMLImageElement | null>(null);
+  const layoutDrawRef = useRef<LayoutDraw | null>(null);
+  const [layoutReady, setLayoutReady] = useState(0);
 
   const toDisplay = (metres: number) =>
     unit === "m" ? Math.round(metres * 10) / 10 : Math.round(metres * 1.09361 * 10) / 10;
@@ -250,6 +268,22 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
     if (hole.par === 3) setClub("7i");
     else setClub("driver");
   }, [hole, compact]);
+
+  useEffect(() => {
+    layoutImgRef.current = null;
+    if (!hole.layoutImage) return;
+    const img = new Image();
+    img.decoding = "async";
+    img.onload = () => {
+      layoutImgRef.current = img;
+      setLayoutReady((n) => n + 1);
+    };
+    img.onerror = () => {
+      layoutImgRef.current = null;
+      setLayoutReady((n) => n + 1);
+    };
+    img.src = hole.layoutImage;
+  }, [hole.layoutImage, hole.id]);
 
   useEffect(() => {
     if (round.lie === "green" && !round.holed) {
@@ -499,38 +533,56 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
       // Keep full hole in view
       camRef.current = cameraForHole(hole, w, h);
       const cam = camRef.current;
+      const layoutImg = layoutImgRef.current;
+      const layout =
+        hasLayoutAnchors(hole) && layoutImg
+          ? makeLayoutDraw(hole, layoutImg, w, h)
+          : null;
+      layoutDrawRef.current = layout;
 
-      // Soft sky → grass ground
-      const sky = ctx.createLinearGradient(0, 0, 0, h);
-      sky.addColorStop(0, "#87b8d8");
-      sky.addColorStop(0.35, "#c5dcc0");
-      sky.addColorStop(1, "#6a9a58");
-      ctx.fillStyle = sky;
-      ctx.fillRect(0, 0, w, h);
-
-      // Ambient ground plate inside bounds
-      const bMin = worldToScreen({ x: hole.bounds.minX, y: hole.bounds.maxY }, hole, cam, w, h);
-      const bMax = worldToScreen({ x: hole.bounds.maxX, y: hole.bounds.minY }, hole, cam, w, h);
-      ctx.fillStyle = "#4a7a3c";
-      ctx.fillRect(bMin.x, bMin.y, bMax.x - bMin.x, bMax.y - bMin.y);
-
-      const order = ["heavy", "rough", "fairway", "tee", "bunker", "water", "green"] as const;
-      for (const kind of order) {
-        for (const z of hole.zones) {
-          if (z.kind !== kind) continue;
-          drawTerrainZone(ctx, z.polygon, hole, cam, w, h, kind);
+      if (layout && layoutImg) {
+        ctx.fillStyle = "#d8dde2";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(
+          layoutImg,
+          0,
+          0,
+          layout.srcW,
+          layout.srcH,
+          layout.dx,
+          layout.dy,
+          layout.drawW,
+          layout.drawH,
+        );
+        ctx.fillStyle = "rgba(255,255,255,0.04)";
+        ctx.fillRect(0, 0, w, h);
+      } else {
+        const bMin = worldToScreen({ x: hole.bounds.minX, y: hole.bounds.maxY }, hole, cam, w, h);
+        const bMax = worldToScreen({ x: hole.bounds.maxX, y: hole.bounds.minY }, hole, cam, w, h);
+        const sky = ctx.createLinearGradient(0, 0, 0, h);
+        sky.addColorStop(0, "#87b8d8");
+        sky.addColorStop(0.35, "#c5dcc0");
+        sky.addColorStop(1, "#6a9a58");
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = "#4a7a3c";
+        ctx.fillRect(bMin.x, bMin.y, bMax.x - bMin.x, bMax.y - bMin.y);
+        const order = ["heavy", "rough", "fairway", "tee", "bunker", "water", "green"] as const;
+        for (const kind of order) {
+          for (const z of hole.zones) {
+            if (z.kind !== kind) continue;
+            drawTerrainZone(ctx, z.polygon, hole, cam, w, h, kind);
+          }
         }
+        const vig = ctx.createRadialGradient(w / 2, h / 2, h * 0.35, w / 2, h / 2, h * 0.85);
+        vig.addColorStop(0, "rgba(0,0,0,0)");
+        vig.addColorStop(1, "rgba(20,40,20,0.22)");
+        ctx.fillStyle = vig;
+        ctx.fillRect(0, 0, w, h);
       }
 
-      // Soft vignette
-      const vig = ctx.createRadialGradient(w / 2, h / 2, h * 0.35, w / 2, h / 2, h * 0.85);
-      vig.addColorStop(0, "rgba(0,0,0,0)");
-      vig.addColorStop(1, "rgba(20,40,20,0.22)");
-      ctx.fillStyle = vig;
-      ctx.fillRect(0, 0, w, h);
-
       // Pin + flag with shadow
-      const pinS = worldToScreen(hole.pin, hole, cam, w, h);
+      const pinS = worldToScreen(hole.pin, hole, cam, w, h, layout);
       ctx.fillStyle = "rgba(0,0,0,0.2)";
       ctx.beginPath();
       ctx.ellipse(pinS.x + 1, pinS.y + 2, 5, 2.5, 0, 0, Math.PI * 2);
@@ -563,8 +615,8 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
       // Aim line + finger miss preview (relative to chosen aim)
       if (!round.holed && (mode === "launch_monitor" || mark)) {
         const target = mark ?? hole.pin;
-        const b = worldToScreen(round.ball, hole, cam, w, h);
-        const t = worldToScreen(target, hole, cam, w, h);
+        const b = worldToScreen(round.ball, hole, cam, w, h, layout);
+        const t = worldToScreen(target, hole, cam, w, h, layout);
         ctx.strokeStyle =
           mode === "finger_dispersion" ? "rgba(1, 68, 33, 0.7)" : "rgba(1, 68, 33, 0.55)";
         ctx.lineWidth = 2;
@@ -601,8 +653,8 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
           fingerCarryM,
           offlineM,
         );
-        const a = worldToScreen(land, hole, cam, w, h);
-        const b = worldToScreen(round.ball, hole, cam, w, h);
+        const a = worldToScreen(land, hole, cam, w, h, layout);
+        const b = worldToScreen(round.ball, hole, cam, w, h, layout);
         ctx.strokeStyle = "rgba(255, 170, 40, 0.85)";
         ctx.lineWidth = 2;
         ctx.setLineDash([6, 5]);
@@ -628,8 +680,8 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
 
       // Flight tracer with glow
       if (flight) {
-        const b = worldToScreen(flight.from, hole, cam, w, h);
-        const e = worldToScreen(flight.to, hole, cam, w, h);
+        const b = worldToScreen(flight.from, hole, cam, w, h, layout);
+        const e = worldToScreen(flight.to, hole, cam, w, h, layout);
         const mx = (b.x + e.x) / 2;
         const my = Math.min(b.y, e.y) - 48 * Math.sin(flight.progress * Math.PI);
         const steps = 24;
@@ -671,7 +723,7 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
       }
 
       // Ball
-      const ballS = worldToScreen(round.ball, hole, cam, w, h);
+      const ballS = worldToScreen(round.ball, hole, cam, w, h, layout);
       const ballR = 5.5;
       ctx.fillStyle = "rgba(0,0,0,0.28)";
       ctx.beginPath();
@@ -698,7 +750,7 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [hole, round.ball, round.holed, mark, mode, flight, compact, fingerDir, fingerWidth, fingerCarryM]);
+  }, [hole, round.ball, round.holed, mark, mode, flight, compact, fingerDir, fingerWidth, fingerCarryM, layoutReady]);
 
   const onPointer = (e: React.PointerEvent<HTMLCanvasElement>, down?: boolean) => {
     if (round.holed) return;
@@ -708,7 +760,9 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
     if (!canvas || !wrap) return;
     const rect = canvas.getBoundingClientRect();
     const sp = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    setMark(screenToWorld(sp, hole, camRef.current, rect.width, rect.height));
+    setMark(
+      screenToWorld(sp, hole, camRef.current, rect.width, rect.height, layoutDrawRef.current),
+    );
   };
 
   const holeSelect = (dir: -1 | 1) => {

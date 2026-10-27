@@ -1,343 +1,267 @@
-import type { HoleData, Vec2 } from "./types";
+import {
+  boundsFromLayout,
+  ovalPoly,
+  uvPolyToWorld,
+  type Uv,
+} from "./layoutMap";
+import type { HoleData, TerrainZone } from "./types";
 
-function strip(points: Vec2[]): Vec2[] {
-  return points;
+type HoleDraft = Omit<HoleData, "bounds" | "zones"> & {
+  zoneUvs: { id: string; kind: TerrainZone["kind"]; uvs: Uv[] }[];
+};
+
+function withLayoutZones(hole: HoleDraft): HoleData {
+  const { zoneUvs, ...rest } = hole;
+  const partial: HoleData = {
+    ...rest,
+    bounds: { minX: 0, maxX: 1, minY: 0, maxY: 1 },
+    zones: [],
+  };
+  const bounds =
+    boundsFromLayout(partial) ?? {
+      minX: -80,
+      maxX: 80,
+      minY: -40,
+      maxY: hole.yardageM + 40,
+    };
+  const zones: TerrainZone[] = zoneUvs.map((z) => ({
+    id: z.id,
+    kind: z.kind,
+    polygon: uvPolyToWorld(partial, z.uvs),
+  }));
+  if (!zones.some((z) => z.kind === "green")) {
+    zones.push({
+      id: `${hole.id}-green`,
+      kind: "green",
+      polygon: ovalPoly(hole.pin, hole.par === 3 ? 14 : 16, hole.par === 3 ? 11 : 13),
+    });
+  }
+  return { ...rest, bounds, zones };
 }
 
 /**
- * Stylised top-down layouts of Stonecutters Ridge (Greg Norman Design).
- * Coords in metres; tee ≈ (0,0), play +Y.
+ * Stonecutters Ridge (Greg Norman Design) — play coords in metres; tee at origin, play +Y.
+ * Layout UVs pin the ball to the blue tee and the flag to the green on the official maps.
  */
 export const STONECUTTERS_HOLES: HoleData[] = [
-  {
+  withLayoutZones({
     id: "scr-1",
     number: 1,
     name: "Opening Dogleg",
     par: 5,
-    yardageM: 495,
-    description: "Dogleg left par 5 — corner bunkers left; deep greenside traps.",
+    yardageM: 520,
+    description: "Par 5 · Blue 520m · White 504m · Gold 464m · Red 443m — dogleg left.",
+    layoutImage: "/on-course/map-1.png",
+    layoutMapFraction: 1,
+    layoutTeeUv: { u: 0.433, v: 0.96 },
+    layoutPinUv: { u: 0.44, v: 0.14 },
     tee: { x: 0, y: 0 },
-    pin: { x: -70, y: 480 },
-    bounds: { minX: -130, maxX: 70, minY: -30, maxY: 530 },
-    zones: [
+    pin: { x: 0, y: 520 },
+    zoneUvs: [
       {
         id: "h1-tee",
         kind: "tee",
-        polygon: strip([
-          { x: -9, y: -6 },
-          { x: 9, y: -6 },
-          { x: 9, y: 8 },
-          { x: -9, y: 8 },
-        ]),
+        uvs: [
+          { u: 0.48, v: 0.94 },
+          { u: 0.57, v: 0.94 },
+          { u: 0.57, v: 0.99 },
+          { u: 0.48, v: 0.99 },
+        ],
       },
       {
         id: "h1-fw",
         kind: "fairway",
-        polygon: strip([
-          { x: -18, y: 12 },
-          { x: 18, y: 12 },
-          { x: 22, y: 140 },
-          { x: 5, y: 250 },
-          { x: -35, y: 340 },
-          { x: -65, y: 420 },
-          { x: -85, y: 460 },
-          { x: -95, y: 455 },
-          { x: -75, y: 400 },
-          { x: -45, y: 320 },
-          { x: -15, y: 240 },
-          { x: -8, y: 140 },
-        ]),
-      },
-      {
-        id: "h1-rough-r",
-        kind: "rough",
-        polygon: strip([
-          { x: 18, y: 12 },
-          { x: 55, y: 20 },
-          { x: 60, y: 200 },
-          { x: 40, y: 380 },
-          { x: -20, y: 510 },
-          { x: -70, y: 520 },
-          { x: -85, y: 460 },
-          { x: -65, y: 420 },
-          { x: -35, y: 340 },
-          { x: 5, y: 250 },
-          { x: 22, y: 140 },
-        ]),
-      },
-      {
-        id: "h1-rough-l",
-        kind: "rough",
-        polygon: strip([
-          { x: -18, y: 12 },
-          { x: -8, y: 140 },
-          { x: -15, y: 240 },
-          { x: -45, y: 320 },
-          { x: -75, y: 400 },
-          { x: -95, y: 455 },
-          { x: -120, y: 500 },
-          { x: -125, y: 40 },
-          { x: -55, y: 15 },
-        ]),
-      },
-      {
-        id: "h1-heavy",
-        kind: "heavy",
-        polygon: strip([
-          { x: -110, y: 200 },
-          { x: -75, y: 210 },
-          { x: -80, y: 290 },
-          { x: -115, y: 280 },
-        ]),
-      },
-      {
-        id: "h1-bunker-corner",
-        kind: "bunker",
-        polygon: strip([
-          { x: -52, y: 255 },
-          { x: -28, y: 262 },
-          { x: -32, y: 288 },
-          { x: -56, y: 280 },
-        ]),
-      },
-      {
-        id: "h1-bunker-green-l",
-        kind: "bunker",
-        polygon: strip([
-          { x: -108, y: 458 },
-          { x: -90, y: 462 },
-          { x: -92, y: 485 },
-          { x: -110, y: 480 },
-        ]),
-      },
-      {
-        id: "h1-bunker-green-r",
-        kind: "bunker",
-        polygon: strip([
-          { x: -58, y: 465 },
-          { x: -38, y: 470 },
-          { x: -42, y: 492 },
-          { x: -62, y: 486 },
-        ]),
+        uvs: [
+          { u: 0.46, v: 0.92 },
+          { u: 0.6, v: 0.92 },
+          { u: 0.62, v: 0.55 },
+          { u: 0.58, v: 0.35 },
+          { u: 0.52, v: 0.22 },
+          { u: 0.4, v: 0.2 },
+          { u: 0.36, v: 0.32 },
+          { u: 0.42, v: 0.55 },
+        ],
       },
       {
         id: "h1-green",
         kind: "green",
-        polygon: strip([
-          { x: -98, y: 455 },
-          { x: -52, y: 462 },
-          { x: -48, y: 498 },
-          { x: -75, y: 508 },
-          { x: -102, y: 490 },
-        ]),
+        uvs: [
+          { u: 0.4, v: 0.08 },
+          { u: 0.58, v: 0.08 },
+          { u: 0.6, v: 0.22 },
+          { u: 0.4, v: 0.22 },
+        ],
+      },
+      {
+        id: "h1-bunker-r",
+        kind: "bunker",
+        uvs: [
+          { u: 0.58, v: 0.48 },
+          { u: 0.66, v: 0.48 },
+          { u: 0.66, v: 0.56 },
+          { u: 0.58, v: 0.56 },
+        ],
+      },
+      {
+        id: "h1-bunker-gl",
+        kind: "bunker",
+        uvs: [
+          { u: 0.32, v: 0.16 },
+          { u: 0.4, v: 0.16 },
+          { u: 0.4, v: 0.24 },
+          { u: 0.32, v: 0.24 },
+        ],
+      },
+      {
+        id: "h1-bunker-gr",
+        kind: "bunker",
+        uvs: [
+          { u: 0.5, v: 0.15 },
+          { u: 0.58, v: 0.15 },
+          { u: 0.58, v: 0.23 },
+          { u: 0.5, v: 0.23 },
+        ],
       },
     ],
-  },
-  {
+  }),
+  withLayoutZones({
     id: "scr-6",
     number: 6,
     name: "Wetland Carry",
     par: 3,
-    yardageM: 165,
-    description: "Signature par 3 — carry the creek to an angled green.",
+    yardageM: 176,
+    description: "Par 3 · Blue 176m · White 146m · Gold 137m · Red 110m — water all down the left.",
+    layoutImage: "/on-course/map-6.png",
+    layoutMapFraction: 1,
+    layoutTeeUv: { u: 0.35, v: 0.82 },
+    layoutPinUv: { u: 0.48, v: 0.16 },
     tee: { x: 0, y: 0 },
-    pin: { x: 18, y: 158 },
-    bounds: { minX: -55, maxX: 70, minY: -25, maxY: 205 },
-    zones: [
+    pin: { x: 0, y: 176 },
+    zoneUvs: [
       {
         id: "h6-tee",
         kind: "tee",
-        polygon: strip([
-          { x: -7, y: -5 },
-          { x: 7, y: -5 },
-          { x: 7, y: 6 },
-          { x: -7, y: 6 },
-        ]),
+        uvs: [
+          { u: 0.35, v: 0.81 },
+          { u: 0.43, v: 0.81 },
+          { u: 0.43, v: 0.88 },
+          { u: 0.35, v: 0.88 },
+        ],
       },
       {
         id: "h6-water",
         kind: "water",
-        polygon: strip([
-          { x: -45, y: 55 },
-          { x: 55, y: 70 },
-          { x: 50, y: 125 },
-          { x: -40, y: 110 },
-        ]),
+        uvs: [
+          { u: 0.05, v: 0.12 },
+          { u: 0.32, v: 0.18 },
+          { u: 0.3, v: 0.55 },
+          { u: 0.08, v: 0.7 },
+          { u: 0.02, v: 0.4 },
+        ],
       },
       {
-        id: "h6-rough",
-        kind: "rough",
-        polygon: strip([
-          { x: -40, y: 5 },
-          { x: 40, y: 5 },
-          { x: 55, y: 55 },
-          { x: 60, y: 180 },
-          { x: -45, y: 185 },
-          { x: -48, y: 50 },
-        ]),
-      },
-      {
-        id: "h6-fw-apron",
+        id: "h6-fw",
         kind: "fairway",
-        polygon: strip([
-          { x: -5, y: 115 },
-          { x: 35, y: 125 },
-          { x: 40, y: 145 },
-          { x: 0, y: 140 },
-        ]),
+        uvs: [
+          { u: 0.34, v: 0.78 },
+          { u: 0.48, v: 0.7 },
+          { u: 0.52, v: 0.35 },
+          { u: 0.5, v: 0.2 },
+          { u: 0.36, v: 0.2 },
+          { u: 0.34, v: 0.4 },
+        ],
       },
       {
-        id: "h6-bunker-front",
+        id: "h6-bunker",
         kind: "bunker",
-        polygon: strip([
-          { x: 5, y: 132 },
-          { x: 28, y: 136 },
-          { x: 26, y: 148 },
-          { x: 4, y: 144 },
-        ]),
-      },
-      {
-        id: "h6-bunker-back",
-        kind: "bunker",
-        polygon: strip([
-          { x: 22, y: 168 },
-          { x: 42, y: 172 },
-          { x: 40, y: 185 },
-          { x: 20, y: 180 },
-        ]),
+        uvs: [
+          { u: 0.3, v: 0.22 },
+          { u: 0.4, v: 0.2 },
+          { u: 0.42, v: 0.32 },
+          { u: 0.3, v: 0.34 },
+        ],
       },
       {
         id: "h6-green",
         kind: "green",
-        polygon: strip([
-          { x: 0, y: 142 },
-          { x: 42, y: 148 },
-          { x: 45, y: 175 },
-          { x: 15, y: 182 },
-          { x: -5, y: 165 },
-        ]),
+        uvs: [
+          { u: 0.38, v: 0.1 },
+          { u: 0.58, v: 0.1 },
+          { u: 0.6, v: 0.24 },
+          { u: 0.38, v: 0.24 },
+        ],
       },
     ],
-  },
-  {
+  }),
+  withLayoutZones({
     id: "scr-18",
     number: 18,
     name: "Clubhouse Closer",
     par: 4,
-    yardageM: 420,
-    description: "Long finishing par 4 — water flanks the left toward the clubhouse.",
+    yardageM: 415,
+    description: "Par 4 · Blue 415m · White 400m · Gold 359m · Red 330m — bunkered green.",
+    layoutImage: "/on-course/map-18.png",
+    layoutMapFraction: 1,
+    layoutTeeUv: { u: 0.5, v: 0.9 },
+    layoutPinUv: { u: 0.42, v: 0.1 },
     tee: { x: 0, y: 0 },
-    pin: { x: 8, y: 408 },
-    bounds: { minX: -85, maxX: 85, minY: -25, maxY: 455 },
-    zones: [
+    pin: { x: 0, y: 415 },
+    zoneUvs: [
       {
         id: "h18-tee",
         kind: "tee",
-        polygon: strip([
-          { x: -9, y: -6 },
-          { x: 9, y: -6 },
-          { x: 9, y: 8 },
-          { x: -9, y: 8 },
-        ]),
-      },
-      {
-        id: "h18-water",
-        kind: "water",
-        polygon: strip([
-          { x: -80, y: 140 },
-          { x: -26, y: 160 },
-          { x: -20, y: 300 },
-          { x: -30, y: 400 },
-          { x: -78, y: 420 },
-          { x: -85, y: 170 },
-        ]),
+        uvs: [
+          { u: 0.5, v: 0.88 },
+          { u: 0.6, v: 0.88 },
+          { u: 0.6, v: 0.96 },
+          { u: 0.5, v: 0.96 },
+        ],
       },
       {
         id: "h18-fw",
         kind: "fairway",
-        polygon: strip([
-          { x: -18, y: 12 },
-          { x: 20, y: 12 },
-          { x: 28, y: 140 },
-          { x: 26, y: 260 },
-          { x: 20, y: 360 },
-          { x: 5, y: 395 },
-          { x: -12, y: 385 },
-          { x: -16, y: 260 },
-          { x: -14, y: 140 },
-        ]),
-      },
-      {
-        id: "h18-rough-r",
-        kind: "rough",
-        polygon: strip([
-          { x: 20, y: 12 },
-          { x: 65, y: 30 },
-          { x: 75, y: 250 },
-          { x: 60, y: 430 },
-          { x: 5, y: 440 },
-          { x: 5, y: 395 },
-          { x: 20, y: 360 },
-          { x: 26, y: 260 },
-          { x: 28, y: 140 },
-        ]),
-      },
-      {
-        id: "h18-rough-l",
-        kind: "rough",
-        polygon: strip([
-          { x: -18, y: 12 },
-          { x: -14, y: 140 },
-          { x: -16, y: 260 },
-          { x: -12, y: 385 },
-          { x: -26, y: 405 },
-          { x: -26, y: 160 },
-          { x: -40, y: 30 },
-        ]),
-      },
-      {
-        id: "h18-heavy",
-        kind: "heavy",
-        polygon: strip([
-          { x: 40, y: 200 },
-          { x: 72, y: 210 },
-          { x: 70, y: 280 },
-          { x: 38, y: 270 },
-        ]),
-      },
-      {
-        id: "h18-bunker-fairway",
-        kind: "bunker",
-        polygon: strip([
-          { x: 16, y: 245 },
-          { x: 36, y: 250 },
-          { x: 34, y: 272 },
-          { x: 14, y: 266 },
-        ]),
-      },
-      {
-        id: "h18-bunker-green",
-        kind: "bunker",
-        polygon: strip([
-          { x: 16, y: 388 },
-          { x: 36, y: 392 },
-          { x: 34, y: 415 },
-          { x: 14, y: 410 },
-        ]),
+        uvs: [
+          { u: 0.48, v: 0.88 },
+          { u: 0.62, v: 0.88 },
+          { u: 0.6, v: 0.45 },
+          { u: 0.55, v: 0.22 },
+          { u: 0.4, v: 0.18 },
+          { u: 0.38, v: 0.4 },
+          { u: 0.44, v: 0.65 },
+        ],
       },
       {
         id: "h18-green",
         kind: "green",
-        polygon: strip([
-          { x: -14, y: 385 },
-          { x: 26, y: 390 },
-          { x: 30, y: 425 },
-          { x: 0, y: 435 },
-          { x: -18, y: 415 },
-        ]),
+        uvs: [
+          { u: 0.38, v: 0.05 },
+          { u: 0.56, v: 0.05 },
+          { u: 0.58, v: 0.18 },
+          { u: 0.38, v: 0.18 },
+        ],
+      },
+      {
+        id: "h18-bunker-l",
+        kind: "bunker",
+        uvs: [
+          { u: 0.3, v: 0.12 },
+          { u: 0.4, v: 0.12 },
+          { u: 0.4, v: 0.22 },
+          { u: 0.3, v: 0.22 },
+        ],
+      },
+      {
+        id: "h18-bunker-r",
+        kind: "bunker",
+        uvs: [
+          { u: 0.52, v: 0.12 },
+          { u: 0.6, v: 0.12 },
+          { u: 0.6, v: 0.2 },
+          { u: 0.52, v: 0.2 },
+        ],
       },
     ],
-  },
+  }),
 ];
 
 export function holeById(id: string): HoleData {
