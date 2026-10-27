@@ -25,6 +25,7 @@ import { ironFadeDrawConfig } from "@/lib/ironFadeDrawConfig";
 import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
 import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
 import { bunkerLiesConfig } from "@/lib/bunkerLiesConfig";
+import { approachShotSimConfig } from "@/lib/approachShotSimConfig";
 import type { CombineLeaderboardTestId } from "@/lib/academyCombinesLeaderboard";
 
 export const COMBINE_CATEGORY_IDS = [
@@ -73,6 +74,7 @@ export const CARD_HANDICAP_TEST_IDS: Partial<Record<string, CombineLeaderboardTe
   "iron-face-control-protocol": "iron_face_control",
   "iron-safe-side": "iron_safe_side",
   "iron-fade-vs-draw": "iron_fade_draw",
+  "approach-shot-sim": "approach_shot_sim",
   "tee-shot-hazard": "tee_shot_hazard",
   "driver-flight-test": "driver_flight_control",
   "bunker-proximity-protocol": "bunker_protocol",
@@ -253,6 +255,16 @@ export const COMBINE_TEST_CARDS: CombineTestCard[] = [
     blurb: "Land it within 3 m of the number. Three misses and you're out.",
     meta: ["Streak game", "30–100 m"],
     group: "Games",
+  },
+  {
+    id: "approach-shot-sim",
+    category: "Irons",
+    href: "/practice/approach-shot-simulator",
+    label: approachShotSimConfig.testName,
+    title: "Approach Shot Simulator",
+    blurb: "Nine random approaches. Score /100, with a handicap estimate from proximity.",
+    meta: ["9 shots", "100 pts max", "HCP estimate"],
+    group: "Tests",
   },
   {
     id: "iron-precision-protocol",

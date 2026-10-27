@@ -9,6 +9,7 @@ import { survival20Config } from "@/lib/survival20Config";
 import { teeShotDispersionCombineConfig } from "@/lib/teeShotDispersionCombineConfig";
 import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
+import { approachShotSimConfig } from "@/lib/approachShotSimConfig";
 
 /** Page titles that don't match the stored test name still open the right history. */
 const HISTORY_BY_LABEL: Record<string, CombineReportId> = {
@@ -29,6 +30,7 @@ const HISTORY_BY_LABEL: Record<string, CombineReportId> = {
   "Tee Shot Hazards": "tee_shot_hazard",
   "Iron Face Control": "iron_face_control",
   "Iron Safe Side": "iron_safe_side",
+  [approachShotSimConfig.testName]: "approach_shot_sim",
   "Mobility Screen": "mobility_screen",
   [teeShotDispersionCombineConfig.testName]: "tee_shot_dispersion_combine",
   [bunker9HoleChallengeConfig.testName]: "bunker_9_hole_challenge",
@@ -63,6 +65,7 @@ export const COMBINE_HISTORY_BY_CARD: Record<string, CombineReportId> = {
   "three-strikes-wedge-challenge": "three_strikes",
   "iron-precision-protocol": "ironPrecisionProtocol",
   "iron-face-control-protocol": "iron_face_control",
+  "approach-shot-sim": "approach_shot_sim",
   "iron-safe-side": "iron_safe_side",
   "iron-fade-vs-draw": "iron_fade_draw",
   "tee-shot-dispersion-combine": "tee_shot_dispersion_combine",

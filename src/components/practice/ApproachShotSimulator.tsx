@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Crosshair, Play, Radar, RefreshCw, Target, Volume2, VolumeX } from "lucide-react";
+import { Hand, Play, Radar, RefreshCw, Target, Volume2, VolumeX } from "lucide-react";
 import {
   SHOTS_PER_SET,
   approachRoll,
   cameraForApproach,
+  estimateApproachHandicap,
   fairwayPolygon,
   generateApproachScenario,
   greenPolygon,
@@ -15,13 +16,8 @@ import {
   type ApproachScenario,
   type ApproachShotResult,
 } from "@/lib/approachShotSim";
-import {
-  aimVsPin,
-  formatAimOffline,
-  landFromCarryOffline,
-  randomInDispersion,
-  sub,
-} from "@/lib/onCourseSimulator/physics";
+import { approachShotSimConfig } from "@/lib/approachShotSimConfig";
+import { dist, landFromCarryOffline, sub } from "@/lib/onCourseSimulator/physics";
 import type { Vec2 } from "@/lib/onCourseSimulator/types";
 import { playBallHit, playCup, playSand, playSplash, playSwing } from "@/lib/onCourseSimulator/sounds";
 import { trackToolUse } from "@/lib/appUsage";
@@ -29,6 +25,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isCoachEmail } from "@/lib/coachEmails";
 import { TestingForSelect } from "@/components/combine/TestingForSelect";
 import type { PlayerOption } from "@/lib/coachingSpaces";
+import { FingerMissInput, fingerMissReady } from "@/components/practice/FingerMissInput";
+import {
+  landFromFingerMiss,
+  type FingerMissDirection,
+  type FingerMissWidth,
+} from "@/lib/fingerMissGeometry";
+import { formatHandicap } from "@/lib/practiceHandicap";
+import { insertPracticeLogCompat } from "@/lib/practiceLogsCompat";
+import { awardCombineCompletionXp } from "@/lib/combineXp";
+import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 
 type FlightAnim = { from: Vec2; to: Vec2; progress: number; done: boolean };
 type Phase = "setup" | "playing" | "complete";
@@ -84,7 +90,48 @@ type SavedResult = {
   playerName: string | null;
   mode: ApproachMode;
   stats: ReturnType<typeof summarizeSession>;
+  handicapEstimate: number;
 };
+
+async function persistApproachSet(
+  userId: string,
+  mode: ApproachMode,
+  shots: ApproachShotResult[],
+  stats: ReturnType<typeof summarizeSession>,
+): Promise<void> {
+  try {
+    const { createClient } = await import("@/lib/supabase/client");
+    const supabase = createClient();
+    const res = await insertPracticeLogCompat(supabase, {
+      user_id: userId,
+      log_type: approachShotSimConfig.practiceLogType,
+      score: stats.score,
+      total_points: stats.score,
+      strike_data: shots.map((s) => ({
+        points: s.points,
+        lie: s.lie,
+        proximityM: s.proximityM,
+        distanceM: s.distanceM,
+      })),
+      metadata: {
+        mode,
+        girPct: stats.girPct,
+        avgProximityM: stats.avgProximityM,
+        handicapEstimate: estimateApproachHandicap(stats.score),
+      },
+    });
+    if (!res.ok) {
+      console.warn("[ApproachShotSim] practice_logs insert:", res.message);
+      return;
+    }
+    await awardCombineCompletionXp(userId);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("practiceSessionsUpdated"));
+    }
+  } catch (e) {
+    console.warn("[ApproachShotSim] practice_logs insert failed", formatSupabaseWriteError(e));
+  }
+}
 
 function saveLastResult(entry: SavedResult) {
   try {
@@ -114,8 +161,10 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
   const [unit, setUnit] = useState<"m" | "yd">("m");
   const [carryIn, setCarryIn] = useState("");
   const [offlineIn, setOfflineIn] = useState("0");
-  const [dispersionM, setDispersionM] = useState(8);
-  const [aim, setAim] = useState<Vec2 | null>(null);
+  /** Aim target on the map (required for finger mode; optional for radar). */
+  const [mark, setMark] = useState<Vec2 | null>(null);
+  const [fingerDir, setFingerDir] = useState<FingerMissDirection | null>(null);
+  const [fingerWidth, setFingerWidth] = useState<FingerMissWidth | null>(null);
   const [soundOn, setSoundOn] = useState(true);
   const [results, setResults] = useState<ApproachShotResult[]>([]);
   const [flight, setFlight] = useState<FlightAnim | null>(null);
@@ -124,7 +173,6 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const dragAim = useRef(false);
   const camRef = useRef({ cx: 0, cy: 100, scale: 4 });
 
   const toDisplay = (metres: number) =>
@@ -133,13 +181,13 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
   const unitLabel = unit === "m" ? "m" : "yd";
 
   const stats = useMemo(() => summarizeSession(results), [results]);
+  const handicapEstimate = useMemo(
+    () => (stats.shots > 0 ? estimateApproachHandicap(stats.score) : null),
+    [stats.shots, stats.score],
+  );
   const shotNum = results.length + 1;
   const playerLabel = testingFor?.name ?? (isCoach ? "Yourself" : null);
-
-  const aimInfo = useMemo(() => {
-    if (!aim || !scenario) return null;
-    return aimVsPin(BALL, scenario.pin, aim);
-  }, [aim, scenario]);
+  const persistForId = testingFor?.id ?? user?.id ?? null;
 
   useEffect(() => {
     setLastSaved(loadLastResult());
@@ -149,7 +197,9 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
     if (!scenario || phase !== "playing") return;
     setCarryIn(String(toDisplay(scenario.distanceM)));
     setOfflineIn("0");
-    setAim(null);
+    setMark(null);
+    setFingerDir(null);
+    setFingerWidth(null);
     setFlight(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenario?.id]);
@@ -168,7 +218,9 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
     setResults([]);
     setLastMsg(null);
     setFlight(null);
-    setAim(null);
+    setMark(null);
+    setFingerDir(null);
+    setFingerWidth(null);
     setPhase("playing");
   };
 
@@ -177,7 +229,9 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
     setScenario(null);
     setResults([]);
     setFlight(null);
-    setAim(null);
+    setMark(null);
+    setFingerDir(null);
+    setFingerWidth(null);
     setLastMsg(null);
     setLastSaved(loadLastResult());
   };
@@ -187,15 +241,16 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
   }, []);
 
   const finishLanding = useCallback(
-    (land: Vec2, current: ApproachScenario) => {
-      const rest = approachRoll(current, land, BALL);
+    (land: Vec2, current: ApproachScenario, opts?: { finalMark?: boolean }) => {
+      // Finger mark is the finished lie; radar landings get a little roll.
+      const rest = opts?.finalMark ? land : approachRoll(current, land, BALL);
       const scored = scoreApproachShot(current, rest);
       const entry: ApproachShotResult = {
         ...scored,
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       };
 
-      setFlight({ from: BALL, to: land, progress: 0, done: false });
+      setFlight({ from: BALL, to: rest, progress: 0, done: false });
       sfx(playSwing);
       sfx(playBallHit);
       window.setTimeout(() => {
@@ -218,23 +273,28 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
         const next = [...prev, entry];
         if (next.length >= SHOTS_PER_SET) {
           const summary = summarizeSession(next);
+          const hcp = estimateApproachHandicap(summary.score);
           const saved: SavedResult = {
             at: new Date().toISOString(),
             playerId: testingFor?.id ?? null,
             playerName: testingFor?.name ?? null,
             mode,
             stats: summary,
+            handicapEstimate: hcp,
           };
           saveLastResult(saved);
           setLastSaved(saved);
           setPhase("complete");
+          if (persistForId) {
+            void persistApproachSet(persistForId, mode, next, summary);
+          }
         } else {
           window.setTimeout(() => nextScenario(), 700);
         }
         return next;
       });
     },
-    [sfx, toDisplay, unitLabel, nextScenario, testingFor, mode],
+    [sfx, toDisplay, unitLabel, nextScenario, testingFor, mode, persistForId],
   );
 
   const fireRadar = () => {
@@ -244,15 +304,19 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
     if (!Number.isFinite(carryDisp) || carryDisp <= 0) return;
     const carryM = fromDisplay(carryDisp);
     const offlineM = fromDisplay(Number.isFinite(offlineDisp) ? offlineDisp : 0);
-    const aimPt = aim ?? scenario.pin;
+    const aimPt = mark ?? scenario.pin;
     const land = landFromCarryOffline(BALL, sub(aimPt, BALL), carryM, offlineM);
     finishLanding(land, scenario);
   };
 
-  const fireTouch = () => {
-    if (!scenario || flight || phase !== "playing" || !aim) return;
-    const target = randomInDispersion(aim, BALL, dispersionM);
-    finishLanding(target, scenario);
+  /** Log finger dispersion: aim first, then fingers L/R of that line (on-line = aim mark). */
+  const confirmFingerMiss = () => {
+    if (!scenario || flight || phase !== "playing" || !mark) return;
+    if (!fingerMissReady(fingerDir, fingerWidth) || !fingerDir) return;
+    const fingers = fingerDir === "straight" ? 0 : fingerWidth!;
+    // Carry = ball→aim so "On line" finishes on the aim mark, not the random pin distance.
+    const { land } = landFromFingerMiss(BALL, mark, fingerDir, fingers);
+    finishLanding(land, scenario, { finalMark: true });
   };
 
   useEffect(() => {
@@ -372,36 +436,12 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
       ctx.fill();
 
       const entryScreen = { x: w / 2, y: h + 8 };
-      if (aim && mode === "touch") {
-        const a = worldToScreen(aim, cam, w, h);
-        ctx.strokeStyle = "rgba(255,170,40,0.85)";
-        ctx.setLineDash([6, 5]);
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(entryScreen.x, entryScreen.y);
-        ctx.lineTo(a.x, a.y);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = "rgba(255,170,40,0.15)";
-        ctx.beginPath();
-        ctx.arc(a.x, a.y, Math.max(14, dispersionM * cam.scale), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255,170,40,0.7)";
-        ctx.stroke();
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(a.x - 8, a.y);
-        ctx.lineTo(a.x + 8, a.y);
-        ctx.moveTo(a.x, a.y - 8);
-        ctx.lineTo(a.x, a.y + 8);
-        ctx.stroke();
-      }
-
-      if (mode === "launch_monitor") {
-        const target = aim ?? scenario.pin;
+      // Aim line (required for finger mode; optional for radar)
+      if (mode === "finger_dispersion" ? mark : true) {
+        const target = mark ?? scenario.pin;
         const t = worldToScreen(target, cam, w, h);
-        ctx.strokeStyle = "rgba(1,68,33,0.45)";
+        ctx.strokeStyle =
+          mode === "finger_dispersion" ? "rgba(1,68,33,0.7)" : "rgba(1,68,33,0.45)";
         ctx.setLineDash([5, 6]);
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -409,6 +449,51 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
         ctx.lineTo(t.x, t.y);
         ctx.stroke();
         ctx.setLineDash([]);
+        if (mode === "finger_dispersion" && mark) {
+          ctx.fillStyle = "#014421";
+          ctx.beginPath();
+          ctx.arc(t.x, t.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = "#fff";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
+
+      if (
+        mode === "finger_dispersion" &&
+        mark &&
+        fingerDir &&
+        (fingerDir === "straight" || fingerWidth != null)
+      ) {
+        const { land } = landFromFingerMiss(
+          BALL,
+          mark,
+          fingerDir,
+          fingerDir === "straight" ? 0 : fingerWidth!,
+        );
+        const a = worldToScreen(land, cam, w, h);
+        ctx.strokeStyle = "rgba(255,170,40,0.75)";
+        ctx.setLineDash([5, 4]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(entryScreen.x, entryScreen.y);
+        ctx.lineTo(a.x, a.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(255,170,40,0.2)";
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#ffaa28";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, 7, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       if (flight) {
@@ -442,21 +527,16 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [phase, scenario, aim, mode, dispersionM, flight, compact]);
+  }, [phase, scenario, mark, mode, flight, compact, fingerDir, fingerWidth]);
 
   const onPointer = (e: React.PointerEvent<HTMLCanvasElement>, down?: boolean) => {
     if (phase !== "playing" || !scenario) return;
+    if (!down) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const sp = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    const wp = screenToWorld(sp, camRef.current, rect.width, rect.height);
-    if (mode === "touch") {
-      if (down) dragAim.current = true;
-      if (dragAim.current || down) setAim(wp);
-    } else if (down) {
-      setAim(wp);
-    }
+    setMark(screenToWorld(sp, camRef.current, rect.width, rect.height));
   };
 
   return (
@@ -511,7 +591,7 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
                 promptTitle="Who is taking this test?"
                 promptHint="Yourself, or search a player in your lesson"
                 selectedTitle={(name) => `Testing ${name}`}
-                selectedHint="Their approach set score saves on this phone."
+                selectedHint="Their set score and handicap estimate save to their practice record."
               />
             )}
 
@@ -521,7 +601,7 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
                 {(
                   [
                     { id: "launch_monitor" as const, label: "Radar", icon: Radar },
-                    { id: "touch" as const, label: "Touch aim", icon: Crosshair },
+                    { id: "finger_dispersion" as const, label: "Finger dispersion", icon: Hand },
                   ] as const
                 ).map((m) => (
                   <button
@@ -539,6 +619,11 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
                   </button>
                 ))}
               </div>
+              <p className="mt-1.5 text-[11px] text-stone-500">
+                {mode === "finger_dispersion"
+                  ? "Tap to set aim, hit that line on the range, then enter fingers left or right of aim."
+                  : "Hit your real shot, then enter carry and offline from the launch monitor."}
+              </p>
             </div>
 
             <div className="flex items-center justify-between gap-2">
@@ -563,7 +648,7 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
               <p className="font-semibold text-stone-800">{SHOTS_PER_SET} random approaches</p>
               <p className="mt-1">
                 Each shot gets a new distance, green size, pin and hazards. Score is out of 100
-                (closer to the pin = higher). Finish the set for an average score
+                (closer to the pin = higher). Finish the set for a handicap estimate
                 {isCoach && testingFor ? ` for ${testingFor.name}` : ""}.
               </p>
             </div>
@@ -573,8 +658,17 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
                 <p className="font-semibold text-stone-800">Last set on this phone</p>
                 <p className="mt-0.5">
                   {lastSaved.playerName ? lastSaved.playerName : "Yourself"} ·{" "}
-                  <span className="font-bold text-[#014421]">{lastSaved.stats.score}/100</span> · GIR{" "}
-                  {lastSaved.stats.girPct}%
+                  <span className="font-bold text-[#014421]">{lastSaved.stats.score}/100</span>
+                  {typeof lastSaved.handicapEstimate === "number" && (
+                    <>
+                      {" "}
+                      · est.{" "}
+                      <span className="font-bold text-[#014421]">
+                        {formatHandicap(lastSaved.handicapEstimate)}
+                      </span>
+                    </>
+                  )}{" "}
+                  · GIR {lastSaved.stats.girPct}%
                   {lastSaved.stats.avgProximityM != null
                     ? ` · avg ${toDisplay(lastSaved.stats.avgProximityM)}${unitLabel}`
                     : ""}
@@ -628,35 +722,21 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
                   (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
                   onPointer(e, true);
                 }}
-                onPointerMove={(e) => onPointer(e)}
-                onPointerUp={() => {
-                  dragAim.current = false;
-                }}
-                onPointerCancel={() => {
-                  dragAim.current = false;
-                }}
               />
               <div className="pointer-events-none absolute left-2 top-2 max-w-[85%] rounded-2xl bg-white/95 px-2.5 py-1.5 text-[11px] font-semibold text-stone-800 shadow-sm">
-                {aimInfo ? (
-                  <span>
-                    Aim: {formatAimOffline(aimInfo.offlineM, toDisplay, unitLabel)}
-                    {Math.abs(aimInfo.longM) >= 0.15 && (
-                      <span className="font-medium text-stone-500">
-                        {" "}
-                        · {toDisplay(Math.abs(aimInfo.longM))}
-                        {unitLabel} {aimInfo.longM > 0 ? "long" : "short"}
-                      </span>
-                    )}
-                  </span>
-                ) : (
-                  <span>Aim for the pin · drag to see offline</span>
-                )}
+                {mode === "finger_dispersion"
+                  ? mark
+                    ? "Aim set — hit, then enter fingers L/R"
+                    : "Tap the map to set your aim"
+                  : "Optional: tap to set aim line (defaults to pin)"}
               </div>
             </div>
 
             {mode === "launch_monitor" ? (
               <div className="space-y-2 rounded-2xl bg-stone-50 p-3 ring-1 ring-stone-100">
-                <p className="text-xs text-stone-500">Enter carry &amp; offline from your launch monitor</p>
+                <p className="text-xs text-stone-500">
+                  Hit your real shot, then enter carry &amp; offline from the launch monitor
+                </p>
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block text-xs font-semibold text-stone-700">
                     Carry ({unitLabel})
@@ -685,37 +765,35 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
                   disabled={!!flight}
                   className="w-full rounded-2xl bg-[#014421] py-3.5 text-sm font-bold text-white disabled:opacity-40"
                 >
-                  Hit approach
+                  Log shot
                 </button>
               </div>
             ) : (
               <div className="space-y-2 rounded-2xl bg-stone-50 p-3 ring-1 ring-stone-100">
-                <p className="text-xs text-stone-500">Tap or drag aim on the map, then swing</p>
-                <label className="block text-xs font-semibold text-stone-700">
-                  Dispersion ±{toDisplay(dispersionM)}
-                  {unitLabel}
-                  <input
-                    type="range"
-                    min={3}
-                    max={22}
-                    step={1}
-                    value={dispersionM}
-                    onChange={(e) => setDispersionM(Number(e.target.value))}
-                    className="mt-2 w-full accent-[#014421]"
-                  />
-                </label>
-                {aimInfo && (
-                  <p className="text-center text-xs font-semibold text-stone-700">
-                    {formatAimOffline(aimInfo.offlineM, toDisplay, unitLabel)}
-                  </p>
-                )}
+                <p className="text-xs text-stone-500">
+                  1. Tap the map to set aim · 2. Hit that line on the range at the shown distance ·
+                  3. Enter fingers left or right of aim
+                </p>
+                <FingerMissInput
+                  distanceM={mark ? dist(BALL, mark) : scenario.distanceM}
+                  unitLabel={unitLabel}
+                  toDisplay={toDisplay}
+                  direction={fingerDir}
+                  fingers={fingerWidth}
+                  onDirectionChange={setFingerDir}
+                  onFingersChange={setFingerWidth}
+                />
                 <button
                   type="button"
-                  onClick={fireTouch}
-                  disabled={!aim || !!flight}
+                  onClick={confirmFingerMiss}
+                  disabled={!mark || !fingerMissReady(fingerDir, fingerWidth) || !!flight}
                   className="w-full rounded-2xl bg-[#FFA500] py-3.5 text-sm font-bold text-[#3d2600] disabled:opacity-40"
                 >
-                  {aim ? "Swing" : "Set aim first"}
+                  {!mark
+                    ? "Set aim first"
+                    : fingerMissReady(fingerDir, fingerWidth)
+                      ? "Log shot"
+                      : "Enter finger miss"}
                 </button>
               </div>
             )}
@@ -765,6 +843,14 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
                 <span className="text-lg font-bold text-white/70">/100</span>
               </p>
               <p className="mt-1 text-xs font-semibold text-[#FFA500]">{stats.band}</p>
+              {handicapEstimate != null && (
+                <p className="mt-3 border-t border-white/15 pt-3 text-sm font-bold tracking-tight">
+                  Est. handicap{" "}
+                  <span className="tabular-nums text-[#FFA500]">
+                    {formatHandicap(handicapEstimate)}
+                  </span>
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-xl bg-white p-2.5 text-center shadow-sm">
@@ -779,8 +865,8 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
               </div>
             </div>
             <p className="text-center text-[11px] text-stone-400">
-              Average of each shot&apos;s points. Closer to the pin scores higher; misses and water
-              score low.
+              Handicap estimate uses the same irons practice curve as other combines. Last 3 sets feed
+              your practice handicap.
             </p>
             <div className="flex gap-2">
               <button

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Flag,
-  Crosshair,
+  Hand,
   Radar,
   Volume2,
   VolumeX,
@@ -13,17 +13,13 @@ import {
 } from "lucide-react";
 import { STONECUTTERS_HOLES, cameraForHole } from "@/lib/onCourseSimulator/courseData";
 import {
-  aimVsPin,
   applyRoll,
   dist,
   dropNearHazard,
   firstWaterCrossing,
-  formatAimOffline,
   landFromCarryOffline,
   lieAt,
-  normalize,
   puttMakeChance,
-  randomInDispersion,
   simulatePutt,
   sub,
 } from "@/lib/onCourseSimulator/physics";
@@ -50,6 +46,12 @@ import {
   type Vec2,
 } from "@/lib/onCourseSimulator/types";
 import { trackToolUse } from "@/lib/appUsage";
+import { FingerMissInput, fingerMissReady } from "@/components/practice/FingerMissInput";
+import {
+  offlineMetresFromFingers,
+  type FingerMissDirection,
+  type FingerMissWidth,
+} from "@/lib/fingerMissGeometry";
 
 type FlightAnim = {
   from: Vec2;
@@ -208,8 +210,10 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
   const [unit, setUnit] = useState<"m" | "yd">("m");
   const [carryIn, setCarryIn] = useState("180");
   const [offlineIn, setOfflineIn] = useState("0");
-  const [dispersionM, setDispersionM] = useState(12);
-  const [aim, setAim] = useState<Vec2 | null>(null);
+  /** Aim target (required for finger mode; optional for launch monitor). */
+  const [mark, setMark] = useState<Vec2 | null>(null);
+  const [fingerDir, setFingerDir] = useState<FingerMissDirection | null>(null);
+  const [fingerWidth, setFingerWidth] = useState<FingerMissWidth | null>(null);
   const [soundOn, setSoundOn] = useState(true);
   const [banner, setBanner] = useState<string | null>("Pick a hole and take your shot");
   const [flight, setFlight] = useState<FlightAnim | null>(null);
@@ -217,7 +221,6 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const dragAim = useRef(false);
   const camRef = useRef(cameraForHole(STONECUTTERS_HOLES[0]!, 360, 400));
 
   const toDisplay = (metres: number) =>
@@ -227,14 +230,17 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
 
   const toPin = dist(round.ball, hole.pin);
 
-  const aimInfo = useMemo(() => {
-    if (!aim) return null;
-    return aimVsPin(round.ball, hole.pin, aim);
-  }, [aim, round.ball, hole.pin]);
+  const fingerCarryM = useMemo(() => {
+    const n = Number(carryIn);
+    if (Number.isFinite(n) && n > 0) return fromDisplay(n);
+    return toPin;
+  }, [carryIn, toPin, unit]);
 
   useEffect(() => {
     setRound(freshHole(hole));
-    setAim(null);
+    setMark(null);
+    setFingerDir(null);
+    setFingerWidth(null);
     setFlight(null);
     setBanner(`Hole ${hole.number} · Par ${hole.par} · ${hole.yardageM}m`);
     const wrap = wrapRef.current;
@@ -367,23 +373,27 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
     if (!Number.isFinite(carryDisp) || carryDisp <= 0) return;
     const carryM = fromDisplay(carryDisp);
     const offlineM = fromDisplay(offlineDisp);
-    const aimPt = aim ?? hole.pin;
+    const aimPt = mark ?? hole.pin;
     const land = landFromCarryOffline(round.ball, sub(aimPt, round.ball), carryM, offlineM);
     resolveLanding(round.ball, land, club, offlineM);
+    setMark(null);
   };
 
-  const fireArcade = () => {
-    if (round.holed || flight || !aim) return;
+  /** Log finger dispersion: aim first, then carry + fingers L/R of that line. */
+  const confirmFingerMiss = () => {
+    if (round.holed || flight || !mark) return;
+    if (!fingerMissReady(fingerDir, fingerWidth) || !fingerDir) return;
+    const carryDisp = Number(carryIn);
+    if (!Number.isFinite(carryDisp) || carryDisp <= 0) return;
     trackToolUse("on-course-sim");
-    const target = randomInDispersion(aim, round.ball, dispersionM);
-    const offlineM =
-      (() => {
-        const forward = normalize(sub(aim, round.ball));
-        const right = { x: forward.y, y: -forward.x };
-        const delta = sub(target, aim);
-        return delta.x * right.x + delta.y * right.y;
-      })() || 0;
-    resolveLanding(round.ball, target, club, offlineM);
+    const carryM = fromDisplay(carryDisp);
+    const fingers = fingerDir === "straight" ? 0 : fingerWidth!;
+    const offlineM = offlineMetresFromFingers(carryM, fingerDir, fingers);
+    const land = landFromCarryOffline(round.ball, sub(mark, round.ball), carryM, offlineM);
+    resolveLanding(round.ball, land, club, offlineM);
+    setMark(null);
+    setFingerDir(null);
+    setFingerWidth(null);
   };
 
   const firePutt = () => {
@@ -550,9 +560,48 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      // Aim reticle
-      if (aim && mode === "arcade" && !round.holed) {
-        const a = worldToScreen(aim, hole, cam, w, h);
+      // Aim line + finger miss preview (relative to chosen aim)
+      if (!round.holed && (mode === "launch_monitor" || mark)) {
+        const target = mark ?? hole.pin;
+        const b = worldToScreen(round.ball, hole, cam, w, h);
+        const t = worldToScreen(target, hole, cam, w, h);
+        ctx.strokeStyle =
+          mode === "finger_dispersion" ? "rgba(1, 68, 33, 0.7)" : "rgba(1, 68, 33, 0.55)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 6]);
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(t.x, t.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (mode === "finger_dispersion" && mark) {
+          ctx.fillStyle = "#014421";
+          ctx.beginPath();
+          ctx.arc(t.x, t.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = "#fff";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
+
+      if (
+        mode === "finger_dispersion" &&
+        !round.holed &&
+        mark &&
+        fingerDir &&
+        (fingerDir === "straight" || fingerWidth != null) &&
+        fingerCarryM > 0
+      ) {
+        const fingers = fingerDir === "straight" ? 0 : fingerWidth!;
+        const offlineM = offlineMetresFromFingers(fingerCarryM, fingerDir, fingers);
+        const land = landFromCarryOffline(
+          round.ball,
+          sub(mark, round.ball),
+          fingerCarryM,
+          offlineM,
+        );
+        const a = worldToScreen(land, hole, cam, w, h);
         const b = worldToScreen(round.ball, hole, cam, w, h);
         ctx.strokeStyle = "rgba(255, 170, 40, 0.85)";
         ctx.lineWidth = 2;
@@ -562,39 +611,19 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
         ctx.lineTo(a.x, a.y);
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.fillStyle = "rgba(255, 170, 40, 0.15)";
+        ctx.fillStyle = "rgba(255, 170, 40, 0.2)";
         ctx.beginPath();
-        ctx.arc(a.x, a.y, dispersionM * cam.scale, 0, Math.PI * 2);
+        ctx.arc(a.x, a.y, 14, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = "rgba(255, 170, 40, 0.7)";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(a.x - 8, a.y);
-        ctx.lineTo(a.x + 8, a.y);
-        ctx.moveTo(a.x, a.y - 8);
-        ctx.lineTo(a.x, a.y + 8);
-        ctx.stroke();
         ctx.strokeStyle = "#ffaa28";
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.arc(a.x, a.y, 5, 0, Math.PI * 2);
+        ctx.arc(a.x, a.y, 7, 0, Math.PI * 2);
         ctx.stroke();
-      }
-
-      if (mode === "launch_monitor" && !round.holed) {
-        const target = aim ?? hole.pin;
-        const b = worldToScreen(round.ball, hole, cam, w, h);
-        const t = worldToScreen(target, hole, cam, w, h);
-        ctx.strokeStyle = "rgba(1, 68, 33, 0.55)";
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 6]);
+        ctx.fillStyle = "#fff";
         ctx.beginPath();
-        ctx.moveTo(b.x, b.y);
-        ctx.lineTo(t.x, t.y);
-        ctx.stroke();
-        ctx.setLineDash([]);
+        ctx.arc(a.x, a.y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       // Flight tracer with glow
@@ -669,22 +698,17 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [hole, round.ball, round.holed, aim, mode, dispersionM, flight, compact]);
+  }, [hole, round.ball, round.holed, mark, mode, flight, compact, fingerDir, fingerWidth, fingerCarryM]);
 
   const onPointer = (e: React.PointerEvent<HTMLCanvasElement>, down?: boolean) => {
     if (round.holed) return;
+    if (!down) return;
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
     if (!canvas || !wrap) return;
     const rect = canvas.getBoundingClientRect();
     const sp = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    const wp = screenToWorld(sp, hole, camRef.current, rect.width, rect.height);
-    if (mode === "arcade") {
-      if (down) dragAim.current = true;
-      if (dragAim.current || down) setAim(wp);
-    } else if (down) {
-      setAim(wp);
-    }
+    setMark(screenToWorld(sp, hole, camRef.current, rect.width, rect.height));
   };
 
   const holeSelect = (dir: -1 | 1) => {
@@ -743,7 +767,9 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
             type="button"
             onClick={() => {
               setRound(freshHole(hole));
-              setAim(null);
+              setMark(null);
+              setFingerDir(null);
+              setFingerWidth(null);
               setFlight(null);
               setBanner(`Hole ${hole.number} restarted`);
             }}
@@ -766,7 +792,7 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
           {(
             [
               { id: "launch_monitor" as const, label: "Launch monitor", icon: Radar },
-              { id: "arcade" as const, label: "Touch aim", icon: Crosshair },
+              { id: "finger_dispersion" as const, label: "Finger dispersion", icon: Hand },
             ] as const
           ).map((m) => (
             <button
@@ -776,7 +802,9 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
               aria-checked={mode === m.id}
               onClick={() => {
                 setMode(m.id);
-                setAim(null);
+                setMark(null);
+                setFingerDir(null);
+                setFingerWidth(null);
               }}
               className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-2 py-2 text-xs font-semibold transition ${
                 mode === m.id ? "bg-[#014421] text-white shadow-sm" : "text-stone-600 hover:text-stone-900"
@@ -787,6 +815,11 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
             </button>
           ))}
         </div>
+        <p className="text-[11px] text-stone-500">
+          {mode === "finger_dispersion"
+            ? "Tap to set aim, hit that line on the range, then enter carry and fingers left or right of aim."
+            : "Hit your real shot, then enter carry and offline from the launch monitor."}
+        </p>
 
         <div
           ref={wrapRef}
@@ -799,32 +832,17 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
               (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
               onPointer(e, true);
             }}
-            onPointerMove={(e) => onPointer(e)}
-            onPointerUp={() => {
-              dragAim.current = false;
-            }}
-            onPointerCancel={() => {
-              dragAim.current = false;
-            }}
           />
           <div className="pointer-events-none absolute left-2 top-2 max-w-[80%] rounded-2xl bg-white/95 px-2.5 py-1.5 text-[11px] font-semibold text-stone-800 shadow-sm backdrop-blur">
             {round.holed ? (
               <span>Complete</span>
-            ) : aimInfo ? (
-              <span>
-                Shot {round.shots.length + 1} · {formatAimOffline(aimInfo.offlineM, toDisplay, unitLabel)}
-                {Math.abs(aimInfo.longM) >= 0.15 && (
-                  <span className="font-medium text-stone-500">
-                    {" "}
-                    · {toDisplay(Math.abs(aimInfo.longM))}
-                    {unitLabel} {aimInfo.longM > 0 ? "long" : "short"}
-                  </span>
-                )}
-              </span>
+            ) : mode === "finger_dispersion" && !mark ? (
+              <span>Tap the map to set your aim</span>
             ) : (
               <span>
                 Shot {round.shots.length + 1} · {toDisplay(toPin)}
                 {unitLabel} · {TERRAIN_LABEL[round.lie]}
+                {mode === "finger_dispersion" && mark ? " · Aim set" : ""}
               </span>
             )}
           </div>
@@ -902,7 +920,9 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
           </div>
         ) : mode === "launch_monitor" ? (
           <div className="space-y-2 rounded-2xl bg-stone-50 p-3 ring-1 ring-stone-100">
-            <p className="text-xs text-stone-500">TrackMan / GC3 / R10 — enter carry and offline</p>
+            <p className="text-xs text-stone-500">
+              Hit your real shot, then enter carry and offline from the launch monitor
+            </p>
             <div className="grid grid-cols-2 gap-2">
               <label className="block text-xs font-semibold text-stone-700">
                 Carry ({unitLabel})
@@ -953,62 +973,57 @@ export default function OnCourseSimulator({ compact }: { compact?: boolean }) {
                 </div>
               </label>
             </div>
-            <p className="text-[11px] text-stone-400">Tap the map to set aim (defaults to pin).</p>
+            <p className="text-[11px] text-stone-400">Optional: tap the map to set aim line (defaults to pin).</p>
             <button
               type="button"
               onClick={fireLaunchMonitor}
               disabled={!!flight}
               className="w-full rounded-2xl bg-[#014421] py-3.5 text-sm font-bold text-white disabled:opacity-40"
             >
-              Hit shot
+              Log shot
             </button>
           </div>
         ) : (
           <div className="space-y-2 rounded-2xl bg-stone-50 p-3 ring-1 ring-stone-100">
-            <p className="text-xs text-stone-500">Tap or drag on the map to aim, then swing</p>
-            {aimInfo && (
-              <p className="text-center text-xs font-semibold text-stone-700">
-                {formatAimOffline(aimInfo.offlineM, toDisplay, unitLabel)}
-                {Math.abs(aimInfo.longM) >= 0.15 && (
-                  <span className="font-medium text-stone-500">
-                    {" "}
-                    · {toDisplay(Math.abs(aimInfo.longM))}
-                    {unitLabel} {aimInfo.longM > 0 ? "long" : "short"}
-                  </span>
-                )}
-              </p>
-            )}
+            <p className="text-xs text-stone-500">
+              1. Tap the map to set aim · 2. Hit that line on the range · 3. Enter carry and fingers
+              left or right of aim
+            </p>
             <label className="block text-xs font-semibold text-stone-700">
-              Dispersion ±{toDisplay(dispersionM)}
-              {unitLabel}{" "}
-              <span className="font-medium text-stone-400">
-                (
-                {dispersionM <= 6
-                  ? "Tour"
-                  : dispersionM <= 12
-                    ? "Scratch"
-                    : dispersionM <= 18
-                      ? "Mid"
-                      : "High hcp"}
-                )
-              </span>
+              Carry ({unitLabel})
               <input
-                type="range"
-                min={4}
-                max={28}
-                step={1}
-                value={dispersionM}
-                onChange={(e) => setDispersionM(Number(e.target.value))}
-                className="mt-2 w-full accent-[#014421]"
+                type="number"
+                inputMode="decimal"
+                value={carryIn}
+                onChange={(e) => setCarryIn(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-lg font-bold tabular-nums text-stone-900 outline-none focus:border-[#014421]"
               />
             </label>
+            <FingerMissInput
+              distanceM={fingerCarryM}
+              unitLabel={unitLabel}
+              toDisplay={toDisplay}
+              direction={fingerDir}
+              fingers={fingerWidth}
+              onDirectionChange={setFingerDir}
+              onFingersChange={setFingerWidth}
+            />
             <button
               type="button"
-              onClick={fireArcade}
-              disabled={!aim || !!flight}
+              onClick={confirmFingerMiss}
+              disabled={
+                !mark ||
+                !fingerMissReady(fingerDir, fingerWidth) ||
+                !!flight ||
+                !(Number(carryIn) > 0)
+              }
               className="w-full rounded-2xl bg-[#FFA500] py-3.5 text-sm font-bold text-[#3d2600] disabled:opacity-40"
             >
-              {aim ? "Swing" : "Set aim first"}
+              {!mark
+                ? "Set aim first"
+                : fingerMissReady(fingerDir, fingerWidth) && Number(carryIn) > 0
+                  ? "Log shot"
+                  : "Enter carry & finger miss"}
             </button>
           </div>
         )}

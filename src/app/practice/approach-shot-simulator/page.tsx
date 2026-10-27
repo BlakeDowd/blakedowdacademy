@@ -26,7 +26,7 @@ export default function ApproachShotSimulatorPage() {
           <h1 className="text-xl font-bold tracking-tight">Approach Shot Simulator</h1>
         </div>
         <p className="mt-1 text-xs font-medium text-white/80">
-          Random greens &amp; hazards · radar or touch · scored handicap
+          Random greens &amp; hazards · radar or finger dispersion · score /100
         </p>
       </header>
       <main className="mx-auto max-w-lg px-3 pt-3">

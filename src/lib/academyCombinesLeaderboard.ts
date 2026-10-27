@@ -21,6 +21,7 @@ import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConf
 import { teeShotHazardConfig, TEE_SHOT_HAZARD_MAX_POINTS } from "@/lib/teeShotHazardConfig";
 import { driverFlightTestConfig } from "@/lib/driverFlightTestConfig";
 import { BUNKER_LIES_PAR, bunkerLiesConfig, formatToPar } from "@/lib/bunkerLiesConfig";
+import { approachShotSimConfig } from "@/lib/approachShotSimConfig";
 
 export type CombineLeaderboardTestId =
   | "ironPrecisionProtocol"
@@ -40,6 +41,7 @@ export type CombineLeaderboardTestId =
   | "iron_face_control"
   | "iron_safe_side"
   | "iron_fade_draw"
+  | "approach_shot_sim"
   | "three_strikes"
   | "bunker_protocol"
   | "tee_shot_hazard"
@@ -191,6 +193,13 @@ export const COMBINE_LEADERBOARD_OPTIONS: CombineLeaderboardTestOption[] = [
     scoreHeader: "Score (/100)",
   },
   {
+    id: "approach_shot_sim",
+    label: approachShotSimConfig.testName,
+    source: "practice_logs",
+    higherIsBetter: true,
+    scoreHeader: "Score (/100)",
+  },
+  {
     id: "three_strikes",
     label: threeStrikesWedgeConfig.testName,
     source: "practice_logs",
@@ -298,6 +307,7 @@ type PracticeMetadataCombineId = Exclude<
   | "chipping"
   | "survival_20"
   | "iron_face_control"
+  | "approach_shot_sim"
 >;
 
 function extractPracticeScore(
@@ -481,8 +491,9 @@ export function collectCombineAttempts(
       if (tp == null || tp < 0) continue;
       add(uid, tp, `${Math.round(tp)} shots`, parseLeaderboardEventMs(row.created_at) ?? 0);
     }
-  } else if (testId === "iron_face_control") {
-    const want = ironFaceControlConfig.practiceLogType.toLowerCase();
+  } else if (testId === "iron_face_control" || testId === "approach_shot_sim") {
+    const cfg = testId === "approach_shot_sim" ? approachShotSimConfig : ironFaceControlConfig;
+    const want = cfg.practiceLogType.toLowerCase();
     const rows = (practiceLogs || []).filter(
       (r) => String(r?.log_type ?? "").trim().toLowerCase() === want,
     );
@@ -491,7 +502,7 @@ export function collectCombineAttempts(
       const uid = row.user_id;
       if (!uid) continue;
       const tp = num(row.score) ?? num(row.total_points);
-      if (tp == null || tp < 0 || tp > ironFaceControlConfig.maxSessionPoints) continue;
+      if (tp == null || tp < 0 || tp > cfg.maxSessionPoints) continue;
       add(uid, tp, `${Math.round(tp)} / 100`, parseLeaderboardEventMs(row.created_at) ?? 0);
     }
   } else if (

@@ -1,6 +1,7 @@
 /** Metres, local hole coords: tee near origin, play roughly +Y toward green. */
 
-export type PlayerMode = "launch_monitor" | "arcade";
+/** Radar = launch-monitor numbers. Finger = mark where the real shot finished. */
+export type PlayerMode = "launch_monitor" | "finger_dispersion";
 
 export type TerrainKind =
   | "tee"

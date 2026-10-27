@@ -34,6 +34,8 @@ export const PRACTICE_HANDICAP_BENCHMARKS: Partial<Record<CombineLeaderboardTest
   iron_face_control: { area: "irons", anchors: [[-4, 85], [0, 70], [9, 52], [18, 35], [28, 20]] },
   iron_safe_side: { area: "irons", anchors: [[-4, 72], [0, 58], [9, 40], [18, 22], [28, 5]] },
   iron_fade_draw: { area: "irons", anchors: [[-4, 80], [0, 65], [9, 45], [18, 28], [28, 12]] },
+  // Approach /100 (proximity-led). Slightly easier than face-control gates at the same level.
+  approach_shot_sim: { area: "irons", anchors: [[-4, 88], [0, 75], [9, 58], [18, 42], [28, 28]] },
 
   // Wedges
   wedge_lateral_9: { area: "wedges", anchors: [[-4, 90], [0, 72], [9, 54], [18, 36], [28, 22]] },

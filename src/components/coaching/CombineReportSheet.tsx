@@ -51,6 +51,7 @@ import { survival20Config } from "@/lib/survival20Config";
 import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
 import { strikeAndSpeedControlTestConfig } from "@/lib/strikeAndSpeedControlTestConfig";
 import { startLineAndSpeedControlTestConfig } from "@/lib/startLineAndSpeedControlTestConfig";
+import { approachShotSimConfig } from "@/lib/approachShotSimConfig";
 
 /** Report ids: every combine leaderboard test plus screens that are not on the leaderboard. */
 export type CombineReportId =
@@ -237,6 +238,10 @@ const LOADERS: Partial<Record<CombineReportId, Loader>> = {
       return { id: r.id, at: r.created_at, score: points(r.total_points), report: shots && <IronFadeDrawReport shots={shots} /> };
     });
   },
+  approach_shot_sim: (supabase, playerId) =>
+    loadLogScores(supabase, playerId, approachShotSimConfig.practiceLogType, (row) =>
+      points(row.score ?? row.total_points),
+    ),
   tee_shot_hazard: async (supabase, playerId) => {
     const rows = await practiceLogs(supabase, playerId, [teeShotHazardConfig.practiceLogType], "strike_data");
     return rows.map((r) => {

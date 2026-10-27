@@ -1,7 +1,12 @@
 import type { Vec2 } from "@/lib/onCourseSimulator/types";
 import { dist, pointInPolygon } from "@/lib/onCourseSimulator/physics";
+import {
+  handicapFromScore,
+  PRACTICE_HANDICAP_BENCHMARKS,
+} from "@/lib/practiceHandicapBenchmarks";
 
-export type ApproachMode = "launch_monitor" | "touch";
+/** Radar = enter launch-monitor numbers. Finger = mark real landing on the map. */
+export type ApproachMode = "launch_monitor" | "finger_dispersion";
 
 export type ApproachHazard =
   | { id: string; kind: "bunker"; polygon: Vec2[] }
@@ -200,6 +205,14 @@ export function scoreBand(score: number): string {
   if (score >= 55) return "Average";
   if (score >= 40) return "Below average";
   return "Needs work";
+}
+
+/** Estimated handicap from a set score (/100), using practice-handicap anchors. */
+export function estimateApproachHandicap(score: number): number {
+  const anchors =
+    PRACTICE_HANDICAP_BENCHMARKS.approach_shot_sim?.anchors ??
+    ([[-4, 88], [0, 75], [9, 58], [18, 42], [28, 28]] as const);
+  return Math.round(handicapFromScore(anchors, score) * 10) / 10;
 }
 
 export function scoreApproachShot(

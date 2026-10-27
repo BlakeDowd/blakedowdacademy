@@ -212,6 +212,7 @@ const TEST_LABELS: Record<string, string> = {
   start_line_speed_test: "Start line & speed",
   gauntlet_protocol_session: "Gauntlet protocol",
   iron_face_control: "Iron face control",
+  approach_shot_sim: "Approach shot simulator",
   iron_safe_side: "Iron safe side",
   iron_fade_draw: "Fade vs draw",
   iron_skills: "Iron skills combine",
