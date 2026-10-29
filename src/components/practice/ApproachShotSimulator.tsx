@@ -943,27 +943,92 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
                 <p className="text-xs text-stone-500">
                   Hit your real shot, then enter carry &amp; offline from the launch monitor
                 </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="block text-xs font-semibold text-stone-700">
-                    Carry ({unitLabel})
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      value={carryIn}
-                      onChange={(e) => setCarryIn(e.target.value)}
-                      className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-lg font-bold tabular-nums outline-none focus:border-[#014421]"
-                    />
-                  </label>
-                  <label className="block text-xs font-semibold text-stone-700">
-                    Offline L− / R+ ({unitLabel})
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      value={offlineIn}
-                      onChange={(e) => setOfflineIn(e.target.value)}
-                      className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-lg font-bold tabular-nums outline-none focus:border-[#FFA500]"
-                    />
-                  </label>
+                <label className="block text-xs font-semibold text-stone-700">
+                  Carry ({unitLabel})
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={carryIn}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "" || /^\d*\.?\d*$/.test(v)) setCarryIn(v);
+                    }}
+                    className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-lg font-bold tabular-nums outline-none focus:border-[#014421]"
+                  />
+                </label>
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold text-stone-700">
+                    Offline ({unitLabel})
+                  </p>
+                  {(() => {
+                    const offlineSide: "L" | "0" | "R" = offlineIn.startsWith("-")
+                      ? "L"
+                      : Number(offlineIn) > 0
+                        ? "R"
+                        : "0";
+                    const offlineMag = offlineIn.replace(/^-/, "");
+                    const magNum = Number(offlineMag);
+                    return (
+                      <>
+                        <div className="flex gap-2">
+                          {(
+                            [
+                              { key: "L" as const, label: "Left" },
+                              { key: "0" as const, label: "On line" },
+                              { key: "R" as const, label: "Right" },
+                            ] as const
+                          ).map((side) => {
+                            const active = offlineSide === side.key;
+                            return (
+                              <button
+                                key={side.key}
+                                type="button"
+                                onClick={() => {
+                                  if (side.key === "0") {
+                                    setOfflineIn("0");
+                                    return;
+                                  }
+                                  const base =
+                                    Number.isFinite(magNum) && magNum > 0 ? offlineMag : "5";
+                                  setOfflineIn(side.key === "L" ? `-${base}` : base);
+                                }}
+                                className={`flex-1 rounded-xl py-2.5 text-sm font-bold ${
+                                  active
+                                    ? side.key === "L"
+                                      ? "bg-sky-700 text-white"
+                                      : side.key === "R"
+                                        ? "bg-[#FFA500] text-[#3d2600]"
+                                        : "bg-stone-700 text-white"
+                                    : "bg-white text-stone-600 ring-1 ring-stone-200"
+                                }`}
+                              >
+                                {side.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <label className="mt-2 block text-xs font-semibold text-stone-700">
+                          How far offline
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            disabled={offlineSide === "0"}
+                            value={offlineSide === "0" ? "0" : offlineMag}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (!(v === "" || /^\d*\.?\d*$/.test(v))) return;
+                              if (offlineSide === "L") setOfflineIn(v === "" ? "-" : `-${v}`);
+                              else setOfflineIn(v === "" ? "" : v);
+                            }}
+                            className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-lg font-bold tabular-nums outline-none focus:border-[#FFA500] disabled:bg-stone-100 disabled:text-stone-400"
+                          />
+                        </label>
+                        <p className="mt-1 text-[11px] text-stone-500">
+                          Tap Left or Right, then enter distance — no minus key needed.
+                        </p>
+                      </>
+                    );
+                  })()}
                 </div>
                 <button
                   type="button"

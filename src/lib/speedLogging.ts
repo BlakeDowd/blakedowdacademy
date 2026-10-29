@@ -21,14 +21,16 @@ export type SpeedClubConfig = {
   /** Optimal smash factor (ball speed ÷ club speed) for a centred strike. */
   smash: number;
   /**
-   * Carry yards per mph of club speed when launch/spin are optimised.
-   * Tuned to TrackMan-style “efficient” driver (≈ club × 2.4 → e.g. 100 mph ≈ 240 yd).
+   * TrackMan-style max-carry linear fit (yards) for optimised launch / +AoA:
+   * carryYards ≈ slope × clubMph + intercept.
+   * Anchored to TrackMan Driver CARRY optimizer (+5° attack): 90→214, 105→263, 120→310.
    */
-  yardsPerMph: number;
+  carrySlope: number;
+  carryIntercept: number;
 };
 
 export const SPEED_CLUBS: readonly SpeedClubConfig[] = [
-  { id: "driver", label: "Driver", smash: 1.48, yardsPerMph: 2.4 },
+  { id: "driver", label: "Driver", smash: 1.5, carrySlope: 3.2, carryIntercept: -74 },
 ] as const;
 
 export function speedClubById(id: SpeedClubId): SpeedClubConfig {
@@ -48,7 +50,8 @@ export function estimateMaxCarry(clubSpeedMph: number, clubId: SpeedClubId = "dr
   if (!Number.isFinite(mph) || mph <= 0 || mph > 160) return null;
   const club = speedClubById(clubId);
   const ballSpeedMph = Math.round(mph * club.smash * 10) / 10;
-  const carryYards = Math.round(mph * club.yardsPerMph);
+  // Floor so very slow swings don't go negative from the linear fit.
+  const carryYards = Math.max(0, Math.round(club.carrySlope * mph + club.carryIntercept));
   const carryMetres = Math.round(carryYards * 0.9144);
   return { clubSpeedMph: Math.round(mph * 10) / 10, ballSpeedMph, carryYards, carryMetres };
 }

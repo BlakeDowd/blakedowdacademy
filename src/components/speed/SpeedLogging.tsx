@@ -227,7 +227,7 @@ export default function SpeedLogging({ hideHeader }: { hideHeader?: boolean }) {
                 {unit === "m"
                   ? `${estimate.carryYards} yards · `
                   : `${estimate.carryMetres} metres · `}
-                est. ball speed {estimate.ballSpeedMph} mph · calm, sea level
+                smash 1.50 · optimised launch · calm, sea level
               </p>
             </div>
           </div>
