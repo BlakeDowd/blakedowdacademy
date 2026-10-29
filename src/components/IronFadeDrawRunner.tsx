@@ -354,7 +354,7 @@ export function IronFadeDrawReport({ shots }: { shots: FadeDrawShot[] }) {
 
 function ClubChips({ selected, onChange }: { selected: string[]; onChange: (next: string[]) => void }) {
   const full = selected.length >= MAX_CLUBS;
-  const groups = (["Irons", "Hybrids", "Woods"] as const).map((g) => ({ group: g, clubs: IRON_TEST_CLUBS.filter((c) => c.group === g) }));
+  const groups = (["Wedges", "Irons", "Hybrids", "Woods"] as const).map((g) => ({ group: g, clubs: IRON_TEST_CLUBS.filter((c) => c.group === g) }));
   return (
     <div className="space-y-3">
       {groups.map(({ group, clubs }) => (

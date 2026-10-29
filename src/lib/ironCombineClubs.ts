@@ -1,8 +1,12 @@
-/** Clubs a player can choose for the Iron Precision Protocol, ordered short → long by typical loft. */
-export type IronTestClub = { key: string; group: "Irons" | "Hybrids" | "Woods" };
+/** Clubs a player can choose for iron/approach combines, ordered short → long by typical loft. */
+export type IronTestClub = { key: string; group: "Wedges" | "Irons" | "Hybrids" | "Woods" };
 
 export const IRON_TEST_CLUBS: IronTestClub[] = [
-  { key: "PW", group: "Irons" },
+  { key: "LW", group: "Wedges" },
+  { key: "SW", group: "Wedges" },
+  { key: "GW", group: "Wedges" },
+  { key: "AW", group: "Wedges" },
+  { key: "PW", group: "Wedges" },
   { key: "9i", group: "Irons" },
   { key: "8i", group: "Irons" },
   { key: "7i", group: "Irons" },
@@ -63,6 +67,10 @@ export function buildClubSequence(selected: string[], shots = IRON_TEST_SHOTS, r
 export function testClubFromBagLabel(label: string): string | null {
   const t = label.trim().toLowerCase().replace(/[\s_-]+/g, "");
   if (!t) return null;
+  if (t === "lw" || t === "lobwedge" || t === "lob") return "LW";
+  if (t === "sw" || t === "sandwedge" || t === "sand") return "SW";
+  if (t === "gw" || t === "gapwedge" || t === "gap" || t === "uw" || t === "utilitywedge") return "GW";
+  if (t === "aw" || t === "approachwedge" || t === "approach") return "AW";
   if (t === "pw" || t === "pitchingwedge" || t === "pitching") return "PW";
   const m = t.match(/^(\d)(i|iron|h|hy|hyb|hybrid|w|wood)$/);
   if (!m) return null;

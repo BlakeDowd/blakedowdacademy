@@ -177,6 +177,30 @@ export function landFromCarryOffline(
   return add(add(ball, scale(forward, carryM)), scale(right, offlineM));
 }
 
+/**
+ * Radar / launch-monitor landing for approach sims.
+ * Carry is always the entered distance toward the pin (hole depth).
+ * A left/right aim mark only shifts lateral start line — it must not shorten/lengthen carry.
+ * When `aimDepthFree` and a mark is set, carry follows the full aim direction (short/long allowed).
+ */
+export function landFromRadarApproach(
+  ball: Vec2,
+  pin: Vec2,
+  mark: Vec2 | null,
+  carryM: number,
+  offlineM: number,
+  aimDepthFree: boolean,
+): Vec2 {
+  if (mark && aimDepthFree) {
+    return landFromCarryOffline(ball, sub(mark, ball), carryM, offlineM);
+  }
+  const forward = normalize(sub(pin, ball));
+  const right = { x: forward.y, y: -forward.x };
+  const toMark = mark ? sub(mark, ball) : null;
+  const aimLateral = toMark ? toMark.x * right.x + toMark.y * right.y : 0;
+  return add(add(ball, scale(forward, carryM)), scale(right, aimLateral + offlineM));
+}
+
 export function randomInDispersion(aim: Vec2, ball: Vec2, radiusM: number): Vec2 {
   const ang = Math.random() * Math.PI * 2;
   const r = Math.sqrt(Math.random()) * radiusM;

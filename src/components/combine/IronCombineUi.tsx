@@ -44,7 +44,7 @@ export function ClubPicker({ selected, onChange }: { selected: string[]; onChang
     if (selected.includes(key)) onChange(selected.filter((k) => k !== key));
     else if (!full) onChange([...selected, key]);
   };
-  const groups = (["Irons", "Hybrids", "Woods"] as const).map((g) => ({
+  const groups = (["Wedges", "Irons", "Hybrids", "Woods"] as const).map((g) => ({
     group: g,
     clubs: IRON_TEST_CLUBS.filter((c) => c.group === g),
   }));

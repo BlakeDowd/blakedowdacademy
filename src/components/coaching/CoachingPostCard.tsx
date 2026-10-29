@@ -126,7 +126,7 @@ export function PostVideo({
           type="button"
           onClick={() => void download()}
           disabled={downloading}
-          className={`absolute bottom-2 right-2 z-10 inline-flex items-center gap-1 rounded-full bg-black/60 font-bold text-white shadow disabled:opacity-60 ${
+          className={`absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 rounded-full bg-black/60 font-bold text-white shadow disabled:opacity-60 ${
             compact ? "p-1.5" : "px-2.5 py-1 text-[11px]"
           }`}
           aria-label="Download video"

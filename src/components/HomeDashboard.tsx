@@ -766,6 +766,11 @@ export default function HomeDashboard() {
               { label: 'Swing Tempo', icon: Timer, onClick: () => router.push('/full-swing-tempo') },
               { label: 'Chip Tempo', icon: Flag, onClick: () => router.push('/short-game-tempo') },
               { label: 'Speed Logging', icon: Gauge, onClick: () => router.push('/speed-logging') },
+              {
+                label: 'Approach Shot Sim',
+                icon: Target,
+                onClick: () => router.push('/practice/approach-shot-simulator'),
+              },
             ].map(({ label, icon: Icon, onClick }) => (
               <button
                 key={label}

@@ -1,10 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { ArrowLeft, Target } from "lucide-react";
 import ApproachShotSimulator from "@/components/practice/ApproachShotSimulator";
 import { trackScreen } from "@/lib/appUsage";
+import { approachShotSimConfig } from "@/lib/approachShotSimConfig";
 import { useEffect } from "react";
+
+const PastCombineResultsButton = dynamic(
+  () => import("@/components/combine/PastCombineResults").then((m) => m.PastCombineResultsButton),
+  { ssr: false },
+);
 
 export default function ApproachShotSimulatorPage() {
   useEffect(() => {
@@ -21,13 +28,24 @@ export default function ApproachShotSimulatorPage() {
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Practice
         </Link>
-        <div className="flex items-center gap-2">
-          <Target className="h-5 w-5 text-[#FFA500]" aria-hidden />
-          <h1 className="text-xl font-bold tracking-tight">Approach Shot Simulator</h1>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Target className="h-5 w-5 shrink-0 text-[#FFA500]" aria-hidden />
+              <h1 className="text-xl font-bold tracking-tight">Approach Shot Simulator</h1>
+            </div>
+            <p className="mt-1 text-xs font-medium text-white/80">
+              Random greens &amp; hazards · radar or finger dispersion · score /100
+            </p>
+          </div>
         </div>
-        <p className="mt-1 text-xs font-medium text-white/80">
-          Random greens &amp; hazards · radar or finger dispersion · score /100
-        </p>
+        <div className="mt-3">
+          <PastCombineResultsButton
+            reportId="approach_shot_sim"
+            label={approachShotSimConfig.testName}
+            className="bg-white/95 text-[#014421] ring-white/40 hover:bg-white"
+          />
+        </div>
       </header>
       <main className="mx-auto max-w-lg px-3 pt-3">
         <ApproachShotSimulator />

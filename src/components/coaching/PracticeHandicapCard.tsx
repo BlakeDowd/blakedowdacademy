@@ -126,6 +126,13 @@ export function PracticeHandicapCard({
   );
 }
 
+function formatGap(gap: number): string {
+  const r = Math.round(gap * 10) / 10;
+  if (r === 0) return "on goal";
+  const abs = Math.abs(r).toFixed(1);
+  return r > 0 ? `+${abs}` : `−${abs}`;
+}
+
 function PracticeHandicapBody({
   practice,
   playing,
@@ -141,6 +148,18 @@ function PracticeHandicapBody({
   onToggleArea: (area: GameArea) => void;
   self: boolean;
 }) {
+  const testedWithGap =
+    playing == null
+      ? []
+      : practice.areas
+          .filter((a) => a.handicap != null)
+          .map((a) => ({ area: a, gap: a.handicap! - playing }));
+  /** Highest positive gap = furthest above goal (needs the most work). */
+  const furthestFromGoal =
+    testedWithGap.length > 0
+      ? [...testedWithGap].sort((a, b) => b.gap - a.gap)[0]!
+      : null;
+
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2">
@@ -152,15 +171,26 @@ function PracticeHandicapBody({
           </p>
         </div>
         <div className="rounded-2xl bg-stone-50 p-3">
-          <p className="text-[11px] font-medium text-stone-500">Playing handicap</p>
+          <p className="text-[11px] font-medium text-stone-500">Goal / playing</p>
           <p className={`mt-0.5 text-2xl font-bold tabular-nums ${playing == null ? "text-stone-300" : "text-stone-900"}`}>
             {playing == null ? "–" : formatHandicap(playing)}
           </p>
           <p className="mt-0.5 text-[11px] text-stone-400">
-            {playing == null ? (self ? "Log a round to compare" : "No handicap on file") : "From rounds and goals"}
+            {playing == null ? (self ? "Set a goal handicap to compare" : "No handicap on file") : "From rounds and goals"}
           </p>
         </div>
       </div>
+
+      {furthestFromGoal && furthestFromGoal.gap > 0.4 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-amber-950">
+          <p className="text-sm font-bold">Furthest from goal: {furthestFromGoal.area.label}</p>
+          <p className="mt-0.5 text-xs leading-relaxed opacity-90">
+            Plays to {formatHandicap(furthestFromGoal.area.handicap!)} — {formatGap(furthestFromGoal.gap)} vs goal{" "}
+            {formatHandicap(playing!)}. Biggest gain is in this area
+            {furthestFromGoal.area.area === "irons" ? " (includes Approach Shot Sim)" : ""}.
+          </p>
+        </div>
+      )}
 
       {verdict && (
         <div className={`rounded-xl border px-3 py-2.5 ${VERDICT_STYLE[verdict.kind]}`}>
@@ -180,20 +210,35 @@ function PracticeHandicapBody({
               </li>
             );
           }
+          const gap = playing != null ? area.handicap - playing : null;
+          const isFurthest = furthestFromGoal?.area.area === area.area && (furthestFromGoal?.gap ?? 0) > 0.4;
           return (
             <li key={area.area} className="py-1">
               <button
                 type="button"
                 onClick={() => onToggleArea(area.area)}
                 aria-expanded={open}
-                className="flex w-full items-center gap-3 rounded-lg py-1.5 text-left hover:bg-stone-50"
+                className={`flex w-full items-center gap-3 rounded-lg py-1.5 text-left hover:bg-stone-50 ${
+                  isFurthest ? "bg-amber-50/80" : ""
+                }`}
               >
                 <span className="w-20 shrink-0 text-sm font-medium text-stone-800">{area.label}</span>
                 <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-stone-100">
                   <span className="block h-full rounded-full bg-[#014421]" style={{ width: `${barPct(area.handicap)}%` }} />
                 </span>
-                <span className="w-12 shrink-0 text-right text-sm font-bold tabular-nums text-stone-900">
-                  {formatHandicap(area.handicap)}
+                <span className="flex w-16 shrink-0 flex-col items-end">
+                  <span className="text-sm font-bold tabular-nums text-stone-900">
+                    {formatHandicap(area.handicap)}
+                  </span>
+                  {gap != null && (
+                    <span
+                      className={`text-[10px] font-semibold tabular-nums ${
+                        gap > 0.4 ? "text-amber-700" : gap < -0.4 ? "text-emerald-700" : "text-stone-400"
+                      }`}
+                    >
+                      {formatGap(gap)}
+                    </span>
+                  )}
                 </span>
                 <ChevronDown className={`h-4 w-4 shrink-0 text-stone-400 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
               </button>
@@ -218,8 +263,8 @@ function PracticeHandicapBody({
       </ul>
 
       <p className="text-[11px] leading-relaxed text-stone-400">
-        Each test uses the average of the last {PRACTICE_HANDICAP_RECENT_ATTEMPTS} attempts. The practice handicap is the
-        average of the areas tested.
+        Each test uses the average of the last {PRACTICE_HANDICAP_RECENT_ATTEMPTS} attempts. Area deltas are vs your goal /
+        playing handicap (+ means that area is higher / weaker than the goal).
       </p>
     </div>
   );

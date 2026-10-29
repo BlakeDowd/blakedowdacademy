@@ -18,6 +18,7 @@ import { teeShotHazardConfig } from "@/lib/teeShotHazardConfig";
 import { driverFlightTestConfig } from "@/lib/driverFlightTestConfig";
 import { bunkerLiesConfig } from "@/lib/bunkerLiesConfig";
 import { mobilityScreenConfig } from "@/lib/mobilityScreenConfig";
+import { approachShotSimConfig } from "@/lib/approachShotSimConfig";
 
 /** `log_type` values written to `practice_logs` by combine protocol runners (leaderboard + completion stats). */
 export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
@@ -34,6 +35,7 @@ export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
   ironFaceControlConfig.practiceLogType,
   ironSafeSideConfig.practiceLogType,
   ironFadeDrawConfig.practiceLogType,
+  approachShotSimConfig.practiceLogType,
   teeShotHazardConfig.practiceLogType,
   driverFlightTestConfig.practiceLogType,
   bunkerLiesConfig.practiceLogType,
@@ -68,6 +70,7 @@ const COMBINE_LOG_TYPE_LABELS: Record<string, string> = {
   [ironFaceControlConfig.practiceLogType]: ironFaceControlConfig.testName,
   [ironSafeSideConfig.practiceLogType]: ironSafeSideConfig.testName,
   [ironFadeDrawConfig.practiceLogType]: ironFadeDrawConfig.testName,
+  [approachShotSimConfig.practiceLogType]: approachShotSimConfig.testName,
   [teeShotHazardConfig.practiceLogType]: teeShotHazardConfig.testName,
   [driverFlightTestConfig.practiceLogType]: driverFlightTestConfig.testName,
   [bunkerLiesConfig.practiceLogType]: bunkerLiesConfig.testName,

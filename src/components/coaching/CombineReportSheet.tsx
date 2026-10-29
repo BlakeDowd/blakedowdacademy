@@ -52,6 +52,7 @@ import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConf
 import { strikeAndSpeedControlTestConfig } from "@/lib/strikeAndSpeedControlTestConfig";
 import { startLineAndSpeedControlTestConfig } from "@/lib/startLineAndSpeedControlTestConfig";
 import { approachShotSimConfig } from "@/lib/approachShotSimConfig";
+import { ApproachShotSimReport, parseApproachShots } from "@/components/practice/ApproachShotSimReport";
 
 /** Report ids: every combine leaderboard test plus screens that are not on the leaderboard. */
 export type CombineReportId =
@@ -238,10 +239,18 @@ const LOADERS: Partial<Record<CombineReportId, Loader>> = {
       return { id: r.id, at: r.created_at, score: points(r.total_points), report: shots && <IronFadeDrawReport shots={shots} /> };
     });
   },
-  approach_shot_sim: (supabase, playerId) =>
-    loadLogScores(supabase, playerId, approachShotSimConfig.practiceLogType, (row) =>
-      points(row.score ?? row.total_points),
-    ),
+  approach_shot_sim: async (supabase, playerId) => {
+    const rows = await practiceLogs(supabase, playerId, [approachShotSimConfig.practiceLogType], "score, strike_data");
+    return rows.map((r) => {
+      const shots = parseApproachShots(r.strike_data);
+      return {
+        id: r.id,
+        at: r.created_at,
+        score: points(r.score ?? r.total_points),
+        report: shots && <ApproachShotSimReport shots={shots} />,
+      };
+    });
+  },
   tee_shot_hazard: async (supabase, playerId) => {
     const rows = await practiceLogs(supabase, playerId, [teeShotHazardConfig.practiceLogType], "strike_data");
     return rows.map((r) => {

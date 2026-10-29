@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Hand, Play, Radar, RefreshCw, Target, Volume2, VolumeX } from "lucide-react";
 import {
+  SCORE_RINGS,
   SHOTS_PER_SET,
-  approachRoll,
   cameraForApproach,
   estimateApproachHandicap,
   fairwayPolygon,
@@ -17,7 +17,7 @@ import {
   type ApproachShotResult,
 } from "@/lib/approachShotSim";
 import { approachShotSimConfig } from "@/lib/approachShotSimConfig";
-import { dist, landFromCarryOffline, sub } from "@/lib/onCourseSimulator/physics";
+import { dist, landFromRadarApproach } from "@/lib/onCourseSimulator/physics";
 import type { Vec2 } from "@/lib/onCourseSimulator/types";
 import { playBallHit, playCup, playSand, playSplash, playSwing } from "@/lib/onCourseSimulator/sounds";
 import { trackToolUse } from "@/lib/appUsage";
@@ -35,6 +35,8 @@ import { formatHandicap } from "@/lib/practiceHandicap";
 import { insertPracticeLogCompat } from "@/lib/practiceLogsCompat";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
+import { IRON_TEST_CLUBS } from "@/lib/ironCombineClubs";
+import { ApproachShotSimReport } from "@/components/practice/ApproachShotSimReport";
 
 type FlightAnim = { from: Vec2; to: Vec2; progress: number; done: boolean };
 type Phase = "setup" | "playing" | "complete";
@@ -112,6 +114,7 @@ async function persistApproachSet(
         lie: s.lie,
         proximityM: s.proximityM,
         distanceM: s.distanceM,
+        club: s.club ?? null,
       })),
       metadata: {
         mode,
@@ -166,7 +169,11 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
   const [fingerDir, setFingerDir] = useState<FingerMissDirection | null>(null);
   const [fingerWidth, setFingerWidth] = useState<FingerMissWidth | null>(null);
   const [soundOn, setSoundOn] = useState(true);
+  const [showScoreRings, setShowScoreRings] = useState(false);
+  /** When off, map taps only move aim left/right (depth stays at the pin). */
+  const [aimDepthFree, setAimDepthFree] = useState(false);
   const [results, setResults] = useState<ApproachShotResult[]>([]);
+  const [club, setClub] = useState("7i");
   const [flight, setFlight] = useState<FlightAnim | null>(null);
   const [lastMsg, setLastMsg] = useState<string | null>(null);
   const [lastSaved, setLastSaved] = useState<SavedResult | null>(null);
@@ -203,6 +210,13 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
     setFlight(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenario?.id]);
+
+  // Turning off depth aim snaps any existing mark back onto the pin line.
+  useEffect(() => {
+    if (aimDepthFree || !scenario || !mark) return;
+    if (Math.abs(mark.y - scenario.pin.y) < 0.05) return;
+    setMark({ x: mark.x, y: scenario.pin.y });
+  }, [aimDepthFree, scenario, mark]);
 
   const sfx = useCallback(
     (fn: () => void) => {
@@ -241,16 +255,16 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
   }, []);
 
   const finishLanding = useCallback(
-    (land: Vec2, current: ApproachScenario, opts?: { finalMark?: boolean }) => {
-      // Finger mark is the finished lie; radar landings get a little roll.
-      const rest = opts?.finalMark ? land : approachRoll(current, land, BALL);
-      const scored = scoreApproachShot(current, rest);
+    (land: Vec2, current: ApproachScenario) => {
+      // Land exactly where carry/aim says — no extra roll that would mismatch entered distance.
+      const scored = scoreApproachShot(current, land);
       const entry: ApproachShotResult = {
         ...scored,
+        club,
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       };
 
-      setFlight({ from: BALL, to: rest, progress: 0, done: false });
+      setFlight({ from: BALL, to: land, progress: 0, done: false });
       sfx(playSwing);
       sfx(playBallHit);
       window.setTimeout(() => {
@@ -294,7 +308,7 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
         return next;
       });
     },
-    [sfx, toDisplay, unitLabel, nextScenario, testingFor, mode, persistForId],
+    [sfx, toDisplay, unitLabel, nextScenario, testingFor, mode, persistForId, club],
   );
 
   const fireRadar = () => {
@@ -304,8 +318,8 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
     if (!Number.isFinite(carryDisp) || carryDisp <= 0) return;
     const carryM = fromDisplay(carryDisp);
     const offlineM = fromDisplay(Number.isFinite(offlineDisp) ? offlineDisp : 0);
-    const aimPt = mark ?? scenario.pin;
-    const land = landFromCarryOffline(BALL, sub(aimPt, BALL), carryM, offlineM);
+    // Left/right taps only shift aim line; carry always matches the entered distance.
+    const land = landFromRadarApproach(BALL, scenario.pin, mark, carryM, offlineM, aimDepthFree);
     finishLanding(land, scenario);
   };
 
@@ -316,7 +330,7 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
     const fingers = fingerDir === "straight" ? 0 : fingerWidth!;
     // Carry = ball→aim so "On line" finishes on the aim mark, not the random pin distance.
     const { land } = landFromFingerMiss(BALL, mark, fingerDir, fingers);
-    finishLanding(land, scenario, { finalMark: true });
+    finishLanding(land, scenario);
   };
 
   useEffect(() => {
@@ -365,55 +379,138 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
       camRef.current = cameraForApproach(scenario, w, h);
       const cam = camRef.current;
 
+      // Photo-like atmosphere: soft sky → deep rough
       const sky = ctx.createLinearGradient(0, 0, 0, h);
-      sky.addColorStop(0, "#8ebad4");
-      sky.addColorStop(0.4, "#c8dcb8");
-      sky.addColorStop(1, "#5a8f48");
+      sky.addColorStop(0, "#9ec4dc");
+      sky.addColorStop(0.28, "#c5d9b8");
+      sky.addColorStop(0.55, "#6a9a55");
+      sky.addColorStop(1, "#3a6a32");
       ctx.fillStyle = sky;
       ctx.fillRect(0, 0, w, h);
 
+      // Rough plate with subtle grain
       const b0 = worldToScreen({ x: scenario.bounds.minX, y: scenario.bounds.maxY }, cam, w, h);
       const b1 = worldToScreen({ x: scenario.bounds.maxX, y: scenario.bounds.minY }, cam, w, h);
-      ctx.fillStyle = "#3d6e38";
+      ctx.fillStyle = "#3f6e36";
       ctx.fillRect(b0.x, b0.y, b1.x - b0.x, b1.y - b0.y);
+      // Stable rough grain (no flicker)
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(b0.x, b0.y, b1.x - b0.x, b1.y - b0.y);
+      ctx.clip();
+      for (let i = 0; i < 70; i++) {
+        const t = (i * 97 + scenario.distanceM * 3) % 1000;
+        const gx = b0.x + ((t * 37) % 1000) / 1000 * (b1.x - b0.x);
+        const gy = b0.y + ((t * 53) % 1000) / 1000 * (b1.y - b0.y);
+        ctx.fillStyle = i % 2 === 0 ? "rgba(50,90,40,0.16)" : "rgba(90,120,55,0.1)";
+        ctx.fillRect(gx, gy, 1.5 + (i % 3), 1.2 + (i % 2));
+      }
+      ctx.restore();
 
+      // Fairway apron
       pathPoly(ctx, fairwayPolygon(scenario), cam, w, h);
-      const fw = ctx.createLinearGradient(0, h, 0, 0);
-      fw.addColorStop(0, "#5aaa50");
-      fw.addColorStop(1, "#6ec860");
+      const fw = ctx.createLinearGradient(0, h, 0, h * 0.35);
+      fw.addColorStop(0, "#5aa848");
+      fw.addColorStop(1, "#78c868");
       ctx.fillStyle = fw;
+      ctx.fill();
+
+      // Collar / fringe (darker ring outside putting surface)
+      pathPoly(ctx, scenario.collarPoly, cam, w, h);
+      ctx.fillStyle = "#4e8f42";
       ctx.fill();
 
       for (const hz of scenario.hazards) {
         pathPoly(ctx, hz.polygon, cam, w, h);
         if (hz.kind === "water") {
-          const g = ctx.createLinearGradient(0, 0, w, h);
-          g.addColorStop(0, "#5eb8e8");
-          g.addColorStop(1, "#1a6fa0");
+          // Soft pond: deep centre, lighter shore — no stripe overlay
+          let cx = 0;
+          let cy = 0;
+          for (const p of hz.polygon) {
+            const s = worldToScreen(p, cam, w, h);
+            cx += s.x;
+            cy += s.y;
+          }
+          cx /= hz.polygon.length;
+          cy /= hz.polygon.length;
+          const g = ctx.createRadialGradient(cx - 6, cy - 8, 2, cx, cy, 55);
+          g.addColorStop(0, "#7ec8e8");
+          g.addColorStop(0.45, "#3a9fd0");
+          g.addColorStop(1, "#1e6a98");
           ctx.fillStyle = g;
+          ctx.fill();
+          ctx.strokeStyle = "rgba(255,255,255,0.35)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          pathPoly(ctx, hz.polygon, cam, w, h);
+          ctx.strokeStyle = "rgba(20,90,130,0.55)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
         } else {
-          const g = ctx.createLinearGradient(0, 0, w, h);
-          g.addColorStop(0, "#ead7b0");
-          g.addColorStop(1, "#c9a878");
+          const g = ctx.createRadialGradient(w * 0.45, h * 0.4, 4, w * 0.5, h * 0.45, h * 0.35);
+          g.addColorStop(0, "#f0e0c0");
+          g.addColorStop(1, "#c4a06e");
           ctx.fillStyle = g;
+          ctx.fill();
+          ctx.strokeStyle = "#a88858";
+          ctx.lineWidth = 1;
+          ctx.stroke();
         }
-        ctx.fill();
-        ctx.strokeStyle = hz.kind === "water" ? "#1e6fa8" : "#b89a6e";
-        ctx.lineWidth = 1;
-        ctx.stroke();
       }
 
-      pathPoly(ctx, greenPolygon(scenario), cam, w, h);
-      const gg = ctx.createRadialGradient(w / 2, h * 0.35, 10, w / 2, h * 0.35, h * 0.4);
-      gg.addColorStop(0, "#a8e8a0");
-      gg.addColorStop(1, "#5cb85a");
+      // Putting green — photo-like mow stripes + soft edge
+      const greenPts = greenPolygon(scenario);
+      pathPoly(ctx, greenPts, cam, w, h);
+      const gc = worldToScreen(scenario.greenCenter, cam, w, h);
+      const gg = ctx.createRadialGradient(gc.x - 8, gc.y - 10, 4, gc.x, gc.y, Math.max(scenario.greenRx, scenario.greenRy) * cam.scale * 1.15);
+      gg.addColorStop(0, "#b6efae");
+      gg.addColorStop(0.45, "#7ed674");
+      gg.addColorStop(1, "#4fad4a");
       ctx.fillStyle = gg;
       ctx.fill();
-      ctx.strokeStyle = "#4a9a48";
-      ctx.lineWidth = 1.5;
+      ctx.save();
+      pathPoly(ctx, greenPts, cam, w, h);
+      ctx.clip();
+      // Alternating mow bands
+      const stripeStep = Math.max(4, 2.2 * cam.scale);
+      for (let i = -20; i < 40; i++) {
+        const y = gc.y - 20 * cam.scale + i * stripeStep;
+        ctx.fillStyle = i % 2 === 0 ? "rgba(255,255,255,0.07)" : "rgba(20,70,25,0.06)";
+        ctx.fillRect(0, y, w, stripeStep * 0.92);
+      }
+      // Soft contour shade
+      const shade = ctx.createRadialGradient(gc.x + 12, gc.y + 8, 2, gc.x, gc.y, Math.max(40, scenario.greenRy * cam.scale));
+      shade.addColorStop(0, "rgba(255,255,255,0)");
+      shade.addColorStop(1, "rgba(30,70,30,0.16)");
+      ctx.fillStyle = shade;
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+      ctx.strokeStyle = "rgba(55,120,50,0.85)";
+      ctx.lineWidth = 1.4;
+      pathPoly(ctx, greenPts, cam, w, h);
       ctx.stroke();
 
       const pinS = worldToScreen(scenario.pin, cam, w, h);
+
+      // Score guide rings only — labels live in the HTML legend (avoids overlap)
+      if (showScoreRings) {
+        const ringColors = [
+          "rgba(255,165,0,0.95)",
+          "rgba(255,255,255,0.88)",
+          "rgba(160,200,255,0.75)",
+        ];
+        for (let i = SCORE_RINGS.length - 1; i >= 0; i--) {
+          const ring = SCORE_RINGS[i]!;
+          const rPx = ring.radiusM * cam.scale;
+          ctx.beginPath();
+          ctx.arc(pinS.x, pinS.y, rPx, 0, Math.PI * 2);
+          ctx.strokeStyle = ringColors[i] ?? "rgba(255,255,255,0.7)";
+          ctx.lineWidth = i === 0 ? 2.2 : 1.5;
+          ctx.setLineDash(i === 0 ? [] : [5, 4]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
       ctx.fillStyle = "rgba(0,0,0,0.2)";
       ctx.beginPath();
       ctx.ellipse(pinS.x + 1, pinS.y + 2, 4, 2, 0, 0, Math.PI * 2);
@@ -527,7 +624,7 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [phase, scenario, mark, mode, flight, compact, fingerDir, fingerWidth]);
+  }, [phase, scenario, mark, mode, flight, compact, fingerDir, fingerWidth, showScoreRings]);
 
   const onPointer = (e: React.PointerEvent<HTMLCanvasElement>, down?: boolean) => {
     if (phase !== "playing" || !scenario) return;
@@ -536,7 +633,10 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const sp = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    setMark(screenToWorld(sp, camRef.current, rect.width, rect.height));
+    const world = screenToWorld(sp, camRef.current, rect.width, rect.height);
+    // Default: lateral aim only — keep depth on the pin so taps don’t go short/long by accident.
+    if (!aimDepthFree) world.y = scenario.pin.y;
+    setMark(world);
   };
 
   return (
@@ -621,7 +721,7 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
               </div>
               <p className="mt-1.5 text-[11px] text-stone-500">
                 {mode === "finger_dispersion"
-                  ? "Tap to set aim, hit that line on the range, then enter fingers left or right of aim."
+                  ? "Tap left/right of the pin to set aim (depth stays on the pin unless you turn on Short / long aim)."
                   : "Hit your real shot, then enter carry and offline from the launch monitor."}
               </p>
             </div>
@@ -644,11 +744,35 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
               </div>
             </div>
 
+            <div className="flex items-center justify-between gap-2 rounded-2xl bg-stone-50 px-3 py-2.5 ring-1 ring-stone-100">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-stone-800">Score rings</p>
+                <p className="text-[11px] text-stone-500">
+                  2 m / 5 m / 10 m from the pin ≈ 88 / 70 / 40 points
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={showScoreRings}
+                onClick={() => setShowScoreRings((v) => !v)}
+                className={`relative h-7 w-12 shrink-0 rounded-full transition ${
+                  showScoreRings ? "bg-[#014421]" : "bg-stone-300"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition ${
+                    showScoreRings ? "left-[1.35rem]" : "left-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+
             <div className="rounded-2xl bg-stone-50 p-3 text-xs text-stone-600 ring-1 ring-stone-100">
               <p className="font-semibold text-stone-800">{SHOTS_PER_SET} random approaches</p>
               <p className="mt-1">
-                Each shot gets a new distance, green size, pin and hazards. Score is out of 100
-                (closer to the pin = higher). Finish the set for a handicap estimate
+                Each shot gets a new distance, irregular green shape, pin and hazards. Score is out of
+                100 (closer to the pin = higher). Finish the set for a handicap estimate
                 {isCoach && testingFor ? ` for ${testingFor.name}` : ""}.
               </p>
             </div>
@@ -714,6 +838,84 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
               </div>
             </div>
 
+            <div>
+              <p className="mb-1.5 text-xs font-semibold text-stone-600">
+                Club for this shot
+              </p>
+              <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+                {IRON_TEST_CLUBS.map((c) => (
+                  <button
+                    key={c.key}
+                    type="button"
+                    onClick={() => setClub(c.key)}
+                    aria-pressed={club === c.key}
+                    className={`shrink-0 rounded-xl px-2.5 py-2 text-xs font-bold transition ${
+                      club === c.key
+                        ? "bg-[#014421] text-white"
+                        : "bg-stone-100 text-stone-700 hover:bg-stone-200"
+                    }`}
+                  >
+                    {c.key}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={aimDepthFree}
+                onClick={() => setAimDepthFree((v) => !v)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  aimDepthFree
+                    ? "bg-[#014421] text-white"
+                    : "bg-stone-100 text-stone-600 ring-1 ring-stone-200"
+                }`}
+                title={
+                  aimDepthFree
+                    ? "Tap sets left/right and short/long"
+                    : "Tap sets left/right only (depth locked to pin)"
+                }
+              >
+                Short / long aim
+              </button>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={showScoreRings}
+                onClick={() => setShowScoreRings((v) => !v)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  showScoreRings
+                    ? "bg-[#014421] text-white"
+                    : "bg-stone-100 text-stone-600 ring-1 ring-stone-200"
+                }`}
+              >
+                <Target className="h-3 w-3" aria-hidden />
+                Score rings
+              </button>
+            </div>
+
+            {showScoreRings && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-stone-900/90 px-3 py-2 text-[11px] font-semibold text-white">
+                {SCORE_RINGS.map((ring, i) => {
+                  const swatch =
+                    i === 0 ? "bg-[#FFA500]" : i === 1 ? "bg-white" : "bg-sky-300";
+                  const distLabel =
+                    unit === "m"
+                      ? `${ring.radiusM} m`
+                      : `${Math.round(ring.radiusM * 1.09361)} yd`;
+                  return (
+                    <span key={ring.radiusM} className="inline-flex items-center gap-1.5">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${swatch}`} aria-hidden />
+                      {distLabel}
+                      <span className="font-normal text-white/70">≈ {ring.approxPoints} pts</span>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
             <div ref={wrapRef} className="relative overflow-hidden rounded-2xl ring-1 ring-stone-200/80">
               <canvas
                 ref={canvasRef}
@@ -726,9 +928,13 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
               <div className="pointer-events-none absolute left-2 top-2 max-w-[85%] rounded-2xl bg-white/95 px-2.5 py-1.5 text-[11px] font-semibold text-stone-800 shadow-sm">
                 {mode === "finger_dispersion"
                   ? mark
-                    ? "Aim set — hit, then enter fingers L/R"
-                    : "Tap the map to set your aim"
-                  : "Optional: tap to set aim line (defaults to pin)"}
+                    ? aimDepthFree
+                      ? "Aim set — hit, then enter fingers L/R"
+                      : "Aim set left/right — Short / long aim unlocks depth"
+                    : aimDepthFree
+                      ? "Tap to set aim (any direction)"
+                      : "Tap left or right of the pin"
+                  : "Optional: tap left/right of pin (defaults to pin)"}
               </div>
             </div>
 
@@ -771,8 +977,9 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
             ) : (
               <div className="space-y-2 rounded-2xl bg-stone-50 p-3 ring-1 ring-stone-100">
                 <p className="text-xs text-stone-500">
-                  1. Tap the map to set aim · 2. Hit that line on the range at the shown distance ·
-                  3. Enter fingers left or right of aim
+                  1. Tap left/right of the pin to set aim · 2. Hit that line on the range · 3. Enter
+                  fingers left or right of aim
+                  {aimDepthFree ? " · Short / long aim is on" : ""}
                 </p>
                 <FingerMissInput
                   distanceM={mark ? dist(BALL, mark) : scenario.distanceM}
@@ -814,7 +1021,8 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
                     <li key={r.id} className="flex justify-between gap-2 border-b border-stone-100 py-1.5">
                       <span>
                         #{results.length - idx} · {toDisplay(r.distanceM)}
-                        {unitLabel} ·{" "}
+                        {unitLabel}
+                        {r.club ? ` · ${r.club}` : ""} ·{" "}
                         {r.proximityM != null
                           ? `${toDisplay(r.proximityM)}${unitLabel} to pin`
                           : r.lie}
@@ -830,43 +1038,33 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
 
         {phase === "complete" && (
           <div className="space-y-3 rounded-2xl bg-[#014421]/5 p-4 ring-1 ring-[#014421]/15">
-            <div className="flex items-center gap-2 text-[#014421]">
-              <Target className="h-5 w-5" aria-hidden />
-              <h3 className="text-sm font-bold">
-                Set scorecard{playerLabel ? ` · ${playerLabel}` : ""}
-              </h3>
-            </div>
-            <div className="rounded-2xl bg-[#014421] p-4 text-center text-white shadow-sm">
-              <p className="text-[11px] font-medium text-white/75">Score</p>
-              <p className="text-4xl font-extrabold tabular-nums tracking-tight">
-                {stats.score}
-                <span className="text-lg font-bold text-white/70">/100</span>
-              </p>
-              <p className="mt-1 text-xs font-semibold text-[#FFA500]">{stats.band}</p>
+            <div className="flex items-center justify-between gap-2 text-[#014421]">
+              <div className="flex items-center gap-2">
+                <Target className="h-5 w-5" aria-hidden />
+                <h3 className="text-sm font-bold">
+                  Set report{playerLabel ? ` · ${playerLabel}` : ""}
+                </h3>
+              </div>
               {handicapEstimate != null && (
-                <p className="mt-3 border-t border-white/15 pt-3 text-sm font-bold tracking-tight">
-                  Est. handicap{" "}
+                <p className="text-xs font-bold">
+                  Est.{" "}
                   <span className="tabular-nums text-[#FFA500]">
                     {formatHandicap(handicapEstimate)}
                   </span>
                 </p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-xl bg-white p-2.5 text-center shadow-sm">
-                <p className="text-[10px] text-stone-500">GIR</p>
-                <p className="text-lg font-bold tabular-nums text-stone-900">{stats.girPct}%</p>
-              </div>
-              <div className="rounded-xl bg-white p-2.5 text-center shadow-sm">
-                <p className="text-[10px] text-stone-500">Avg prox.</p>
-                <p className="text-lg font-bold tabular-nums text-stone-900">
-                  {stats.avgProximityM != null ? `${toDisplay(stats.avgProximityM)}${unitLabel}` : "—"}
-                </p>
-              </div>
-            </div>
+            <ApproachShotSimReport
+              shots={results.map((s) => ({
+                points: s.points,
+                lie: s.lie,
+                proximityM: s.proximityM,
+                distanceM: s.distanceM,
+                club: s.club,
+              }))}
+            />
             <p className="text-center text-[11px] text-stone-400">
-              Handicap estimate uses the same irons practice curve as other combines. Last 3 sets feed
-              your practice handicap.
+              Saves to your profile combines · feeds the Irons practice handicap. Last 3 sets count.
             </p>
             <div className="flex gap-2">
               <button

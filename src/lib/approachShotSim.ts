@@ -12,14 +12,28 @@ export type ApproachHazard =
   | { id: string; kind: "bunker"; polygon: Vec2[] }
   | { id: string; kind: "water"; polygon: Vec2[] };
 
+/**
+ * Pin proximity guide rings for this sim’s scoring
+ * (`points ≈ 100 − proximityM × 6` on the green).
+ */
+export const SCORE_RINGS = [
+  { radiusM: 2, approxPoints: 88, label: "Tour" },
+  { radiusM: 5, approxPoints: 70, label: "Solid" },
+  { radiusM: 10, approxPoints: 40, label: "Weak GIR" },
+] as const;
+
 export type ApproachScenario = {
   id: string;
   /** Straight-line metres from ball to green centre. */
   distanceM: number;
   greenCenter: Vec2;
-  /** Half-width (x) and half-depth (y) of green ellipse, metres. */
+  /** Bounding half-width (x) and half-depth (y) of green, metres. */
   greenRx: number;
   greenRy: number;
+  /** Irregular putting-surface outline (metres). */
+  greenPoly: Vec2[];
+  /** Collar / fringe just outside the green. */
+  collarPoly: Vec2[];
   pin: Vec2;
   hazards: ApproachHazard[];
   /** World bounds for camera. */
@@ -38,6 +52,8 @@ export type ApproachShotResult = {
   proximityM: number | null;
   /** Points for this shot, 0–100. */
   points: number;
+  /** Club used for this shot (e.g. 7i), optional for older sessions. */
+  club?: string | null;
 };
 
 export type ApproachSessionStats = {
@@ -67,65 +83,120 @@ function ellipsePoly(cx: number, cy: number, rx: number, ry: number, n = 28): Ve
   return pts;
 }
 
-function rectPoly(x0: number, y0: number, x1: number, y1: number): Vec2[] {
-  return [
-    { x: x0, y: y0 },
-    { x: x1, y: y0 },
-    { x: x1, y: y1 },
-    { x: x0, y: y1 },
-  ];
+/**
+ * Realistic irregular green: elliptical base + low harmonics so edges look
+ * natural (kidney / pear / skewed oval) rather than a perfect ellipse.
+ */
+function irregularGreenPoly(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  n = 40,
+): Vec2[] {
+  const a1 = rand(0, Math.PI * 2);
+  const a2 = rand(0, Math.PI * 2);
+  const a3 = rand(0, Math.PI * 2);
+  const amp1 = rand(0.06, 0.14);
+  const amp2 = rand(0.04, 0.1);
+  const amp3 = rand(0.02, 0.06);
+  // Mild squish so greens aren't circular
+  const skew = rand(-0.12, 0.12);
+  const pts: Vec2[] = [];
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * Math.PI * 2;
+    const wobble =
+      1 +
+      amp1 * Math.sin(t + a1) +
+      amp2 * Math.sin(2 * t + a2) +
+      amp3 * Math.sin(3 * t + a3);
+    const x = cx + Math.cos(t) * rx * wobble + Math.sin(t) * ry * skew * 0.35;
+    const y = cy + Math.sin(t) * ry * wobble;
+    pts.push({ x, y });
+  }
+  return pts;
 }
 
-/** Fresh random approach: distance, green size, pin, hazards. */
+function scalePolyAbout(pts: Vec2[], c: Vec2, factor: number): Vec2[] {
+  return pts.map((p) => ({
+    x: c.x + (p.x - c.x) * factor,
+    y: c.y + (p.y - c.y) * factor,
+  }));
+}
+
+function polyBounds(pts: Vec2[]) {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of pts) {
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y);
+  }
+  return { minX, maxX, minY, maxY };
+}
+
+/** Fresh random approach: distance, green size/shape, pin, hazards. */
 export function generateApproachScenario(): ApproachScenario {
   const distanceM = Math.round(rand(55, 175));
-  const greenRx = rand(8, 18);
-  const greenRy = rand(7, 16);
-  const greenCenter = { x: rand(-6, 6), y: distanceM };
+  // Real greens ~300–700 m² → half-axes roughly 8–16 m (width) × 9–18 m (depth).
+  const greenRx = rand(8.5, 15.5);
+  const greenRy = rand(9.5, 17.5);
+  const greenCenter = { x: rand(-5, 5), y: distanceM };
+  const greenPoly = irregularGreenPoly(greenCenter.x, greenCenter.y, greenRx, greenRy);
+  const collarPoly = scalePolyAbout(greenPoly, greenCenter, 1.14);
 
-  // Pin inset from green edge
-  const pinInset = 0.65;
-  const pin = {
+  // Pin inset from green edge (stay on surface)
+  const pinInset = 0.55;
+  let pin = {
     x: greenCenter.x + rand(-greenRx * pinInset, greenRx * pinInset),
     y: greenCenter.y + rand(-greenRy * pinInset, greenRy * pinInset),
   };
+  // Nudge pin onto green if irregular edge pushed it out
+  if (!pointInPolygon(pin, greenPoly)) {
+    pin = { ...greenCenter };
+  }
 
   const hazards: ApproachHazard[] = [];
-  const bunkerCount = randInt(0, 2);
+  const bunkerCount = randInt(1, 3);
   for (let i = 0; i < bunkerCount; i++) {
     const side = Math.random() > 0.5 ? 1 : -1;
-    const bx = greenCenter.x + side * (greenRx + rand(1.5, 4.5));
-    const by = greenCenter.y + rand(-greenRy * 0.7, greenRy * 0.5);
-    const brx = rand(2.8, 5);
-    const bry = rand(2.2, 4);
+    const along = rand(-0.85, 0.65);
+    const bx = greenCenter.x + side * (greenRx + rand(1.2, 4.2));
+    const by = greenCenter.y + along * greenRy;
+    const brx = rand(3.2, 6.5);
+    const bry = rand(2.4, 4.8);
     hazards.push({
       id: `bunker-${i}`,
       kind: "bunker",
-      polygon: ellipsePoly(bx, by, brx, bry, 18),
+      polygon: irregularGreenPoly(bx, by, brx, bry, 20),
     });
   }
 
-  if (Math.random() < 0.45) {
+  if (Math.random() < 0.4) {
     const left = Math.random() > 0.5;
-    // Keep water tight to the green so zoom stays close
-    const wx0 = left ? greenCenter.x - greenRx - rand(3, 9) : greenCenter.x + greenRx + rand(1, 3);
-    const wx1 = left ? greenCenter.x - greenRx - rand(1, 3) : greenCenter.x + greenRx + rand(3, 9);
-    const wy0 = greenCenter.y - greenRy - rand(2, 8);
-    const wy1 = greenCenter.y + greenRy + rand(1, 6);
+    const side = left ? -1 : 1;
+    const wx = greenCenter.x + side * (greenRx + rand(5, 10));
+    const wy = greenCenter.y + rand(-greenRy * 0.35, greenRy * 0.25);
+    const wrx = rand(4.5, 8);
+    const wry = rand(6, 12);
     hazards.push({
       id: "water-0",
       kind: "water",
-      polygon: rectPoly(Math.min(wx0, wx1), wy0, Math.max(wx0, wx1), wy1),
+      // Soft pond shape (same irregular outline as bunkers / greens)
+      polygon: irregularGreenPoly(wx, wy, wrx, wry, 28),
     });
   }
 
-  // Tight frame: green fills most of the view; only nearby hazard tips expand it.
-  const fringe = 6;
-  let minX = greenCenter.x - greenRx - fringe;
-  let maxX = greenCenter.x + greenRx + fringe;
-  let minY = greenCenter.y - greenRy - fringe - 4;
-  let maxY = greenCenter.y + greenRy + fringe;
-  const maxReach = Math.max(greenRx, greenRy) + 14;
+  const fringe = 7;
+  const gb = polyBounds(collarPoly);
+  let minX = gb.minX - fringe;
+  let maxX = gb.maxX + fringe;
+  let minY = gb.minY - fringe - 4;
+  let maxY = gb.maxY + fringe;
+  const maxReach = Math.max(greenRx, greenRy) + 16;
   for (const h of hazards) {
     for (const p of h.polygon) {
       if (Math.hypot(p.x - greenCenter.x, p.y - greenCenter.y) > maxReach) continue;
@@ -142,6 +213,8 @@ export function generateApproachScenario(): ApproachScenario {
     greenCenter,
     greenRx,
     greenRy,
+    greenPoly,
+    collarPoly,
     pin,
     hazards,
     bounds: { minX, maxX, minY, maxY },
@@ -149,18 +222,18 @@ export function generateApproachScenario(): ApproachScenario {
 }
 
 export function greenPolygon(s: ApproachScenario): Vec2[] {
-  return ellipsePoly(s.greenCenter.x, s.greenCenter.y, s.greenRx, s.greenRy);
+  return s.greenPoly;
 }
 
 /** Short fairway apron just short of the green (for zoomed green view). */
 export function fairwayPolygon(s: ApproachScenario): Vec2[] {
-  const half = Math.max(8, s.greenRx * 0.75);
+  const half = Math.max(9, s.greenRx * 0.85);
   const front = s.greenCenter.y - s.greenRy;
   return [
-    { x: s.greenCenter.x - half, y: front - 8 },
-    { x: s.greenCenter.x + half, y: front - 8 },
-    { x: s.greenCenter.x + s.greenRx * 0.5, y: front },
-    { x: s.greenCenter.x - s.greenRx * 0.5, y: front },
+    { x: s.greenCenter.x - half * 1.15, y: front - 12 },
+    { x: s.greenCenter.x + half * 1.15, y: front - 12 },
+    { x: s.greenCenter.x + s.greenRx * 0.55, y: front + 1 },
+    { x: s.greenCenter.x - s.greenRx * 0.55, y: front + 1 },
   ];
 }
 
@@ -174,7 +247,7 @@ export function lieAtApproach(s: ApproachScenario, p: Vec2): ApproachLie {
   for (const h of s.hazards) {
     if (h.kind === "water" && pointInPolygon(p, h.polygon)) return "water";
   }
-  if (pointInEllipse(p, s.greenCenter, s.greenRx, s.greenRy)) return "green";
+  if (pointInPolygon(p, s.greenPoly)) return "green";
   for (const h of s.hazards) {
     if (h.kind === "bunker" && pointInPolygon(p, h.polygon)) return "bunker";
   }
@@ -243,9 +316,8 @@ export function approachRoll(scenario: ApproachScenario, land: Vec2, from: Vec2)
   };
   const len = Math.hypot(toward.x, toward.y) || 1;
   const unit = { x: toward.x / len, y: toward.y / len };
-  let roll = lie === "green" ? rand(1.5, 4) : lie === "fairway" ? rand(2, 6) : rand(0.3, 1.2);
+  const roll = lie === "green" ? rand(1.5, 4) : lie === "fairway" ? rand(2, 6) : rand(0.3, 1.2);
   const rest = { x: land.x + unit.x * roll, y: land.y + unit.y * roll };
-  // Don't roll into water
   if (lieAtApproach(scenario, rest) === "water") return land;
   return rest;
 }
@@ -278,15 +350,14 @@ export function cameraForApproach(
   viewW: number,
   viewH: number,
 ): { cx: number; cy: number; scale: number } {
-  // Prefer green-centred tight zoom; bounds only nudge if a bunker sits wider.
-  const greenSpanX = s.greenRx * 2.35;
-  const greenSpanY = s.greenRy * 2.45;
+  const greenSpanX = s.greenRx * 2.5;
+  const greenSpanY = s.greenRy * 2.55;
   const boundW = s.bounds.maxX - s.bounds.minX;
   const boundH = s.bounds.maxY - s.bounds.minY;
-  const worldW = Math.min(Math.max(greenSpanX, boundW * 0.92), greenSpanX * 1.35);
-  const worldH = Math.min(Math.max(greenSpanY, boundH * 0.92), greenSpanY * 1.35);
+  const worldW = Math.min(Math.max(greenSpanX, boundW * 0.92), greenSpanX * 1.4);
+  const worldH = Math.min(Math.max(greenSpanY, boundH * 0.92), greenSpanY * 1.4);
   const cx = s.greenCenter.x;
-  const cy = s.greenCenter.y - s.greenRy * 0.08; // slight bias to show front fringe
+  const cy = s.greenCenter.y - s.greenRy * 0.06;
   const scale = Math.min(viewW / Math.max(worldW, 1), viewH / Math.max(worldH, 1));
   return { cx, cy, scale };
 }
