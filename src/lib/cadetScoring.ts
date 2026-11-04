@@ -172,6 +172,26 @@ export function periodWindow(
 
 type ScoreJoin = CadetScoreRow & { profiles?: { full_name: string | null } | null };
 
+function profileFullName(raw: unknown): string | null {
+  if (raw == null) return null;
+  if (Array.isArray(raw)) {
+    const first = raw[0] as { full_name?: string | null } | undefined;
+    return first?.full_name ?? null;
+  }
+  if (typeof raw === "object" && "full_name" in (raw as object)) {
+    return (raw as { full_name: string | null }).full_name ?? null;
+  }
+  return null;
+}
+
+function mapScoreJoinRow(row: Record<string, unknown>): ScoreJoin {
+  const { profiles: _profiles, ...rest } = row;
+  return {
+    ...(rest as CadetScoreRow),
+    profiles: { full_name: profileFullName(row.profiles) },
+  };
+}
+
 function rankKey(entry: CadetLeaderboardEntry): number {
   // Prefer average to-par when available; else average gross.
   if (entry.avgToPar != null) return entry.avgToPar;
@@ -266,7 +286,11 @@ export async function fetchCadetScores(
     if (isMissingRelation(msg)) return { scores: [], error: CADET_MIGRATION_HINT, available: false };
     return { scores: [], error: msg, available: true };
   }
-  return { scores: (data as ScoreJoin[]) || [], error: null, available: true };
+  return {
+    scores: ((data as Record<string, unknown>[] | null) || []).map(mapScoreJoinRow),
+    error: null,
+    available: true,
+  };
 }
 
 /** Player on-course rounds (optionally scoped to hole group + date window). */
