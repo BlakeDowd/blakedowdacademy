@@ -37,6 +37,7 @@ import {
   Loader2,
   ChevronRight,
   PersonStanding,
+  GraduationCap,
 } from "lucide-react";
 import { AddToHomeScreenGuide } from "@/components/AddToHomeScreenGuide";
 import { InstallAppPrompt } from "@/components/InstallAppPrompt";
@@ -680,28 +681,33 @@ export default function HomeDashboard() {
                 <Camera className="h-3 w-3 text-white" strokeWidth={2.5} />
               </span>
             </button>
-            <div className="flex-1">
+            <div className="min-w-0 flex-1">
               <p className="text-gray-400 text-xs">Welcome back,</p>
-              <p className="text-gray-900 font-bold text-xl mt-1 truncate min-w-0 flex-shrink">
-                {/* Connect Auth: Import useAuth and extract the user object */}
-                {/* Personalize Greeting: Replace the hardcoded 'Member' text with {user?.fullName || 'Golfer'} */}
-                {/* Safety: Keep the existing useRef guards to ensure this doesn't trigger a re-fetch loop */}
+              <p className="text-gray-900 font-bold text-xl mt-1 truncate">
                 <span>{displayName}</span>
               </p>
+              {/* Level sits under the name — keeps the chosen emblem/photo clean. */}
+              <Link
+                href="/skill-history/xp"
+                className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-[#014421]/8 px-2.5 py-0.5 text-[11px] font-bold tabular-nums text-[#014421] ring-1 ring-[#014421]/15 hover:bg-[#014421]/15"
+              >
+                Level {currentLevel}
+                <span className="font-semibold text-[#014421]/55">
+                  {xpRemaining > 0 ? `${xpRemaining} XP to next` : "Maxed"}
+                </span>
+              </Link>
             </div>
           </div>
           
-          {/* Relocate UI: Move the streak display to the right side of the Welcome Header */}
-          {/* Styling: Wrap the streak in a small, pill-shaped badge with a subtle orange background */}
+          {/* Streak stays on the right — not overlaid on the logo. */}
           <div 
-            className="px-3 py-1.5 rounded-full flex items-center gap-1.5"
+            className="shrink-0 px-3 py-1.5 rounded-full flex items-center gap-1.5"
             style={{ 
               backgroundColor: '#FFA500',
               boxShadow: '0 2px 8px rgba(255, 165, 0, 0.2)'
             }}
           >
             <Flame className="w-3.5 h-3.5 text-white" />
-            {/* Force Variable Sync: Using profile.currentStreak (camelCase) to match our database fix */}
             <span className="text-white text-sm font-semibold">
               {(profile?.currentStreak || 0)} day{(profile?.currentStreak || 0) !== 1 ? 's' : ''}
             </span>
@@ -712,7 +718,7 @@ export default function HomeDashboard() {
 
         {/* Coach Administration - visible for authorized coaches only */}
         {(['bdowd@pgamember.org.au', 'allendowd86@gmail.com'].includes((user?.email || '').toLowerCase().trim())) && (
-          <div className="w-full px-4 mb-4">
+          <div className="mb-4 w-full space-y-2 px-4">
             <Link
               href="/dashboard/coach"
               className="flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:bg-stone-50"
@@ -723,6 +729,21 @@ export default function HomeDashboard() {
               <span className="min-w-0 flex-1">
                 <span className="block text-base font-bold text-stone-900">Player reports</span>
                 <span className="block truncate text-xs text-stone-500">Stats, goals and practice for every player</span>
+              </span>
+              <ChevronRight className="h-5 w-5 shrink-0 text-stone-300" aria-hidden />
+            </Link>
+            <Link
+              href="/dashboard/coach/cadet"
+              className="flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:bg-stone-50"
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                <GraduationCap className="h-5 w-5 text-[#014421]" aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-base font-bold text-stone-900">Cadet Program</span>
+                <span className="block truncate text-xs text-stone-500">
+                  Skill board · draft · players can&apos;t see this yet
+                </span>
               </span>
               <ChevronRight className="h-5 w-5 shrink-0 text-stone-300" aria-hidden />
             </Link>

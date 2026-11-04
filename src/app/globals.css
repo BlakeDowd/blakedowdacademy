@@ -498,3 +498,157 @@ select option {
   animation: trophy-shine-sweep 5s ease-in-out infinite;
   pointer-events: none;
 }
+
+/* —— Cadet Program showcase —— */
+@keyframes cadet-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cadet-path-draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes cadet-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cadet-soft-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(1, 68, 33, 0.28);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(1, 68, 33, 0);
+  }
+}
+
+.cadet-page {
+  --cadet-green: #014421;
+  --cadet-green-deep: #013319;
+  --cadet-fairway: #1a5c38;
+  --cadet-sand: #d6c4a1;
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(1, 68, 33, 0.14), transparent 55%),
+    linear-gradient(180deg, #eef4ef 0%, #f5f2eb 42%, #f7f5f0 100%);
+}
+
+.cadet-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.5rem;
+  background:
+    linear-gradient(145deg, rgba(1, 68, 33, 0.97) 0%, #013319 48%, #1a5c38 100%);
+  color: #fff;
+  animation: cadet-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cadet-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 18% 22%, rgba(214, 196, 161, 0.18), transparent 34%),
+    radial-gradient(circle at 88% 12%, rgba(255, 255, 255, 0.1), transparent 28%),
+    repeating-linear-gradient(
+      -18deg,
+      transparent,
+      transparent 11px,
+      rgba(255, 255, 255, 0.03) 11px,
+      rgba(255, 255, 255, 0.03) 12px
+    );
+  pointer-events: none;
+}
+
+.cadet-hero::after {
+  content: "";
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  bottom: -40%;
+  height: 70%;
+  background: radial-gradient(ellipse at center, rgba(214, 196, 161, 0.2), transparent 68%);
+  pointer-events: none;
+}
+
+.cadet-hero-inner {
+  position: relative;
+  z-index: 1;
+}
+
+.cadet-display {
+  font-family: var(--font-cadet-display), ui-serif, Georgia, serif;
+  letter-spacing: -0.03em;
+  line-height: 0.95;
+}
+
+.cadet-path-rail {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
+.cadet-path-rail::before {
+  content: "";
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  /* Align with equal-height step tiles (not labels under them). */
+  top: 1.65rem;
+  height: 2px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgba(1, 68, 33, 0.15), rgba(1, 68, 33, 0.45), rgba(1, 68, 33, 0.15));
+  animation: cadet-path-draw 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.25s both;
+}
+
+.cadet-hero .cadet-path-rail::before {
+  display: none;
+}
+
+.cadet-path-step {
+  animation: cadet-step-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cadet-path-step-current {
+  animation:
+    cadet-step-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both,
+    cadet-soft-pulse 2.4s ease-in-out 0.8s infinite;
+}
+
+.cadet-panel-rise {
+  animation: cadet-rise 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cadet-tab-shell {
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cadet-hero,
+  .cadet-path-rail::before,
+  .cadet-path-step,
+  .cadet-path-step-current,
+  .cadet-panel-rise {
+    animation: none !important;
+  }
+}

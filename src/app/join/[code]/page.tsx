@@ -22,10 +22,18 @@ import {
   isFamilyInviteCode,
   type FamilyInvitePreview,
 } from "@/lib/family";
+import {
+  acceptCadetInvite,
+  fetchCadetInvitePreview,
+  isCadetInviteCode,
+  type CadetInvitePreview,
+} from "@/lib/cadetInvites";
+import { cadetHoleGroupLabel } from "@/lib/cadetScoring";
 
 const COACHING_HREF = "/profile?tab=coaching";
 /** Home, where "Who's practising?" opens for a family login. */
 const FAMILY_HOME = "/";
+const CADET_PROFILE_HREF = "/profile?tab=coaching";
 
 type Loaded = { key: string; preview: InvitePreview | null } | { key: string; error: string };
 
@@ -51,7 +59,188 @@ const secondary =
 export default function JoinPage() {
   const params = useParams<{ code: string }>();
   const code = normalizeInviteCode(decodeURIComponent(params?.code ?? ""));
-  return isFamilyInviteCode(code) ? <JoinFamily code={code} /> : <JoinSpace code={code} />;
+  if (isCadetInviteCode(code)) return <JoinCadet code={code} />;
+  if (isFamilyInviteCode(code)) return <JoinFamily code={code} />;
+  return <JoinSpace code={code} />;
+}
+
+type CadetLoaded = { key: string; preview: CadetInvitePreview | null } | { key: string; error: string };
+
+function JoinCadet({ code }: { code: string }) {
+  const { user, isAuthenticated, loading } = useAuth();
+  const isCoach = isCoachEmail(user?.email) || user?.role === "coach";
+  const [loaded, setLoaded] = useState<CadetLoaded | null>(null);
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const loadKey = `${code}:${user?.id ?? ""}`;
+
+  useEffect(() => {
+    if (loading) return;
+    let cancelled = false;
+    const autoJoin =
+      isAuthenticated && !isCoach && new URLSearchParams(window.location.search).get(AUTO_JOIN_PARAM) === "1";
+    void (async () => {
+      try {
+        const preview = await fetchCadetInvitePreview(code);
+        if (cancelled) return;
+        if (preview && !preview.claimed && !isAuthenticated) rememberPendingInvite(code, preview.displayName);
+        else if (!preview || preview.claimed) clearPendingInvite();
+        if (autoJoin && preview?.isSelf) {
+          window.location.assign(CADET_PROFILE_HREF);
+          return;
+        }
+        if (autoJoin && preview && !preview.claimed) {
+          try {
+            await acceptCadetInvite(code);
+            clearPendingInvite();
+            window.location.assign(CADET_PROFILE_HREF);
+            return;
+          } catch (err) {
+            if (cancelled) return;
+            setJoinError(err instanceof Error ? err.message : "Couldn't join Cadets.");
+          }
+        }
+        setLoaded({ key: loadKey, preview });
+      } catch (err) {
+        if (!cancelled) {
+          setLoaded({
+            key: loadKey,
+            error: err instanceof Error ? err.message : "Couldn't load the cadet link.",
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [code, loading, loadKey, isAuthenticated, isCoach]);
+
+  const join = async () => {
+    setJoining(true);
+    setJoinError(null);
+    try {
+      await acceptCadetInvite(code);
+      clearPendingInvite();
+      window.location.assign(CADET_PROFILE_HREF);
+    } catch (err) {
+      setJoinError(err instanceof Error ? err.message : "Couldn't join Cadets.");
+      setJoining(false);
+    }
+  };
+
+  const current = loaded?.key === loadKey ? loaded : null;
+
+  if (loading || !current) {
+    return (
+      <Card>
+        <div className="flex items-center justify-center gap-2 py-6 text-sm text-gray-500">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          Loading cadet invite…
+        </div>
+      </Card>
+    );
+  }
+
+  if ("error" in current) {
+    return (
+      <Card>
+        <h1 className="text-lg font-bold text-gray-900">Couldn&apos;t load this invite</h1>
+        <p className="text-sm text-gray-600">{current.error}</p>
+        <Link href="/" onClick={clearPendingInvite} className={secondary}>
+          Go to the app
+        </Link>
+      </Card>
+    );
+  }
+
+  const { preview } = current;
+
+  if (!preview) {
+    return (
+      <Card>
+        <h1 className="text-lg font-bold text-gray-900">Cadet link not valid</h1>
+        <p className="text-sm text-gray-600">
+          This link may have been replaced or mistyped. Ask your coach for a new Cadet setup link.
+        </p>
+        {isAuthenticated && (
+          <Link href="/" className={secondary}>
+            Go to the app
+          </Link>
+        )}
+      </Card>
+    );
+  }
+
+  if (preview.claimed) {
+    return (
+      <Card>
+        <CheckCircle2 className="mx-auto h-10 w-10 text-[#014421]" aria-hidden />
+        <h1 className="text-lg font-bold text-gray-900">
+          {preview.isSelf ? "You’re in Cadets" : "Link already used"}
+        </h1>
+        <p className="text-sm text-gray-600">
+          {preview.isSelf
+            ? `${preview.displayName} is enrolled on the ${cadetHoleGroupLabel(preview.holeGroup)} pathway.`
+            : "This Cadet setup link was already claimed by another account. Ask your coach for a new one."}
+        </p>
+        {preview.isSelf ? (
+          <Link href={CADET_PROFILE_HREF} className={primary}>
+            Open profile
+          </Link>
+        ) : (
+          <Link href="/" className={secondary}>
+            Go to the app
+          </Link>
+        )}
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#014421]/10 text-[#014421]">
+        <UserPlus className="h-7 w-7" aria-hidden />
+      </span>
+      <div className="space-y-1">
+        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#014421]/70">Cadet setup</p>
+        <h1 className="text-lg font-bold text-gray-900">{preview.displayName}</h1>
+        <p className="text-sm text-gray-600">
+          Join the Blake Dowd Cadet Program on the {cadetHoleGroupLabel(preview.holeGroup)} pathway. This link is for
+          this cadet only.
+        </p>
+      </div>
+
+      {!isAuthenticated ? (
+        <div className="space-y-2">
+          <Link href="/login?mode=signup" className={primary}>
+            Create account &amp; join Cadets
+          </Link>
+          <Link href="/login" className={secondary}>
+            I already have an account
+          </Link>
+        </div>
+      ) : isCoach ? (
+        <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          You&apos;re signed in as a coach. Send this link to the cadet (or parent) so they can join.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">
+            Signed in as {user?.fullName || "this account"}. Joining links this account to {preview.displayName}
+            &apos;s Cadet profile.
+          </p>
+          <button type="button" onClick={() => void join()} disabled={joining} className={primary}>
+            {joining && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+            Join Cadets
+          </button>
+          <Link href="/" onClick={clearPendingInvite} className={secondary}>
+            Not now
+          </Link>
+          {joinError && <p className="text-sm text-red-600">{joinError}</p>}
+        </div>
+      )}
+    </Card>
+  );
 }
 
 type FamilyLoaded = { key: string; preview: FamilyInvitePreview | null } | { key: string; error: string };
