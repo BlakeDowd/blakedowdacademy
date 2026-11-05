@@ -38,6 +38,7 @@ import {
   ChevronRight,
   PersonStanding,
   GraduationCap,
+  BookHeart,
 } from "lucide-react";
 import { AddToHomeScreenGuide } from "@/components/AddToHomeScreenGuide";
 import { InstallAppPrompt } from "@/components/InstallAppPrompt";
@@ -66,6 +67,7 @@ import {
 import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 import { HallOfFameLeaderboard } from "@/components/academy/HallOfFameLeaderboard";
 import { HomeCommunityCard } from "@/components/community/HomeCommunityCard";
+import { HomeGoldenFeelsCard } from "@/components/feel/HomeGoldenFeelsCard";
 
 const INSTALL_BANNER_DISMISSED_KEY = 'homeInstallBannerDismissed';
 const RECENT_ITEMS_SHOWN = 3;
@@ -787,6 +789,7 @@ export default function HomeDashboard() {
               { label: 'Swing Tempo', icon: Timer, onClick: () => router.push('/full-swing-tempo') },
               { label: 'Chip Tempo', icon: Flag, onClick: () => router.push('/short-game-tempo') },
               { label: 'Speed Logging', icon: Gauge, onClick: () => router.push('/speed-logging') },
+              { label: 'Feel Log', icon: BookHeart, onClick: () => router.push('/feel-log') },
               {
                 label: 'Approach Shot Sim',
                 icon: Target,
@@ -1041,6 +1044,7 @@ export default function HomeDashboard() {
         </div>
 
         <HomeCommunityCard />
+        <HomeGoldenFeelsCard />
 
         <div className="w-full px-4 mb-4 space-y-3">
           {!installBannerHidden ? (

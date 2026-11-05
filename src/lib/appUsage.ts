@@ -93,6 +93,7 @@ export const TOOL_LABELS = {
   "short-game-tempo": "Short game tempo",
   "putting-calculator": "Putting stroke calculator",
   "speed-logging": "Speed logging",
+  "feel-log": "Feel log",
   "on-course-sim": "On-course simulator",
   "approach-shot-sim": "Approach shot simulator",
   "swing-analyzer": "Swing analyser",
