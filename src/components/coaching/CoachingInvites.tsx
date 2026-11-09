@@ -4,12 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Copy, Hourglass, Loader2, Search, Share2, Trash2, UserPlus, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import type { CoachingSpaceSummary } from "@/lib/coachingFeed";
 import {
   addExistingPlayer,
   createInviteSpace,
   deletePendingSpace,
   fetchPlayerOptions,
   inviteUrl,
+  linkExistingPlayerToPendingSpace,
+  mergeCoachingThreads,
   shareInvite,
   type CoachingSpaceRecord,
   type PlayerOption,
@@ -17,6 +20,7 @@ import {
 import { Avatar } from "@/components/coaching/coachingUi";
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
+const nameKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
 
 function InviteLinkActions({ code, playerName, coachName }: { code: string; playerName: string; coachName: string }) {
   const [status, setStatus] = useState<"idle" | "copied" | "shared">("idle");
@@ -282,16 +286,43 @@ export function PendingInviteBanner({
   playerName,
   coachName,
   onDeleted,
+  onLinked,
 }: {
   spaceId: string;
   inviteCode: string;
   playerName: string;
   coachName: string;
   onDeleted: () => void;
+  /** Called after linking an existing account — refresh spaces and open their feed. */
+  onLinked?: (playerId: string, name: string) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [players, setPlayers] = useState<PlayerOption[] | null>(null);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    if (!linkOpen) return;
+    let cancelled = false;
+    fetchPlayerOptions(createClient())
+      .then((list) => {
+        if (!cancelled) setPlayers(list);
+      })
+      .catch(() => {
+        if (!cancelled) setPlayers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [linkOpen]);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q || !players) return [];
+    return players.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [players, query]);
 
   const remove = async () => {
     setBusy(true);
@@ -305,6 +336,19 @@ export function PendingInviteBanner({
     }
   };
 
+  const linkPlayer = async (player: PlayerOption) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await linkExistingPlayerToPendingSpace(createClient(), spaceId, player.id);
+      onLinked?.(player.id, player.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't link that player.");
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
       <div className="flex items-start gap-2">
@@ -312,11 +356,70 @@ export function PendingInviteBanner({
         <div className="min-w-0 text-sm text-stone-800">
           <p className="font-semibold">Waiting for {firstName(playerName)} to join</p>
           <p className="text-xs text-stone-600">
-            Anything you post here now will be waiting for them when they open the invite link.
+            They must open this invite link (not only download the app). Videos stay here until they join.
           </p>
         </div>
       </div>
       <InviteLinkActions code={inviteCode} playerName={playerName} coachName={coachName} />
+
+      {linkOpen ? (
+        <div className="space-y-2 rounded-xl bg-white p-3 ring-1 ring-stone-200">
+          <p className="text-xs font-semibold text-stone-800">
+            Already signed up without the link?
+          </p>
+          <p className="text-[11px] text-stone-500">
+            Search their name and link them — posts and videos move to their account.
+          </p>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" aria-hidden />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search players…"
+              className="w-full rounded-lg border border-stone-200 py-2 pl-8 pr-3 text-sm outline-none focus:border-[#014421]"
+            />
+          </div>
+          {matches.length > 0 ? (
+            <ul className="divide-y divide-stone-100">
+              {matches.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void linkPlayer(p)}
+                    className="flex w-full items-center gap-2 px-1 py-2 text-left text-sm font-medium text-stone-800 hover:bg-stone-50 disabled:opacity-50"
+                  >
+                    <Avatar name={p.name} userId={p.id} />
+                    <span className="min-w-0 truncate">{p.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : query.trim() ? (
+            <p className="text-xs text-stone-500">No matching players.</p>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setLinkOpen(false);
+              setQuery("");
+            }}
+            className="text-xs font-semibold text-stone-500 hover:text-stone-800"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setLinkOpen(true)}
+          className="flex items-center gap-1.5 text-xs font-semibold text-[#014421] hover:underline"
+        >
+          <UserPlus className="h-3.5 w-3.5" aria-hidden />
+          Link existing account
+        </button>
+      )}
+
       {confirming ? (
         <div className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 text-xs">
           <span className="text-stone-700">Delete this invite and anything posted in it?</span>
@@ -346,6 +449,153 @@ export function PendingInviteBanner({
         >
           <Trash2 className="h-3.5 w-3.5" aria-hidden />
           Delete invite
+        </button>
+      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+/** When two spaces share a name (invite + signup, or double accounts), merge onto the one with videos. */
+export function MergeDuplicateBanner({
+  current,
+  spaces,
+  onMerged,
+}: {
+  current: { id: string; name: string };
+  spaces: CoachingSpaceSummary[];
+  onMerged: (keepId: string, name: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  const duplicates = useMemo(() => {
+    const key = nameKey(current.name);
+    if (!key) return [];
+    return spaces.filter((s) => s.studentId !== current.id && nameKey(s.name) === key);
+  }, [spaces, current.id, current.name]);
+
+  if (duplicates.length === 0) return null;
+
+  const confirming = confirmId ? duplicates.find((d) => d.studentId === confirmId) : null;
+
+  const mergeAway = async (drop: CoachingSpaceSummary) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      // Keep this open space (videos stay / land here); absorb the other account.
+      const keepId = await mergeCoachingThreads(createClient(), current.id, drop.studentId);
+      onMerged(keepId, current.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't merge those spaces.");
+      setBusy(false);
+      setConfirmId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+      <p className="text-sm font-semibold text-stone-900">
+        {duplicates.length === 1 ? "Duplicate name found" : `${duplicates.length} duplicates found`}
+      </p>
+      <p className="text-xs text-stone-600">
+        Same name as another space — usually an invite with your videos plus a signup that skipped the link.
+        Merge the empty one into this space so posts stay in one place.
+      </p>
+      {open ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 rounded-xl bg-[#014421]/5 px-3 py-2 ring-1 ring-[#014421]/20">
+            <Avatar name={current.name} userId={current.id} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold text-stone-900">{current.name}</span>
+              <span className="block text-[11px] font-medium text-[#014421]">Keeping this one</span>
+            </span>
+          </div>
+          <ul className="space-y-2">
+            {duplicates.map((d) => (
+              <li
+                key={d.studentId}
+                className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 ring-1 ring-stone-200"
+              >
+                <Avatar name={d.name} userId={d.studentId} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-stone-800">{d.name}</span>
+                  <span className="block text-[11px] text-stone-500">
+                    {d.space?.pending ? "Waiting invite" : d.lastActivityAt ? "Has activity" : "No posts yet"}
+                  </span>
+                </span>
+                {confirmId !== d.studentId && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setConfirmId(d.studentId)}
+                    className="shrink-0 rounded-lg border border-stone-200 px-2 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-50"
+                  >
+                    Merge away
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          {confirming && (
+            <div className="space-y-2 rounded-xl border border-amber-300 bg-white p-3">
+              <div className="flex items-center gap-2">
+                <Avatar name={confirming.name} userId={confirming.studentId} size="sm" />
+                <p className="text-sm font-semibold text-stone-900">Are you sure?</p>
+              </div>
+              <p className="text-xs text-stone-600">
+                Merge away <span className="font-semibold text-stone-800">{confirming.name}</span> into{" "}
+                <span className="font-semibold text-stone-800">{current.name}</span>. Posts and videos stay on
+                the one you’re keeping. This can’t be undone from here.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setConfirmId(null)}
+                  className="flex-1 rounded-lg border border-stone-200 px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void mergeAway(confirming)}
+                  className="flex-1 rounded-lg bg-[#014421] px-3 py-2 text-xs font-semibold text-white hover:bg-[#013320] disabled:opacity-50"
+                >
+                  {busy ? "Merging…" : "Yes, merge"}
+                </button>
+              </div>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setConfirmId(null);
+              setError(null);
+            }}
+            className="text-xs font-semibold text-stone-500 hover:text-stone-800"
+          >
+            Close
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-2 text-xs font-semibold text-[#014421] hover:underline"
+        >
+          <span className="flex -space-x-2">
+            <Avatar name={current.name} userId={current.id} size="sm" />
+            {duplicates.slice(0, 2).map((d) => (
+              <Avatar key={d.studentId} name={d.name} userId={d.studentId} size="sm" />
+            ))}
+          </span>
+          Review & merge
         </button>
       )}
       {error && <p className="text-xs text-red-600">{error}</p>}

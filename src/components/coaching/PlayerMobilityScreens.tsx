@@ -6,6 +6,7 @@ import { ChevronRight, PersonStanding } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { mobilityScreenConfig } from "@/lib/mobilityScreenConfig";
 import { ReportEmpty, ReportSection } from "@/components/coach/CoachReportParts";
+import { ReportGate } from "@/components/coach/CoachReportVisibility";
 import { CombineReportSheet } from "@/components/coaching/CombineReportSheet";
 
 type Screen = { id: string; at: string; pct: number };
@@ -114,9 +115,11 @@ export function PlayerMobilityScreens({
 
   if (!self) {
     return (
-      <ReportSection title="Mobility screens" subtitle="Tests passed on each screen, newest first">
-        {body}
-      </ReportSection>
+      <ReportGate empty={state.status === "ready" && !latest}>
+        <ReportSection title="Mobility screens" subtitle="Tests passed on each screen, newest first">
+          {body}
+        </ReportSection>
+      </ReportGate>
     );
   }
 

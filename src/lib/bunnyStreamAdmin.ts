@@ -44,7 +44,25 @@ export type BunnyTusUploadCredentials = {
   title: string;
 };
 
-export async function bunnyListVideos(limit = 20): Promise<BunnyVideoDetails[]> {
+export type BunnyListVideosOpts = {
+  limit?: number;
+  page?: number;
+  /** Bunny title search string. */
+  search?: string;
+  collectionId?: string | null;
+};
+
+/** List library videos. Pass a number for items-per-page (legacy) or an options object. */
+export async function bunnyListVideos(
+  limitOrOpts: number | BunnyListVideosOpts = 20,
+): Promise<BunnyVideoDetails[]> {
+  const opts: BunnyListVideosOpts =
+    typeof limitOrOpts === "number" ? { limit: limitOrOpts } : limitOrOpts;
+  const limit = Math.min(100, Math.max(1, opts.limit ?? 20));
+  const page = Math.max(1, opts.page ?? 1);
+  const search = opts.search?.trim() || "";
+  const collectionId = opts.collectionId?.trim() || "";
+
   const apiKey = getBunnyStreamApiKey();
   const libraryId = resolveBunnyLibraryId();
   if (!apiKey || !libraryId) {
@@ -53,8 +71,16 @@ export async function bunnyListVideos(limit = 20): Promise<BunnyVideoDetails[]> 
     );
   }
 
+  const params = new URLSearchParams({
+    page: String(page),
+    itemsPerPage: String(limit),
+    orderBy: "date",
+  });
+  if (search) params.set("search", search);
+  if (collectionId) params.set("collection", collectionId);
+
   const response = await fetch(
-    `${BUNNY_VIDEO_API}/library/${libraryId}/videos?page=1&itemsPerPage=${limit}&orderBy=date`,
+    `${BUNNY_VIDEO_API}/library/${libraryId}/videos?${params}`,
     { headers: bunnyAuthHeaders(apiKey), cache: "no-store" },
   );
   if (!response.ok) {

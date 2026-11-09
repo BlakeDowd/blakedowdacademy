@@ -279,6 +279,7 @@ export function GamePlanCard({
   const shown = showAll ? plans : plans.slice(0, PLANS_SHOWN);
   const firstName = studentName.split(" ")[0] || "the player";
 
+  // Always show for coaches — empty state is the “post a plan” action for the lesson.
   return (
     <section className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-stone-200">
       <div className="relative overflow-hidden bg-gradient-to-br from-[#014421] to-[#0b6b3a] px-4 py-4 text-white">

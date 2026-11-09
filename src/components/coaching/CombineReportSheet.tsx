@@ -53,6 +53,8 @@ import { strikeAndSpeedControlTestConfig } from "@/lib/strikeAndSpeedControlTest
 import { startLineAndSpeedControlTestConfig } from "@/lib/startLineAndSpeedControlTestConfig";
 import { approachShotSimConfig } from "@/lib/approachShotSimConfig";
 import { ApproachShotSimReport, parseApproachShots } from "@/components/practice/ApproachShotSimReport";
+import { teeShotSimConfig } from "@/lib/teeShotSimConfig";
+import { TeeShotSimReport, parseTeeShots } from "@/components/practice/TeeShotSimReport";
 
 /** Report ids: every combine leaderboard test plus screens that are not on the leaderboard. */
 export type CombineReportId =
@@ -248,6 +250,18 @@ const LOADERS: Partial<Record<CombineReportId, Loader>> = {
         at: r.created_at,
         score: points(r.score ?? r.total_points),
         report: shots && <ApproachShotSimReport shots={shots} />,
+      };
+    });
+  },
+  tee_shot_sim: async (supabase, playerId) => {
+    const rows = await practiceLogs(supabase, playerId, [teeShotSimConfig.practiceLogType], "score, strike_data");
+    return rows.map((r) => {
+      const shots = parseTeeShots(r.strike_data);
+      return {
+        id: r.id,
+        at: r.created_at,
+        score: points(r.score ?? r.total_points),
+        report: shots && <TeeShotSimReport shots={shots} />,
       };
     });
   },

@@ -225,12 +225,107 @@ const ACCEPT_ERRORS: Record<string, string> = {
   profile_missing: "Finish setting up your profile, then open the invite link again.",
 };
 
+/** Makes sure the signed-in user has a profiles row so accept_coaching_invite can succeed. */
+export async function ensurePlayerProfile(
+  supabase: SupabaseClient,
+  user: { id: string; email?: string | null; fullName?: string | null },
+): Promise<void> {
+  const { data, error } = await supabase.from("profiles").select("id").eq("id", user.id).maybeSingle();
+  if (error && !isMissingSetup(error)) throw new Error(error.message || "Couldn't check your profile.");
+  if (data?.id) return;
+
+  const fullName = user.fullName?.trim() || user.email?.split("@")[0] || "Golfer";
+  const insert = await supabase.from("profiles").insert({
+    id: user.id,
+    full_name: fullName,
+    starting_handicap: 54,
+    created_at: new Date().toISOString(),
+  });
+  if (insert.error) {
+    // Race: another tab may have created it
+    const again = await supabase.from("profiles").select("id").eq("id", user.id).maybeSingle();
+    if (again.data?.id) return;
+    throw new Error(insert.error.message || "Couldn't create your profile.");
+  }
+}
+
 export async function acceptInvite(supabase: SupabaseClient, code: string): Promise<void> {
+  const { data: auth } = await supabase.auth.getUser();
+  if (auth.user) {
+    await ensurePlayerProfile(supabase, {
+      id: auth.user.id,
+      email: auth.user.email,
+      fullName:
+        (auth.user.user_metadata?.full_name as string | undefined) ||
+        (auth.user.user_metadata?.fullName as string | undefined) ||
+        null,
+    });
+  }
+
   const { error } = await supabase.rpc("accept_coaching_invite", { p_code: code });
   if (!error) return;
   const known = Object.keys(ACCEPT_ERRORS).find((k) => error.message?.includes(k));
   if (known) throw new Error(ACCEPT_ERRORS[known]);
   rethrow(error);
+}
+
+/**
+ * Coach recovery: attach a player who already signed up (without the invite) to a waiting space
+ * so posts/videos filed under the space id move to their account.
+ */
+export async function linkExistingPlayerToPendingSpace(
+  supabase: SupabaseClient,
+  spaceId: string,
+  playerId: string,
+): Promise<void> {
+  const { error } = await supabase.rpc("link_player_to_pending_space", {
+    p_space_id: spaceId,
+    p_player_id: playerId,
+  });
+  if (!error) return;
+  if (/space_not_pending|space_not_found|player_missing|already_linked|not_coach/i.test(error.message ?? "")) {
+    const map: Record<string, string> = {
+      space_not_found: "That invite space wasn't found.",
+      space_not_pending: "This space is already linked to a player.",
+      player_missing: "That player doesn't have a profile yet.",
+      already_linked: "That player is already in another coaching space.",
+      not_coach: "Only the coach can link a player to this invite.",
+    };
+    const key = Object.keys(map).find((k) => error.message?.includes(k));
+    throw new Error(key ? map[key]! : error.message);
+  }
+  rethrow(error);
+}
+
+/**
+ * Coach: absorb a duplicate space/account into the one that should keep the videos.
+ * `keepId` / `dropId` are space keys (player user id, or pending invite space id).
+ * Returns the surviving space key to open after refresh.
+ */
+export async function mergeCoachingThreads(
+  supabase: SupabaseClient,
+  keepId: string,
+  dropId: string,
+): Promise<string> {
+  const { data, error } = await supabase.rpc("coach_merge_coaching_threads", {
+    p_keep: keepId,
+    p_drop: dropId,
+  });
+  if (error) {
+    const map: Record<string, string> = {
+      not_coach: "Only the coach can merge duplicates.",
+      pick_two_different: "Pick two different spaces to merge.",
+      keep_not_found: "Couldn't find the space to keep.",
+      drop_not_found: "Couldn't find the duplicate to merge away.",
+      cannot_merge_coach: "Coach accounts can't be merged.",
+      space_not_pending: "That invite was already linked.",
+      space_not_found: "That invite space wasn't found.",
+      player_missing: "That player doesn't have a profile yet.",
+    };
+    const key = Object.keys(map).find((k) => error.message?.includes(k));
+    throw new Error(key ? map[key]! : error.message);
+  }
+  return (data as string) || keepId;
 }
 
 export const normalizeInviteCode = (code: string) => code.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -245,7 +340,9 @@ export async function shareInvite(
   coachName: string,
 ): Promise<"shared" | "copied" | "cancelled"> {
   const url = inviteUrl(code);
-  const text = `Hi ${playerName.split(" ")[0]}, ${coachName} has set up a private coaching space for you. Join here:`;
+  // Put the URL in the text body — many apps (WhatsApp, iMessage) ignore the separate `url` field
+  // and players then sign up from the App Store with no invite → empty space, missing videos.
+  const text = `Hi ${playerName.split(" ")[0]}, ${coachName} has set up a private coaching space for you on Blake Dowd Golf.\n\nOpen this link to join (don't just download the app):\n${url}`;
   if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
     try {
       await navigator.share({ title: "Join your coaching space", text, url });
@@ -254,7 +351,7 @@ export async function shareInvite(
       if (err instanceof DOMException && err.name === "AbortError") return "cancelled";
     }
   }
-  await navigator.clipboard.writeText(`${text} ${url}`);
+  await navigator.clipboard.writeText(text);
   return "copied";
 }
 

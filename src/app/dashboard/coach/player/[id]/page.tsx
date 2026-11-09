@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
-import { ArrowLeft, ArrowUpRight, ArrowDownRight, Download, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, ArrowDownRight, Download, Eye, EyeOff, Loader2 } from "lucide-react";
 import {
   initials,
   ReportEmpty,
@@ -13,16 +13,23 @@ import {
   ReportSubLabel,
   ReportTile,
 } from "@/components/coach/CoachReportParts";
+import {
+  CoachReportShowEmptyProvider,
+  ReportGate,
+} from "@/components/coach/CoachReportVisibility";
+import { CoachSessionDiscussFirst } from "@/components/coach/CoachSessionDiscussFirst";
 import { Segmented } from "@/components/profile/ProfileStatsParts";
 import { getBenchmarkGoals } from "@/lib/benchmarkGoals";
 import type { PlayerGoalRow } from "@/types/playerGoals";
 import type { PracticeLogAccountabilityRow } from "@/types/playerGoals";
 import {
+  averageWeeklyPracticeHours,
   computeGoalAccountabilityState,
   minutesFromPracticeRows,
-  startOfWeekMondayLocal,
+  startOfPreviousWeekMondayLocal,
   endOfWeekSundayLocal,
   DEFAULT_PLAYER_GOAL,
+  normalizeFocusArea,
 } from "@/lib/goalAccountability";
 import { buildCoachPlayerCombineSnapshot } from "@/lib/coachPlayerCombineSnapshot";
 import { TROPHY_LIST } from "@/lib/academyTrophies";
@@ -115,6 +122,8 @@ export default function PlayerDeepDivePage() {
   const [playerName, setPlayerName] = useState<string>("");
   const [playerHandicap, setPlayerHandicap] = useState<number>(54);
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>(getDefaultRange);
+  /** Session diagnostic default: hide blocks the player hasn't filled in. */
+  const [showEmpty, setShowEmpty] = useState(false);
   const [practiceData, setPracticeData] = useState<any[]>([]);
   const [practiceRawData, setPracticeRawData] = useState<any[]>([]);
   const [practiceConsistencyData, setPracticeConsistencyData] = useState<any[]>([]);
@@ -169,7 +178,7 @@ export default function PlayerDeepDivePage() {
       // Fetch player profile
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("full_name, initial_handicap, total_xp")
+        .select("full_name, starting_handicap, total_xp")
         .eq("id", playerId)
         .single();
       console.log("Supabase Response:", { data: profile, error: profileError });
@@ -187,7 +196,7 @@ export default function PlayerDeepDivePage() {
       }
       setPlayerName(profile?.full_name || "Player");
       coachDeepDiveBlockingLoadDoneRef.current = true;
-      const hcapRaw = profile?.initial_handicap ?? 54;
+      const hcapRaw = profile?.starting_handicap ?? 54;
       const hcapNum = typeof hcapRaw === "number" ? hcapRaw : Number(hcapRaw);
       const hcapInt = Math.min(54, Math.max(-5, Math.round(Number.isFinite(hcapNum) ? hcapNum : 54)));
       setPlayerHandicap(hcapInt);
@@ -516,19 +525,30 @@ export default function PlayerDeepDivePage() {
     );
   }, [playerGoal, playerId]);
 
+  /** Last complete Mon–Sun week — doesn’t shrink on a Monday lesson. */
   const coachAccountability = useMemo(() => {
     if (!playerId) return null;
-    const weekStart = startOfWeekMondayLocal();
+    const weekStart = startOfPreviousWeekMondayLocal();
     const weekEnd = endOfWeekSundayLocal(weekStart);
-    const ws = weekStart.getTime();
-    const we = weekEnd.getTime();
-    const weekLogs = (playerPracticeLogs || []).filter((r) => {
-      const t = r.created_at ? new Date(r.created_at).getTime() : NaN;
-      return Number.isFinite(t) && t >= ws && t < we;
-    }) as PracticeLogAccountabilityRow[];
     const supplemental = minutesFromPracticeRows(playerPracticeAll || [], playerId, weekStart, weekEnd);
-    return computeGoalAccountabilityState(coachGoalMerged, weekLogs, supplemental, playerId);
+    return computeGoalAccountabilityState(
+      coachGoalMerged,
+      (playerPracticeLogs || []) as PracticeLogAccountabilityRow[],
+      supplemental,
+      playerId,
+      weekStart,
+    );
   }, [playerId, coachGoalMerged, playerPracticeLogs, playerPracticeAll]);
+
+  const coachWeeklyAvg = useMemo(() => {
+    if (!playerId) return null;
+    return averageWeeklyPracticeHours(
+      (playerPracticeLogs || []) as PracticeLogAccountabilityRow[],
+      playerPracticeAll || [],
+      playerId,
+      4,
+    );
+  }, [playerId, playerPracticeLogs, playerPracticeAll]);
 
   const coachCombineSnapshot = useMemo(
     () =>
@@ -682,15 +702,71 @@ export default function PlayerDeepDivePage() {
               />
             </label>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowEmpty((v) => !v)}
+            className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200 hover:bg-stone-100"
+          >
+            {showEmpty ? (
+              <>
+                <EyeOff className="h-3.5 w-3.5" aria-hidden />
+                Hide empty sections
+              </>
+            ) : (
+              <>
+                <Eye className="h-3.5 w-3.5" aria-hidden />
+                Show empty sections
+              </>
+            )}
+          </button>
+          {!showEmpty && (
+            <p className="mt-1.5 text-center text-[11px] text-stone-400">
+              Empty blocks stay hidden so the session stays on what they&apos;ve logged.
+            </p>
+          )}
         </div>
       </header>
 
       <div id="coach-deepdive-scroll" className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-32 pt-3">
+        <CoachReportShowEmptyProvider showEmpty={showEmpty}>
         <div className="w-full min-w-0 space-y-3" id="coach-deepdive-pdf-content">
           <div className="hidden border-b border-gray-200 pb-2 text-sm font-bold text-gray-900 print:block">
             Player Report — {name} ({dateRange.start} to {dateRange.end})
           </div>
 
+          <CoachSessionDiscussFirst
+            playerId={playerId}
+            playerName={name}
+            strokeSaver={
+              strokeOpportunityRows[0]
+                ? {
+                    name: strokeOpportunityRows[0].name,
+                    estimatedGain: strokeOpportunityRows[0].estimatedGain,
+                    current: strokeOpportunityRows[0].current,
+                    goal: strokeOpportunityRows[0].goal,
+                    unit: strokeOpportunityRows[0].unit ?? "",
+                  }
+                : null
+            }
+            week={
+              coachAccountability
+                ? {
+                    actualHours: coachAccountability.actualHours,
+                    commitmentHours: coachAccountability.commitmentHours,
+                    focusMismatch: coachAccountability.focusMismatch,
+                    focusLabel: normalizeFocusArea(playerGoal?.focus_area ?? "Putting"),
+                    topCategory: coachAccountability.metrics?.topCategory ?? null,
+                    avgHours: coachWeeklyAvg?.avgHours ?? null,
+                    avgWeeks: coachWeeklyAvg?.weekCount ?? 4,
+                  }
+                : null
+            }
+            hasGoals={!!playerGoal}
+            combineCount={coachCombineSnapshot.filter((r) => r.scoreDisplay).length}
+            roundsInRange={roundsData.length}
+          />
+
+          <div id="coach-report-body" className="space-y-3">
           <CoachDeepDiveProfilePanels
             playerName={name}
             playerHandicap={playerHandicap}
@@ -703,6 +779,8 @@ export default function PlayerDeepDivePage() {
             practiceSessionsInRange={practiceRawData.length}
             dateRangeLabel={dateRangeLabel}
             unlockedTrophies={playerUnlockedTrophies}
+            weeklyAvgHours={coachWeeklyAvg?.avgHours ?? null}
+            weeklyAvgWeeks={coachWeeklyAvg?.weekCount ?? 4}
           />
 
           <PlayerGroupsCard key={`groups-${playerId}`} playerId={playerId} playerName={name} />
@@ -721,6 +799,7 @@ export default function PlayerDeepDivePage() {
             />
           )}
 
+          <ReportGate empty={!bigSix}>
           <ReportSection title="Scoring" subtitle="Averages over the rounds in this range">
             {bigSix ? (
               <>
@@ -747,6 +826,7 @@ export default function PlayerDeepDivePage() {
               <ReportEmpty>No rounds logged in this range.</ReportEmpty>
             )}
           </ReportSection>
+          </ReportGate>
 
           {strokeOpportunityRows.length > 0 && (
             <ReportSection title="Biggest stroke savers" subtitle="Where reaching the target saves the most shots">
@@ -859,11 +939,13 @@ export default function PlayerDeepDivePage() {
             handicapPoints={roundTrendChartPoints.handicap}
             rangeCaption={dateRangeLabel}
           />
+          </div>
 
           <div className="mt-8 hidden border-t border-gray-200 pt-4 text-center text-xs text-gray-500 print:block">
             Blake Dowd Golf — blakedowdgolf.com
           </div>
         </div>
+        </CoachReportShowEmptyProvider>
       </div>
     </div>
     </CoachDeepDiveErrorBoundary>

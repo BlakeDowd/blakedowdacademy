@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useCoachReportShowEmpty } from "@/components/coach/CoachReportVisibility";
 
 export type RoundTrendPoint = { sortAt: number; y: number };
 
@@ -52,6 +53,9 @@ function TrendCard({
   emptyMessage: string;
   yLabel: string;
 }) {
+  const showEmpty = useCoachReportShowEmpty();
+  if (data.length === 0 && !showEmpty) return null;
+
   const chartData = data.map((d) => ({ sortAt: d.sortAt, [dataKey]: d.y }));
   const lineClass =
     dataKey === "gross" ? "coach-deepdive-chart-gross" : "coach-deepdive-chart-handicap";

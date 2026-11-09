@@ -15,6 +15,7 @@ import {
 import { GAME_AREAS, PRACTICE_HANDICAP_MAX, PRACTICE_HANDICAP_MIN, type GameArea } from "@/lib/practiceHandicapBenchmarks";
 import { usePracticeHandicap } from "@/hooks/usePracticeHandicap";
 import { ReportEmpty, ReportSection } from "@/components/coach/CoachReportParts";
+import { ReportGate } from "@/components/coach/CoachReportVisibility";
 import { PracticeHandicapBenchmarksSheet } from "@/components/coaching/PracticeHandicapBenchmarksSheet";
 
 const noopSubscribe = () => () => {};
@@ -95,15 +96,20 @@ export function PracticeHandicapCard({
     </>
   );
 
+  const empty =
+    state.status === "ready" && (practice == null || practice.overall == null);
+
   if (!self) {
     return (
-      <ReportSection
-        title="Practice handicap"
-        subtitle="What the combine tests say each part of the game plays to"
-        aside={editButton || undefined}
-      >
-        {body}
-      </ReportSection>
+      <ReportGate empty={empty}>
+        <ReportSection
+          title="Practice handicap"
+          subtitle="What the combine tests say each part of the game plays to"
+          aside={editButton || undefined}
+        >
+          {body}
+        </ReportSection>
+      </ReportGate>
     );
   }
 

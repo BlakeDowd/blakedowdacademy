@@ -96,14 +96,14 @@ export default function LoginPage() {
 
     try {
       setShowRetry(false);
-      // Create a timeout promise that rejects after 3 seconds
+      // Signup can be slow on mobile — don't kill it at 3s (that left invites unclaimed).
+      const timeoutMs = isSignUp ? 20000 : 8000;
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
           reject(new Error("Login timed out. Please check your connection and try again."));
-        }, 3000);
+        }, timeoutMs);
       });
 
-      // Race between the login/signup and the timeout
       if (isSignUp) {
         const handicap = parseFloat(initialHandicap);
         if (isNaN(handicap) || handicap < -5 || handicap > 54) {
@@ -117,42 +117,49 @@ export default function LoginPage() {
         }
         await Promise.race([
           signup(email, password, fullName, handicap, selectedIcon || undefined),
-          timeoutPromise
+          timeoutPromise,
         ]);
-        // Wait 200ms for session to be saved before redirecting
-        await new Promise(resolve => setTimeout(resolve, 200));
-        // Verify session exists before redirecting
+        await new Promise((resolve) => setTimeout(resolve, 300));
         try {
           const { createClient } = await import("@/lib/supabase/client");
           const supabase = createClient();
-          const { data: { session } } = await supabase.auth.getSession();
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
           if (session?.user) {
+            // Always return to the invite with auto-join when one is pending
             window.location.assign(postLoginPath());
+            return;
           }
+          // Email confirmation may be on — keep pending invite in localStorage for after they log in
+          setError(
+            "Check your email to confirm your account, then open the invite link again (or log in) so you join your coach's space.",
+          );
+          setLoading(false);
+          return;
         } catch (err) {
-          console.error('Login: Error verifying session before redirect:', err);
-          // Still redirect after delay
-          setTimeout(() => window.location.assign(postLoginPath()), 200);
+          console.error("Login: Error verifying session before redirect:", err);
+          window.location.assign(postLoginPath());
+          return;
         }
       } else {
-        await Promise.race([
-          login(email, password),
-          timeoutPromise
-        ]);
-        // Wait 200ms for session to be saved before redirecting
-        await new Promise(resolve => setTimeout(resolve, 200));
-        // Verify session exists before redirecting
+        await Promise.race([login(email, password), timeoutPromise]);
+        await new Promise((resolve) => setTimeout(resolve, 300));
         try {
           const { createClient } = await import("@/lib/supabase/client");
           const supabase = createClient();
-          const { data: { session } } = await supabase.auth.getSession();
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
           if (session?.user) {
             window.location.assign(postLoginPath());
+            return;
           }
+          setError("Signed in, but no session yet. Try again.");
+          setLoading(false);
         } catch (err) {
-          console.error('Login: Error verifying session before redirect:', err);
-          // Still redirect after delay
-          setTimeout(() => window.location.assign(postLoginPath()), 200);
+          console.error("Login: Error verifying session before redirect:", err);
+          window.location.assign(postLoginPath());
         }
       }
     } catch (err: any) {

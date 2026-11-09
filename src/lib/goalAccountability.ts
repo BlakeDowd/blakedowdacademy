@@ -94,6 +94,14 @@ export function endOfWeekSundayLocal(weekStart: Date): Date {
   return e;
 }
 
+/** Monday of the last fully finished week (stable for mid-week lessons). */
+export function startOfPreviousWeekMondayLocal(from: Date = new Date()): Date {
+  const thisWeek = startOfWeekMondayLocal(from);
+  const prev = new Date(thisWeek);
+  prev.setDate(prev.getDate() - 7);
+  return prev;
+}
+
 function tallyCategories(rows: PracticeLogAccountabilityRow[]): Map<GoalFocusArea, number> {
   const m = new Map<GoalFocusArea, number>();
   for (const r of rows) {
@@ -166,8 +174,9 @@ export function computeGoalAccountabilityState(
   logs: PracticeLogAccountabilityRow[],
   supplementalPracticeMinutes: number,
   userId: string,
+  /** Defaults to the current calendar week; pass last week’s Monday for lesson-day-stable reports. */
+  weekStart: Date = startOfWeekMondayLocal(),
 ): GoalAccountabilityState {
-  const weekStart = startOfWeekMondayLocal();
   const weekEnd = endOfWeekSundayLocal(weekStart);
   const ws = weekStart.getTime();
   const we = weekEnd.getTime();
@@ -218,6 +227,48 @@ export function computeGoalAccountabilityState(
     actualHours,
     hourProgressPct,
     hoursBelowThreshold,
+  };
+}
+
+/**
+ * Average practice hours per week over the last `weekCount` complete Mon–Sun weeks
+ * (excludes the current in-progress week so lesson day doesn’t skew the figure).
+ */
+export function averageWeeklyPracticeHours(
+  logs: PracticeLogAccountabilityRow[],
+  practiceRows: { duration_minutes?: number | null; created_at?: string | null; user_id?: string }[],
+  userId: string,
+  weekCount = 4,
+  from: Date = new Date(),
+): { avgHours: number; weeksWithPractice: number; weekCount: number } {
+  let totalHours = 0;
+  let weeksWithPractice = 0;
+  const thisWeek = startOfWeekMondayLocal(from);
+  for (let i = 1; i <= weekCount; i++) {
+    const weekStart = new Date(thisWeek);
+    weekStart.setDate(weekStart.getDate() - 7 * i);
+    const weekEnd = endOfWeekSundayLocal(weekStart);
+    const ws = weekStart.getTime();
+    const we = weekEnd.getTime();
+    let minutes = 0;
+    for (const r of logs) {
+      if (r.user_id !== userId) continue;
+      const t = r.created_at ? new Date(r.created_at).getTime() : NaN;
+      if (!Number.isFinite(t) || t < ws || t >= we) continue;
+      const dm = Number(r.duration_minutes ?? 0);
+      if (Number.isFinite(dm) && dm > 0) minutes += dm;
+    }
+    if (minutes === 0) {
+      minutes = minutesFromPracticeRows(practiceRows, userId, weekStart, weekEnd);
+    }
+    const hours = minutes / 60;
+    totalHours += hours;
+    if (hours > 0.05) weeksWithPractice += 1;
+  }
+  return {
+    avgHours: Math.round((totalHours / weekCount) * 10) / 10,
+    weeksWithPractice,
+    weekCount,
   };
 }
 

@@ -13,7 +13,8 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ videoId: string }> };
 
 const PLAY_TTL_SEC = 4 * 60 * 60;
-const MP4_RENDITIONS = ["play_720p.mp4", "play_480p.mp4", "play_1080p.mp4", "play_360p.mp4"];
+/** Prefer highest available encode so lesson / game-plan footage stays sharp. */
+const MP4_RENDITIONS = ["play_1080p.mp4", "play_720p.mp4", "play_480p.mp4", "play_360p.mp4"];
 
 /** RLS decides visibility, so a row coming back means this user may watch the video. */
 async function canSeeVideo(client: SupabaseClient, ids: string[]): Promise<boolean> {

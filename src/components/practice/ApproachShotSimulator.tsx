@@ -39,6 +39,8 @@ import { IRON_TEST_CLUBS } from "@/lib/ironCombineClubs";
 import { ApproachShotSimReport } from "@/components/practice/ApproachShotSimReport";
 
 type FlightAnim = { from: Vec2; to: Vec2; progress: number; done: boolean };
+/** Floating points callout when a shot finds the green. */
+type ScorePopup = { points: number; at: Vec2; born: number };
 type Phase = "setup" | "playing" | "complete";
 
 function worldToScreen(
@@ -169,12 +171,15 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
   const [fingerDir, setFingerDir] = useState<FingerMissDirection | null>(null);
   const [fingerWidth, setFingerWidth] = useState<FingerMissWidth | null>(null);
   const [soundOn, setSoundOn] = useState(true);
-  const [showScoreRings, setShowScoreRings] = useState(false);
+  const [showScoreRings, setShowScoreRings] = useState(true);
   /** When off, map taps only move aim left/right (depth stays at the pin). */
   const [aimDepthFree, setAimDepthFree] = useState(false);
   const [results, setResults] = useState<ApproachShotResult[]>([]);
   const [club, setClub] = useState("7i");
   const [flight, setFlight] = useState<FlightAnim | null>(null);
+  const [scorePopup, setScorePopup] = useState<ScorePopup | null>(null);
+  /** True from log → next hole / complete so the player can’t double-fire while the popup plays. */
+  const [shotBusy, setShotBusy] = useState(false);
   const [lastMsg, setLastMsg] = useState<string | null>(null);
   const [lastSaved, setLastSaved] = useState<SavedResult | null>(null);
 
@@ -232,6 +237,8 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
     setResults([]);
     setLastMsg(null);
     setFlight(null);
+    setScorePopup(null);
+    setShotBusy(false);
     setMark(null);
     setFingerDir(null);
     setFingerWidth(null);
@@ -243,6 +250,8 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
     setScenario(null);
     setResults([]);
     setFlight(null);
+    setScorePopup(null);
+    setShotBusy(false);
     setMark(null);
     setFingerDir(null);
     setFingerWidth(null);
@@ -251,6 +260,8 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
   };
 
   const nextScenario = useCallback(() => {
+    setScorePopup(null);
+    setShotBusy(false);
     setScenario(generateApproachScenario());
   }, []);
 
@@ -264,6 +275,7 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       };
 
+      setShotBusy(true);
       setFlight({ from: BALL, to: land, progress: 0, done: false });
       sfx(playSwing);
       sfx(playBallHit);
@@ -271,7 +283,11 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
         if (entry.lie === "water") sfx(playSplash);
         else if (entry.lie === "bunker") sfx(playSand);
         else if (entry.lie === "green" && (entry.proximityM ?? 99) < 3) sfx(playCup);
-      }, 400);
+        // Points float once the ball has roughly landed.
+        if (entry.lie === "green") {
+          setScorePopup({ points: entry.points, at: land, born: Date.now() });
+        }
+      }, 420);
 
       const prox =
         entry.proximityM != null
@@ -298,12 +314,16 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
           };
           saveLastResult(saved);
           setLastSaved(saved);
-          setPhase("complete");
+          // Hold so the green points popup can read.
+          window.setTimeout(() => {
+            setShotBusy(false);
+            setPhase("complete");
+          }, entry.lie === "green" ? 1100 : 400);
           if (persistForId) {
             void persistApproachSet(persistForId, mode, next, summary);
           }
         } else {
-          window.setTimeout(() => nextScenario(), 700);
+          window.setTimeout(() => nextScenario(), entry.lie === "green" ? 1300 : 700);
         }
         return next;
       });
@@ -312,7 +332,7 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
   );
 
   const fireRadar = () => {
-    if (!scenario || flight || phase !== "playing") return;
+    if (!scenario || flight || shotBusy || phase !== "playing") return;
     const carryDisp = Number(carryIn);
     const offlineDisp = Number(offlineIn);
     if (!Number.isFinite(carryDisp) || carryDisp <= 0) return;
@@ -325,7 +345,7 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
 
   /** Log finger dispersion: aim first, then fingers L/R of that line (on-line = aim mark). */
   const confirmFingerMiss = () => {
-    if (!scenario || flight || phase !== "playing" || !mark) return;
+    if (!scenario || flight || shotBusy || phase !== "playing" || !mark) return;
     if (!fingerMissReady(fingerDir, fingerWidth) || !fingerDir) return;
     const fingers = fingerDir === "straight" ? 0 : fingerWidth!;
     // Carry = ball→aim so "On line" finishes on the aim mark, not the random pin distance.
@@ -620,11 +640,40 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
         ctx.fill();
       }
 
+      // Green hit: float the shot points above the ball.
+      if (scorePopup) {
+        const age = (Date.now() - scorePopup.born) / 1000;
+        if (age < 1.25) {
+          const s = worldToScreen(scorePopup.at, cam, w, h);
+          const rise = Math.min(36, age * 42);
+          const alpha =
+            age < 0.12 ? age / 0.12 : age > 0.85 ? Math.max(0, 1 - (age - 0.85) / 0.4) : 1;
+          const label = `${scorePopup.points}`;
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.font = "800 22px ui-sans-serif, system-ui, sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "bottom";
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = "rgba(1,68,33,0.85)";
+          ctx.strokeText(label, s.x, s.y - 10 - rise);
+          ctx.fillStyle = "#FFA500";
+          ctx.fillText(label, s.x, s.y - 10 - rise);
+          ctx.font = "700 11px ui-sans-serif, system-ui, sans-serif";
+          ctx.fillStyle = "#fff";
+          ctx.strokeStyle = "rgba(1,68,33,0.7)";
+          ctx.lineWidth = 3;
+          ctx.strokeText("pts", s.x, s.y + 4 - rise);
+          ctx.fillText("pts", s.x, s.y + 4 - rise);
+          ctx.restore();
+        }
+      }
+
       raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [phase, scenario, mark, mode, flight, compact, fingerDir, fingerWidth, showScoreRings]);
+  }, [phase, scenario, mark, mode, flight, scorePopup, compact, fingerDir, fingerWidth, showScoreRings]);
 
   const onPointer = (e: React.PointerEvent<HTMLCanvasElement>, down?: boolean) => {
     if (phase !== "playing" || !scenario) return;
@@ -1033,7 +1082,7 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
                 <button
                   type="button"
                   onClick={fireRadar}
-                  disabled={!!flight}
+                  disabled={!!flight || shotBusy}
                   className="w-full rounded-2xl bg-[#014421] py-3.5 text-sm font-bold text-white disabled:opacity-40"
                 >
                   Log shot
@@ -1058,7 +1107,7 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
                 <button
                   type="button"
                   onClick={confirmFingerMiss}
-                  disabled={!mark || !fingerMissReady(fingerDir, fingerWidth) || !!flight}
+                  disabled={!mark || !fingerMissReady(fingerDir, fingerWidth) || !!flight || shotBusy}
                   className="w-full rounded-2xl bg-[#FFA500] py-3.5 text-sm font-bold text-[#3d2600] disabled:opacity-40"
                 >
                   {!mark

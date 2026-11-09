@@ -36,12 +36,12 @@ async function loadPlayingHandicap(supabase: SupabaseClient, playerId: string): 
     supabase.from("round_stats").select("handicap_index").eq("user_id", playerId).order("played_at", { ascending: false }).limit(5),
     supabase.from("rounds").select("handicap, created_at").eq("user_id", playerId).order("created_at", { ascending: false }).limit(5),
     supabase.from("player_goals").select("current_handicap").eq("user_id", playerId).maybeSingle(),
-    supabase.from("profiles").select("initial_handicap").eq("id", playerId).maybeSingle(),
+    supabase.from("profiles").select("starting_handicap").eq("id", playerId).maybeSingle(),
   ]);
   return (
     defaultHandicapFromStats(statsRes.error ? [] : statsRes.data ?? [], roundsRes.error ? [] : roundsRes.data ?? []) ??
     toNumber(goalRes.data?.current_handicap) ??
-    toNumber(profileRes.data?.initial_handicap)
+    toNumber(profileRes.data?.starting_handicap)
   );
 }
 

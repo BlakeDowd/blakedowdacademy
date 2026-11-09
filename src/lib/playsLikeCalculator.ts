@@ -315,12 +315,31 @@ export type ShotBlueprintOption = {
   deltaMetres: number;
 };
 
+/** Max metres a shot option may miss the Plays Like target and still be shown. */
 const MATCH_TOLERANCE_METRES = 3;
 
-function isWithinShotTolerance(variance: number, elevationInput: number): boolean {
-  const maxShortMiss = elevationInput > 0 ? 3 : 5;
-  const maxLongMiss = 4;
-  return variance >= -maxShortMiss && variance <= maxLongMiss;
+function isWithinShotTolerance(
+  variance: number,
+  _elevationInput: number,
+  tolerance: number = MATCH_TOLERANCE_METRES,
+): boolean {
+  return variance >= -tolerance && variance <= tolerance;
+}
+
+function isNearPlaysLikeTarget(
+  distance: number,
+  playsLikeBase: number,
+  tolerance: number = MATCH_TOLERANCE_METRES,
+): boolean {
+  return Math.abs(distance - playsLikeBase) <= tolerance;
+}
+
+function filterShotsNearPlaysLike(
+  shots: TacticalShot[],
+  playsLikeBase: number,
+  tolerance: number = MATCH_TOLERANCE_METRES,
+): TacticalShot[] {
+  return shots.filter((shot) => isNearPlaysLikeTarget(shot.distance, playsLikeBase, tolerance));
 }
 
 export type BuildShotBlueprintOptionsParams = {
@@ -595,7 +614,7 @@ export function generateUltimateShotOptions(
       );
       const variance = actualShotDistance - playsLikeTarget;
 
-      if (isWithinShotTolerance(variance, elevationChange)) {
+      if (isWithinShotTolerance(variance, elevationChange, tolerance)) {
         options.push({
           clubId: club.id,
           clubName: club.name,
@@ -706,12 +725,6 @@ export type TacticalShot = {
   label: string;
   gear?: "1 Club Up" | "2 Clubs Up";
   swingLength?: SwingLength;
-  split?: {
-    lowerClubName: string;
-    lowerDistance: number;
-    upperClubName: string;
-    upperDistance: number;
-  };
 };
 
 export type StrategicMenu = {
@@ -867,7 +880,7 @@ export function sortShotsByExecutionEase(
   );
 }
 
-const TEMPO_OPTIONS_LIMIT = 3;
+const TEMPO_OPTIONS_LIMIT = 2;
 
 function shotVarianceFromPlaysLike(shot: TacticalShot, playsLikeBase: number): number {
   return Math.abs(shot.distance - playsLikeBase);
@@ -942,20 +955,6 @@ function findClosestStandardCarryEntry(
   );
 }
 
-function findBetweenClubsPair(
-  entries: StandardCarryEntry[],
-  playsLikeBase: number,
-): { lower: StandardCarryEntry; upper: StandardCarryEntry } | null {
-  for (let i = 0; i < entries.length - 1; i++) {
-    const lower = entries[i];
-    const upper = entries[i + 1];
-    if (lower.dist < playsLikeBase && playsLikeBase < upper.dist) {
-      return { lower, upper };
-    }
-  }
-  return null;
-}
-
 function buildStandardDistanceShot(
   entry: StandardCarryEntry,
   playsLikeBase: number,
@@ -969,32 +968,7 @@ function buildStandardDistanceShot(
     flight: "STANDARD",
     shape: baselineShapeName,
     distance: entry.dist,
-    label: `STANDARD CARRY: Full ${entry.club.name} — ${entry.dist}m stock distance, closest to your ${targetM}m Plays Like target.`,
-  };
-}
-
-function buildBetweenClubsShot(
-  pair: { lower: StandardCarryEntry; upper: StandardCarryEntry },
-  playsLikeBase: number,
-  baselineShapeName: string,
-): TacticalShot {
-  const targetM = Math.round(playsLikeBase);
-  const lowerBagM = Math.round(pair.lower.club.baseCarry);
-  const upperBagM = Math.round(pair.upper.club.baseCarry);
-  return {
-    clubName: "Split yardage",
-    grip: "Full Grip",
-    tempo: "100%",
-    flight: "STANDARD",
-    shape: baselineShapeName,
-    distance: targetM,
-    label: `SPLIT YARDAGE: ${targetM}m Plays Like falls between these two full-swing carries.`,
-    split: {
-      lowerClubName: pair.lower.club.name,
-      lowerDistance: lowerBagM,
-      upperClubName: pair.upper.club.name,
-      upperDistance: upperBagM,
-    },
+    label: `Full ${entry.club.name} — ${entry.dist}m carry, closest to your ${targetM}m Plays Like target.`,
   };
 }
 
@@ -1014,16 +988,8 @@ function buildPinnedStandardDistanceShots(
     1,
   );
   const closest = findClosestStandardCarryEntry(entries, playsLikeBase);
-  if (!closest) return [];
-
-  const pinned: TacticalShot[] = [];
-  const betweenPair = findBetweenClubsPair(entries, playsLikeBase);
-  if (betweenPair) {
-    pinned.push(buildBetweenClubsShot(betweenPair, playsLikeBase, baselineShapeName));
-  } else {
-    pinned.push(buildStandardDistanceShot(closest, playsLikeBase, baselineShapeName));
-  }
-  return pinned;
+  if (!closest || !isNearPlaysLikeTarget(closest.dist, playsLikeBase)) return [];
+  return [buildStandardDistanceShot(closest, playsLikeBase, baselineShapeName)];
 }
 
 function selectShapeOptionsForDisplay(
@@ -1049,8 +1015,11 @@ function sortClubBagByCarry(
 }
 
 const EXTREME_TEMPO_WIND_KMH = 12;
-const TEMPO_MIN_MOD = 0.75;
+/** Smooth tempo only for clubs already near the target — avoids far-long clubs dialled way down. */
+const TEMPO_MIN_MOD = 0.88;
 const TEMPO_MAX_MOD = 0.99;
+/** Full-swing carry may sit this far above target before a smooth-tempo option is offered. */
+const TEMPO_MAX_FULL_CARRY_OVER_METRES = 14;
 
 function isExtremeTempoEnvironment(
   windSpeed: number,
@@ -1104,7 +1073,9 @@ function findTempoAnchorClub(
     }
   }
 
-  const pick = bestInTolerance ?? bestFallback;
+  const pick =
+    bestInTolerance ??
+    (bestFallback && bestFallback.score <= 12 ? bestFallback : null);
   return pick ? { club: pick.club, index: pick.index } : null;
 }
 
@@ -1135,6 +1106,8 @@ function tryCalibratedTempoForClub(
 
   const requiredMod = playsLikeBase / fullDist;
   if (requiredMod < TEMPO_MIN_MOD || requiredMod > TEMPO_MAX_MOD) return null;
+  // Club must already be close to the end distance — not a much longer club throttled down.
+  if (fullDist - playsLikeBase > TEMPO_MAX_FULL_CARRY_OVER_METRES) return null;
 
   const dist = computeShapeTrajectoryCarry(
     club.baseCarry,
@@ -1445,46 +1418,61 @@ export function generateStrategicMenu(
     windDirection,
   );
 
-  const flightSorted = sortShotsByPlaysLikeProximity(
-    flightCandidates,
+  const flightSorted = filterShotsNearPlaysLike(
+    sortShotsByPlaysLikeProximity(
+      flightCandidates,
+      playsLikeBase,
+      playerShape,
+      baselineShapeName,
+    ).slice(0, 2),
     playsLikeBase,
-    playerShape,
-    baselineShapeName,
-  ).slice(0, 2);
-
-  const gripSorted = sortShotsByPlaysLikeProximity(
-    gripCandidates,
-    playsLikeBase,
-    playerShape,
-    baselineShapeName,
-  ).slice(0, 2);
-
-  const shapeSorted = selectShapeOptionsForDisplay(
-    shapeCandidates,
-    playsLikeBase,
-    playerShape,
-    baselineShapeName,
   );
 
-  const tempoSorted = buildTempoOptions(
-    clubBag,
+  const gripSorted = filterShotsNearPlaysLike(
+    sortShotsByPlaysLikeProximity(
+      gripCandidates,
+      playsLikeBase,
+      playerShape,
+      baselineShapeName,
+    ).slice(0, 2),
     playsLikeBase,
-    playerShape,
-    baselineShapeName,
-    windSpeed,
-    windDirection,
-    slope,
-    1,
   );
 
-  const swingLengthSorted = buildSwingLengthOptions(
-    clubBag,
+  const shapeSorted = filterShotsNearPlaysLike(
+    selectShapeOptionsForDisplay(
+      shapeCandidates,
+      playsLikeBase,
+      playerShape,
+      baselineShapeName,
+    ),
     playsLikeBase,
-    playerShape,
-    baselineShapeName,
-    windSpeed,
-    windDirection,
-    slope,
+  );
+
+  const tempoSorted = filterShotsNearPlaysLike(
+    buildTempoOptions(
+      clubBag,
+      playsLikeBase,
+      playerShape,
+      baselineShapeName,
+      windSpeed,
+      windDirection,
+      slope,
+      1,
+    ),
+    playsLikeBase,
+  );
+
+  const swingLengthSorted = filterShotsNearPlaysLike(
+    buildSwingLengthOptions(
+      clubBag,
+      playsLikeBase,
+      playerShape,
+      baselineShapeName,
+      windSpeed,
+      windDirection,
+      slope,
+    ),
+    playsLikeBase,
   );
 
   return {

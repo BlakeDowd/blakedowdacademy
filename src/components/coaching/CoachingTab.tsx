@@ -14,7 +14,7 @@ import { CoachingSpacesGrid } from "@/components/coaching/CoachingSpacesGrid";
 import { CoachingActivity } from "@/components/coaching/CoachingActivity";
 import { CoachingUsage } from "@/components/coaching/CoachingUsage";
 import { AssignedOverview, AssignmentsPanel } from "@/components/coaching/CoachingAssignments";
-import { NewSpaceSheet, PendingInviteBanner } from "@/components/coaching/CoachingInvites";
+import { MergeDuplicateBanner, NewSpaceSheet, PendingInviteBanner } from "@/components/coaching/CoachingInvites";
 import { PlayerEmail } from "@/components/coaching/PlayerEmail";
 import { TestPlayerButton } from "@/components/coaching/TestPlayerButton";
 import { PlayerCombineScores } from "@/components/coaching/PlayerCombineScores";
@@ -22,6 +22,7 @@ import { PlayerMobilityScreens } from "@/components/coaching/PlayerMobilityScree
 import { PracticeHandicapCard } from "@/components/coaching/PracticeHandicapCard";
 import { CoachingFamilies } from "@/components/coaching/CoachingFamilies";
 import { GamePlanCard } from "@/components/coaching/GamePlanCard";
+import { PlayerCadetScorecard } from "@/components/cadet/PlayerCadetScorecard";
 
 type View = "spaces" | "feed" | "activity" | "assigned" | "usage" | "families";
 
@@ -142,6 +143,7 @@ export default function CoachingTab({
           </div>
         </div>
         <GamePlanCard studentId={user.id} studentName={user.fullName || "You"} viewerId={user.id} viewerIsCoach={false} />
+        <PlayerCadetScorecard playerId={user.id} playerName={user.fullName || undefined} />
         <AssignmentsPanel studentId={user.id} viewerId={user.id} viewerIsCoach={false} />
         <SubTabs
           tabs={[
@@ -240,8 +242,22 @@ export default function CoachingTab({
               setOpen(null);
               void loadSpaces();
             }}
+            onLinked={(playerId, name) => {
+              void loadSpaces().then(() => setOpen({ id: playerId, name }));
+            }}
           />
         )}
+        <MergeDuplicateBanner
+          current={open}
+          spaces={spaces}
+          onMerged={(keepId, name) => {
+            void loadSpaces().then(() => {
+              setOpen({ id: keepId, name });
+              writeOpenSpace({ id: keepId, name });
+              setFeedVersion((v) => v + 1);
+            });
+          }}
+        />
         <GamePlanCard
           key={`plan-${open.id}`}
           studentId={open.id}

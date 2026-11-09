@@ -77,7 +77,7 @@ export async function loadTalentPlayers(
   const ids = members.map((m) => m.player_id);
   if (ids.length === 0) return [];
   const [profilesRes, goalsRes] = await Promise.all([
-    supabase.from("profiles").select('id, full_name, "currentStreak", last_login_date, initial_handicap').in("id", ids),
+    supabase.from("profiles").select('id, full_name, "currentStreak", last_login_date, starting_handicap').in("id", ids),
     supabase.from("player_goals").select("user_id, current_handicap").in("user_id", ids),
   ]);
   const profiles = new Map(((profilesRes.data ?? []) as Row[]).map((p) => [String(p.id), p]));
@@ -114,7 +114,7 @@ export async function loadTalentPlayers(
         streak: toNumber(profile?.currentStreak) ?? 0,
         lastActive: typeof profile?.last_login_date === "string" ? profile.last_login_date : null,
         goalHandicap: toNumber(goals.get(id)?.current_handicap),
-        initialHandicap: toNumber(profile?.initial_handicap),
+        initialHandicap: toNumber(profile?.starting_handicap),
         practice: (practiceRes.data ?? []) as Row[],
         logs: (logsRes.data ?? []) as Row[],
         rounds: (roundsRes.data ?? []) as unknown as Row[],

@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, BookOpen, Apple, PersonStanding, Gauge, Gamepad2, Crosshair, PenLine, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus, BookHeart, Timer } from "lucide-react";
 import SpeedLogging from "@/components/speed/SpeedLogging";
 import FeelLog from "@/components/feel/FeelLog";
-import OnCourseSimulator from "@/components/practice/OnCourseSimulator";
+import TeeShotSimulator from "@/components/practice/TeeShotSimulator";
 import ApproachShotSimulator from "@/components/practice/ApproachShotSimulator";
 import LocalSwingAnalyzer from "@/components/practice/LocalSwingAnalyzer";
 import WedgeClockTool from "@/components/practice/WedgeClockTool";
@@ -4157,7 +4157,7 @@ export default function PracticePage() {
               )}
             </div>
 
-            <div id="on-course-arcade-section" className="scroll-mt-24 rounded-xl bg-gray-50">
+            <div id="tee-shot-arcade-section" className="scroll-mt-24 rounded-xl bg-gray-50">
               <button
                 type="button"
                 onClick={() => setOpenTool((t) => (t === "arcade" ? null : "arcade"))}
@@ -4168,13 +4168,10 @@ export default function PracticePage() {
                   <Gamepad2 className="h-4 w-4 text-[#014421]" aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-                    On-Course Simulator
-                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
-                      Beta
-                    </span>
+                  <span className="block text-sm font-semibold text-gray-900">Tee Shot Simulator</span>
+                  <span className="block text-xs text-gray-500">
+                    Fairway % · nine random corridors · score by landing lie
                   </span>
-                  <span className="block text-xs text-gray-500">Stonecutters Ridge · layouts still being refined</span>
                 </span>
                 <ChevronDown
                   className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${openTool === "arcade" ? "rotate-180" : ""}`}
@@ -4183,9 +4180,9 @@ export default function PracticePage() {
               </button>
               {openTool === "arcade" && (
                 <div className="border-t border-gray-200 px-2 pb-3 pt-3">
-                  <OnCourseSimulator compact />
+                  <TeeShotSimulator compact />
                   <Link
-                    href="/practice/on-course-simulator"
+                    href="/practice/tee-shot-simulator"
                     className="mt-2 flex items-center justify-center gap-1 py-2 text-xs font-semibold text-[#014421] hover:underline"
                   >
                     Open full screen

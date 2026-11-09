@@ -12,6 +12,8 @@ type TourPlayerProfileHeroProps = {
   trophies: number;
   practiceHours: number;
   preferredIconId?: string | null;
+  /** XP level — shown as a chip under the name, not on the emblem. */
+  level?: number | null;
   /** Coach groups the player is in (e.g. Scholarship), shown as badges. */
   groups?: string[];
 };
@@ -34,6 +36,7 @@ export function TourPlayerProfileHero({
   trophies,
   practiceHours,
   preferredIconId,
+  level = null,
   groups = [],
 }: TourPlayerProfileHeroProps) {
   const picture = preferredIconId === "flame" ? null : preferredIconId;
@@ -83,6 +86,11 @@ export function TourPlayerProfileHero({
               {playerName}
             </h1>
             <div className="mt-2 flex flex-wrap gap-1.5">
+              {level != null && level > 0 && (
+                <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-bold tabular-nums text-white ring-1 ring-white/20">
+                  Level {level}
+                </span>
+              )}
               <span className="inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-1 text-xs font-semibold text-[#FFA500] ring-1 ring-white/10">
                 <span className="h-1.5 w-1.5 rounded-full bg-[#FFA500]" aria-hidden />
                 Rank {formatRank(rank)}

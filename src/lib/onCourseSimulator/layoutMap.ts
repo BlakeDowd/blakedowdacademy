@@ -99,6 +99,40 @@ export function makeLayoutDraw(
   return { ...rect, basis };
 }
 
+/**
+ * Zoom the layout map so ball→shot target (expected carry) fills the view.
+ * Pass the landing focus for this club/carry, not the pin on long tee shots.
+ */
+export function makeLayoutDrawShot(
+  hole: HoleData,
+  img: HTMLImageElement,
+  viewW: number,
+  viewH: number,
+  ball: Vec2,
+  target: Vec2,
+  padFrac = 0.45,
+): LayoutDraw | null {
+  const full = makeLayoutDraw(hole, img, viewW, viewH);
+  if (!full) return null;
+  const uvA = worldToUv(full.basis, ball, hole.tee);
+  const uvB = worldToUv(full.basis, target, hole.tee);
+  const midU = (uvA.u + uvB.u) / 2;
+  const midV = (uvA.v + uvB.v) / 2;
+  // Keep a bit of lateral room for aim / offline.
+  const spanU = Math.max(0.08, Math.abs(uvA.u - uvB.u) * (1 + padFrac) + 0.06);
+  const spanV = Math.max(0.08, Math.abs(uvA.v - uvB.v) * (1 + padFrac) + 0.06);
+  const zoom = Math.min(1 / spanU, 1 / spanV, 6);
+  const drawW = full.drawW * zoom;
+  const drawH = full.drawH * zoom;
+  return {
+    ...full,
+    drawW,
+    drawH,
+    dx: viewW / 2 - midU * drawW,
+    dy: viewH / 2 - midV * drawH,
+  };
+}
+
 export function worldToScreenLayout(p: Vec2, hole: HoleData, layout: LayoutDraw): Vec2 {
   const uv = worldToUv(layout.basis, p, hole.tee);
   return {

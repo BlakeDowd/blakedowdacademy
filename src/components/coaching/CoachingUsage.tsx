@@ -22,10 +22,19 @@ import {
 import { Avatar, timeAgo, useProfileNames } from "@/components/coaching/coachingUi";
 
 const DAY_MS = 86400000;
-const TREND_WEEKS = 8;
+/** How far back we load raw events (covers 12-mo range + weekly chart). */
+const FETCH_DAYS = 370;
+const TREND_WEEKS = 12;
 const FEED_PAGE = 30;
 
-type Range = 7 | 30;
+/** Rolling windows — these are period totals, not lifetime. */
+type Range = 7 | 30 | 90 | 365;
+const RANGE_OPTIONS: { id: Range; label: string }[] = [
+  { id: 7, label: "7d" },
+  { id: 30, label: "30d" },
+  { id: 90, label: "90d" },
+  { id: 365, label: "12 mo" },
+];
 
 /** Start of the local calendar week (Monday 00:00). */
 function startOfWeek(d = new Date()): Date {
@@ -134,7 +143,7 @@ export function CoachingUsage({
   const [drills, setDrills] = useState<DrillTitles>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [range, setRange] = useState<Range>(7);
+  const [range, setRange] = useState<Range>(30);
   /** Frozen when data loads so totals don't drift while the page sits open. */
   const [loadedAt, setLoadedAt] = useState(() => Date.now());
   const [player, setPlayer] = useState<string | null>(null);
@@ -147,7 +156,7 @@ export function CoachingUsage({
     setLoading(true);
     try {
       const now = Date.now();
-      const since = new Date(now - TREND_WEEKS * 7 * DAY_MS);
+      const since = new Date(now - FETCH_DAYS * DAY_MS);
       const [list, titles] = await Promise.all([fetchUsageEvents(createClient(), since), fetchDrillTitles()]);
       setDrills(titles);
       setEvents(list.filter((e) => e.user_id !== viewerId));
@@ -300,18 +309,18 @@ export function CoachingUsage({
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <div className="flex rounded-full bg-stone-100 p-1" role="radiogroup" aria-label="Time range">
-          {([7, 30] as const).map((r) => (
+          {RANGE_OPTIONS.map((r) => (
             <button
-              key={r}
+              key={r.id}
               type="button"
               role="radio"
-              aria-checked={range === r}
-              onClick={() => setRange(r)}
-              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                range === r ? "bg-[#014421] text-white" : "text-stone-600 hover:text-stone-900"
+              aria-checked={range === r.id}
+              onClick={() => setRange(r.id)}
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold transition ${
+                range === r.id ? "bg-[#014421] text-white" : "text-stone-600 hover:text-stone-900"
               }`}
             >
-              {r} days
+              {r.label}
             </button>
           ))}
         </div>
@@ -339,8 +348,9 @@ export function CoachingUsage({
         ))}
       </div>
       <p className="px-1 text-[11px] text-stone-500">
-        Active players opened the app (any screen). Actions are drills, tests, sessions, rounds and tools.
-        Practice hrs are freestyle sessions and coach lessons only.
+        Totals for the selected period (not all-time). Default is last 30 days — if people were quiet
+        recently, counts drop even though older activity is still stored. Active = opened any screen;
+        Actions = drills, tests, sessions, rounds and tools; Practice hrs = freestyle + lessons.
       </p>
 
       <Card title="Weekly active players" note={`Players who opened the app, Monday–Sunday, last ${TREND_WEEKS} weeks`}>

@@ -26,6 +26,7 @@ import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
 import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
 import { bunkerLiesConfig } from "@/lib/bunkerLiesConfig";
 import { approachShotSimConfig } from "@/lib/approachShotSimConfig";
+import { teeShotSimConfig } from "@/lib/teeShotSimConfig";
 import type { CombineLeaderboardTestId } from "@/lib/academyCombinesLeaderboard";
 
 export const COMBINE_CATEGORY_IDS = [
@@ -76,6 +77,7 @@ export const CARD_HANDICAP_TEST_IDS: Partial<Record<string, CombineLeaderboardTe
   "iron-fade-vs-draw": "iron_fade_draw",
   "approach-shot-sim": "approach_shot_sim",
   "tee-shot-hazard": "tee_shot_hazard",
+  "tee-shot-sim": "tee_shot_sim",
   "driver-flight-test": "driver_flight_control",
   "bunker-proximity-protocol": "bunker_protocol",
   "bunker-lies": "bunker_lies",
@@ -334,6 +336,16 @@ export const COMBINE_TEST_CARDS: CombineTestCard[] = [
     title: "Tee Shot Hazards",
     blurb: "Random targets with a bunker or OB to one side. Keep it out of trouble.",
     meta: ["14 shots", "3 tee clubs"],
+    group: "Tests",
+  },
+  {
+    id: "tee-shot-sim",
+    category: "Tee Shot",
+    href: "/practice/tee-shot-simulator",
+    label: teeShotSimConfig.testName,
+    title: "Tee Shot Simulator",
+    blurb: "Nine random tee corridors. Score /100 by landing lie, with fairway %.",
+    meta: ["9 shots", "100 pts max", "FIR %"],
     group: "Tests",
   },
   {

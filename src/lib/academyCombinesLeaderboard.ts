@@ -45,6 +45,7 @@ export type CombineLeaderboardTestId =
   | "three_strikes"
   | "bunker_protocol"
   | "tee_shot_hazard"
+  | "tee_shot_sim"
   | "driver_flight_control"
   | "bunker_lies";
 

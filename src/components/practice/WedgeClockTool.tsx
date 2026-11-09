@@ -42,24 +42,54 @@ function parseDistText(text: string): number | null {
   return Number.isFinite(n) ? n : NaN;
 }
 
+function waitForEvent(el: HTMLVideoElement, event: string, timeoutMs = 15000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const t = window.setTimeout(() => {
+      cleanup();
+      reject(new Error(`Timed out waiting for ${event}`));
+    }, timeoutMs);
+    const onOk = () => {
+      cleanup();
+      resolve();
+    };
+    const onErr = () => {
+      cleanup();
+      reject(new Error("Video failed to load"));
+    };
+    const cleanup = () => {
+      window.clearTimeout(t);
+      el.removeEventListener(event, onOk);
+      el.removeEventListener("error", onErr);
+    };
+    el.addEventListener(event, onOk, { once: true });
+    el.addEventListener("error", onErr, { once: true });
+  });
+}
+
 export default function WedgeClockTool({ compact }: { compact?: boolean }) {
   const { user } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const objectUrlRef = useRef<string | null>(null);
   const rafRef = useRef<number | null>(null);
-  const lastVideoTimeRef = useRef(-1);
+  const lastTsRef = useRef(0);
   const peakRef = useRef(0);
   const armedRef = useRef(false);
   const runningRef = useRef(false);
   const lockedRef = useRef(false);
+  const modeRef = useRef<Mode>("idle");
+  const analysingRef = useRef(false);
 
   const [mode, setMode] = useState<Mode>("idle");
   const [modelReady, setModelReady] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [loadingModel, setLoadingModel] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [analysing, setAnalysing] = useState(false);
+  const [analyseProgress, setAnalyseProgress] = useState(0);
   const [handedness, setHandedness] = useState<Handedness>("right");
   const [club, setClub] = useState<string>("PW");
   const [targetClock, setTargetClock] = useState<string>("9:00");
@@ -74,8 +104,10 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
   const [history, setHistory] = useState<WedgeClockLogEntry[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>(
-    "Log radar carry anytime. Optional camera measures clock length — nothing uploads.",
+    "Side-on to the swing. Camera or a phone video — pose stays on this device.",
   );
+
+  modeRef.current = mode;
 
   useEffect(() => {
     setUnit(loadDistanceUnit());
@@ -94,16 +126,10 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
     }
   }, []);
 
-  const stopCamera = useCallback(() => {
-    stopLoop();
+  const stopCameraTracks = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-    const v = videoRef.current;
-    if (v) {
-      v.srcObject = null;
-      v.removeAttribute("src");
-    }
-  }, [stopLoop]);
+  }, []);
 
   const clearObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -112,18 +138,33 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
     }
   }, []);
 
+  const detachVideo = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.pause();
+    v.srcObject = null;
+    v.removeAttribute("src");
+    v.load();
+  }, []);
+
   const resetSession = useCallback(() => {
-    stopCamera();
+    stopLoop();
+    analysingRef.current = false;
+    setAnalysing(false);
+    setAnalyseProgress(0);
+    stopCameraTracks();
     clearObjectUrl();
+    detachVideo();
     setMode("idle");
     setLive(null);
     setLocked(null);
     lockedRef.current = false;
     peakRef.current = 0;
     armedRef.current = false;
-    lastVideoTimeRef.current = -1;
-    setStatus("Log radar carry anytime. Optional camera measures clock length — nothing uploads.");
-  }, [clearObjectUrl, stopCamera]);
+    lastTsRef.current = 0;
+    setBusy(false);
+    setStatus("Side-on to the swing. Camera or a phone video — pose stays on this device.");
+  }, [clearObjectUrl, detachVideo, stopCameraTracks, stopLoop]);
 
   useEffect(() => () => resetSession(), [resetSession]);
 
@@ -145,6 +186,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
     if (modelReady) return true;
     setLoadingModel(true);
     setModelError(null);
+    setStatus("Loading pose model on this device…");
     try {
       await getPoseLandmarker();
       setModelReady(true);
@@ -154,6 +196,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       const msg = err instanceof Error ? err.message : "Couldn't load pose model.";
       setModelError(msg);
       setLoadingModel(false);
+      setStatus("Pose model failed to load. Check connection and try again.");
       return false;
     }
   }, [modelReady]);
@@ -162,6 +205,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
     (
       landmarks: Array<{ x: number; y: number; visibility?: number }> | undefined,
       degrees: number | null,
+      peakDegrees: number,
     ) => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -174,8 +218,22 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.clearRect(0, 0, w, h);
-      if (!landmarks) return;
 
+      // Always show live / peak clock so the player knows it's working
+      const liveLabel = degrees != null ? snapClockLabel(degrees) : null;
+      const peakLabel = peakDegrees >= 20 ? snapClockLabel(peakDegrees) : null;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(12, 12, Math.min(w - 24, 220), peakLabel ? 78 : 48);
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 28px system-ui, sans-serif";
+      ctx.fillText(liveLabel ?? "—", 24, 44);
+      if (peakLabel) {
+        ctx.font = "600 16px system-ui, sans-serif";
+        ctx.fillStyle = "#7CFFB2";
+        ctx.fillText(`Backswing ${peakLabel}`, 24, 72);
+      }
+
+      if (!landmarks) return;
       const pts = leadArmPoints(landmarks, handedness);
       if (!pts) return;
 
@@ -186,7 +244,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       const wx = pts.wrist.x * w;
       const wy = pts.wrist.y * h;
 
-      const r = Math.min(w, h) * 0.18;
+      const r = Math.min(w, h) * 0.16;
       ctx.beginPath();
       ctx.arc(sx, sy, r, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(255,255,255,0.35)";
@@ -205,7 +263,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       ctx.moveTo(sx, sy);
       ctx.lineTo(ex, ey);
       ctx.lineTo(wx, wy);
-      ctx.strokeStyle = "#7CFFB2";
+      ctx.strokeStyle = pts.ok ? "#7CFFB2" : "#FFA500";
       ctx.lineWidth = 4;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
@@ -224,58 +282,28 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
         ctx.lineWidth = 2;
         ctx.stroke();
       }
-
-      if (degrees != null) {
-        const label = snapClockLabel(degrees);
-        ctx.font = "bold 28px system-ui, sans-serif";
-        ctx.fillStyle = "rgba(0,0,0,0.55)";
-        ctx.fillRect(12, 12, 140, 44);
-        ctx.fillStyle = "#fff";
-        ctx.fillText(label, 24, 44);
-      }
     },
     [handedness],
   );
 
-  const processFrame = useCallback(async () => {
-    if (!runningRef.current) return;
-    const video = videoRef.current;
-    if (!video || video.readyState < 2) {
-      rafRef.current = requestAnimationFrame(() => void processFrame());
-      return;
-    }
-
-    if (video.currentTime === lastVideoTimeRef.current && mode === "camera") {
-      rafRef.current = requestAnimationFrame(() => void processFrame());
-      return;
-    }
-    lastVideoTimeRef.current = video.currentTime;
-
-    try {
-      const landmarker = await getPoseLandmarker();
-      const result = landmarker.detectForVideo(video, performance.now());
-      const landmarks = result.landmarks?.[0];
-      const degrees = landmarks ? measureLeadArmDegrees(landmarks, handedness) : null;
-      drawOverlay(landmarks, degrees);
-
+  const applyDegrees = useCallback(
+    (degrees: number | null, landmarks?: Array<{ x: number; y: number; visibility?: number }>) => {
       if (degrees != null) {
-        if (!armedRef.current && degrees > 25) armedRef.current = true;
-        if (armedRef.current && degrees > peakRef.current) {
-          peakRef.current = degrees;
-        }
+        if (!armedRef.current && degrees > 20) armedRef.current = true;
+        if (armedRef.current && degrees > peakRef.current) peakRef.current = degrees;
         if (
           armedRef.current &&
-          peakRef.current >= 40 &&
-          degrees < peakRef.current - 25 &&
-          !lockedRef.current
+          peakRef.current >= 35 &&
+          degrees < peakRef.current - 20 &&
+          !lockedRef.current &&
+          modeRef.current === "camera"
         ) {
           const peak = peakRef.current;
           lockedRef.current = true;
           setLocked({ degrees: peak, label: snapClockLabel(peak) });
-          setStatus("Clock locked — enter radar carry below and save. Video was not uploaded.");
+          setStatus(`Backswing locked at ${snapClockLabel(peak)}. Nothing uploaded.`);
           trackToolUse("wedge-clock");
         }
-
         setLive({
           degrees,
           label: snapClockLabel(degrees),
@@ -283,101 +311,270 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
           peakLabel: snapClockLabel(peakRef.current || degrees),
         });
       }
-    } catch {
-      /* frame skip */
-    }
+      drawOverlay(landmarks, degrees, peakRef.current);
+    },
+    [drawOverlay],
+  );
 
-    if (mode === "video" && video.ended) {
-      if (peakRef.current >= 30 && !lockedRef.current) {
-        const peak = peakRef.current;
-        lockedRef.current = true;
-        setLocked({ degrees: peak, label: snapClockLabel(peak) });
-        setStatus("Clock locked from video — add radar carry if you have it. Nothing uploaded.");
-        trackToolUse("wedge-clock");
-      }
-      stopLoop();
+  const processLiveFrame = useCallback(async () => {
+    if (!runningRef.current || analysingRef.current) return;
+    const video = videoRef.current;
+    if (!video || video.readyState < 2) {
+      rafRef.current = requestAnimationFrame(() => void processLiveFrame());
       return;
     }
 
-    rafRef.current = requestAnimationFrame(() => void processFrame());
-  }, [drawOverlay, handedness, mode, stopLoop]);
+    // Live camera often keeps currentTime at 0 — throttle by wall clock, not video time.
+    const now = performance.now();
+    if (now - lastTsRef.current < 33) {
+      rafRef.current = requestAnimationFrame(() => void processLiveFrame());
+      return;
+    }
+    lastTsRef.current = now;
 
-  const startLoop = useCallback(() => {
+    try {
+      const landmarker = await getPoseLandmarker();
+      const result = landmarker.detectForVideo(video, now);
+      const landmarks = result.landmarks?.[0];
+      const degrees = landmarks ? measureLeadArmDegrees(landmarks, handedness) : null;
+      applyDegrees(degrees, landmarks);
+    } catch {
+      /* skip bad frame */
+    }
+
+    if (modeRef.current === "camera" && runningRef.current) {
+      rafRef.current = requestAnimationFrame(() => void processLiveFrame());
+    }
+  }, [applyDegrees, handedness]);
+
+  const startLiveLoop = useCallback(() => {
     stopLoop();
     runningRef.current = true;
     peakRef.current = 0;
     armedRef.current = false;
     lockedRef.current = false;
-    lastVideoTimeRef.current = -1;
+    lastTsRef.current = 0;
     setLocked(null);
     setLive(null);
     setSaveMsg(null);
-    rafRef.current = requestAnimationFrame(() => void processFrame());
-  }, [processFrame, stopLoop]);
+    rafRef.current = requestAnimationFrame(() => void processLiveFrame());
+  }, [processLiveFrame, stopLoop]);
+
+  const scrollPreview = () => {
+    window.setTimeout(() => {
+      previewRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 50);
+  };
+
+  /** Sample a local video file frame-by-frame (reliable vs realtime playback). */
+  const analyseVideoFile = useCallback(
+    async (video: HTMLVideoElement) => {
+      analysingRef.current = true;
+      setAnalysing(true);
+      setAnalyseProgress(0);
+      stopLoop();
+      peakRef.current = 0;
+      armedRef.current = false;
+      lockedRef.current = false;
+      setLocked(null);
+      setLive(null);
+
+      try {
+        if (!Number.isFinite(video.duration) || video.duration <= 0) {
+          await waitForEvent(video, "loadedmetadata");
+        }
+        const duration = Math.min(video.duration || 0, 20);
+        if (duration < 0.2) throw new Error("Video is too short to analyse.");
+
+        const landmarker = await getPoseLandmarker();
+        // ~15 samples/sec across the clip (cap work on long phones)
+        const step = Math.max(1 / 15, duration / 90);
+        let peak = 0;
+        let samples = 0;
+        let timestamp = 1;
+
+        for (let t = 0; t <= duration; t += step) {
+          if (!analysingRef.current) return;
+          video.currentTime = Math.min(t, duration - 0.001);
+          await waitForEvent(video, "seeked", 8000);
+          // Tiny pause helps some mobile decoders present the frame
+          await new Promise((r) => window.setTimeout(r, 16));
+
+          const result = landmarker.detectForVideo(video, timestamp);
+          timestamp += 66;
+          const landmarks = result.landmarks?.[0];
+          const degrees = landmarks ? measureLeadArmDegrees(landmarks, handedness) : null;
+          if (degrees != null) {
+            samples += 1;
+            if (degrees > 20) armedRef.current = true;
+            if (armedRef.current && degrees > peak) peak = degrees;
+            peakRef.current = peak;
+            setLive({
+              degrees,
+              label: snapClockLabel(degrees),
+              peakDegrees: peak,
+              peakLabel: snapClockLabel(peak || degrees),
+            });
+            drawOverlay(landmarks, degrees, peak);
+          } else {
+            drawOverlay(landmarks, null, peak);
+          }
+          setAnalyseProgress(Math.min(99, Math.round((t / duration) * 100)));
+        }
+
+        if (peak >= 25) {
+          lockedRef.current = true;
+          setLocked({ degrees: peak, label: snapClockLabel(peak) });
+          setStatus(`Backswing length ${snapClockLabel(peak)}. Video stayed on this device.`);
+          trackToolUse("wedge-clock");
+        } else if (samples === 0) {
+          setStatus("Couldn't see a person — try a brighter side-on clip of the full torso.");
+          setModelError("No pose detected in that video.");
+        } else {
+          setStatus("Saw movement but no clear backswing. Use a side-on clip from address to the top.");
+        }
+        setAnalyseProgress(100);
+      } finally {
+        analysingRef.current = false;
+        setAnalysing(false);
+        setBusy(false);
+      }
+    },
+    [drawOverlay, handedness, stopLoop],
+  );
 
   const startCamera = async () => {
+    setBusy(true);
+    setModelError(null);
     const ok = await ensureModel();
-    if (!ok) return;
-    stopCamera();
+    if (!ok) {
+      setBusy(false);
+      return;
+    }
+
+    stopLoop();
+    stopCameraTracks();
     clearObjectUrl();
+    detachVideo();
+
+    // Mount the preview first so videoRef exists
+    setMode("camera");
+    scrollPreview();
+    setStatus("Starting camera…");
+
+    await new Promise((r) => window.requestAnimationFrame(() => r(undefined)));
+
+    const v = videoRef.current;
+    if (!v) {
+      setModelError("Couldn't open camera preview.");
+      setBusy(false);
+      setMode("idle");
+      return;
+    }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: true,
+        });
+      }
       streamRef.current = stream;
-      const v = videoRef.current;
-      if (!v) return;
       v.srcObject = stream;
       v.muted = true;
       v.playsInline = true;
+      v.setAttribute("playsinline", "true");
+      v.setAttribute("webkit-playsinline", "true");
       await v.play();
-      setMode("camera");
-      setStatus("Side-on view · swing when ready — peak backswing locks automatically.");
-      startLoop();
+      // Wait until we have pixels
+      if (v.videoWidth === 0) {
+        await waitForEvent(v, "loadeddata", 10000);
+      }
+      setStatus("Recording live · side-on · swing when ready — peak backswing locks automatically.");
+      startLiveLoop();
       trackToolUse("wedge-clock");
-    } catch {
-      setModelError("Camera permission blocked. Allow camera, or analyse a video from your phone.");
+    } catch (err) {
+      const msg =
+        err instanceof Error && /Permission|NotAllowed/i.test(err.message)
+          ? "Camera permission blocked. Allow camera, or use Analyse video instead."
+          : "Couldn't start the camera. Try Analyse video with a clip from your phone.";
+      setModelError(msg);
+      setMode("idle");
+      stopCameraTracks();
+    } finally {
+      setBusy(false);
     }
   };
 
   const onPickVideo = async (file: File | null) => {
     if (!file) return;
+    setBusy(true);
+    setModelError(null);
     const ok = await ensureModel();
-    if (!ok) return;
-    stopCamera();
+    if (!ok) {
+      setBusy(false);
+      return;
+    }
+
+    stopLoop();
+    stopCameraTracks();
     clearObjectUrl();
+    detachVideo();
+
     const url = URL.createObjectURL(file);
     objectUrlRef.current = url;
-    const v = videoRef.current;
-    if (!v) return;
-    v.srcObject = null;
-    v.src = url;
-    v.muted = true;
-    v.playsInline = true;
-    await new Promise<void>((resolve) => {
-      v.onloadeddata = () => resolve();
-    });
-    await v.play();
     setMode("video");
-    setStatus("Playing locally — measuring lead arm. Video never leaves this device.");
-    startLoop();
-    trackToolUse("wedge-clock");
+    scrollPreview();
+    setStatus(`Loading ${file.name}…`);
+
+    await new Promise((r) => window.requestAnimationFrame(() => r(undefined)));
+
+    const v = videoRef.current;
+    if (!v) {
+      setModelError("Couldn't open video preview.");
+      setBusy(false);
+      setMode("idle");
+      return;
+    }
+
+    try {
+      v.srcObject = null;
+      v.src = url;
+      v.muted = true;
+      v.playsInline = true;
+      v.setAttribute("playsinline", "true");
+      v.load();
+      await waitForEvent(v, "loadeddata");
+      setStatus("Scanning backswing on this device…");
+      await analyseVideoFile(v);
+      trackToolUse("wedge-clock");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Couldn't analyse that video.";
+      setModelError(msg);
+      setStatus("Analyse failed — try another side-on clip.");
+      setBusy(false);
+    }
   };
 
   const lockPeakNow = () => {
     const peak = peakRef.current || live?.degrees;
     if (peak == null || peak < 20) {
-      setStatus("No clear backswing yet — take a swing or scrub a side-on clip.");
+      setStatus("No clear backswing yet — take a swing side-on, or analyse a longer clip.");
       return;
     }
     lockedRef.current = true;
     setLocked({ degrees: peak, label: snapClockLabel(peak) });
-    setStatus("Clock locked — enter radar carry below and save.");
+    setStatus(`Backswing locked at ${snapClockLabel(peak)}.`);
     trackToolUse("wedge-clock");
   };
 
@@ -459,6 +656,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       : null;
 
   const canSave = Boolean(locked || carryText.trim());
+  const previewActive = mode !== "idle";
 
   return (
     <div className={compact ? "space-y-3" : "space-y-4"}>
@@ -467,7 +665,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
           <div>
             <p className="text-sm font-semibold text-stone-900">Wedge Clock</p>
             <p className="mt-1 text-xs text-stone-500">
-              Radar-friendly: club, goal, and carry. Optional on-device clock — no swing upload.
+              Measure backswing arm length (clock face). Optional radar carry — no swing upload.
             </p>
           </div>
           <div className="flex shrink-0 rounded-full bg-stone-200/80 p-0.5" role="radiogroup" aria-label="Distance unit">
@@ -512,7 +710,16 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
             Handedness
             <select
               value={handedness}
-              onChange={(e) => setHandedness(e.target.value as Handedness)}
+              onChange={(e) => {
+                const next = e.target.value as Handedness;
+                setHandedness(next);
+                // Don't mix peaks from the other lead arm
+                peakRef.current = 0;
+                armedRef.current = false;
+                lockedRef.current = false;
+                setLocked(null);
+                setLive(null);
+              }}
               className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900"
             >
               <option value="right">Right-handed</option>
@@ -548,7 +755,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
             />
           </label>
           <label className="col-span-2 block text-xs font-medium text-stone-600">
-            Target clock (if measuring)
+            Target clock
             <select
               value={targetClock}
               onChange={(e) => setTargetClock(e.target.value)}
@@ -605,32 +812,36 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       </div>
 
       <div className="rounded-2xl bg-stone-50 p-4 ring-1 ring-stone-100">
-        <p className="text-sm font-semibold text-stone-900">Optional · measure clock</p>
+        <p className="text-sm font-semibold text-stone-900">Measure backswing</p>
         <p className="mt-1 text-xs text-stone-500">
-          Side-on camera or a local video. Pose stays on this phone.
+          Side-on so the lead arm is clear. Reports clock length at the top (e.g. 9:00 / 10:30).
         </p>
 
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <button
             type="button"
             onClick={() => void startCamera()}
-            disabled={loadingModel}
+            disabled={loadingModel || busy || analysing}
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white disabled:opacity-60"
           >
-            {loadingModel ? (
+            {loadingModel || (busy && mode !== "video") ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             ) : (
               <Camera className="h-4 w-4" aria-hidden />
             )}
-            Use camera
+            Record swing
           </button>
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={loadingModel}
+            disabled={loadingModel || busy || analysing}
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white py-3 text-sm font-bold text-stone-900 ring-1 ring-stone-200 disabled:opacity-60"
           >
-            <Upload className="h-4 w-4" aria-hidden />
+            {analysing ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : (
+              <Upload className="h-4 w-4" aria-hidden />
+            )}
             Analyse video
           </button>
           <input
@@ -638,14 +849,18 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
             type="file"
             accept="video/*"
             className="hidden"
-            onChange={(e) => void onPickVideo(e.target.files?.[0] ?? null)}
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null;
+              e.target.value = "";
+              void onPickVideo(f);
+            }}
           />
         </div>
 
         {locked && (
           <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-[#014421]/10 px-3 py-2">
             <p className="text-sm font-semibold text-[#014421]">
-              Locked <span className="tabular-nums">{locked.label}</span>
+              Backswing <span className="tabular-nums">{locked.label}</span>
               {clockDelta ? ` · ${clockDelta}` : ""}
             </p>
             <button
@@ -660,71 +875,108 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
 
         {modelError && <p className="mt-2 text-xs text-red-600">{modelError}</p>}
         <p className="mt-2 text-xs text-stone-500">{status}</p>
+        {analysing && (
+          <div className="mt-2">
+            <div className="h-1.5 overflow-hidden rounded-full bg-stone-200">
+              <div
+                className="h-full rounded-full bg-[#014421] transition-all"
+                style={{ width: `${analyseProgress}%` }}
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-stone-500">Scanning… {analyseProgress}%</p>
+          </div>
+        )}
       </div>
 
-      {(mode === "camera" || mode === "video") && (
-        <div className="overflow-hidden rounded-2xl bg-black ring-1 ring-stone-200">
-          <div className="relative aspect-[3/4] w-full bg-black sm:aspect-video">
-            <video
-              ref={videoRef}
-              className="absolute inset-0 h-full w-full object-contain"
-              playsInline
-              muted
-            />
-            <canvas
-              ref={canvasRef}
-              className="pointer-events-none absolute inset-0 h-full w-full object-contain"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2 border-t border-white/10 bg-stone-950 px-3 py-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-2xl font-bold tabular-nums text-white">{displayLabel}</p>
-              <p className="text-xs text-stone-400">
-                {clockDelta ?? "vs target clock"}
-                {displayDegrees != null ? ` · ${Math.round(displayDegrees)}°` : ""}
-                {locked ? " · locked" : live ? " · tracking" : ""}
-              </p>
+      {/* Kept mounted (hidden when idle) so camera/video can attach to the ref */}
+      <div
+        ref={previewRef}
+        className={
+          previewActive
+            ? "overflow-hidden rounded-2xl bg-black ring-1 ring-stone-200"
+            : "hidden"
+        }
+        aria-hidden={!previewActive}
+      >
+        <div className="relative aspect-[3/4] w-full bg-black sm:aspect-video">
+          <video
+            ref={videoRef}
+            className="absolute inset-0 h-full w-full bg-black object-contain"
+            playsInline
+            muted
+            autoPlay={mode === "camera"}
+          />
+          <canvas
+            ref={canvasRef}
+            className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+          />
+          {mode === "camera" && !locked && (
+            <div className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white shadow-lg">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-white" aria-hidden />
+              Rec
             </div>
-            {!locked && (
-              <button
-                type="button"
-                onClick={lockPeakNow}
-                className="rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white"
-              >
-                Lock peak
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                peakRef.current = 0;
-                armedRef.current = false;
-                lockedRef.current = false;
-                setLocked(null);
-                setSaveMsg(null);
-                setStatus("Ready for another swing.");
-                if (mode === "video" && videoRef.current) {
-                  videoRef.current.currentTime = 0;
-                  void videoRef.current.play();
-                  startLoop();
-                }
-              }}
-              className="inline-flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white"
-            >
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-              Reset
-            </button>
-            <button
-              type="button"
-              onClick={resetSession}
-              className="inline-flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white"
-            >
-              <Square className="h-3.5 w-3.5" aria-hidden />
-              Stop
-            </button>
-          </div>
+          )}
+          {mode === "video" && analysing && (
+            <div className="absolute left-3 top-3 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-bold text-white">
+              Analysing…
+            </div>
+          )}
         </div>
-      )}
+        <div className="flex flex-wrap items-center gap-2 border-t border-white/10 bg-stone-950 px-3 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+              {locked ? "Backswing length" : "Live / peak"}
+            </p>
+            <p className="text-3xl font-bold tabular-nums text-white">{displayLabel}</p>
+            <p className="text-xs text-stone-400">
+              {clockDelta ?? `Target ${targetClock}`}
+              {displayDegrees != null ? ` · ${Math.round(displayDegrees)}° from address` : ""}
+              {locked ? " · locked" : live ? " · tracking" : ""}
+            </p>
+          </div>
+          {!locked && (
+            <button
+              type="button"
+              onClick={lockPeakNow}
+              disabled={analysing}
+              className="rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+            >
+              Lock peak
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              peakRef.current = 0;
+              armedRef.current = false;
+              lockedRef.current = false;
+              setLocked(null);
+              setSaveMsg(null);
+              setModelError(null);
+              if (mode === "camera") {
+                setStatus("Ready — swing when ready.");
+                startLiveLoop();
+              } else if (mode === "video" && objectUrlRef.current && videoRef.current) {
+                setStatus("Re-scanning…");
+                void analyseVideoFile(videoRef.current);
+              }
+            }}
+            disabled={analysing}
+            className="inline-flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+          >
+            <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+            Reset
+          </button>
+          <button
+            type="button"
+            onClick={resetSession}
+            className="inline-flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white"
+          >
+            <Square className="h-3.5 w-3.5" aria-hidden />
+            Stop
+          </button>
+        </div>
+      </div>
 
       {(history.length > 0 || historyError) && (
         <div className="rounded-2xl bg-stone-50 p-4 ring-1 ring-stone-100">

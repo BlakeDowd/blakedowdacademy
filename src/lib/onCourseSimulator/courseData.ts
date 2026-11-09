@@ -24,18 +24,22 @@ function withLayoutZones(hole: HoleDraft): HoleData {
       minY: -40,
       maxY: hole.yardageM + 40,
     };
-  const zones: TerrainZone[] = zoneUvs.map((z) => ({
-    id: z.id,
-    kind: z.kind,
-    polygon: uvPolyToWorld(partial, z.uvs),
-  }));
-  if (!zones.some((z) => z.kind === "green")) {
-    zones.push({
-      id: `${hole.id}-green`,
-      kind: "green",
-      polygon: ovalPoly(hole.pin, hole.par === 3 ? 14 : 16, hole.par === 3 ? 11 : 13),
-    });
-  }
+  // UV boxes for greens were ~80–120m across (map pixels ≠ metres). Lie uses
+  // real metre ovals around the pin so “on the green” only means ~putting surface.
+  const zones: TerrainZone[] = zoneUvs
+    .filter((z) => z.kind !== "green")
+    .map((z) => ({
+      id: z.id,
+      kind: z.kind,
+      polygon: uvPolyToWorld(partial, z.uvs),
+    }));
+  const greenRx = hole.par === 3 ? 15 : 18;
+  const greenRy = hole.par === 3 ? 12 : 14;
+  zones.push({
+    id: `${hole.id}-green`,
+    kind: "green",
+    polygon: ovalPoly(hole.pin, greenRx, greenRy),
+  });
   return { ...rest, bounds, zones };
 }
 
@@ -282,4 +286,52 @@ export function cameraForHole(
   const worldH = (maxY - minY) * (1 + pad);
   const scale = Math.min(viewW / Math.max(worldW, 1), viewH / Math.max(worldH, 1));
   return { cx, cy, scale };
+}
+
+/**
+ * Zoom on this shot’s length: ball → expected landing (not always the pin).
+ * `target` should be ~carry metres along the aim line so a driver tee shot
+ * frames ~200m of fairway instead of the whole 500m hole.
+ */
+export function cameraForShot(
+  ball: { x: number; y: number },
+  target: { x: number; y: number },
+  viewW: number,
+  viewH: number,
+  padM = 28,
+  minSpanM = 48,
+): { cx: number; cy: number; scale: number } {
+  const shotLen = Math.hypot(target.x - ball.x, target.y - ball.y);
+  // Wider side pad on longer shots so offline / aim taps stay in frame.
+  const sidePad = Math.max(padM, Math.min(55, shotLen * 0.18));
+  const depthPad = Math.max(padM, Math.min(40, shotLen * 0.12));
+  let minX = Math.min(ball.x, target.x) - sidePad;
+  let maxX = Math.max(ball.x, target.x) + sidePad;
+  let minY = Math.min(ball.y, target.y) - depthPad;
+  let maxY = Math.max(ball.y, target.y) + depthPad;
+  let worldW = maxX - minX;
+  let worldH = maxY - minY;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  if (worldW < minSpanM) {
+    worldW = minSpanM;
+  }
+  if (worldH < minSpanM) {
+    worldH = minSpanM;
+  }
+  const scale = Math.min(viewW / worldW, viewH / worldH) * 0.9;
+  return { cx, cy, scale };
+}
+
+/** Point `carryM` metres from ball toward aim (defaults toward pin). */
+export function shotLandingFocus(
+  ball: { x: number; y: number },
+  aim: { x: number; y: number },
+  carryM: number,
+): { x: number; y: number } {
+  const dx = aim.x - ball.x;
+  const dy = aim.y - ball.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const dist = Math.max(35, carryM);
+  return { x: ball.x + (dx / len) * dist, y: ball.y + (dy / len) * dist };
 }

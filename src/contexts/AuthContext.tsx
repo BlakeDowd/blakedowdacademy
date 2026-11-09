@@ -1045,35 +1045,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
       if (data.user && supabase) {
-        // Create user profile with fullName, initialHandicap, and preferred_icon_id
-        // Force: ONLY use full_name column
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            id: data.user.id,
-            full_name: fullName, // Force: ONLY use full_name column
-            preferred_icon_id: profileIcon || null, // Golf icon selected by student
-            initial_handicap: initialHandicap,
-            created_at: new Date().toISOString(),
-          });
+        // Profile must exist before accept_coaching_invite can attach them to a waiting space.
+        const profilePayload = {
+          id: data.user.id,
+          full_name: fullName,
+          preferred_icon_id: profileIcon || null,
+          starting_handicap: initialHandicap,
+          created_at: new Date().toISOString(),
+        };
+        let { error: profileError } = await supabase.from("profiles").insert(profilePayload);
+        if (profileError) {
+          console.error("Error creating profile:", profileError);
+          const upsert = await supabase.from("profiles").upsert(profilePayload, { onConflict: "id" });
+          profileError = upsert.error;
+          if (profileError) {
+            console.error("Error upserting profile:", profileError);
+          }
+        }
 
-      if (profileError) {
-        console.error("Error creating profile:", profileError);
-        // Continue anyway - profile can be updated later
+        // Keep invite metadata on the auth user so DB can fall back if profiles insert raced
+        try {
+          await supabase.auth.updateUser({ data: { full_name: fullName } });
+        } catch {
+          /* non-fatal */
+        }
+
+        setUser({
+          id: data.user.id,
+          email: data.user.email || "",
+          fullName,
+          preferredIconId: profileIcon || undefined,
+          initialHandicap,
+          createdAt: data.user.created_at,
+        });
+        setIsAuthenticated(true);
       }
-
-      setUser({
-        id: data.user.id,
-        email: data.user.email || '',
-        fullName,
-        preferredIconId: profileIcon || undefined,
-        initialHandicap,
-        createdAt: data.user.created_at,
-      });
-      setIsAuthenticated(true);
-      // REDIRECTION BLOCKED: was router.push("/")
-      console.log("REDIRECTION BLOCKED");
-    }
   };
 
   const logout = async () => {

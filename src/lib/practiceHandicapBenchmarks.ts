@@ -27,6 +27,7 @@ export type CombineBenchmark = {
 export const PRACTICE_HANDICAP_BENCHMARKS: Partial<Record<CombineLeaderboardTestId, CombineBenchmark>> = {
   // Driving
   tee_shot_hazard: { area: "driving", anchors: [[-4, 115], [0, 95], [9, 70], [18, 45], [28, 15]] },
+  tee_shot_sim: { area: "driving", anchors: [[-4, 92], [0, 78], [9, 58], [18, 40], [28, 22]] },
   driver_flight_control: { area: "driving", anchors: [[-4, 38], [0, 30], [9, 21], [18, 13], [28, 6]] },
 
   // Irons

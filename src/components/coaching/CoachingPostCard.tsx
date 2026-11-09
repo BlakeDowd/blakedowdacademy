@@ -51,7 +51,11 @@ const PROCESSING_RETRY_MS = 5000;
 
 /** Portrait iPhone footage; used until the real shape is known from the thumbnail. */
 const PHONE_VIDEO_ASPECT = 9 / 16;
-const VIDEO_STAGE_HEIGHT = "h-[min(110vw,460px)]";
+/**
+ * Width-first stage: phone footage fills the card width (was height-capped ~460px,
+ * which shrank portrait videos to ~250px wide and looked soft).
+ */
+const VIDEO_STAGE_MAX_HEIGHT = "min(85vh, 720px)";
 
 export function PostVideo({
   video,
@@ -150,13 +154,19 @@ export function PostVideo({
     </>
   );
   if (compact) return <div className="relative">{content}</div>;
-  // Fixed stage height so every slide (thumbnail or playing) is the same size; the frame
-  // matches the video's own shape so the player never letterboxes it in black.
+  // Width-first frame: uses the card width, then clamps height so tall portrait clips still fit.
   return (
-    <div className={`flex ${VIDEO_STAGE_HEIGHT} w-full items-center justify-center bg-stone-100`}>
+    <div
+      className="flex w-full items-center justify-center bg-stone-100"
+      style={{ maxHeight: VIDEO_STAGE_MAX_HEIGHT }}
+    >
       <div
-        className="relative"
-        style={{ aspectRatio: aspect, width: `min(100%, calc(min(110vw, 460px) * ${aspect}))` }}
+        className="relative w-full"
+        style={{
+          aspectRatio: aspect,
+          maxHeight: VIDEO_STAGE_MAX_HEIGHT,
+          maxWidth: `min(100%, calc(${VIDEO_STAGE_MAX_HEIGHT} * ${aspect}))`,
+        }}
       >
         {content}
       </div>
@@ -410,7 +420,7 @@ export function PostPhoto({ path, compact }: { path: string; compact?: boolean }
 
   const frame = compact
     ? "relative flex h-32 w-32 items-center justify-center overflow-hidden rounded-xl bg-stone-200"
-    : "relative flex max-h-[min(110vw,460px)] min-h-40 w-full items-center justify-center overflow-hidden bg-stone-100";
+    : "relative flex max-h-[min(85vh,720px)] min-h-40 w-full items-center justify-center overflow-hidden bg-stone-100";
 
   if (!url) {
     return (
@@ -434,7 +444,11 @@ export function PostPhoto({ path, compact }: { path: string; compact?: boolean }
         <img
           src={url}
           alt=""
-          className={compact ? "h-full w-full object-cover" : "max-h-[min(110vw,460px)] w-auto max-w-full object-contain"}
+          className={
+            compact
+              ? "h-full w-full object-cover"
+              : "max-h-[min(85vh,720px)] w-auto max-w-full object-contain"
+          }
         />
       </button>
       {zoomed &&

@@ -209,22 +209,18 @@ function buildExecutionBadges(shot: TacticalShot, kind: OptionSetKind): string[]
 }
 
 function getPrimaryShotKind(shot: TacticalShot, kind: OptionSetKind): string {
-  if (kind === "standard") {
-    return shot.split ? "Split yardage" : "Full swing";
-  }
+  if (kind === "standard") return "Full swing";
   if (kind === "shape" && shot.shape !== "Straight") return shot.shape;
   if (kind === "swingLength" && shot.swingLength) {
     return SWING_LENGTH_LABELS[shot.swingLength];
   }
   if (kind === "tempo") {
-    if (shot.split) return "Split yardage";
     const pctMatch = shot.tempo.match(/^(\d+)%/);
     if (pctMatch && pctMatch[1] === "100" && shot.flight === "STANDARD") return "Standard";
     if (pctMatch) return `${pctMatch[1]}% tempo`;
     return shot.tempo;
   }
   if (kind === "flight") {
-    if (shot.split) return "Split yardage";
     if (shot.flight !== "STANDARD") return `${shot.flight} flight`;
     return "Standard flight";
   }
@@ -251,9 +247,6 @@ function ShotKindBadge({ children, primary }: { children: string; primary?: bool
 }
 
 function formatShotCoachingNote(shot: TacticalShot, kind: OptionSetKind): string {
-  if (shot.split) {
-    return `${shot.distance}m Plays Like sits in the gap — take more club with a smooth swing, or less club with a firm strike.`;
-  }
   const detail = shot.label.replace(/^[A-Z\s]+:\s*/i, "").trim();
   if (kind === "tempo" && detail.toLowerCase().includes("spin")) {
     return detail;
@@ -285,25 +278,7 @@ function StrategicShotPick({ shot, kind }: { shot: TacticalShot; kind: OptionSet
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-base font-bold leading-tight text-gray-900">{shot.clubName}</p>
-          {shot.split ? (
-            <div className="mt-2 space-y-1.5">
-              <p className="text-sm font-bold tabular-nums text-[#014421]">
-                {shot.distance}m Plays Like target
-              </p>
-              <div className="space-y-1 text-xs sm:text-sm">
-                <div className="flex items-baseline justify-between gap-3 rounded-md bg-gray-50 px-2.5 py-1.5">
-                  <span className="font-semibold text-gray-800">{shot.split.lowerClubName}</span>
-                  <span className="font-bold tabular-nums text-[#014421]">{shot.split.lowerDistance}m</span>
-                </div>
-                <div className="flex items-baseline justify-between gap-3 rounded-md bg-gray-50 px-2.5 py-1.5">
-                  <span className="font-semibold text-gray-800">{shot.split.upperClubName}</span>
-                  <span className="font-bold tabular-nums text-[#014421]">{shot.split.upperDistance}m</span>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <p className="mt-0.5 text-sm font-bold tabular-nums text-[#014421]">{shot.distance}m carry</p>
-          )}
+          <p className="mt-0.5 text-sm font-bold tabular-nums text-[#014421]">{shot.distance}m carry</p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <ShotKindBadge primary>{primaryKind}</ShotKindBadge>

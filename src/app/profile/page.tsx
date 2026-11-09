@@ -196,7 +196,7 @@ export default function ProfilePage() {
           const supabase = createClient();
           const { error } = await supabase
             .from('profiles')
-            .update({ initial_handicap: newGoal })
+            .update({ starting_handicap: newGoal })
             .eq('id', user.id);
             
           if (error) {
@@ -773,6 +773,7 @@ export default function ProfilePage() {
           trophies={statsTrophySummary.total}
           practiceHours={practiceHoursTotal}
           preferredIconId={user?.preferredIconId}
+          level={user?.currentLevel ?? null}
           groups={myGroups}
         />
 

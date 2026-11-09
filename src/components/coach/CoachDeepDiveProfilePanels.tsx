@@ -17,6 +17,7 @@ import {
 import type { CoachCombineSnapshotRow } from "@/lib/coachPlayerCombineSnapshot";
 import type { AcademyTrophyDbRow } from "@/components/AcademyTrophyCasePanel";
 import { ReportEmpty, ReportRow, ReportSection, ReportTile } from "@/components/coach/CoachReportParts";
+import { ReportGate } from "@/components/coach/CoachReportVisibility";
 
 export type CoachDeepDiveProfilePanelsProps = {
   playerName: string;
@@ -32,6 +33,9 @@ export type CoachDeepDiveProfilePanelsProps = {
   dateRangeLabel: string;
   /** All rows from `user_trophies` for this player (newest first). */
   unlockedTrophies: readonly AcademyTrophyDbRow[];
+  /** Average hours/week over the last complete weeks (lesson-day stable). */
+  weeklyAvgHours?: number | null;
+  weeklyAvgWeeks?: number;
 };
 
 const fmtHandicap = (h: number) => (h >= 0 ? String(Math.round(h)) : `+${Math.abs(Math.round(h))}`);
@@ -54,6 +58,8 @@ export function CoachDeepDiveProfilePanels({
   practiceSessionsInRange,
   dateRangeLabel,
   unlockedTrophies,
+  weeklyAvgHours = null,
+  weeklyAvgWeeks = 4,
 }: CoachDeepDiveProfilePanelsProps) {
   const firstName = playerName.split(" ")[0] || "This player";
   const milestoneLabel = SCORING_MILESTONE_LABELS[milestoneToPreset(playerGoal?.scoring_milestone ?? null)];
@@ -96,80 +102,101 @@ export function CoachDeepDiveProfilePanels({
         </p>
       </ReportSection>
 
-      <ReportSection
-        title="Goals"
-        subtitle={
-          playerGoal?.updated_at
-            ? `Set by ${firstName} · updated ${new Date(playerGoal.updated_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
-            : `Set by ${firstName} on their Home screen`
-        }
-      >
-        {!playerGoal ? (
-          <ReportEmpty>{firstName} hasn&apos;t saved any goals yet.</ReportEmpty>
-        ) : (
-          <div className="divide-y divide-stone-100">
-            <ReportRow label="Scoring milestone" value={milestoneLabel} />
-            <ReportRow label="Weekly practice" value={formatWeeklyHoursLabel(hoursPreset)} />
-            <ReportRow label="Main focus" value={focus} />
-            <ReportRow label="Best round target" value={goalNumber(playerGoal.lowest_score) ?? "–"} />
-            <ReportRow label="Handicap target" value={goalNumber(playerGoal.current_handicap) ?? "–"} />
-          </div>
-        )}
-      </ReportSection>
+      <ReportGate empty={!playerGoal}>
+        <ReportSection
+          title="Goals"
+          subtitle={
+            playerGoal?.updated_at
+              ? `Set by ${firstName} · updated ${new Date(playerGoal.updated_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
+              : `Set by ${firstName} on their Home screen`
+          }
+        >
+          {!playerGoal ? (
+            <ReportEmpty>{firstName} hasn&apos;t saved any goals yet.</ReportEmpty>
+          ) : (
+            <div className="divide-y divide-stone-100">
+              <ReportRow label="Scoring milestone" value={milestoneLabel} />
+              <ReportRow label="Weekly practice" value={formatWeeklyHoursLabel(hoursPreset)} />
+              <ReportRow label="Main focus" value={focus} />
+              <ReportRow label="Best round target" value={goalNumber(playerGoal.lowest_score) ?? "–"} />
+              <ReportRow label="Handicap target" value={goalNumber(playerGoal.current_handicap) ?? "–"} />
+            </div>
+          )}
+        </ReportSection>
+      </ReportGate>
 
-      <ReportSection title="This week" subtitle="Practice logged since Monday against their weekly goal">
-        {accountability ? (
-          <>
-            <div className="flex items-baseline justify-between gap-2">
-              <p className="text-2xl font-bold tabular-nums text-stone-900">
-                {accountability.actualHours.toFixed(1)}
-                <span className="text-sm font-semibold text-stone-400">h</span>
-              </p>
-              <p className="text-xs font-medium text-stone-500">of {accountability.commitmentHours.toFixed(1)}h goal</p>
-            </div>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-stone-100">
-              <div
-                className={`h-full rounded-full ${commitmentHealthBarClass(health ?? 0, { eliteHoursShortfall })}`}
-                style={{ width: `${Math.min(100, accountability.hourProgressPct)}%` }}
-              />
-            </div>
-            {goalsNotSaved && (
-              <p className="mt-2 text-[11px] text-stone-400">Using the default goal until {firstName} saves one.</p>
-            )}
-            {!weekQuiet && (
-              <div className="mt-3 space-y-1 text-xs text-stone-600">
-                <p>
-                  {accountability.focusMismatch
-                    ? `Most time went on ${accountability.metrics?.topCategory ?? "another area"}, but their focus is ${focus}.`
-                    : `Time logged matches their focus on ${focus}.`}
+      <ReportGate empty={!accountability}>
+        <ReportSection
+          title="Last week"
+          subtitle="Last complete Mon–Sun (not the in-progress week — so lesson day doesn’t skew it)"
+        >
+          {accountability ? (
+            <>
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-2xl font-bold tabular-nums text-stone-900">
+                  {accountability.actualHours.toFixed(1)}
+                  <span className="text-sm font-semibold text-stone-400">h</span>
                 </p>
+                <p className="text-xs font-medium text-stone-500">of {accountability.commitmentHours.toFixed(1)}h goal</p>
               </div>
-            )}
-          </>
-        ) : (
-          <ReportEmpty>No practice loaded for this week.</ReportEmpty>
-        )}
-      </ReportSection>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-stone-100">
+                <div
+                  className={`h-full rounded-full ${commitmentHealthBarClass(health ?? 0, { eliteHoursShortfall })}`}
+                  style={{ width: `${Math.min(100, accountability.hourProgressPct)}%` }}
+                />
+              </div>
+              {weeklyAvgHours != null && (
+                <p className="mt-2 text-xs text-stone-600">
+                  <span className="font-semibold tabular-nums text-stone-800">{weeklyAvgHours.toFixed(1)}h</span>
+                  {" "}avg / week over the last {weeklyAvgWeeks} complete weeks
+                  {accountability.commitmentHours > 0 && (
+                    <span className="text-stone-400">
+                      {" "}
+                      · {Math.round((weeklyAvgHours / accountability.commitmentHours) * 100)}% of weekly goal
+                    </span>
+                  )}
+                </p>
+              )}
+              {goalsNotSaved && (
+                <p className="mt-2 text-[11px] text-stone-400">Using the default goal until {firstName} saves one.</p>
+              )}
+              {!weekQuiet && (
+                <div className="mt-3 space-y-1 text-xs text-stone-600">
+                  <p>
+                    {accountability.focusMismatch
+                      ? `Most time went on ${accountability.metrics?.topCategory ?? "another area"}, but their focus is ${focus}.`
+                      : `Time logged matches their focus on ${focus}.`}
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <ReportEmpty>No practice loaded for last week.</ReportEmpty>
+          )}
+        </ReportSection>
+      </ReportGate>
 
-      <ReportSection title="Combine scores" subtitle="Personal best on each combine, all time">
-        {withScores.length === 0 ? (
-          <ReportEmpty>No combines finished yet.</ReportEmpty>
-        ) : (
-          <div className="divide-y divide-stone-100">
-            {withScores.map((row) => (
-              <ReportRow key={row.id} label={row.label} value={<span className="text-[#014421]">{row.scoreDisplay}</span>} />
-            ))}
-          </div>
-        )}
-        {withoutScores.length > 0 && withScores.length > 0 && (
-          <details className="mt-3 rounded-xl bg-stone-50 px-3 py-2 text-xs text-stone-600">
-            <summary className="cursor-pointer font-semibold text-stone-700">
-              {withoutScores.length} not played yet
-            </summary>
-            <p className="mt-1.5 leading-relaxed text-stone-500">{withoutScores.map((r) => r.label).join(" · ")}</p>
-          </details>
-        )}
-      </ReportSection>
+      <ReportGate empty={withScores.length === 0}>
+        <ReportSection title="Combine scores" subtitle="Personal best on each combine, all time">
+          {withScores.length === 0 ? (
+            <ReportEmpty>No combines finished yet.</ReportEmpty>
+          ) : (
+            <div className="divide-y divide-stone-100">
+              {withScores.map((row) => (
+                <ReportRow key={row.id} label={row.label} value={<span className="text-[#014421]">{row.scoreDisplay}</span>} />
+              ))}
+            </div>
+          )}
+          {withoutScores.length > 0 && withScores.length > 0 && (
+            <details className="mt-3 rounded-xl bg-stone-50 px-3 py-2 text-xs text-stone-600">
+              <summary className="cursor-pointer font-semibold text-stone-700">
+                {withoutScores.length} not played yet
+              </summary>
+              <p className="mt-1.5 leading-relaxed text-stone-500">{withoutScores.map((r) => r.label).join(" · ")}</p>
+            </details>
+          )}
+        </ReportSection>
+      </ReportGate>
     </>
   );
 }
