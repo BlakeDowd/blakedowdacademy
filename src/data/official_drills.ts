@@ -472,7 +472,7 @@ export const OFFICIAL_DRILLS: DrillRecord[] = [
     "focus": "FIR %",
     "description": "Hitting drives of varying tee heights. From off the ground to very high. You will obtain skills in hitting the centre.",
     "goal": "",
-    "score_type": "streak",
+    "score_type": "makes/10",
     "estimatedMinutes": 15,
     "xpValue": 10,
     "contentType": "text"

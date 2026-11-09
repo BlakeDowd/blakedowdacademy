@@ -44,6 +44,10 @@ import {
   buildAcademyCombinesLeaderboard,
   type CombineLeaderboardTestId,
 } from "@/lib/academyCombinesLeaderboard";
+import {
+  isFreestyleFacilityPracticeType,
+  practiceRowMarksScheduleComplete,
+} from "@/lib/practiceActivity";
 
 type RoundType = '9-hole' | '18-hole' | null;
 
@@ -1103,6 +1107,19 @@ export default function PracticePage() {
             const dayOfWeek = practiceDate.getDay();
             const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Convert Sunday=0 to Monday=0
             const completedDateStr = toLocalDateString(practiceDate);
+            const logIdEarly =
+              practice.id !== undefined && practice.id !== null
+                ? String(practice.id)
+                : undefined;
+
+            // Freestyle area logs are not roadmap drills — drop any earlier orphan cards.
+            if (isFreestyleFacilityPracticeType(practice.type)) {
+              const day = loadedPlan[dayIndex];
+              if (day?.drills?.length && logIdEarly) {
+                day.drills = day.drills.filter((d) => d?.practiceLogId !== logIdEarly);
+              }
+              return;
+            }
 
             // Create day only when we have DB data for it (no pre-population)
             if (!loadedPlan[dayIndex]) {
@@ -1153,12 +1170,10 @@ export default function PracticePage() {
             // MAP THE DATA: Attach video_url, pdf_url, and drill_levels to drill object
             const generatedDrillId = drillDetails?.id || practice.drill_id || `practice-${practice.id}`;
             const drillTitle = drillDetails?.drill_name ?? drillDetails?.title ?? practice.drill_name ?? practice.type ?? practice.title ?? 'Practice Session';
-            const isCompleted = practice.completed || false;
+            // `practice.completed` was never a real column — presence of completed_at / Completed Drill notes means done.
+            const isCompleted = practiceRowMarksScheduleComplete(practice);
             const dayPlanRef = loadedPlan?.[dayIndex];
-            const logId =
-              practice.id !== undefined && practice.id !== null
-                ? String(practice.id)
-                : undefined;
+            const logId = logIdEarly;
 
             if (!dayPlanRef?.drills) return;
 
@@ -1169,7 +1184,8 @@ export default function PracticePage() {
 
             const applyRowFields = (idx: number) => {
               const row = dayPlanRef.drills[idx];
-              row.completed = isCompleted;
+              // Never un-complete a planned row when a completion log is attached.
+              row.completed = Boolean(row.completed) || isCompleted;
               if (logId) row.practiceLogId = logId;
               row.drill_id = generatedDrillId;
               if (levels) row.levels = levels;
@@ -1272,6 +1288,13 @@ export default function PracticePage() {
     };
 
     loadWeeklySchedule();
+    const refresh = () => void loadWeeklySchedule();
+    window.addEventListener("practiceActivityUpdated", refresh);
+    window.addEventListener("drillsUpdated", refresh);
+    return () => {
+      window.removeEventListener("practiceActivityUpdated", refresh);
+      window.removeEventListener("drillsUpdated", refresh);
+    };
   }, [user?.id]);
 
   // Fetch drills from DB + merge with OFFICIAL_DRILLS (prefers server catalog so RLS cannot hide rows)

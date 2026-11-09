@@ -6,9 +6,18 @@ import { BUNKER_UP_DOWN_DRILL_KEY, PAR2_18_DRILL_KEY, PAR2_9_DRILL_KEY } from "@
 import { AIMPOINT_READ_DRILLS } from "@/lib/aimpointReadDrill";
 import { ENVIRONMENTAL_DRILL_KEY } from "@/lib/environmentalDrill";
 import { DRIVES_5S_DRILL_ID, DRIVES_5S_DRILL_KEY } from "@/lib/drives5sDrill";
+import {
+  ALTERNATE_TEE_HEIGHT_DRILL_ID,
+  ALTERNATE_TEE_HEIGHT_DRILL_KEY,
+} from "@/lib/alternateTeeHeightDrill";
 
 /** Drills with their own scoring screen. Planner rows can carry the code, the catalogue UUID or only the name. */
 const RUNNER_DRILLS: { key: string; ids: readonly string[]; title: string }[] = [
+  {
+    key: ALTERNATE_TEE_HEIGHT_DRILL_KEY,
+    ids: [ALTERNATE_TEE_HEIGHT_DRILL_ID],
+    title: "alternate tee height",
+  },
   { key: FACE_STRIKE_DRILL_KEY, ids: ["12388649-8cd3-4100-84d5-814952ee170e"], title: "hitting all parts of the face" },
   { key: BALL_FLIGHT_DRILL_KEY, ids: ["b2b576ef-9fe2-4940-81ae-000799d941d1"], title: "9 ball flight driver" },
   { key: BALL_FLIGHT_IRONS_DRILL_KEY, ids: ["e00fd094-673e-44e0-8279-000dd3ac404b"], title: "9 ball flight irons" },

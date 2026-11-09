@@ -16,6 +16,11 @@ import DrillProgressTracker from "@/components/DrillProgressTracker";
 import DrillScoringPicker from "@/components/DrillScoringPicker";
 import FaceStrikeDrill from "@/components/FaceStrikeDrill";
 import { FACE_STRIKE_DRILL_KEY, FACE_STRIKE_SCORE_TYPE } from "@/lib/faceStrikeDrill";
+import AlternateTeeHeightDrill from "@/components/AlternateTeeHeightDrill";
+import {
+  ALTERNATE_TEE_HEIGHT_DRILL_KEY,
+  ALTERNATE_TEE_SCORE_TYPE,
+} from "@/lib/alternateTeeHeightDrill";
 import BallFlightDrill from "@/components/BallFlightDrill";
 import { BALL_FLIGHT_SCORE_TYPE, ballFlightClub } from "@/lib/ballFlightDrill";
 import FingerDispersionDrill from "@/components/FingerDispersionDrill";
@@ -164,6 +169,7 @@ export default function DrillCard({
   const { milestones, coachGoalText } = useMemo(() => parseCoachGoals(goalRepsForUi), [goalRepsForUi]);
   const coachScoreType = drillScoringOverride(useDrillScoringOverrides(), drillKey);
   const isFaceStrike = runnerKey === FACE_STRIKE_DRILL_KEY;
+  const isAlternateTee = runnerKey === ALTERNATE_TEE_HEIGHT_DRILL_KEY;
   const flightClub = ballFlightClub(runnerKey);
   const isBallFlight = flightClub != null;
   const isFingerDispersion = runnerKey === FINGER_DISPERSION_DRILL_KEY;
@@ -175,21 +181,23 @@ export default function DrillCard({
   const videoUrl = bunnyVideoId ? `bunny:${bunnyVideoId}` : realVideoUrl(drill.youtube_url || drill.video_url);
   const scoreTypeOverride = isFaceStrike
     ? FACE_STRIKE_SCORE_TYPE
-    : isBallFlight
-      ? BALL_FLIGHT_SCORE_TYPE
-      : isFingerDispersion
-        ? FINGER_DISPERSION_SCORE_TYPE
-        : isTempoTown
-          ? TEMPO_TOWN_SCORE_TYPE
-          : par2
-            ? PAR2_SCORE_TYPE
-            : isAimpointReadKey(runnerKey)
-              ? AIMPOINT_READ_SCORE_TYPE
-              : isEnvironmental
-                ? ENVIRONMENTAL_SCORE_TYPE
-                : isDrives5s
-                  ? DRIVES_5S_SCORE_TYPE
-                  : (coachScoreType ?? catalogScoring?.scoreType ?? null);
+    : isAlternateTee
+      ? ALTERNATE_TEE_SCORE_TYPE
+      : isBallFlight
+        ? BALL_FLIGHT_SCORE_TYPE
+        : isFingerDispersion
+          ? FINGER_DISPERSION_SCORE_TYPE
+          : isTempoTown
+            ? TEMPO_TOWN_SCORE_TYPE
+            : par2
+              ? PAR2_SCORE_TYPE
+              : isAimpointReadKey(runnerKey)
+                ? AIMPOINT_READ_SCORE_TYPE
+                : isEnvironmental
+                  ? ENVIRONMENTAL_SCORE_TYPE
+                  : isDrives5s
+                    ? DRIVES_5S_SCORE_TYPE
+                    : (coachScoreType ?? catalogScoring?.scoreType ?? null);
   const focus = catalogScoring?.focus ?? null;
   const scoring = useMemo(
     () =>
@@ -476,6 +484,11 @@ export default function DrillCard({
               scoreEntry={
                 isFaceStrike ? (
                   <FaceStrikeDrill
+                    saving={progress.saving}
+                    onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
+                  />
+                ) : isAlternateTee ? (
+                  <AlternateTeeHeightDrill
                     saving={progress.saving}
                     onSave={(score, reps, details) => progress.saveScore(score, reps, details)}
                   />

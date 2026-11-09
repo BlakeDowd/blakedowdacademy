@@ -251,6 +251,10 @@ export function describeDrillLog(
     .reverse()
     .find((m) => meets(s, score, m.score) && !meets(s, prevBest, m.score));
   if (better(s, score, prevBest)) {
+    if (s.type === "streak") {
+      const headline = reached ? `${reached.label} level — you're king` : "New record — you're king";
+      return { text: `${headline}: ${fmt(score)} in a row!`, tone: "pb" };
+    }
     const headline = reached ? `${reached.label} level reached! New personal best` : "New personal best";
     return isPerfectScore(score, s)
       ? { text: `${headline}: a perfect ${fmt(score)}!`, tone: "pb" }
@@ -259,7 +263,11 @@ export function describeDrillLog(
   if (score === prevBest) {
     return isPerfectScore(score, s)
       ? { text: "Perfect again. Keep owning this drill.", tone: "up" }
-      : { text: `Matched your best of ${fmt(prevBest)}. So close, beat it next time.`, tone: "up" };
+      : s.type === "streak"
+        ? { text: `Matched your best of ${fmt(prevBest)} in a row. One more to take the crown.`, tone: "up" }
+        : { text: `Matched your best of ${fmt(prevBest)}. So close, beat it next time.`, tone: "up" };
   }
-  return { text: `Your best is ${fmt(prevBest)}. Keep going, you'll beat it.`, tone: "even" };
+  return s.type === "streak"
+    ? { text: `King sits at ${fmt(prevBest)} in a row. Keep going.`, tone: "even" }
+    : { text: `Your best is ${fmt(prevBest)}. Keep going, you'll beat it.`, tone: "even" };
 }

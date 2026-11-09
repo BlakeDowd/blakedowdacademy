@@ -10,8 +10,10 @@ import {
   WEDGE_CLOCK_CLUBS,
   WEDGE_CLOCK_TARGETS,
   describeDelta,
+  isLikelyFaceOn,
   leadArmPoints,
   measureLeadArmDegrees,
+  robustPeakDegrees,
   snapClockLabel,
   type Handedness,
 } from "@/lib/wedgeClock";
@@ -80,6 +82,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
   const armedRef = useRef(false);
   const runningRef = useRef(false);
   const lockedRef = useRef(false);
+  const liveSamplesRef = useRef<number[]>([]);
   const modeRef = useRef<Mode>("idle");
   const analysingRef = useRef(false);
 
@@ -104,7 +107,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
   const [history, setHistory] = useState<WedgeClockLogEntry[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>(
-    "Side-on to the swing. Camera or a phone video — pose stays on this device.",
+    "Side-on to the swing. Long walk-in clips are fine — it finds the peak. Pose stays on this device.",
   );
 
   modeRef.current = mode;
@@ -161,9 +164,12 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
     lockedRef.current = false;
     peakRef.current = 0;
     armedRef.current = false;
-    lastTsRef.current = 0;
+    liveSamplesRef.current = [];
+    // Keep lastTsRef — MediaPipe VIDEO mode never accepts a lower timestamp.
     setBusy(false);
-    setStatus("Side-on to the swing. Camera or a phone video — pose stays on this device.");
+    setStatus(
+      "Side-on to the swing. Long walk-in clips are fine — it finds the peak. Pose stays on this device.",
+    );
   }, [clearObjectUrl, detachVideo, stopCameraTracks, stopLoop]);
 
   useEffect(() => () => resetSession(), [resetSession]);
@@ -290,7 +296,12 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
     (degrees: number | null, landmarks?: Array<{ x: number; y: number; visibility?: number }>) => {
       if (degrees != null) {
         if (!armedRef.current && degrees > 20) armedRef.current = true;
-        if (armedRef.current && degrees > peakRef.current) peakRef.current = degrees;
+        if (armedRef.current && degrees > 18) {
+          const buf = liveSamplesRef.current;
+          buf.push(degrees);
+          if (buf.length > 24) buf.shift();
+          peakRef.current = robustPeakDegrees(buf);
+        }
         if (
           armedRef.current &&
           peakRef.current >= 35 &&
@@ -316,6 +327,13 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
     [drawOverlay],
   );
 
+  /** MediaPipe VIDEO mode requires strictly increasing timestamps across the whole session. */
+  const nextDetectTs = useCallback(() => {
+    const next = Math.max(performance.now(), lastTsRef.current + 33);
+    lastTsRef.current = next;
+    return next;
+  }, []);
+
   const processLiveFrame = useCallback(async () => {
     if (!runningRef.current || analysingRef.current) return;
     const video = videoRef.current;
@@ -326,16 +344,18 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
 
     // Live camera often keeps currentTime at 0 — throttle by wall clock, not video time.
     const now = performance.now();
-    if (now - lastTsRef.current < 33) {
+    if (now - lastTsRef.current < 33 && lastTsRef.current > 0) {
       rafRef.current = requestAnimationFrame(() => void processLiveFrame());
       return;
     }
-    lastTsRef.current = now;
 
     try {
       const landmarker = await getPoseLandmarker();
-      const result = landmarker.detectForVideo(video, now);
+      const result = landmarker.detectForVideo(video, nextDetectTs());
       const landmarks = result.landmarks?.[0];
+      if (landmarks && isLikelyFaceOn(landmarks)) {
+        setStatus("Looks face-on — stand to the side so the lead arm is clear of the body.");
+      }
       const degrees = landmarks ? measureLeadArmDegrees(landmarks, handedness) : null;
       applyDegrees(degrees, landmarks);
     } catch {
@@ -345,20 +365,20 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
     if (modeRef.current === "camera" && runningRef.current) {
       rafRef.current = requestAnimationFrame(() => void processLiveFrame());
     }
-  }, [applyDegrees, handedness]);
+  }, [applyDegrees, handedness, nextDetectTs]);
 
   const startLiveLoop = useCallback(() => {
     stopLoop();
     runningRef.current = true;
-    peakRef.current = 0;
-    armedRef.current = false;
-    lockedRef.current = false;
-    lastTsRef.current = 0;
-    setLocked(null);
-    setLive(null);
-    setSaveMsg(null);
-    rafRef.current = requestAnimationFrame(() => void processLiveFrame());
-  }, [processLiveFrame, stopLoop]);
+      peakRef.current = 0;
+      armedRef.current = false;
+      lockedRef.current = false;
+      liveSamplesRef.current = [];
+      setLocked(null);
+      setLive(null);
+      setSaveMsg(null);
+      rafRef.current = requestAnimationFrame(() => void processLiveFrame());
+    }, [processLiveFrame, stopLoop]);
 
   const scrollPreview = () => {
     window.setTimeout(() => {
@@ -376,6 +396,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       peakRef.current = 0;
       armedRef.current = false;
       lockedRef.current = false;
+      liveSamplesRef.current = [];
       setLocked(null);
       setLive(null);
 
@@ -383,31 +404,62 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
         if (!Number.isFinite(video.duration) || video.duration <= 0) {
           await waitForEvent(video, "loadedmetadata");
         }
-        const duration = Math.min(video.duration || 0, 20);
+        // Walk to the ball → hit → walk back: scan the whole clip (cap for phone work).
+        const ANALYSE_MAX_SEC = 180;
+        const ANALYSE_SAMPLES = 140;
+        const fullLen = video.duration || 0;
+        const duration = Math.min(fullLen, ANALYSE_MAX_SEC);
         if (duration < 0.2) throw new Error("Video is too short to analyse.");
 
         const landmarker = await getPoseLandmarker();
-        // ~15 samples/sec across the clip (cap work on long phones)
-        const step = Math.max(1 / 15, duration / 90);
+        // Even spacing across the clip so a mid-video swing isn’t missed (dense on short clips).
+        const step = Math.max(1 / 12, duration / ANALYSE_SAMPLES);
+        const degreeSamples: number[] = [];
+        let faceOnVotes = 0;
+        let poseFrames = 0;
         let peak = 0;
-        let samples = 0;
-        let timestamp = 1;
+
+        if (fullLen > ANALYSE_MAX_SEC) {
+          setStatus(
+            `Scanning first ${ANALYSE_MAX_SEC / 60} min for the peak backswing (clip is longer — keep the swing in that window).`,
+          );
+        } else if (fullLen > 25) {
+          setStatus("Scanning the whole clip for the peak backswing — walk-in / walk-back is fine.");
+        }
 
         for (let t = 0; t <= duration; t += step) {
           if (!analysingRef.current) return;
           video.currentTime = Math.min(t, duration - 0.001);
           await waitForEvent(video, "seeked", 8000);
           // Tiny pause helps some mobile decoders present the frame
-          await new Promise((r) => window.setTimeout(r, 16));
+          await new Promise((r) => window.setTimeout(r, 12));
 
-          const result = landmarker.detectForVideo(video, timestamp);
-          timestamp += 66;
-          const landmarks = result.landmarks?.[0];
+          let landmarks: Array<{ x: number; y: number; visibility?: number }> | undefined;
+          try {
+            const result = landmarker.detectForVideo(video, nextDetectTs());
+            landmarks = result.landmarks?.[0];
+          } catch (err) {
+            // Timestamp / graph glitches — keep going with the next frame.
+            const msg = err instanceof Error ? err.message : String(err);
+            if (/timestamp|INVALID_ARGUMENT|norm_rect/i.test(msg)) {
+              lastTsRef.current = Math.max(lastTsRef.current + 1000, performance.now() + 1000);
+              continue;
+            }
+            throw err;
+          }
+
+          if (landmarks) {
+            poseFrames += 1;
+            if (isLikelyFaceOn(landmarks)) faceOnVotes += 1;
+          }
+
           const degrees = landmarks ? measureLeadArmDegrees(landmarks, handedness) : null;
           if (degrees != null) {
-            samples += 1;
-            if (degrees > 20) armedRef.current = true;
-            if (armedRef.current && degrees > peak) peak = degrees;
+            if (degrees > 18) {
+              armedRef.current = true;
+              degreeSamples.push(degrees);
+            }
+            peak = robustPeakDegrees(degreeSamples);
             peakRef.current = peak;
             setLive({
               degrees,
@@ -422,25 +474,46 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
           setAnalyseProgress(Math.min(99, Math.round((t / duration) * 100)));
         }
 
-        if (peak >= 25) {
+        const faceOn = poseFrames > 0 && faceOnVotes / poseFrames >= 0.45;
+        peak = robustPeakDegrees(degreeSamples);
+        peakRef.current = peak;
+
+        if (faceOn) {
+          setLocked(null);
+          lockedRef.current = false;
+          setModelError(
+            "That clip looks face-on. Film from the side so the lead arm is clear — face-on often reads as 12:00.",
+          );
+          setStatus("Analyse needs a side-on view (camera at trail-hip height, looking across the target line).");
+        } else if (peak >= 25 && degreeSamples.length >= 3) {
           lockedRef.current = true;
           setLocked({ degrees: peak, label: snapClockLabel(peak) });
+          setModelError(null);
           setStatus(`Backswing length ${snapClockLabel(peak)}. Video stayed on this device.`);
           trackToolUse("wedge-clock");
-        } else if (samples === 0) {
+        } else if (degreeSamples.length === 0 && poseFrames === 0) {
           setStatus("Couldn't see a person — try a brighter side-on clip of the full torso.");
           setModelError("No pose detected in that video.");
         } else {
           setStatus("Saw movement but no clear backswing. Use a side-on clip from address to the top.");
+          setModelError(null);
         }
         setAnalyseProgress(100);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setModelError(
+          /timestamp|INVALID_ARGUMENT|norm_rect/i.test(msg)
+            ? "Analyse hiccup — tap Analyse video again (same clip is fine)."
+            : msg || "Analyse failed — try another side-on clip.",
+        );
+        setStatus("Analyse failed — try another side-on clip.");
       } finally {
         analysingRef.current = false;
         setAnalysing(false);
         setBusy(false);
       }
     },
-    [drawOverlay, handedness, stopLoop],
+    [drawOverlay, handedness, nextDetectTs, stopLoop],
   );
 
   const startCamera = async () => {
@@ -814,7 +887,8 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       <div className="rounded-2xl bg-stone-50 p-4 ring-1 ring-stone-100">
         <p className="text-sm font-semibold text-stone-900">Measure backswing</p>
         <p className="mt-1 text-xs text-stone-500">
-          Side-on so the lead arm is clear. Reports clock length at the top (e.g. 9:00 / 10:30).
+          Side-on so the lead arm is clear. Long phone clips are fine — it scans for the peak
+          (walk to the ball, hit, walk back). Reports clock length at the top (e.g. 9:00 / 10:30).
         </p>
 
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">

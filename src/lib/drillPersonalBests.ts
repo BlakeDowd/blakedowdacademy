@@ -75,9 +75,17 @@ export type DrillScoreLog = {
   created_at: string;
   /** Attempts that session (balls hit, putts taken...), when the player entered it. */
   reps?: number | null;
+  /** Shot-level payload (attemptResults, sessionPct, …). */
+  details?: unknown;
 };
 
-type DrillScoreLogRow = { id: string; score: number | string; created_at: string; reps?: number | string | null };
+type DrillScoreLogRow = {
+  id: string;
+  score: number | string;
+  created_at: string;
+  reps?: number | string | null;
+  details?: unknown;
+};
 
 function toDrillScoreLog(row: DrillScoreLogRow): DrillScoreLog {
   const reps = row.reps == null ? null : Number(row.reps);
@@ -86,6 +94,7 @@ function toDrillScoreLog(row: DrillScoreLogRow): DrillScoreLog {
     score: Number(row.score),
     created_at: row.created_at,
     reps: reps != null && Number.isFinite(reps) ? reps : null,
+    details: row.details ?? undefined,
   };
 }
 
@@ -156,12 +165,15 @@ export async function fetchDrillProgress(
       .eq("user_id", userId)
       .eq("drill_key", drillKey)
       .maybeSingle(),
-    fetchLogs("id, score, reps, created_at"),
+    fetchLogs("id, score, reps, details, created_at"),
   ]);
-  const logsRes =
-    firstLogsRes.error && isMissingRepsColumn(firstLogsRes.error.message)
-      ? await fetchLogs("id, score, created_at")
-      : firstLogsRes;
+  let logsRes = firstLogsRes;
+  if (logsRes.error && isMissingDetailsColumn(logsRes.error.message)) {
+    logsRes = await fetchLogs("id, score, reps, created_at");
+  }
+  if (logsRes.error && isMissingRepsColumn(logsRes.error.message)) {
+    logsRes = await fetchLogs("id, score, created_at");
+  }
 
   if (pbRes.error) {
     const legacy = await fetchDrillPersonalBest(supabase, userId, drillKey);
@@ -212,7 +224,15 @@ export async function insertDrillScore(
         ...(withReps ? { reps } : {}),
         ...(withDetails ? { details } : {}),
       })
-      .select(withReps ? "id, score, reps, created_at" : "id, score, created_at")
+      .select(
+        withDetails
+          ? withReps
+            ? "id, score, reps, details, created_at"
+            : "id, score, details, created_at"
+          : withReps
+            ? "id, score, reps, created_at"
+            : "id, score, created_at",
+      )
       .single();
 
   let withDetails = details != null;

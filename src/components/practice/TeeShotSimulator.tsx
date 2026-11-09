@@ -43,10 +43,43 @@ import { insertPracticeLogCompat } from "@/lib/practiceLogsCompat";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { TeeShotSimReport } from "@/components/practice/TeeShotSimReport";
+import {
+  clearSimSessionDraft,
+  loadSimSessionDraft,
+  saveSimSessionDraft,
+} from "@/lib/simSessionDraft";
 
 type FlightAnim = { from: Vec2; to: Vec2; progress: number; done: boolean };
 type ScorePopup = { points: number; at: Vec2; born: number };
 type Phase = "setup" | "playing" | "complete";
+
+const SESSION_KEY = "tee_shot_sim_session_v1";
+
+type TeeSessionDraft = {
+  v: 1;
+  phase: Phase;
+  mode: TeeMode;
+  unit: "m" | "yd";
+  scenario: TeeScenario | null;
+  results: TeeShotResult[];
+  club: string;
+  range: TeeDistanceRange;
+  carryIn: string;
+  offlineIn: string;
+  mark: Vec2 | null;
+  fingerDir: FingerMissDirection | null;
+  fingerWidth: FingerMissWidth | null;
+  lastMsg: string | null;
+  soundOn: boolean;
+};
+
+function readTeeDraft(): TeeSessionDraft | null {
+  const d = loadSimSessionDraft<TeeSessionDraft>(SESSION_KEY);
+  if (!d || d.v !== 1) return null;
+  if (d.phase !== "playing" && d.phase !== "complete") return null;
+  if (!d.scenario || !Array.isArray(d.results)) return null;
+  return d;
+}
 
 function worldToScreen(
   p: Vec2,
@@ -187,31 +220,39 @@ function loadLastResult(): SavedResult | null {
 export default function TeeShotSimulator({ compact }: { compact?: boolean }) {
   const { user } = useAuth();
   const isCoach = isCoachEmail(user?.email) || user?.role === "coach";
+  const restored = useMemo(() => readTeeDraft(), []);
 
-  const [phase, setPhase] = useState<Phase>("setup");
+  const [phase, setPhase] = useState<Phase>(() => restored?.phase ?? "setup");
   const [testingFor, setTestingFor] = useState<PlayerOption | null>(null);
-  const [scenario, setScenario] = useState<TeeScenario | null>(null);
-  const [mode, setMode] = useState<TeeMode>("launch_monitor");
-  const [unit, setUnit] = useState<"m" | "yd">("m");
-  const [carryIn, setCarryIn] = useState("");
-  const [offlineIn, setOfflineIn] = useState("0");
-  const [mark, setMark] = useState<Vec2 | null>(null);
-  const [fingerDir, setFingerDir] = useState<FingerMissDirection | null>(null);
-  const [fingerWidth, setFingerWidth] = useState<FingerMissWidth | null>(null);
-  const [soundOn, setSoundOn] = useState(true);
-  const [results, setResults] = useState<TeeShotResult[]>([]);
-  const [club, setClub] = useState("driver");
+  const [scenario, setScenario] = useState<TeeScenario | null>(() => restored?.scenario ?? null);
+  const [mode, setMode] = useState<TeeMode>(() => restored?.mode ?? "launch_monitor");
+  const [unit, setUnit] = useState<"m" | "yd">(() => restored?.unit ?? "m");
+  const [carryIn, setCarryIn] = useState(() => restored?.carryIn ?? "");
+  const [offlineIn, setOfflineIn] = useState(() => restored?.offlineIn ?? "0");
+  const [mark, setMark] = useState<Vec2 | null>(() => restored?.mark ?? null);
+  const [fingerDir, setFingerDir] = useState<FingerMissDirection | null>(
+    () => restored?.fingerDir ?? null,
+  );
+  const [fingerWidth, setFingerWidth] = useState<FingerMissWidth | null>(
+    () => restored?.fingerWidth ?? null,
+  );
+  const [soundOn, setSoundOn] = useState(() => restored?.soundOn ?? true);
+  const [results, setResults] = useState<TeeShotResult[]>(() => restored?.results ?? []);
+  const [club, setClub] = useState(() => restored?.club ?? "driver");
   const [flight, setFlight] = useState<FlightAnim | null>(null);
   const [scorePopup, setScorePopup] = useState<ScorePopup | null>(null);
   const [shotBusy, setShotBusy] = useState(false);
-  const [lastMsg, setLastMsg] = useState<string | null>(null);
+  const [lastMsg, setLastMsg] = useState<string | null>(() => restored?.lastMsg ?? null);
   const [lastSaved, setLastSaved] = useState<SavedResult | null>(null);
   const [range, setRange] = useState<TeeDistanceRange>(() =>
-    typeof window !== "undefined" ? loadSavedRange() : normalizeTeeDistanceRange(140, 185),
+    restored?.range ??
+    (typeof window !== "undefined" ? loadSavedRange() : normalizeTeeDistanceRange(140, 185)),
   );
   /** Display-unit strings while editing min/max carry. */
   const [minCarryIn, setMinCarryIn] = useState("");
   const [maxCarryIn, setMaxCarryIn] = useState("");
+  /** Skip one scenario-id reset after hydrating a draft (otherwise inputs wipe). */
+  const skipScenarioResetRef = useRef(Boolean(restored?.scenario));
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -260,6 +301,10 @@ export default function TeeShotSimulator({ compact }: { compact?: boolean }) {
 
   useEffect(() => {
     if (!scenario || phase !== "playing") return;
+    if (skipScenarioResetRef.current) {
+      skipScenarioResetRef.current = false;
+      return;
+    }
     setCarryIn(String(toDisplay(scenario.distanceM)));
     setOfflineIn("0");
     setMark(null);
@@ -269,6 +314,47 @@ export default function TeeShotSimulator({ compact }: { compact?: boolean }) {
     setClub(suggestTeeClub(scenario.distanceM));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenario?.id]);
+
+  // Keep mid-session progress when opening full screen (navigates to a new mount).
+  useEffect(() => {
+    if (phase === "setup" || !scenario) {
+      clearSimSessionDraft(SESSION_KEY);
+      return;
+    }
+    const draft: TeeSessionDraft = {
+      v: 1,
+      phase,
+      mode,
+      unit,
+      scenario,
+      results,
+      club,
+      range,
+      carryIn,
+      offlineIn,
+      mark,
+      fingerDir,
+      fingerWidth,
+      lastMsg,
+      soundOn,
+    };
+    saveSimSessionDraft(SESSION_KEY, draft);
+  }, [
+    phase,
+    mode,
+    unit,
+    scenario,
+    results,
+    club,
+    range,
+    carryIn,
+    offlineIn,
+    mark,
+    fingerDir,
+    fingerWidth,
+    lastMsg,
+    soundOn,
+  ]);
 
   const sfx = useCallback(
     (fn: () => void) => {
@@ -301,6 +387,7 @@ export default function TeeShotSimulator({ compact }: { compact?: boolean }) {
   };
 
   const backToSetup = () => {
+    clearSimSessionDraft(SESSION_KEY);
     setPhase("setup");
     setScenario(null);
     setResults([]);

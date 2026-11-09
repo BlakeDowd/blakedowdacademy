@@ -67,6 +67,31 @@ export function normalizePracticeArea(raw: string | null | undefined): PracticeA
   return key ? (AREA_ALIASES[key] ?? null) : null;
 }
 
+/**
+ * Freestyle "Enter practice I've already done" / area timers write `practice.type` as a facility
+ * (Putting, Driving, …). Those sessions must not appear as incomplete roadmap drills on the week plan.
+ * (`practice.completed_at` defaults to now(), so they otherwise show up in the week query.)
+ */
+export function isFreestyleFacilityPracticeType(type: string | null | undefined): boolean {
+  const raw = String(type ?? "").trim();
+  if (!raw || raw.includes(":")) return false;
+  return normalizePracticeArea(raw) != null && PRACTICE_AREAS.some((a) => a.toLowerCase() === raw.toLowerCase());
+}
+
+/** A practice row that should tick a planned week-plan drill as done. */
+export function practiceRowMarksScheduleComplete(row: {
+  completed?: unknown;
+  completed_at?: string | null;
+  notes?: unknown;
+  type?: string | null;
+}): boolean {
+  if (isFreestyleFacilityPracticeType(row.type)) return false;
+  if (row.completed === true) return true;
+  if (row.completed_at) return true;
+  const notes = typeof row.notes === "string" ? row.notes : "";
+  return /Completed Drill/i.test(notes);
+}
+
 const COMBINE_CATEGORY_AREA: Record<CombineCategoryId, PracticeArea> = {
   Putting: "Putting",
   Chipping: "Chipping",

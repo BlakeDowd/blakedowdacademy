@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { ArrowDown, ArrowUp, Minus, Plus, Target, TrendingUp, Trophy } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, Check, Crown, Minus, Plus, RotateCcw, Target, TrendingUp, Trophy, X } from "lucide-react";
 import { formatDrillScore, type DrillProgressSummary, type DrillScoreLog } from "@/lib/drillPersonalBests";
 import { DRILL_SCORE_TYPE_LABELS, TO_PAR_UNIT, isPerfectScore, type DrillScoring } from "@/lib/drillScoring";
 import { parseDrillScoreInput, type DrillProgressState } from "@/hooks/useDrillProgress";
@@ -9,6 +9,351 @@ import { parseDrillScoreInput, type DrillProgressState } from "@/hooks/useDrillP
 const SPARK_POINTS = 12;
 const LONG_UNIT_CHARS = 8;
 const MAX_SCORE_CHIPS = 15;
+
+type AttemptResult = "make" | "miss";
+
+function streakFromAttempts(attempts: readonly AttemptResult[]): { current: number; best: number } {
+  let current = 0;
+  let best = 0;
+  for (const a of attempts) {
+    if (a === "make") {
+      current += 1;
+      if (current > best) best = current;
+    } else {
+      current = 0;
+    }
+  }
+  return { current, best };
+}
+
+function sessionMakePct(attempts: readonly AttemptResult[]): {
+  made: number;
+  total: number;
+  pct: number | null;
+} {
+  const total = attempts.length;
+  const made = attempts.filter((a) => a === "make").length;
+  return { made, total, pct: total > 0 ? Math.round((made / total) * 100) : null };
+}
+
+/** Best make-% from prior logs (details.sessionPct or attemptResults only — not streak score/reps). */
+function bestMakePctFromLogs(logs: readonly DrillScoreLog[]): number | null {
+  let best: number | null = null;
+  for (const log of logs) {
+    const d = log.details as
+      | { kind?: string; sessionPct?: unknown; attemptResults?: unknown }
+      | null
+      | undefined;
+    let pct: number | null = null;
+    if (d && typeof d.sessionPct === "number" && Number.isFinite(d.sessionPct)) {
+      pct = Math.round(d.sessionPct);
+    } else if (d && Array.isArray(d.attemptResults) && d.attemptResults.length > 0) {
+      const made = d.attemptResults.filter((a) => a === "make").length;
+      pct = Math.round((made / d.attemptResults.length) * 100);
+    } else if (
+      d?.kind === "makes_attempts" &&
+      log.reps != null &&
+      log.reps > 0 &&
+      log.score >= 0
+    ) {
+      pct = Math.round((log.score / log.reps) * 100);
+    }
+    if (pct == null) continue;
+    best = best == null ? pct : Math.max(best, pct);
+  }
+  return best;
+}
+
+/** Consecutive Made / Missed — score is the best run this session. */
+function StreakAttemptPad({
+  attempts,
+  setAttempts,
+  personalBest,
+  personalBestPct,
+  onSwitchToTotal,
+}: {
+  attempts: AttemptResult[];
+  setAttempts: (next: AttemptResult[] | ((prev: AttemptResult[]) => AttemptResult[])) => void;
+  personalBest: number | null;
+  personalBestPct: number | null;
+  onSwitchToTotal: () => void;
+}) {
+  const { current, best } = streakFromAttempts(attempts);
+  const { made, total, pct } = sessionMakePct(attempts);
+  const isNewRecord = personalBest == null ? best > 0 : best > personalBest;
+  const currentIsKing = personalBest == null ? current > 0 : current > personalBest;
+  const isNewPctRecord =
+    pct != null && total >= 3 && (personalBestPct == null ? pct > 0 : pct > personalBestPct);
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">In a row</p>
+        <button
+          type="button"
+          onClick={onSwitchToTotal}
+          className="shrink-0 text-[11px] font-semibold text-gray-500 underline underline-offset-2 hover:text-[#014421]"
+        >
+          Enter total
+        </button>
+      </div>
+
+      <div
+        className={`relative overflow-hidden rounded-xl px-3 py-4 text-center ring-1 transition-colors ${
+          currentIsKing
+            ? "bg-[#FFA500]/10 ring-[#FFA500]/50"
+            : "bg-white ring-gray-200"
+        }`}
+      >
+        {currentIsKing && (
+          <span className="absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-[#FFA500] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+            <Crown className="h-3 w-3" aria-hidden />
+            King
+          </span>
+        )}
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Current streak</p>
+        <p className="text-5xl font-extrabold tabular-nums leading-none text-[#014421]">{current}</p>
+        <p className="mt-1 text-[11px] text-gray-500">
+          {current === 0
+            ? "Tap Made to start a run · Miss ends it"
+            : current === 1
+              ? "1 in a row — keep going"
+              : `${current} in a row`}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-1.5">
+        <div className="rounded-lg bg-white px-2.5 py-2 ring-1 ring-gray-200">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Best streak</p>
+          <p className="text-lg font-extrabold tabular-nums text-gray-900">{best}</p>
+          {isNewRecord ? (
+            <span className="mt-0.5 inline-flex items-center gap-0.5 text-[10px] font-bold text-[#FFA500]">
+              <Crown className="h-3 w-3" aria-hidden />
+              New record
+            </span>
+          ) : personalBest != null ? (
+            <p className="text-[10px] text-gray-500">
+              Best ever <span className="font-semibold tabular-nums text-gray-800">{personalBest}</span>
+            </p>
+          ) : (
+            <p className="text-[10px] text-gray-400">First session</p>
+          )}
+        </div>
+        <div
+          className={`rounded-lg px-2.5 py-2 ring-1 ${
+            isNewPctRecord ? "bg-[#FFA500]/10 ring-[#FFA500]/40" : "bg-white ring-gray-200"
+          }`}
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Session %</p>
+          <p className="text-lg font-extrabold tabular-nums text-gray-900">
+            {pct != null ? `${pct}%` : "—"}
+          </p>
+          {pct != null ? (
+            <p className="text-[10px] text-gray-500">
+              <span className="font-semibold tabular-nums text-gray-800">
+                {made}/{total}
+              </span>{" "}
+              made
+              {isNewPctRecord ? (
+                <span className="ml-1 inline-flex items-center gap-0.5 font-bold text-[#FFA500]">
+                  <Crown className="h-3 w-3" aria-hidden />
+                  Record
+                </span>
+              ) : personalBestPct != null ? (
+                <span>
+                  {" "}
+                  · best <span className="font-semibold tabular-nums">{personalBestPct}%</span>
+                </span>
+              ) : null}
+            </p>
+          ) : (
+            <p className="text-[10px] text-gray-400">Updates as you tap</p>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => setAttempts((prev) => [...prev, "make"])}
+          className="rounded-xl bg-[#014421] px-3 py-4 text-base font-extrabold text-white transition-transform hover:bg-[#013320] active:scale-[0.98]"
+        >
+          <Check className="mx-auto mb-1 h-5 w-5" aria-hidden />
+          Made
+        </button>
+        <button
+          type="button"
+          onClick={() => setAttempts((prev) => [...prev, "miss"])}
+          className="rounded-xl border-2 border-gray-200 bg-white px-3 py-4 text-base font-extrabold text-gray-800 transition-transform hover:border-red-300 active:scale-[0.98]"
+        >
+          <X className="mx-auto mb-1 h-5 w-5 text-red-500" aria-hidden />
+          Missed
+        </button>
+      </div>
+
+      {attempts.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap gap-1" aria-label="Attempt results">
+            {attempts.map((a, i) => (
+              <span
+                key={`${i}-${a}`}
+                title={`Shot ${i + 1}: ${a === "make" ? "Made" : "Missed"}`}
+                className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-[11px] font-bold tabular-nums ${
+                  a === "make" ? "bg-[#014421] text-white" : "bg-red-50 text-red-700 ring-1 ring-red-100"
+                }`}
+              >
+                {i + 1}
+              </span>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setAttempts((prev) => prev.slice(0, -1))}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-[#014421]"
+          >
+            <RotateCcw className="h-3 w-3" aria-hidden />
+            Undo last
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Per-shot Made / Missed pad — score + attempts stay in sync for Log score. */
+function MakesAttemptPad({
+  max,
+  attempts,
+  setAttempts,
+  personalBestPct,
+  onSwitchToTotal,
+}: {
+  max: number;
+  attempts: AttemptResult[];
+  setAttempts: (next: AttemptResult[] | ((prev: AttemptResult[]) => AttemptResult[])) => void;
+  personalBestPct: number | null;
+  onSwitchToTotal: () => void;
+}) {
+  const made = attempts.filter((a) => a === "make").length;
+  const missed = attempts.length - made;
+  const full = attempts.length >= max;
+  const nextNum = attempts.length + 1;
+  const pct = attempts.length > 0 ? Math.round((made / attempts.length) * 100) : null;
+  const isNewPctRecord =
+    pct != null && attempts.length >= 3 && (personalBestPct == null ? pct > 0 : pct > personalBestPct);
+
+  const push = (result: AttemptResult) => {
+    if (full) return;
+    setAttempts((prev) => [...prev, result]);
+  };
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-end justify-between gap-2">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+            {full ? "Session done" : `Attempt ${nextNum} of ${max}`}
+          </p>
+          <p className="text-2xl font-extrabold tabular-nums text-gray-900">
+            {made}
+            <span className="text-base font-bold text-gray-400"> / {max}</span>
+          </p>
+          <p className="text-[11px] text-gray-500">
+            {attempts.length === 0
+              ? "Tap Made or Missed after each shot"
+              : `${made} made · ${missed} missed · ${attempts.length} attempts`}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onSwitchToTotal}
+          className="shrink-0 text-[11px] font-semibold text-gray-500 underline underline-offset-2 hover:text-[#014421]"
+        >
+          Enter total
+        </button>
+      </div>
+
+      {pct != null && (
+        <div
+          className={`flex items-center justify-between rounded-lg px-2.5 py-2 ring-1 ${
+            isNewPctRecord ? "bg-[#FFA500]/10 ring-[#FFA500]/40" : "bg-white ring-gray-200"
+          }`}
+        >
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Session %</p>
+            <p className="text-lg font-extrabold tabular-nums text-gray-900">{pct}%</p>
+          </div>
+          {isNewPctRecord ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#FFA500] px-2.5 py-1 text-[11px] font-bold text-white">
+              <Crown className="h-3.5 w-3.5" aria-hidden />
+              % record
+            </span>
+          ) : personalBestPct != null ? (
+            <p className="text-[11px] text-gray-500">
+              Best <span className="font-semibold tabular-nums text-gray-800">{personalBestPct}%</span>
+            </p>
+          ) : null}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          disabled={full}
+          onClick={() => push("make")}
+          className="rounded-xl bg-[#014421] px-3 py-4 text-base font-extrabold text-white transition-transform hover:bg-[#013320] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Check className="mx-auto mb-1 h-5 w-5" aria-hidden />
+          Made
+        </button>
+        <button
+          type="button"
+          disabled={full}
+          onClick={() => push("miss")}
+          className="rounded-xl border-2 border-gray-200 bg-white px-3 py-4 text-base font-extrabold text-gray-800 transition-transform hover:border-red-300 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <X className="mx-auto mb-1 h-5 w-5 text-red-500" aria-hidden />
+          Missed
+        </button>
+      </div>
+
+      {attempts.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap gap-1" aria-label="Attempt results">
+            {attempts.map((a, i) => (
+              <span
+                key={`${i}-${a}`}
+                title={`Attempt ${i + 1}: ${a === "make" ? "Made" : "Missed"}`}
+                className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-[11px] font-bold tabular-nums ${
+                  a === "make" ? "bg-[#014421] text-white" : "bg-red-50 text-red-700 ring-1 ring-red-100"
+                }`}
+              >
+                {i + 1}
+              </span>
+            ))}
+            {!full &&
+              Array.from({ length: Math.min(4, max - attempts.length) }, (_, i) => (
+                <span
+                  key={`empty-${i}`}
+                  className="inline-flex h-7 min-w-7 items-center justify-center rounded-md bg-white text-[11px] font-semibold text-gray-300 ring-1 ring-dashed ring-gray-200"
+                >
+                  {attempts.length + i + 1}
+                </span>
+              ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setAttempts((prev) => prev.slice(0, -1))}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-[#014421]"
+          >
+            <RotateCcw className="h-3 w-3" aria-hidden />
+            Undo last
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Sparkline({ logs, lowerIsBetter, best }: { logs: DrillScoreLog[]; lowerIsBetter: boolean; best: number }) {
   const points = logs.slice(0, SPARK_POINTS).reverse();
@@ -73,13 +418,21 @@ function BeatYourBest({ summary, scoring }: { summary: DrillProgressSummary | nu
   }
   const fmt = (n: number) => formatDrillScore(n, scoring.unit);
   const perfect = isPerfectScore(summary.best, scoring);
+  const isStreak = scoring.type === "streak";
   return (
     <div className="rounded-lg bg-[#014421] px-3 py-2.5 text-white">
       <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-white/70">
-        <Trophy className="h-3.5 w-3.5 text-[#FFA500]" aria-hidden />
-        {perfect ? "Your best" : "Beat your best"}
+        {isStreak ? (
+          <Crown className="h-3.5 w-3.5 text-[#FFA500]" aria-hidden />
+        ) : (
+          <Trophy className="h-3.5 w-3.5 text-[#FFA500]" aria-hidden />
+        )}
+        {perfect ? "Your best" : isStreak ? "King of the hill" : "Beat your best"}
       </p>
-      <p className="mt-0.5 text-xl font-bold tabular-nums">{fmt(summary.best)}</p>
+      <p className="mt-0.5 text-xl font-bold tabular-nums">
+        {fmt(summary.best)}
+        {isStreak ? <span className="ml-1 text-sm font-semibold text-white/70">in a row</span> : null}
+      </p>
       <p className="text-[11px] leading-snug text-white/75">
         {perfect
           ? "Perfect score. Match it again to own this drill."
@@ -265,12 +618,58 @@ export default function DrillProgressTracker({
     repsSummary,
     feedback,
     logDraft,
+    saveScore,
     undoLog,
   } = progress;
   const best = summary?.best ?? null;
+  const bestPct = bestMakePctFromLogs(logs);
   const lowerIsBetter = scoring.lowerIsBetter;
   const isCompletion = scoring.type === "completion";
   const isMakes = scoring.type === "makes" && scoring.max != null && scoring.max <= MAX_SCORE_CHIPS;
+  const isStreak = scoring.type === "streak";
+  const makesMax = isMakes ? scoring.max! : 0;
+  const [makesMode, setMakesMode] = useState<"tap" | "total">("tap");
+  const [streakMode, setStreakMode] = useState<"tap" | "total">("tap");
+  const [makeAttempts, setMakeAttempts] = useState<AttemptResult[]>([]);
+  const [streakAttempts, setStreakAttempts] = useState<AttemptResult[]>([]);
+
+  // Keep draft + attempts field in sync with the tap pad.
+  useEffect(() => {
+    if (!isMakes || makesMode !== "tap") return;
+    if (makeAttempts.length === 0) {
+      setDraft("");
+      setRepsDraft("");
+      return;
+    }
+    setDraft(String(makeAttempts.filter((a) => a === "make").length));
+    setRepsDraft(String(makeAttempts.length));
+  }, [isMakes, makesMode, makeAttempts, setDraft, setRepsDraft]);
+
+  useEffect(() => {
+    if (!isStreak || streakMode !== "tap") return;
+    if (streakAttempts.length === 0) {
+      setDraft("");
+      setRepsDraft("");
+      return;
+    }
+    const { best } = streakFromAttempts(streakAttempts);
+    setDraft(String(best));
+    setRepsDraft(String(streakAttempts.length));
+  }, [isStreak, streakMode, streakAttempts, setDraft, setRepsDraft]);
+
+  // Clear pad after a successful log (draft wiped by saveScore).
+  useEffect(() => {
+    if (makesMode === "tap" && makeAttempts.length > 0 && !draft.trim() && !repsDraft.trim() && !saving) {
+      setMakeAttempts([]);
+    }
+  }, [draft, repsDraft, saving, makesMode, makeAttempts.length]);
+
+  useEffect(() => {
+    if (streakMode === "tap" && streakAttempts.length > 0 && !draft.trim() && !repsDraft.trim() && !saving) {
+      setStreakAttempts([]);
+    }
+  }, [draft, repsDraft, saving, streakMode, streakAttempts.length]);
+
   const attemptsLabel = scoring.type === "speed" ? "Swings" : "Attempts";
   const attemptsField = (
     <label className="w-20 shrink-0">
@@ -333,17 +732,106 @@ export default function DrillProgressTracker({
             className="space-y-2"
             onSubmit={(e) => {
               e.preventDefault();
-              void logDraft();
+              void (async () => {
+                if (isMakes && makesMode === "tap" && makeAttempts.length > 0) {
+                  const made = makeAttempts.filter((a) => a === "make").length;
+                  const { pct } = sessionMakePct(makeAttempts);
+                  const ok = await saveScore(made, makeAttempts.length, {
+                    kind: "makes_attempts",
+                    attemptResults: makeAttempts,
+                    sessionPct: pct,
+                  });
+                  if (ok) setMakeAttempts([]);
+                  return;
+                }
+                if (isStreak && streakMode === "tap" && streakAttempts.length > 0) {
+                  const { best: sessionBest } = streakFromAttempts(streakAttempts);
+                  const { made, pct } = sessionMakePct(streakAttempts);
+                  const ok = await saveScore(sessionBest, streakAttempts.length, {
+                    kind: "streak_attempts",
+                    attemptResults: streakAttempts,
+                    sessionBest,
+                    sessionMakes: made,
+                    sessionPct: pct,
+                  });
+                  if (ok) setStreakAttempts([]);
+                  return;
+                }
+                await logDraft();
+              })();
             }}
           >
-            {isMakes ? (
-              <ScoreInput
-                scoring={scoring}
-                draft={draft}
-                setDraft={setDraft}
-                target={best}
-                hasLogs={logs.length > 0}
+            {isStreak && streakMode === "tap" ? (
+              <StreakAttemptPad
+                attempts={streakAttempts}
+                setAttempts={setStreakAttempts}
+                personalBest={best}
+                personalBestPct={bestPct}
+                onSwitchToTotal={() => {
+                  setStreakMode("total");
+                  setStreakAttempts([]);
+                  setDraft("");
+                  setRepsDraft("");
+                }}
               />
+            ) : isMakes && makesMode === "tap" ? (
+              <MakesAttemptPad
+                max={makesMax}
+                attempts={makeAttempts}
+                setAttempts={setMakeAttempts}
+                personalBestPct={bestPct}
+                onSwitchToTotal={() => {
+                  setMakesMode("total");
+                  setMakeAttempts([]);
+                  setDraft("");
+                  setRepsDraft("");
+                }}
+              />
+            ) : isMakes ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className={FIELD_LABEL}>Total made</p>
+                  <button
+                    type="button"
+                    onClick={() => setMakesMode("tap")}
+                    className="text-[11px] font-semibold text-gray-500 underline underline-offset-2 hover:text-[#014421]"
+                  >
+                    Made / Missed
+                  </button>
+                </div>
+                <ScoreInput
+                  scoring={scoring}
+                  draft={draft}
+                  setDraft={setDraft}
+                  target={best}
+                  hasLogs={logs.length > 0}
+                />
+              </div>
+            ) : isStreak ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className={FIELD_LABEL}>Best streak</p>
+                  <button
+                    type="button"
+                    onClick={() => setStreakMode("tap")}
+                    className="text-[11px] font-semibold text-gray-500 underline underline-offset-2 hover:text-[#014421]"
+                  >
+                    Made / Missed
+                  </button>
+                </div>
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1">
+                    <ScoreInput
+                      scoring={scoring}
+                      draft={draft}
+                      setDraft={setDraft}
+                      target={best}
+                      hasLogs={logs.length > 0}
+                    />
+                  </div>
+                  {attemptsField}
+                </div>
+              </div>
             ) : (
               <div className="flex items-end gap-2">
                 <div className="min-w-0 flex-1">
@@ -360,13 +848,32 @@ export default function DrillProgressTracker({
               </div>
             )}
             <div className="flex items-end gap-2">
-              {isMakes && attemptsField}
+              {isMakes && makesMode === "total" && attemptsField}
               <button
                 type="submit"
-                disabled={saving || !draft.trim()}
+                disabled={
+                  saving ||
+                  (isMakes && makesMode === "tap"
+                    ? makeAttempts.length === 0
+                    : isStreak && streakMode === "tap"
+                      ? streakAttempts.length === 0
+                      : !draft.trim())
+                }
                 className="flex-1 rounded-lg bg-[#014421] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#014421]/90 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {saving ? "Saving…" : "Log score"}
+                {saving
+                  ? "Saving…"
+                  : isMakes && makesMode === "tap" && makeAttempts.length > 0
+                    ? `Log ${makeAttempts.filter((a) => a === "make").length}/${makeAttempts.length}`
+                    : isStreak && streakMode === "tap" && streakAttempts.length > 0
+                      ? (() => {
+                          const { best: b } = streakFromAttempts(streakAttempts);
+                          const { pct } = sessionMakePct(streakAttempts);
+                          return pct != null
+                            ? `Log ${b} in a row · ${pct}%`
+                            : `Log best ${b} in a row`;
+                        })()
+                      : "Log score"}
               </button>
             </div>
           </form>
@@ -378,7 +885,12 @@ export default function DrillProgressTracker({
         <div
           className={`flex items-start gap-2 rounded-lg px-2.5 py-2 text-xs leading-snug ${FEEDBACK_STYLES[feedback.tone]}`}
         >
-          {feedback.tone === "pb" && <Trophy className="mt-px h-3.5 w-3.5 shrink-0 text-[#FFA500]" aria-hidden />}
+          {feedback.tone === "pb" &&
+            (isStreak ? (
+              <Crown className="mt-px h-3.5 w-3.5 shrink-0 text-[#FFA500]" aria-hidden />
+            ) : (
+              <Trophy className="mt-px h-3.5 w-3.5 shrink-0 text-[#FFA500]" aria-hidden />
+            ))}
           <span className="min-w-0 flex-1">{feedback.text}</span>
           {feedback.undoLogId && (
             <button

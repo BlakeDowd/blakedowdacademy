@@ -37,11 +37,45 @@ import { awardCombineCompletionXp } from "@/lib/combineXp";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { IRON_TEST_CLUBS } from "@/lib/ironCombineClubs";
 import { ApproachShotSimReport } from "@/components/practice/ApproachShotSimReport";
+import {
+  clearSimSessionDraft,
+  loadSimSessionDraft,
+  saveSimSessionDraft,
+} from "@/lib/simSessionDraft";
 
 type FlightAnim = { from: Vec2; to: Vec2; progress: number; done: boolean };
 /** Floating points callout when a shot finds the green. */
 type ScorePopup = { points: number; at: Vec2; born: number };
 type Phase = "setup" | "playing" | "complete";
+
+const SESSION_KEY = "approach_shot_sim_session_v1";
+
+type ApproachSessionDraft = {
+  v: 1;
+  phase: Phase;
+  mode: ApproachMode;
+  unit: "m" | "yd";
+  scenario: ApproachScenario | null;
+  results: ApproachShotResult[];
+  club: string;
+  carryIn: string;
+  offlineIn: string;
+  mark: Vec2 | null;
+  fingerDir: FingerMissDirection | null;
+  fingerWidth: FingerMissWidth | null;
+  lastMsg: string | null;
+  soundOn: boolean;
+  showScoreRings: boolean;
+  aimDepthFree: boolean;
+};
+
+function readApproachDraft(): ApproachSessionDraft | null {
+  const d = loadSimSessionDraft<ApproachSessionDraft>(SESSION_KEY);
+  if (!d || d.v !== 1) return null;
+  if (d.phase !== "playing" && d.phase !== "complete") return null;
+  if (!d.scenario || !Array.isArray(d.results)) return null;
+  return d;
+}
 
 function worldToScreen(
   p: Vec2,
@@ -158,30 +192,36 @@ function loadLastResult(): SavedResult | null {
 export default function ApproachShotSimulator({ compact }: { compact?: boolean }) {
   const { user } = useAuth();
   const isCoach = isCoachEmail(user?.email) || user?.role === "coach";
+  const restored = useMemo(() => readApproachDraft(), []);
 
-  const [phase, setPhase] = useState<Phase>("setup");
+  const [phase, setPhase] = useState<Phase>(() => restored?.phase ?? "setup");
   const [testingFor, setTestingFor] = useState<PlayerOption | null>(null);
-  const [scenario, setScenario] = useState<ApproachScenario | null>(null);
-  const [mode, setMode] = useState<ApproachMode>("launch_monitor");
-  const [unit, setUnit] = useState<"m" | "yd">("m");
-  const [carryIn, setCarryIn] = useState("");
-  const [offlineIn, setOfflineIn] = useState("0");
+  const [scenario, setScenario] = useState<ApproachScenario | null>(() => restored?.scenario ?? null);
+  const [mode, setMode] = useState<ApproachMode>(() => restored?.mode ?? "launch_monitor");
+  const [unit, setUnit] = useState<"m" | "yd">(() => restored?.unit ?? "m");
+  const [carryIn, setCarryIn] = useState(() => restored?.carryIn ?? "");
+  const [offlineIn, setOfflineIn] = useState(() => restored?.offlineIn ?? "0");
   /** Aim target on the map (required for finger mode; optional for radar). */
-  const [mark, setMark] = useState<Vec2 | null>(null);
-  const [fingerDir, setFingerDir] = useState<FingerMissDirection | null>(null);
-  const [fingerWidth, setFingerWidth] = useState<FingerMissWidth | null>(null);
-  const [soundOn, setSoundOn] = useState(true);
-  const [showScoreRings, setShowScoreRings] = useState(true);
+  const [mark, setMark] = useState<Vec2 | null>(() => restored?.mark ?? null);
+  const [fingerDir, setFingerDir] = useState<FingerMissDirection | null>(
+    () => restored?.fingerDir ?? null,
+  );
+  const [fingerWidth, setFingerWidth] = useState<FingerMissWidth | null>(
+    () => restored?.fingerWidth ?? null,
+  );
+  const [soundOn, setSoundOn] = useState(() => restored?.soundOn ?? true);
+  const [showScoreRings, setShowScoreRings] = useState(() => restored?.showScoreRings ?? true);
   /** When off, map taps only move aim left/right (depth stays at the pin). */
-  const [aimDepthFree, setAimDepthFree] = useState(false);
-  const [results, setResults] = useState<ApproachShotResult[]>([]);
-  const [club, setClub] = useState("7i");
+  const [aimDepthFree, setAimDepthFree] = useState(() => restored?.aimDepthFree ?? false);
+  const [results, setResults] = useState<ApproachShotResult[]>(() => restored?.results ?? []);
+  const [club, setClub] = useState(() => restored?.club ?? "7i");
   const [flight, setFlight] = useState<FlightAnim | null>(null);
   const [scorePopup, setScorePopup] = useState<ScorePopup | null>(null);
   /** True from log → next hole / complete so the player can’t double-fire while the popup plays. */
   const [shotBusy, setShotBusy] = useState(false);
-  const [lastMsg, setLastMsg] = useState<string | null>(null);
+  const [lastMsg, setLastMsg] = useState<string | null>(() => restored?.lastMsg ?? null);
   const [lastSaved, setLastSaved] = useState<SavedResult | null>(null);
+  const skipScenarioResetRef = useRef(Boolean(restored?.scenario));
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -207,6 +247,10 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
 
   useEffect(() => {
     if (!scenario || phase !== "playing") return;
+    if (skipScenarioResetRef.current) {
+      skipScenarioResetRef.current = false;
+      return;
+    }
     setCarryIn(String(toDisplay(scenario.distanceM)));
     setOfflineIn("0");
     setMark(null);
@@ -222,6 +266,48 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
     if (Math.abs(mark.y - scenario.pin.y) < 0.05) return;
     setMark({ x: mark.x, y: scenario.pin.y });
   }, [aimDepthFree, scenario, mark]);
+
+  useEffect(() => {
+    if (phase === "setup" || !scenario) {
+      clearSimSessionDraft(SESSION_KEY);
+      return;
+    }
+    const draft: ApproachSessionDraft = {
+      v: 1,
+      phase,
+      mode,
+      unit,
+      scenario,
+      results,
+      club,
+      carryIn,
+      offlineIn,
+      mark,
+      fingerDir,
+      fingerWidth,
+      lastMsg,
+      soundOn,
+      showScoreRings,
+      aimDepthFree,
+    };
+    saveSimSessionDraft(SESSION_KEY, draft);
+  }, [
+    phase,
+    mode,
+    unit,
+    scenario,
+    results,
+    club,
+    carryIn,
+    offlineIn,
+    mark,
+    fingerDir,
+    fingerWidth,
+    lastMsg,
+    soundOn,
+    showScoreRings,
+    aimDepthFree,
+  ]);
 
   const sfx = useCallback(
     (fn: () => void) => {
@@ -246,6 +332,7 @@ export default function ApproachShotSimulator({ compact }: { compact?: boolean }
   };
 
   const backToSetup = () => {
+    clearSimSessionDraft(SESSION_KEY);
     setPhase("setup");
     setScenario(null);
     setResults([]);

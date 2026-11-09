@@ -124,8 +124,8 @@ export function leadArmPoints(
   const elbow = landmarks[ei];
   const wrist = landmarks[wi];
   if (!shoulder || !elbow || !wrist) return null;
-  const visOk = (p: { visibility?: number }) => p.visibility == null || p.visibility > 0.4;
-  const ok = visOk(shoulder) && visOk(wrist);
+  const visOk = (p: { visibility?: number }) => p.visibility == null || p.visibility > 0.45;
+  const ok = visOk(shoulder) && visOk(elbow) && visOk(wrist);
   return {
     shoulder: { x: shoulder.x, y: shoulder.y },
     elbow: { x: elbow.x, y: elbow.y },
@@ -134,11 +134,51 @@ export function leadArmPoints(
   };
 }
 
+/**
+ * Face-on clips make shoulder→wrist look “vertical” and falsely read as 12:00.
+ * Side-on: shoulders nearly stacked in x; face-on: wide left–right separation.
+ */
+export function isLikelyFaceOn(
+  landmarks: Array<{ x: number; y: number; visibility?: number }>,
+): boolean {
+  if (!landmarks || landmarks.length < 25) return false;
+  const ls = landmarks[POSE.LEFT_SHOULDER];
+  const rs = landmarks[POSE.RIGHT_SHOULDER];
+  if (!ls || !rs) return false;
+  const vis = (p: { visibility?: number }) => p.visibility == null || p.visibility > 0.4;
+  if (!vis(ls) || !vis(rs)) return false;
+  const shoulderWidth = Math.abs(ls.x - rs.x);
+  const shoulderDepth = Math.abs(ls.y - rs.y) + 0.001;
+  return shoulderWidth > 0.14 && shoulderWidth / shoulderDepth > 2.2;
+}
+
+/**
+ * Lead-arm clock degrees. Uses wrist when the elbow lies roughly on the arm line;
+ * otherwise falls back to shoulder→elbow (more stable mid-swing).
+ */
 export function measureLeadArmDegrees(
   landmarks: Array<{ x: number; y: number; visibility?: number }>,
   handedness: Handedness,
 ): number | null {
   const pts = leadArmPoints(landmarks, handedness);
   if (!pts || !pts.ok) return null;
-  return armDegreesFromDown(pts.shoulder, pts.wrist);
+
+  const toWrist = armDegreesFromDown(pts.shoulder, pts.wrist);
+  const toElbow = armDegreesFromDown(pts.shoulder, pts.elbow);
+
+  // If elbow and wrist disagree a lot, the wrist is often a bad 2D projection — prefer elbow.
+  if (Math.abs(toWrist - toElbow) > 45) {
+    return Math.min(toWrist, toElbow + 25);
+  }
+  // Blend slightly toward elbow so single-frame wrist spikes don't jump to 12:00.
+  return toWrist * 0.75 + toElbow * 0.25;
+}
+
+/** Reject one-frame spikes: use the 3rd-highest sample (or max if few samples). */
+export function robustPeakDegrees(samples: readonly number[]): number {
+  if (!samples.length) return 0;
+  const sorted = [...samples].sort((a, b) => b - a);
+  if (sorted.length >= 5) return sorted[2]!;
+  if (sorted.length >= 3) return sorted[1]!;
+  return sorted[0]!;
 }

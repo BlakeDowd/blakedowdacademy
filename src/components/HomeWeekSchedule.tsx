@@ -8,6 +8,10 @@ import { OFFICIAL_DRILLS } from "@/data/official_drills";
 import { COMBINE_TEST_CARDS } from "@/lib/combineTestsCatalog";
 import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 import { WeekDayStrip } from "@/components/WeekDayStrip";
+import {
+  isFreestyleFacilityPracticeType,
+  practiceRowMarksScheduleComplete,
+} from "@/lib/practiceActivity";
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const MAX_VISIBLE_DRILLS = 4;
@@ -175,14 +179,24 @@ export function HomeWeekSchedule() {
         if (!row.completed_at) return;
         const dayIdx = dayIndexOf(new Date(String(row.completed_at)));
         const logId = row.id != null ? String(row.id) : undefined;
-        const id = String(row.drill_id ?? row.type ?? "");
-        const completed = row.completed === true;
         const dayDrills = merged[dayIdx];
+
+        // Freestyle area logs belong in activity history, not as unfinished week-plan drills.
+        if (isFreestyleFacilityPracticeType(String(row.type ?? ""))) {
+          if (logId) {
+            const idx = dayDrills.findIndex((d) => d.logId === logId);
+            if (idx >= 0) dayDrills.splice(idx, 1);
+          }
+          return;
+        }
+
+        const id = String(row.drill_id ?? row.type ?? "");
+        const completed = practiceRowMarksScheduleComplete(row);
 
         let match = logId ? dayDrills.find((d) => d.logId === logId) : undefined;
         if (!match && id) match = dayDrills.find((d) => !d.logId && d.ids.includes(id));
         if (match) {
-          match.completed = completed;
+          match.completed = match.completed || completed;
           if (logId) match.logId = logId;
           return;
         }
