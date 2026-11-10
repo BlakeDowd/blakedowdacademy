@@ -541,26 +541,28 @@ export default function DrillCard({
             </DrillGuide>
           ) : null}
 
-          <button
-            type="button"
-            onClick={() => void handleComplete()}
-            disabled={isCompleted || progress.saving}
-            className={`flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-base font-bold text-white shadow-md transition-transform active:scale-[0.99] disabled:cursor-not-allowed ${
-              isCompleted ? "bg-green-500" : "bg-[#014421] hover:bg-[#013320] disabled:opacity-50"
-            }`}
-          >
-            {isCompleted ? (
-              <>
-                <CheckCircle2 className="h-5 w-5" />
-                Completed
-              </>
-            ) : (
-              <>
-                <Check className="h-5 w-5" />
-                Complete drill
-              </>
-            )}
-          </button>
+          <div className="sticky bottom-0 z-10 -mx-1 bg-gradient-to-t from-white via-white to-white/90 px-1 pb-0.5 pt-2">
+            <button
+              type="button"
+              onClick={() => void handleComplete()}
+              disabled={isCompleted || progress.saving}
+              className={`flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-base font-bold text-white shadow-md transition-transform active:scale-[0.99] disabled:cursor-not-allowed ${
+                isCompleted ? "bg-green-500" : "bg-[#014421] hover:bg-[#013320] disabled:opacity-50"
+              }`}
+            >
+              {isCompleted ? (
+                <>
+                  <CheckCircle2 className="h-5 w-5" />
+                  Completed
+                </>
+              ) : (
+                <>
+                  <Check className="h-5 w-5" />
+                  Complete drill
+                </>
+              )}
+            </button>
+          </div>
 
           {(!drill.isRound || onClear) && (
             <div className="flex items-center justify-between gap-3 px-1">

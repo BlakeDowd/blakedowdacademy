@@ -22,7 +22,7 @@ export default function WedgeClockPage() {
       </Link>
       <h1 className="text-xl font-bold tracking-tight text-stone-900">Wedge Clock</h1>
       <p className="mt-1 text-sm text-stone-500">
-        Log club, goal, and radar carry. Optional on-device clock — no swing upload.
+        Hit to a clock length. Log club, goal, and carry from your radar.
       </p>
       <div className="mt-4">
         <WedgeClockTool />

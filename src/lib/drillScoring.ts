@@ -148,7 +148,7 @@ export function describeScoring(s: DrillScoring): string {
     case "streak":
       return "Streak (in a row)";
     case "count":
-      return s.unit ? `Count (${s.unit})` : "Count";
+      return s.unit ? `Count · Good / Miss (${s.unit})` : "Count · Good / Miss · %";
     case "strokes":
       return `Lower is better (${s.unit || "strokes"})`;
     case "gross":

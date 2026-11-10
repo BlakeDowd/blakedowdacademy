@@ -75,9 +75,13 @@ export default function AlternateTeeHeightDrill({
       <div className="space-y-3 rounded-xl bg-white p-3 ring-1 ring-gray-200" onClick={(e) => e.stopPropagation()}>
         <p className="text-sm font-semibold text-gray-900">Alternate tee height</p>
         <ol className="list-decimal space-y-1 pl-4 text-xs leading-snug text-gray-600">
-          <li>The app calls a random tee height — set the ball that way.</li>
-          <li>Hit the drive. Tap <span className="font-semibold text-gray-800">Made</span> for a solid centre-face strike, or <span className="font-semibold text-gray-800">Missed</span> if it was thin, fat, or off the face.</li>
-          <li>{ALTERNATE_TEE_SHOTS} shots — each height twice. Score and history save so you can beat your best.</li>
+          <li>Set the tee to the height shown (off the ground through very high).</li>
+          <li>
+            Hit the drive. Tap <span className="font-semibold text-gray-800">Made</span> for a solid
+            centre strike, or <span className="font-semibold text-gray-800">Missed</span> if it was
+            thin, fat, or off the face.
+          </li>
+          <li>Do {ALTERNATE_TEE_SHOTS} shots — each height twice.</li>
         </ol>
         <div className="flex flex-wrap gap-1.5">
           {TEE_HEIGHTS.map((h) => (

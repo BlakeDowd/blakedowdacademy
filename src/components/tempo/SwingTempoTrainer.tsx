@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useWakeLock } from "@/hooks/useWakeLock";
 import { Mic, Music, Pause, Play, Volume2, type LucideIcon } from "lucide-react";
 import { trackToolUse, type ToolKey } from "@/lib/appUsage";
 import { releaseAudio, unlockAudio } from "@/lib/unlockAudio";
@@ -95,6 +96,7 @@ export function SwingTempoTrainer({
   const [reps, setReps] = useState(0);
   const [countIn, setCountIn] = useState(true);
   const [light, setLight] = useState<CountLight | null>(null);
+  useWakeLock(playing);
 
   const preset = presets[presetIndex] ?? presets[0]!;
   const times = presetSeconds(preset);

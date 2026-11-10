@@ -21,6 +21,7 @@ import {
   type ChallengeEntry,
   type ChallengeMetric,
 } from "@/lib/communityChallenges";
+import { CommunityLessonDrawCard } from "@/components/community/CommunityLessonDrawCard";
 
 const INPUT =
   "mt-1 block w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-900 focus:border-[#014421] focus:bg-white focus:outline-none";
@@ -465,6 +466,8 @@ export function CommunityChallengesView({
 
   return (
     <div className="space-y-3">
+      <CommunityLessonDrawCard />
+
       {isCoach &&
         (creating ? (
           <NewChallengeForm

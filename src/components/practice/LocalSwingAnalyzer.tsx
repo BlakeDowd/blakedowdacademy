@@ -5,10 +5,7 @@ import { Film, Upload } from "lucide-react";
 import { SwingAnalyzer, type AnalyzerSource } from "@/components/video/SwingAnalyzer";
 import { trackToolUse } from "@/lib/appUsage";
 
-/**
- * Swing analyser for any player: pick a video from the phone/computer and draw over it.
- * Drawings stay on-device for this session (use coaching videos to save shared layers).
- */
+/** Swing analyser: open a phone video and draw lines/angles over the swing. */
 export default function LocalSwingAnalyzer({ compact }: { compact?: boolean }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [source, setSource] = useState<AnalyzerSource | null>(null);
@@ -36,10 +33,10 @@ export default function LocalSwingAnalyzer({ compact }: { compact?: boolean }) {
   return (
     <div className={compact ? "space-y-3" : "space-y-4"}>
       <div className="rounded-2xl bg-stone-50 p-4 ring-1 ring-stone-100">
-        <p className="text-sm font-semibold text-stone-900">Analyse any swing video</p>
+        <p className="text-sm font-semibold text-stone-900">Open a swing video</p>
         <p className="mt-1 text-xs text-stone-500">
-          Draw lines, angles and circles. Scrub, slow-mo, zoom, flip, and hit Record for a free
-          voiceover download (stays on your device). Open a coaching video to save shared drawings.
+          1. Pick a clip from your phone. 2. Scrub to the frame you want. 3. Draw lines or angles on
+          the positions that matter.
         </p>
         <input
           ref={inputRef}

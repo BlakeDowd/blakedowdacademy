@@ -16,7 +16,7 @@ import { saveDrillScoring } from "@/lib/drillScoringOverrides";
 const OPTIONS: { type: DrillScoreType; label: string; hint: string }[] = [
   { type: "makes", label: "Out of", hint: "e.g. 7 out of 10" },
   { type: "streak", label: "Streak", hint: "How many in a row" },
-  { type: "count", label: "Count", hint: "e.g. chip ins" },
+  { type: "count", label: "Count", hint: "Good / Miss · session %" },
   { type: "strokes", label: "Lower is better", hint: "Putts, strokes" },
   { type: "gross", label: "Gross score", hint: "Strokes for 9 or 18 holes" },
   { type: "topar", label: "Over / under par", hint: "E, +3, −2 counter" },

@@ -118,10 +118,26 @@ export function useDrillProgress(
           return false;
         }
         const reaction = describeDrillLog(score, logs, scoring, milestones);
+        const sessionPct =
+          details &&
+          typeof details === "object" &&
+          typeof (details as { sessionPct?: unknown }).sessionPct === "number"
+            ? Math.round((details as { sessionPct: number }).sessionPct)
+            : null;
+        const withPct =
+          sessionPct != null
+            ? {
+                ...reaction,
+                text:
+                  scoring.type === "count"
+                    ? `Session ${sessionPct}% · ${score} good${reps != null ? ` / ${reps}` : ""}. ${reaction.text}`
+                    : `${reaction.text} Session ${sessionPct}%.`,
+              }
+            : reaction;
         setLogs((prev) => [log, ...prev]);
         setDraft("");
         setRepsDraft("");
-        setFeedback({ ...reaction, undoLogId: log.id });
+        setFeedback({ ...withPct, undoLogId: log.id });
         announceDrillActivity();
         if (settings.unit !== unit || settings.lowerIsBetter !== lowerIsBetter) {
           setSettings((s) => ({ ...s, unit, lowerIsBetter }));

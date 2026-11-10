@@ -203,7 +203,7 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
         className="bg-white rounded-3xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex-1 space-y-3 overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3">
           <DrillHero
             title={drill.drill_name ?? drill.title ?? "Untitled"}
             kicker={`${drill.category} drill`}
@@ -242,7 +242,7 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
           <DrillScoringRow drill={drill} />
           <DrillListPicker drill={drill} />
 
-          {bunnyVideoId && <DrillBunnyVideo videoId={bunnyVideoId} />}
+          {bunnyVideoId && <DrillBunnyVideo videoId={bunnyVideoId} constrained />}
 
           {(((SHOW_PDFS && drill.pdf_url) || (!bunnyVideoId && (drill.video_url || (drill as any).youtube_url)))) && (
             <div className="flex flex-wrap gap-2">
@@ -289,7 +289,7 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
             </div>
           )}
         </div>
-        <div className="p-4 border-t border-gray-200">
+        <div className="shrink-0 border-t border-gray-200 bg-white p-4">
           {!showDayPicker ? (
             <button
               onClick={() => setShowDayPicker(true)}

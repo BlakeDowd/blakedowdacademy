@@ -26,6 +26,8 @@ import {
   type BoardRow,
   type Challenge,
 } from "@/lib/communityChallenges";
+import { CommunityLessonDrawCompact } from "@/components/community/CommunityLessonDrawCard";
+import { fetchPracticeDrawStatus } from "@/lib/practiceDrawTickets";
 
 const ROUNDS_SHOWN = 3;
 const ACTIVITY_SHOWN = 3;
@@ -89,22 +91,26 @@ export function HomeCommunityCard() {
   const [daysLeft, setDaysLeft] = useState(0);
   const [pending, setPending] = useState(0);
   const [people, setPeople] = useState<Map<string, CommunityPerson>>(new Map());
+  const [hasLessonDraw, setHasLessonDraw] = useState(false);
 
   useEffect(() => {
     if (!me) return;
     let cancelled = false;
-    void Promise.all([fetchCommunityFeed(40), fetchChallenges()]).then(async ([f, c]) => {
-      const live = c.challenges.find((x) => challengeState(x) === "live");
-      const b = live ? await fetchChallengeBoard(live) : { rows: [] };
-      if (cancelled) return;
-      setFeed(f.feed);
-      setFeedMissing(Boolean(f.error));
-      setChallenges(c.challenges);
-      setBoard(b.rows);
-      setDaysLeft(
-        live ? Math.max(0, Math.ceil((new Date(`${live.endsOn}T23:59:59`).getTime() - Date.now()) / DAY)) : 0,
-      );
-    });
+    void Promise.all([fetchCommunityFeed(40), fetchChallenges(), fetchPracticeDrawStatus(me)]).then(
+      async ([f, c, draw]) => {
+        const live = c.challenges.find((x) => challengeState(x) === "live");
+        const b = live ? await fetchChallengeBoard(live) : { rows: [] };
+        if (cancelled) return;
+        setFeed(f.feed);
+        setFeedMissing(Boolean(f.error));
+        setChallenges(c.challenges);
+        setBoard(b.rows);
+        setHasLessonDraw(Boolean(draw));
+        setDaysLeft(
+          live ? Math.max(0, Math.ceil((new Date(`${live.endsOn}T23:59:59`).getTime() - Date.now()) / DAY)) : 0,
+        );
+      },
+    );
     if (isCoach) void countPendingCommunity().then((n) => !cancelled && setPending(n));
     return () => {
       cancelled = true;
@@ -230,8 +236,8 @@ export function HomeCommunityCard() {
         </div>
         <p className="mt-1 text-center text-[10px] text-gray-400">The academy · last 7 days</p>
 
-        {/* Challenge of the week */}
-        <SectionTitle href={live ? "/community?tab=challenges" : undefined}>Challenge of the week</SectionTitle>
+        {/* Challenge of the week — lesson draw fills the coming-soon slot */}
+        <SectionTitle href="/community?tab=challenges">Challenge of the week</SectionTitle>
         {live ? (
           <Link href="/community?tab=challenges" className="block rounded-xl bg-[#014421] p-3 text-white">
             <div className="flex items-start justify-between gap-2">
@@ -263,6 +269,8 @@ export function HomeCommunityCard() {
               Winner drawn at random from everyone who takes part.
             </p>
           </Link>
+        ) : hasLessonDraw ? (
+          <CommunityLessonDrawCompact />
         ) : (
           <div className="flex items-center gap-3 rounded-xl border border-dashed border-[#014421]/25 bg-[#014421]/[0.03] p-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">

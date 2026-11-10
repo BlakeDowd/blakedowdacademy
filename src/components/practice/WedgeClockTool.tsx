@@ -107,7 +107,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
   const [history, setHistory] = useState<WedgeClockLogEntry[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>(
-    "Side-on to the swing. Long walk-in clips are fine — it finds the peak. Pose stays on this device.",
+    "Film side-on so the lead arm is clear. Walk in, hit, walk back — keep the phone still.",
   );
 
   modeRef.current = mode;
@@ -167,9 +167,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
     liveSamplesRef.current = [];
     // Keep lastTsRef — MediaPipe VIDEO mode never accepts a lower timestamp.
     setBusy(false);
-    setStatus(
-      "Side-on to the swing. Long walk-in clips are fine — it finds the peak. Pose stays on this device.",
-    );
+    setStatus("Film side-on so the lead arm is clear. Walk in, hit, walk back — keep the phone still.");
   }, [clearObjectUrl, detachVideo, stopCameraTracks, stopLoop]);
 
   useEffect(() => () => resetSession(), [resetSession]);
@@ -192,17 +190,16 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
     if (modelReady) return true;
     setLoadingModel(true);
     setModelError(null);
-    setStatus("Loading pose model on this device…");
+    setStatus("Getting ready…");
     try {
       await getPoseLandmarker();
       setModelReady(true);
       setLoadingModel(false);
       return true;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Couldn't load pose model.";
-      setModelError(msg);
+    } catch {
+      setModelError("Couldn't start measuring. Check your connection and try again.");
       setLoadingModel(false);
-      setStatus("Pose model failed to load. Check connection and try again.");
+      setStatus("Couldn't start — check connection and try again.");
       return false;
     }
   }, [modelReady]);
@@ -312,7 +309,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
           const peak = peakRef.current;
           lockedRef.current = true;
           setLocked({ degrees: peak, label: snapClockLabel(peak) });
-          setStatus(`Backswing locked at ${snapClockLabel(peak)}. Nothing uploaded.`);
+          setStatus(`Backswing locked at ${snapClockLabel(peak)}. Save the shot, then reset for another.`);
           trackToolUse("wedge-clock");
         }
         setLive({
@@ -419,12 +416,8 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
         let poseFrames = 0;
         let peak = 0;
 
-        if (fullLen > ANALYSE_MAX_SEC) {
-          setStatus(
-            `Scanning first ${ANALYSE_MAX_SEC / 60} min for the peak backswing (clip is longer — keep the swing in that window).`,
-          );
-        } else if (fullLen > 25) {
-          setStatus("Scanning the whole clip for the peak backswing — walk-in / walk-back is fine.");
+        if (fullLen > 25) {
+          setStatus("Watching your clip for the top of the backswing…");
         }
 
         for (let t = 0; t <= duration; t += step) {
@@ -482,20 +475,20 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
           setLocked(null);
           lockedRef.current = false;
           setModelError(
-            "That clip looks face-on. Film from the side so the lead arm is clear — face-on often reads as 12:00.",
+            "That looks face-on. Move the camera to your trail side so we can see the lead arm.",
           );
-          setStatus("Analyse needs a side-on view (camera at trail-hip height, looking across the target line).");
+          setStatus("Stand the camera at trail-hip height, looking across the target line.");
         } else if (peak >= 25 && degreeSamples.length >= 3) {
           lockedRef.current = true;
           setLocked({ degrees: peak, label: snapClockLabel(peak) });
           setModelError(null);
-          setStatus(`Backswing length ${snapClockLabel(peak)}. Video stayed on this device.`);
+          setStatus(`Backswing length ${snapClockLabel(peak)}. Save the shot, then reset for another.`);
           trackToolUse("wedge-clock");
         } else if (degreeSamples.length === 0 && poseFrames === 0) {
-          setStatus("Couldn't see a person — try a brighter side-on clip of the full torso.");
-          setModelError("No pose detected in that video.");
+          setStatus("Couldn't see you — brighter light, full torso, camera side-on.");
+          setModelError("No person found in that video.");
         } else {
-          setStatus("Saw movement but no clear backswing. Use a side-on clip from address to the top.");
+          setStatus("No clear top of backswing. Film from address to the top, side-on.");
           setModelError(null);
         }
         setAnalyseProgress(100);
@@ -503,10 +496,10 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
         const msg = err instanceof Error ? err.message : String(err);
         setModelError(
           /timestamp|INVALID_ARGUMENT|norm_rect/i.test(msg)
-            ? "Analyse hiccup — tap Analyse video again (same clip is fine)."
-            : msg || "Analyse failed — try another side-on clip.",
+            ? "Couldn't read that clip — tap Analyse video again."
+            : msg || "Couldn't read that clip — try another side-on video.",
         );
-        setStatus("Analyse failed — try another side-on clip.");
+        setStatus("Try another side-on video from address to the top.");
       } finally {
         analysingRef.current = false;
         setAnalysing(false);
@@ -573,7 +566,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       if (v.videoWidth === 0) {
         await waitForEvent(v, "loadeddata", 10000);
       }
-      setStatus("Recording live · side-on · swing when ready — peak backswing locks automatically.");
+      setStatus("Camera ready — stand side-on and swing. Backswing locks at the top.");
       startLiveLoop();
       trackToolUse("wedge-clock");
     } catch (err) {
@@ -628,13 +621,13 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       v.setAttribute("playsinline", "true");
       v.load();
       await waitForEvent(v, "loadeddata");
-      setStatus("Scanning backswing on this device…");
+      setStatus("Watching for the top of your backswing…");
       await analyseVideoFile(v);
       trackToolUse("wedge-clock");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Couldn't analyse that video.";
       setModelError(msg);
-      setStatus("Analyse failed — try another side-on clip.");
+      setStatus("Try another side-on video from address to the top.");
       setBusy(false);
     }
   };
@@ -642,12 +635,12 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
   const lockPeakNow = () => {
     const peak = peakRef.current || live?.degrees;
     if (peak == null || peak < 20) {
-      setStatus("No clear backswing yet — take a swing side-on, or analyse a longer clip.");
+      setStatus("No clear top yet — swing side-on, or use a clip that shows address to the top.");
       return;
     }
     lockedRef.current = true;
     setLocked({ degrees: peak, label: snapClockLabel(peak) });
-    setStatus(`Backswing locked at ${snapClockLabel(peak)}.`);
+    setStatus(`Backswing locked at ${snapClockLabel(peak)}. Save the shot, then reset for another.`);
     trackToolUse("wedge-clock");
   };
 
@@ -738,7 +731,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
           <div>
             <p className="text-sm font-semibold text-stone-900">Wedge Clock</p>
             <p className="mt-1 text-xs text-stone-500">
-              Measure backswing arm length (clock face). Optional radar carry — no swing upload.
+              Hit to a clock length (e.g. 9:00). Log club, goal, and carry from your radar.
             </p>
           </div>
           <div className="flex shrink-0 rounded-full bg-stone-200/80 p-0.5" role="radiogroup" aria-label="Distance unit">
@@ -885,10 +878,10 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       </div>
 
       <div className="rounded-2xl bg-stone-50 p-4 ring-1 ring-stone-100">
-        <p className="text-sm font-semibold text-stone-900">Measure backswing</p>
+        <p className="text-sm font-semibold text-stone-900">Film your swing</p>
         <p className="mt-1 text-xs text-stone-500">
-          Side-on so the lead arm is clear. Long phone clips are fine — it scans for the peak
-          (walk to the ball, hit, walk back). Reports clock length at the top (e.g. 9:00 / 10:30).
+          1. Set the phone side-on at trail-hip height. 2. Record, walk in, hit, walk back. 3. Stop —
+          we&apos;ll show your clock length at the top (e.g. 9:00 / 10:30).
         </p>
 
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -957,7 +950,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
                 style={{ width: `${analyseProgress}%` }}
               />
             </div>
-            <p className="mt-1 text-[11px] text-stone-500">Scanning… {analyseProgress}%</p>
+            <p className="mt-1 text-[11px] text-stone-500">Finding top of swing… {analyseProgress}%</p>
           </div>
         )}
       </div>
@@ -1028,10 +1021,10 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
               setSaveMsg(null);
               setModelError(null);
               if (mode === "camera") {
-                setStatus("Ready — swing when ready.");
+                setStatus("Ready — stand side-on and swing.");
                 startLiveLoop();
               } else if (mode === "video" && objectUrlRef.current && videoRef.current) {
-                setStatus("Re-scanning…");
+                setStatus("Watching for the top of your backswing…");
                 void analyseVideoFile(videoRef.current);
               }
             }}

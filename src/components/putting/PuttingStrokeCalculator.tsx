@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useWakeLock } from "@/hooks/useWakeLock";
 import { trackToolUse } from "@/lib/appUsage";
 import { releaseAudio, unlockAudio } from "@/lib/unlockAudio";
 import {
@@ -366,6 +367,7 @@ export default function PuttingStrokeCalculator({ hideHeader = false }: { hideHe
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
   const [handedness, setHandedness] = useState<Handedness>("right");
+  useWakeLock(playing || fullScreen);
   const targetLeft = handedness === "right";
 
   const rhythm = RHYTHMS.find((r) => r.id === rhythmId) ?? RHYTHMS[0]!;

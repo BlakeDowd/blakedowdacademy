@@ -36,32 +36,106 @@ function sessionMakePct(attempts: readonly AttemptResult[]): {
   return { made, total, pct: total > 0 ? Math.round((made / total) * 100) : null };
 }
 
+function logMakePct(log: DrillScoreLog): number | null {
+  const d = log.details as
+    | { kind?: string; sessionPct?: unknown; attemptResults?: unknown }
+    | null
+    | undefined;
+  if (d && typeof d.sessionPct === "number" && Number.isFinite(d.sessionPct)) {
+    return Math.round(d.sessionPct);
+  }
+  if (d && Array.isArray(d.attemptResults) && d.attemptResults.length > 0) {
+    const made = d.attemptResults.filter((a) => a === "make").length;
+    return Math.round((made / d.attemptResults.length) * 100);
+  }
+  if (d?.kind === "makes_attempts" && log.reps != null && log.reps > 0 && log.score >= 0) {
+    return Math.round((log.score / log.reps) * 100);
+  }
+  return null;
+}
+
 /** Best make-% from prior logs (details.sessionPct or attemptResults only — not streak score/reps). */
 function bestMakePctFromLogs(logs: readonly DrillScoreLog[]): number | null {
   let best: number | null = null;
   for (const log of logs) {
-    const d = log.details as
-      | { kind?: string; sessionPct?: unknown; attemptResults?: unknown }
-      | null
-      | undefined;
-    let pct: number | null = null;
-    if (d && typeof d.sessionPct === "number" && Number.isFinite(d.sessionPct)) {
-      pct = Math.round(d.sessionPct);
-    } else if (d && Array.isArray(d.attemptResults) && d.attemptResults.length > 0) {
-      const made = d.attemptResults.filter((a) => a === "make").length;
-      pct = Math.round((made / d.attemptResults.length) * 100);
-    } else if (
-      d?.kind === "makes_attempts" &&
-      log.reps != null &&
-      log.reps > 0 &&
-      log.score >= 0
-    ) {
-      pct = Math.round((log.score / log.reps) * 100);
-    }
+    const pct = logMakePct(log);
     if (pct == null) continue;
     best = best == null ? pct : Math.max(best, pct);
   }
   return best;
+}
+
+type AverageTrend = {
+  /** Signed change of the metric (positive = metric went up). */
+  pctDelta: number;
+  /** True when the player is improving for this scoring type. */
+  improving: boolean;
+  sessions: number;
+  label: "make %" | "score";
+};
+
+/**
+ * Recent half vs older half of the last N sessions (newest first).
+ * Prefer make-% when enough sessions logged it; else compare scores.
+ */
+function averageTrendFromLogs(
+  logs: readonly DrillScoreLog[],
+  lowerIsBetter: boolean,
+  window = 5,
+): AverageTrend | null {
+  if (logs.length < 2) return null;
+  const slice = logs.slice(0, Math.min(window, logs.length));
+  const pcts = slice.map(logMakePct);
+  const usePct = pcts.filter((p) => p != null).length >= 2;
+  const values = (usePct ? pcts.filter((p): p is number => p != null) : slice.map((l) => l.score)) as number[];
+  if (values.length < 2) return null;
+
+  const split = Math.max(1, Math.floor(values.length / 2));
+  const recent = values.slice(0, split);
+  const older = values.slice(split);
+  if (!older.length) return null;
+  const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const r = avg(recent);
+  const o = avg(older);
+  if (!Number.isFinite(r) || !Number.isFinite(o) || Math.abs(o) < 1e-6) return null;
+  const pctDelta = ((r - o) / Math.abs(o)) * 100;
+  const improving = lowerIsBetter && !usePct ? pctDelta < 0 : pctDelta > 0;
+  return {
+    pctDelta,
+    improving,
+    sessions: recent.length + older.length,
+    label: usePct ? "make %" : "score",
+  };
+}
+
+function formatTrendPct(pctDelta: number): string {
+  const rounded = Math.round(pctDelta);
+  if (rounded === 0) return "0%";
+  return `${rounded > 0 ? "+" : ""}${rounded}%`;
+}
+
+function AverageTrendRow({ trend }: { trend: AverageTrend }) {
+  const flat = Math.round(trend.pctDelta) === 0;
+  const color = flat ? "text-gray-600" : trend.improving ? "text-green-700" : "text-red-600";
+  const bg = flat ? "bg-white" : trend.improving ? "bg-green-50" : "bg-red-50";
+  const Icon = flat ? Minus : trend.improving ? ArrowUp : ArrowDown;
+  return (
+    <div className={`flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 ${bg} ring-1 ring-black/5`}>
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Trend</p>
+        <p className={`text-sm font-bold tabular-nums ${color}`}>
+          <Icon className="mr-0.5 inline h-3.5 w-3.5 align-[-2px]" aria-hidden />
+          {formatTrendPct(trend.pctDelta)}
+          <span className="ml-1 text-[11px] font-semibold text-gray-500">
+            {trend.label} · {trend.sessions} sessions
+          </span>
+        </p>
+      </div>
+      <span className={`shrink-0 text-[11px] font-semibold ${color}`}>
+        {flat ? "Steady" : trend.improving ? "Improving" : "Off form"}
+      </span>
+    </div>
+  );
 }
 
 /** Consecutive Made / Missed — score is the best run this session. */
@@ -198,6 +272,127 @@ function StreakAttemptPad({
               <span
                 key={`${i}-${a}`}
                 title={`Shot ${i + 1}: ${a === "make" ? "Made" : "Missed"}`}
+                className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-[11px] font-bold tabular-nums ${
+                  a === "make" ? "bg-[#014421] text-white" : "bg-red-50 text-red-700 ring-1 ring-red-100"
+                }`}
+              >
+                {i + 1}
+              </span>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setAttempts((prev) => prev.slice(0, -1))}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-[#014421]"
+          >
+            <RotateCcw className="h-3 w-3" aria-hidden />
+            Undo last
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Count pad: tick = satisfactory, cross = not — session % when you finish. */
+function CountAttemptPad({
+  attempts,
+  setAttempts,
+  unit,
+  personalBestPct,
+  onSwitchToTotal,
+}: {
+  attempts: AttemptResult[];
+  setAttempts: (next: AttemptResult[] | ((prev: AttemptResult[]) => AttemptResult[])) => void;
+  unit: string;
+  personalBestPct: number | null;
+  onSwitchToTotal: () => void;
+}) {
+  const unitLabel = unit.trim() || "good";
+  const { made, total, pct } = sessionMakePct(attempts);
+  const missed = total - made;
+  const isNewPctRecord =
+    pct != null && total >= 3 && (personalBestPct == null ? pct > 0 : pct > personalBestPct);
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+          Was that a good shot?
+        </p>
+        <button
+          type="button"
+          onClick={onSwitchToTotal}
+          className="shrink-0 text-[11px] font-semibold text-gray-500 underline underline-offset-2 hover:text-[#014421]"
+        >
+          Enter total
+        </button>
+      </div>
+
+      <div
+        className={`relative overflow-hidden rounded-xl px-3 py-4 text-center ring-1 transition-colors ${
+          isNewPctRecord ? "bg-[#FFA500]/10 ring-[#FFA500]/50" : "bg-white ring-gray-200"
+        }`}
+      >
+        {isNewPctRecord && (
+          <span className="absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-[#FFA500] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+            <Crown className="h-3 w-3" aria-hidden />
+            % record
+          </span>
+        )}
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Session %</p>
+        <p className="text-5xl font-extrabold tabular-nums leading-none text-[#014421]">
+          {pct != null ? `${pct}%` : "—"}
+        </p>
+        <p className="mt-1 text-[11px] text-gray-500">
+          {total === 0
+            ? "Tap ✓ or ✗ after each shot"
+            : `${made} good · ${missed} miss · ${total} shots`}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-1.5">
+        <div className="rounded-lg bg-white px-2.5 py-2 ring-1 ring-gray-200">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Good</p>
+          <p className="text-lg font-extrabold tabular-nums text-gray-900">
+            {made}
+            <span className="ml-1 text-xs font-semibold text-gray-500">{unitLabel}</span>
+          </p>
+        </div>
+        <div className="rounded-lg bg-white px-2.5 py-2 ring-1 ring-gray-200">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Best %</p>
+          <p className="text-lg font-extrabold tabular-nums text-gray-900">
+            {personalBestPct != null ? `${personalBestPct}%` : "—"}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => setAttempts((prev) => [...prev, "make"])}
+          className="rounded-xl bg-[#014421] px-3 py-4 text-base font-extrabold text-white transition-transform hover:bg-[#013320] active:scale-[0.98]"
+        >
+          <Check className="mx-auto mb-1 h-5 w-5" aria-hidden />
+          Good
+        </button>
+        <button
+          type="button"
+          onClick={() => setAttempts((prev) => [...prev, "miss"])}
+          className="rounded-xl border-2 border-gray-200 bg-white px-3 py-4 text-base font-extrabold text-gray-800 transition-transform hover:border-red-300 active:scale-[0.98]"
+        >
+          <X className="mx-auto mb-1 h-5 w-5 text-red-500" aria-hidden />
+          Miss
+        </button>
+      </div>
+
+      {attempts.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap gap-1" aria-label="Shot results">
+            {attempts.map((a, i) => (
+              <span
+                key={`${i}-${a}`}
+                title={`Shot ${i + 1}: ${a === "make" ? "Good" : "Miss"}`}
                 className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-[11px] font-bold tabular-nums ${
                   a === "make" ? "bg-[#014421] text-white" : "bg-red-50 text-red-700 ring-1 ring-red-100"
                 }`}
@@ -624,14 +819,25 @@ export default function DrillProgressTracker({
   const best = summary?.best ?? null;
   const bestPct = bestMakePctFromLogs(logs);
   const lowerIsBetter = scoring.lowerIsBetter;
+  const averageTrend = averageTrendFromLogs(logs, lowerIsBetter);
   const isCompletion = scoring.type === "completion";
   const isMakes = scoring.type === "makes" && scoring.max != null && scoring.max <= MAX_SCORE_CHIPS;
   const isStreak = scoring.type === "streak";
+  const isCount = scoring.type === "count";
   const makesMax = isMakes ? scoring.max! : 0;
   const [makesMode, setMakesMode] = useState<"tap" | "total">("tap");
   const [streakMode, setStreakMode] = useState<"tap" | "total">("tap");
+  const [countMode, setCountMode] = useState<"tap" | "total">("tap");
   const [makeAttempts, setMakeAttempts] = useState<AttemptResult[]>([]);
   const [streakAttempts, setStreakAttempts] = useState<AttemptResult[]>([]);
+  const [countAttempts, setCountAttempts] = useState<AttemptResult[]>([]);
+
+  // Whenever a drill is set to Count, open on Good / Miss.
+  useEffect(() => {
+    if (scoring.type !== "count") return;
+    setCountMode("tap");
+    setCountAttempts([]);
+  }, [scoring.type, scoring.unit]);
 
   // Keep draft + attempts field in sync with the tap pad.
   useEffect(() => {
@@ -657,6 +863,17 @@ export default function DrillProgressTracker({
     setRepsDraft(String(streakAttempts.length));
   }, [isStreak, streakMode, streakAttempts, setDraft, setRepsDraft]);
 
+  useEffect(() => {
+    if (!isCount || countMode !== "tap") return;
+    if (countAttempts.length === 0) {
+      setDraft("");
+      setRepsDraft("");
+      return;
+    }
+    setDraft(String(countAttempts.filter((a) => a === "make").length));
+    setRepsDraft(String(countAttempts.length));
+  }, [isCount, countMode, countAttempts, setDraft, setRepsDraft]);
+
   // Clear pad after a successful log (draft wiped by saveScore).
   useEffect(() => {
     if (makesMode === "tap" && makeAttempts.length > 0 && !draft.trim() && !repsDraft.trim() && !saving) {
@@ -669,6 +886,12 @@ export default function DrillProgressTracker({
       setStreakAttempts([]);
     }
   }, [draft, repsDraft, saving, streakMode, streakAttempts.length]);
+
+  useEffect(() => {
+    if (countMode === "tap" && countAttempts.length > 0 && !draft.trim() && !repsDraft.trim() && !saving) {
+      setCountAttempts([]);
+    }
+  }, [draft, repsDraft, saving, countMode, countAttempts.length]);
 
   const attemptsLabel = scoring.type === "speed" ? "Swings" : "Attempts";
   const attemptsField = (
@@ -727,7 +950,8 @@ export default function DrillProgressTracker({
             <p className="text-[11px] text-gray-400">Your old note: {settings.legacyText}</p>
           )}
 
-          {scoreEntry ?? (
+          {/* Count always uses Good / Miss + session %, even if the drill has a custom score screen. */}
+          {scoring.type === "count" || !scoreEntry ? (
           <form
             className="space-y-2"
             onSubmit={(e) => {
@@ -757,6 +981,17 @@ export default function DrillProgressTracker({
                   if (ok) setStreakAttempts([]);
                   return;
                 }
+                if (isCount && countMode === "tap" && countAttempts.length > 0) {
+                  const made = countAttempts.filter((a) => a === "make").length;
+                  const { pct } = sessionMakePct(countAttempts);
+                  const ok = await saveScore(made, countAttempts.length, {
+                    kind: "count_attempts",
+                    attemptResults: countAttempts,
+                    sessionPct: pct,
+                  });
+                  if (ok) setCountAttempts([]);
+                  return;
+                }
                 await logDraft();
               })();
             }}
@@ -783,6 +1018,19 @@ export default function DrillProgressTracker({
                 onSwitchToTotal={() => {
                   setMakesMode("total");
                   setMakeAttempts([]);
+                  setDraft("");
+                  setRepsDraft("");
+                }}
+              />
+            ) : isCount && countMode === "tap" ? (
+              <CountAttemptPad
+                attempts={countAttempts}
+                setAttempts={setCountAttempts}
+                unit={scoring.unit}
+                personalBestPct={bestPct}
+                onSwitchToTotal={() => {
+                  setCountMode("total");
+                  setCountAttempts([]);
                   setDraft("");
                   setRepsDraft("");
                 }}
@@ -832,6 +1080,31 @@ export default function DrillProgressTracker({
                   {attemptsField}
                 </div>
               </div>
+            ) : isCount ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className={FIELD_LABEL}>{scoreFieldLabel(scoring)}</p>
+                  <button
+                    type="button"
+                    onClick={() => setCountMode("tap")}
+                    className="text-[11px] font-semibold text-gray-500 underline underline-offset-2 hover:text-[#014421]"
+                  >
+                    Good / Miss
+                  </button>
+                </div>
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1">
+                    <ScoreInput
+                      scoring={scoring}
+                      draft={draft}
+                      setDraft={setDraft}
+                      target={best}
+                      hasLogs={logs.length > 0}
+                    />
+                  </div>
+                  {attemptsField}
+                </div>
+              </div>
             ) : (
               <div className="flex items-end gap-2">
                 <div className="min-w-0 flex-1">
@@ -857,7 +1130,9 @@ export default function DrillProgressTracker({
                     ? makeAttempts.length === 0
                     : isStreak && streakMode === "tap"
                       ? streakAttempts.length === 0
-                      : !draft.trim())
+                      : isCount && countMode === "tap"
+                        ? countAttempts.length === 0
+                        : !draft.trim())
                 }
                 className="flex-1 rounded-lg bg-[#014421] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#014421]/90 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -873,10 +1148,19 @@ export default function DrillProgressTracker({
                             ? `Log ${b} in a row · ${pct}%`
                             : `Log best ${b} in a row`;
                         })()
-                      : "Log score"}
+                      : isCount && countMode === "tap" && countAttempts.length > 0
+                        ? (() => {
+                            const { made, total, pct } = sessionMakePct(countAttempts);
+                            return pct != null
+                              ? `End session · ${pct}% (${made}/${total})`
+                              : `End session · ${made}/${total}`;
+                          })()
+                        : "Log score"}
               </button>
             </div>
           </form>
+          ) : (
+            scoreEntry
           )}
         </>
       )}
@@ -925,6 +1209,7 @@ export default function DrillProgressTracker({
               <p className="text-sm font-bold tabular-nums text-gray-900">{summary.count}</p>
             </div>
           </div>
+          {averageTrend && <AverageTrendRow trend={averageTrend} />}
           <Sparkline logs={logs} lowerIsBetter={lowerIsBetter} best={summary.best} />
         </>
       )}

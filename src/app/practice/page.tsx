@@ -4,13 +4,14 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useStats } from "@/contexts/StatsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
-import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, BookOpen, Apple, PersonStanding, Gauge, Gamepad2, Crosshair, PenLine, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus, BookHeart, Timer } from "lucide-react";
+import { Sparkles, Calendar, Clock, Home, Target, Flag, FlagTriangleRight, Check, CheckCircle2, PlayCircle, BookOpen, Apple, PersonStanding, Gauge, Gamepad2, Crosshair, PenLine, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Download, X, RefreshCw, Pencil, File, Plus, Minus, BookHeart, Timer, ListOrdered } from "lucide-react";
 import SpeedLogging from "@/components/speed/SpeedLogging";
 import FeelLog from "@/components/feel/FeelLog";
 import TeeShotSimulator from "@/components/practice/TeeShotSimulator";
 import ApproachShotSimulator from "@/components/practice/ApproachShotSimulator";
 import LocalSwingAnalyzer from "@/components/practice/LocalSwingAnalyzer";
 import WedgeClockTool from "@/components/practice/WedgeClockTool";
+import RoutineBuilder from "@/components/routine/RoutineBuilder";
 import { OFFICIAL_DRILLS, DESCRIPTION_BY_DRILL_ID, type DrillRecord } from "@/data/official_drills";
 import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
@@ -612,6 +613,7 @@ function plannerCombineFromDrillId(drillId: string | null | undefined): PlannerC
 
 import { logActivity } from "@/lib/activity";
 import { addProfileXp } from "@/lib/addProfileXp";
+import { awardPracticeDrawMinutes } from "@/lib/practiceDrawTickets";
 
 async function updateUserXP(userId: string, points: number): Promise<void> {
   await addProfileXp(userId, points);
@@ -632,6 +634,13 @@ export default function PracticePage() {
   const [statsAreaRanking, setStatsAreaRanking] = useState<FacilityType[]>(['Putting']);
   const [generatedPlan, setGeneratedPlan] = useState<WeeklyPlan | null>(null);
   const [xpNotification, setXpNotification] = useState<{ show: boolean; amount: number }>({ show: false, amount: 0 });
+  const [drawNotification, setDrawNotification] = useState<{
+    show: boolean;
+    ticketsAwarded: number;
+    ticketsTotal: number;
+    minutesToNext: number;
+    prize: string | null;
+  }>({ show: false, ticketsAwarded: 0, ticketsTotal: 0, minutesToNext: 60, prize: null });
   const [expandedDrill, setExpandedDrill] = useState<string | null>(null); // Track which drill is expanded
   const [durationModal, setDurationModal] = useState<{ open: boolean; facility: FacilityType | null }>({ open: false, facility: null });
   const [onCourseConfirm, setOnCourseConfirm] = useState<{
@@ -656,7 +665,7 @@ export default function PracticePage() {
   });
   const [totalPracticeMinutes, setTotalPracticeMinutes] = useState<number>(0);
   const [scheduleExpanded, setScheduleExpanded] = useState<boolean>(true); // Weekly schedule expanded state
-  const [openTool, setOpenTool] = useState<"planner" | "insights" | "library" | "combine" | "fuel" | "speed" | "feel" | "arcade" | "approach" | "analyzer" | "wedge-clock" | null>(null);
+  const [openTool, setOpenTool] = useState<"planner" | "insights" | "library" | "combine" | "fuel" | "speed" | "feel" | "arcade" | "approach" | "analyzer" | "wedge-clock" | "routine" | null>(null);
   useEffect(() => {
     if (openTool) trackScreen(`practice-${openTool}`);
   }, [openTool]);
@@ -1900,6 +1909,24 @@ export default function PracticePage() {
         console.log(`Practice: Added ${xpEarned} XP for ${duration} minutes of practice`);
       }
 
+      const practiceId =
+        Array.isArray(data) && data[0] && typeof (data[0] as { id?: unknown }).id === "string"
+          ? (data[0] as { id: string }).id
+          : null;
+      const drawResult = await awardPracticeDrawMinutes(duration, practiceId);
+      if (drawResult.ticketsAwarded > 0 || (drawResult.campaignId && duration > 0)) {
+        setDrawNotification({
+          show: true,
+          ticketsAwarded: drawResult.ticketsAwarded,
+          ticketsTotal: drawResult.ticketsTotal,
+          minutesToNext: drawResult.minutesToNext,
+          prize: drawResult.prize,
+        });
+        setTimeout(() => {
+          setDrawNotification((prev) => ({ ...prev, show: false }));
+        }, 4000);
+      }
+
       localStorage.setItem(dailyMinutesKey, String(currentDailyMinutes + duration));
 
       // Update total practice minutes
@@ -2738,6 +2765,22 @@ export default function PracticePage() {
           await updateUserXP(user.id, xpEarned);
           console.log(`Practice: Added ${xpEarned} XP for drill completion`);
 
+          if (durationMinutes > 0) {
+            const drawResult = await awardPracticeDrawMinutes(durationMinutes);
+            if (drawResult.ticketsAwarded > 0 || drawResult.campaignId) {
+              setDrawNotification({
+                show: true,
+                ticketsAwarded: drawResult.ticketsAwarded,
+                ticketsTotal: drawResult.ticketsTotal,
+                minutesToNext: drawResult.minutesToNext,
+                prize: drawResult.prize,
+              });
+              setTimeout(() => {
+                setDrawNotification((prev) => ({ ...prev, show: false }));
+              }, 4000);
+            }
+          }
+
           await refreshDrills();
           await refreshPracticeSessions();
           window.dispatchEvent(new Event('drillsUpdated'));
@@ -3358,12 +3401,29 @@ export default function PracticePage() {
         />
 
 
-        {/* XP Notification Toast */}
+        {/* XP / draw ticket toasts */}
         {xpNotification.show && (
           <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-50 animate-bounce">
             <div className="bg-secondary text-primary px-6 py-3 rounded-full shadow-lg font-bold flex items-center gap-2">
               <Sparkles className="w-5 h-5" />
               <span>+{xpNotification.amount} XP Earned!</span>
+            </div>
+          </div>
+        )}
+        {drawNotification.show && (
+          <div
+            className={`fixed left-1/2 z-50 -translate-x-1/2 ${
+              xpNotification.show ? "bottom-40" : "bottom-24"
+            }`}
+          >
+            <div className="flex items-center gap-2 rounded-full bg-[#014421] px-5 py-3 font-semibold text-white shadow-lg">
+              <span>
+                {drawNotification.ticketsAwarded > 0
+                  ? `+${drawNotification.ticketsAwarded} draw ticket${
+                      drawNotification.ticketsAwarded === 1 ? "" : "s"
+                    }! (${drawNotification.ticketsTotal} total)`
+                  : `${drawNotification.minutesToNext} min to your next draw ticket`}
+              </span>
             </div>
           </div>
         )}
@@ -3548,11 +3608,26 @@ export default function PracticePage() {
           </div>
         )}
 
-        {/* XP Notification Animation */}
+        {/* XP / draw ticket notifications (schedule view) */}
         {xpNotification.show && (
           <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 animate-bounce">
             <div className="bg-secondary text-white px-6 py-3 rounded-full shadow-lg font-bold text-lg">
               +{xpNotification.amount} XP
+            </div>
+          </div>
+        )}
+        {drawNotification.show && (
+          <div
+            className={`fixed left-1/2 z-50 -translate-x-1/2 ${
+              xpNotification.show ? "top-36" : "top-20"
+            }`}
+          >
+            <div className="rounded-full bg-[#014421] px-5 py-2.5 text-sm font-semibold text-white shadow-lg">
+              {drawNotification.ticketsAwarded > 0
+                ? `+${drawNotification.ticketsAwarded} draw ticket${
+                    drawNotification.ticketsAwarded === 1 ? "" : "s"
+                  } toward ${drawNotification.prize ?? "50% off a lesson"}`
+                : `${drawNotification.minutesToNext} min to next ticket`}
             </div>
           </div>
         )}
@@ -4062,7 +4137,7 @@ export default function PracticePage() {
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold text-gray-900">Swing Analyser</span>
                   <span className="block text-xs text-gray-500">
-                    Frame scrub, draw lines &amp; angles — open any video from your phone
+                    Open a swing video and mark lines or angles
                   </span>
                 </span>
                 <ChevronDown
@@ -4097,7 +4172,7 @@ export default function PracticePage() {
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold text-gray-900">Wedge Clock</span>
                   <span className="block text-xs text-gray-500">
-                    Club · goal · radar carry · optional on-device clock
+                    Hit to a clock length · log club, goal &amp; carry
                   </span>
                 </span>
                 <ChevronDown
@@ -4250,6 +4325,46 @@ export default function PracticePage() {
               )}
             </div>
 
+            <div id="routine-builder-section" className="scroll-mt-24 rounded-xl bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setOpenTool((t) => (t === "routine" ? null : "routine"))}
+                aria-expanded={openTool === "routine"}
+                className="flex w-full items-center gap-3 p-3 text-left"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                  <ListOrdered className="h-4 w-4 text-[#014421]" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                    Routine builder
+                    <span className="rounded bg-[#FFA500]/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#c77c00]">
+                      Beta
+                    </span>
+                  </span>
+                  <span className="block text-xs text-gray-500">
+                    Script each part of the game · rehearse with voice start / stop
+                  </span>
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${openTool === "routine" ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
+              </button>
+              {openTool === "routine" && (
+                <div className="border-t border-gray-200 px-3 pb-3 pt-3">
+                  <RoutineBuilder compact />
+                  <Link
+                    href="/practice/routine-builder"
+                    className="mt-2 flex items-center justify-center gap-1 py-2 text-xs font-semibold text-[#014421] hover:underline"
+                  >
+                    Open full screen
+                    <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                  </Link>
+                </div>
+              )}
+            </div>
+
             <Link href="/practice/mobility-screen" className="flex items-center gap-3 rounded-xl bg-gray-50 p-3 text-left">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
                 <PersonStanding className="h-4 w-4 text-[#014421]" aria-hidden />
@@ -4266,49 +4381,64 @@ export default function PracticePage() {
         {/* YouTube Modal */}
         {youtubeModal.open && (
           <div 
-            className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
             onClick={() => setYoutubeModal({ open: false, url: '' })}
           >
             <div 
-              className="bg-surface rounded-2xl p-4 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+              className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-surface p-4"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-4">
+              <div className="mb-3 flex shrink-0 items-center justify-between">
                 <h3 className="text-lg font-semibold text-gray-900">Video</h3>
                 <button
                   onClick={() => setYoutubeModal({ open: false, url: '' })}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="rounded-lg p-2 transition-colors hover:bg-gray-100"
                   aria-label="Close"
                 >
-                  <X className="w-5 h-5 text-gray-600" />
+                  <X className="h-5 w-5 text-gray-600" />
                 </button>
               </div>
-              {bunnyVideoIdFromLink(youtubeModal.url) ? (
-                <DrillBunnyVideo videoId={bunnyVideoIdFromLink(youtubeModal.url)!} autoplay />
-              ) : (
-              <div className="aspect-video w-full">
-                {(() => {
-                  // Convert YouTube URL to embed format
-                  const embedUrl = youtubeModal.url.includes('youtube.com/watch?v=')
-                    ? youtubeModal.url.replace('youtube.com/watch?v=', 'youtube.com/embed/')
-                    : youtubeModal.url.includes('youtu.be/')
-                    ? youtubeModal.url.replace('youtu.be/', 'youtube.com/embed/')
-                    : youtubeModal.url;
-                  
-                  const cleanUrl = embedUrl.split('&')[0]; // Remove extra parameters
-                  
-                  return (
-                    <iframe
-                      src={cleanUrl}
-                      className="w-full h-full rounded-lg"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                      title="YouTube video player"
-                    />
-                  );
-                })()}
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                {bunnyVideoIdFromLink(youtubeModal.url) ? (
+                  <DrillBunnyVideo
+                    videoId={bunnyVideoIdFromLink(youtubeModal.url)!}
+                    autoplay
+                    constrained
+                  />
+                ) : (
+                <div className="aspect-video max-h-[min(50vh,420px)] w-full">
+                  {(() => {
+                    // Convert YouTube URL to embed format
+                    const embedUrl = youtubeModal.url.includes('youtube.com/watch?v=')
+                      ? youtubeModal.url.replace('youtube.com/watch?v=', 'youtube.com/embed/')
+                      : youtubeModal.url.includes('youtu.be/')
+                      ? youtubeModal.url.replace('youtu.be/', 'youtube.com/embed/')
+                      : youtubeModal.url;
+                    
+                    const cleanUrl = embedUrl.split('&')[0]; // Remove extra parameters
+                    
+                    return (
+                      <iframe
+                        src={cleanUrl}
+                        className="h-full w-full rounded-lg"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        title="YouTube video player"
+                      />
+                    );
+                  })()}
+                </div>
+                )}
               </div>
-              )}
+              <div className="mt-3 shrink-0 border-t border-gray-100 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setYoutubeModal({ open: false, url: "" })}
+                  className="w-full rounded-xl bg-[#014421] py-3 text-sm font-bold text-white"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         )}
