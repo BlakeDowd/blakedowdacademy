@@ -729,7 +729,12 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       <div className="rounded-2xl bg-stone-50 p-4 ring-1 ring-stone-100">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <p className="text-sm font-semibold text-stone-900">Wedge Clock</p>
+            <p className="flex items-center gap-2 text-sm font-semibold text-stone-900">
+              Wedge Clock
+              <span className="rounded bg-[#FFA500]/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#c77c00]">
+                Beta
+              </span>
+            </p>
             <p className="mt-1 text-xs text-stone-500">
               Hit to a clock length (e.g. 9:00). Log club, goal, and carry from your radar.
             </p>

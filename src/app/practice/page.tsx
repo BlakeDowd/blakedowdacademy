@@ -4170,7 +4170,12 @@ export default function PracticePage() {
                   <Timer className="h-4 w-4 text-[#014421]" aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-gray-900">Wedge Clock</span>
+                  <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                    Wedge Clock
+                    <span className="rounded bg-[#FFA500]/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#c77c00]">
+                      Beta
+                    </span>
+                  </span>
                   <span className="block text-xs text-gray-500">
                     Hit to a clock length · log club, goal &amp; carry
                   </span>
