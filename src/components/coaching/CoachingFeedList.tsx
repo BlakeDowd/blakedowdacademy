@@ -297,7 +297,7 @@ export function CoachingFeedList({
           viewerIsCoach={viewerIsCoach}
           studentId={studentId}
           studentName={studentName}
-          spaces={studentId ? undefined : spaces}
+          spaces={spaces}
           placeholder={placeholder}
           onPosted={addPost}
           onAnnounced={viewerIsCoach && !studentId ? addAnnouncement : undefined}

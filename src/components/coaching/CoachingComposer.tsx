@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, ChevronDown, GraduationCap, ImageIcon, Loader2, Paperclip, Send, Video, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { holdScreenAwake } from "@/lib/holdScreenAwake";
+import { useWakeLock } from "@/hooks/useWakeLock";
 import {
   MAX_COACHING_PHOTO_BYTES,
   MAX_VIDEOS_PER_POST,
@@ -53,18 +55,8 @@ type SubmitInput = Omit<MediaInput, "photoFolder" | "videoTitle" | "kind"> & {
 
 type SubmitResult = { post: CoachingPost | null; failed: File[]; firstError: unknown };
 
-/** Stops the phone screen sleeping (which pauses uploads) while videos are sending. */
-export async function holdScreenAwake(): Promise<() => void> {
-  try {
-    const nav = navigator as Navigator & {
-      wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> };
-    };
-    const lock = await nav.wakeLock?.request("screen");
-    return () => void lock?.release().catch(() => undefined);
-  } catch {
-    return () => undefined;
-  }
-}
+/** Re-export for GamePlanCard and other coaching uploaders. */
+export { holdScreenAwake };
 
 /**
  * Uploads the photo, then videos one at a time (more reliable on phones).
@@ -473,6 +465,8 @@ export function PostComposer({
   const [lesson, setLesson] = useState(false);
   const [lessonDoneFor, setLessonDoneFor] = useState<Record<string, boolean>>({});
   const files = useAttachments(onToast, viewerIsCoach);
+  // Whole send (upload + post) — keeps the phone awake so swing uploads don't die mid-flight.
+  useWakeLock(sending);
 
   const toAll = !studentId && targetId === ALL_PLAYERS && Boolean(onAnnounced);
   const target = studentId
@@ -489,6 +483,11 @@ export function PostComposer({
   const idBase = `coaching-post-${studentId ?? "feed"}`;
   const lessonTargetId = viewerIsCoach && open && !toAll && target ? target.id : null;
   const lessonDone = lessonTargetId ? lessonDoneFor[lessonTargetId] : undefined;
+  const lessonTargetPending = Boolean(
+    lessonTargetId &&
+      (spaces?.find((s) => s.studentId === lessonTargetId)?.space?.pending ||
+        (studentId && spaces?.find((s) => s.studentId === studentId)?.space?.pending)),
+  );
 
   useEffect(() => {
     if (!lessonTargetId || lessonDoneFor[lessonTargetId] !== undefined) return;
@@ -512,9 +511,24 @@ export function PostComposer({
 
   const awardLesson = async (playerId: string, firstName: string) => {
     const result = await logCoachLesson(createClient(), playerId);
-    setLessonDoneFor((m) => ({ ...m, [playerId]: result === "logged" || result === "already" || m[playerId] }));
-    if (result === "logged") onToast({ message: `Lesson logged: +${LESSON_XP} XP and 1 hour of practice for ${firstName}. ✓`, type: "success" });
-    else if (result !== "already") onToast({ message: `Posted, but the lesson XP didn't save: ${result}`, type: "warning" });
+    setLessonDoneFor((m) => ({
+      ...m,
+      [playerId]:
+        result === "logged" || result === "logged_pending" || result === "already" || m[playerId],
+    }));
+    if (result === "logged") {
+      onToast({
+        message: `Lesson logged: +${LESSON_XP} XP and 1 hour of practice for ${firstName}. ✓`,
+        type: "success",
+      });
+    } else if (result === "logged_pending") {
+      onToast({
+        message: `Lesson saved for ${firstName}. +${LESSON_XP} XP and 1 hour unlock when they join. ✓`,
+        type: "success",
+      });
+    } else if (result !== "already") {
+      onToast({ message: `Posted, but the lesson XP didn't save: ${result}`, type: "warning" });
+    }
   };
 
   const sendAnnouncement = async () => {
@@ -759,7 +773,9 @@ export function PostComposer({
           <span className="min-w-0 leading-tight">
             <span className="block text-sm font-semibold text-stone-800">Lesson today</span>
             <span className="block text-[11px] text-stone-500">
-              Gives {target?.name.split(" ")[0] || "them"} +{LESSON_XP} XP and 1 hour of practice when you post
+              {lessonTargetPending
+                ? `Saves +${LESSON_XP} XP and 1 hour for when ${target?.name.split(" ")[0] || "they"} join`
+                : `Gives ${target?.name.split(" ")[0] || "them"} +${LESSON_XP} XP and 1 hour of practice when you post`}
             </span>
           </span>
         </label>

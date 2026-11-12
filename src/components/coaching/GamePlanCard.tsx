@@ -15,7 +15,8 @@ import {
   type CoachingVideoRef,
 } from "@/lib/coachingFeed";
 import { GamePlanRow, lessonDate } from "@/components/coaching/CoachingPostCard";
-import { holdScreenAwake } from "@/components/coaching/CoachingComposer";
+import { holdScreenAwake } from "@/lib/holdScreenAwake";
+import { useWakeLock } from "@/hooks/useWakeLock";
 
 const VIDEO_ACCEPT = "video/mp4,video/quicktime,video/webm,.mp4,.mov,.m4v,.webm";
 const PLANS_SHOWN = 5;
@@ -48,6 +49,7 @@ function GamePlanForm({
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const limit = maxVideoBytes(true);
+  useWakeLock(sending);
 
   const pick = (files: FileList | null) => {
     if (!files) return;
