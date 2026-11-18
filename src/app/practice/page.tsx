@@ -17,6 +17,8 @@ import DrillCard, { type FacilityType } from "@/components/DrillCard";
 import { AIPlayerInsights } from "@/components/AIPlayerInsights";
 import { DrillLibrary } from "@/components/DrillLibrary";
 import { GuidedPracticeSession, type GuidedSessionDrill } from "@/components/GuidedPracticeSession";
+import { finderTagBoost, getDrillFinderTagsMap, useDrillFinderTags } from "@/lib/drillFinderTags";
+import { stableDrillKey } from "@/lib/drillPersonalBests";
 import DrillBunnyVideo from "@/components/DrillBunnyVideo";
 import { bunnyVideoIdFromLink } from "@/lib/bunnyStream";
 import { WeekDayStrip } from "@/components/WeekDayStrip";
@@ -623,6 +625,7 @@ export default function PracticePage() {
   const { rounds, refreshPracticeSessions, refreshDrills, practiceLogs, practiceSessions, loading: statsLoading } = useStats();
   const { user, refreshUser } = useAuth();
   const { favourites: favouriteDrills } = useDrillCollections();
+  useDrillFinderTags(); // load coach finder tags for guided "Find practice"
   const drillWeight = (d: Drill) => (drillInKeys(favouriteDrills, d) ? FAVOURITE_DRILL_WEIGHT : 1);
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({});
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
@@ -1998,22 +2001,56 @@ export default function PracticePage() {
 
   const buildGuidedSession = (
     blocks: { area: FacilityType; minutes: number }[],
+    opts?: {
+      focuses?: string[];
+      styleKeywords?: string[];
+      scoreBandId?: string;
+      styleIds?: string[];
+    },
   ): GuidedSessionDrill[] => {
     const session: GuidedSessionDrill[] = [];
     const usedIds = new Set<string>();
     const usedTitles = new Set<string>();
     const titleOf = (d: Drill) => d.drill_name ?? d.title ?? 'Drill';
+    const focuses = opts?.focuses?.filter(Boolean) ?? [];
+    const styleKeywords = opts?.styleKeywords?.filter(Boolean) ?? [];
+    const tagMap = getDrillFinderTagsMap();
+    const matchesFocus = (d: Drill) => {
+      if (focuses.length === 0) return true;
+      const f = String(d.focus || '').toLowerCase();
+      if (!f) return false;
+      return focuses.some((needle) => f.includes(needle.toLowerCase()));
+    };
+    const styleBoost = (d: Drill) => {
+      if (styleKeywords.length === 0) return 1;
+      const text = `${titleOf(d)} ${d.description || ''} ${d.goal || ''}`.toLowerCase();
+      let hits = 0;
+      for (const kw of styleKeywords) {
+        if (text.includes(kw.toLowerCase())) hits += 1;
+      }
+      return 1 + hits * 2;
+    };
+    const tagBoost = (d: Drill) => {
+      const key = stableDrillKey({ id: d.id, drill_id: d.drill_id });
+      return finderTagBoost(tagMap.get(key.toLowerCase()), {
+        scoreBandId: opts?.scoreBandId,
+        styleIds: opts?.styleIds,
+      });
+    };
     const poolFor = (area: FacilityType) => {
       const categories = new Set(
         [area, ...(facilityDrillMapping[area] || []).map((f) => f.category)].map((c) => c.toLowerCase()),
       );
-      return drills.filter(
+      const base = drills.filter(
         (d) =>
           !d.isCombine &&
           categories.has(String(d.category || '').toLowerCase()) &&
           !usedIds.has(d.id) &&
           !usedTitles.has(titleOf(d).trim().toLowerCase()),
       );
+      const focused = focuses.length > 0 ? base.filter(matchesFocus) : base;
+      // Fall back to the full area pool if focus tags are too narrow for this catalog.
+      return focused.length > 0 ? focused : base;
     };
     const add = (d: Drill, area: FacilityType) => {
       usedIds.add(d.id);
@@ -2042,7 +2079,12 @@ export default function PracticePage() {
     const fillArea = (area: FacilityType, minutes: number): number => {
       let minutesLeft = minutes;
       while (session.length < GUIDED_SESSION_MAX_DRILLS && minutesLeft >= GUIDED_SESSION_MIN_BLOCK_MINUTES) {
-        const hit = pickDrillForRemainingTime(poolFor(area), usedIds, minutesLeft, drillWeight);
+        const hit = pickDrillForRemainingTime(
+          poolFor(area),
+          usedIds,
+          minutesLeft,
+          (d) => drillWeight(d) * styleBoost(d) * tagBoost(d),
+        );
         if (!hit) break;
         add(hit.drill, area);
         minutesLeft -= hit.est;

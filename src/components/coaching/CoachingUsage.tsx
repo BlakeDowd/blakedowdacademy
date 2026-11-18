@@ -9,6 +9,7 @@ import {
   featureOf,
   fetchDrillTitles,
   fetchUsageEvents,
+  fetchWeeklyActivePlayers,
   isScreenView,
   itemOf,
   loggedPracticeMinutes,
@@ -140,6 +141,7 @@ export function CoachingUsage({
   onOpenSpace: (studentId: string, name: string) => void;
 }) {
   const [events, setEvents] = useState<UsageEvent[]>([]);
+  const [weeklyCounts, setWeeklyCounts] = useState<number[] | null>(null);
   const [drills, setDrills] = useState<DrillTitles>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -152,14 +154,41 @@ export function CoachingUsage({
   const [showInactive, setShowInactive] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
 
+  const rosterIds = useMemo(
+    () =>
+      spaces
+        .filter((s) => !s.space?.pending && s.studentId && s.studentId !== viewerId)
+        .map((s) => s.studentId),
+    [spaces, viewerId],
+  );
+
+  const weekStarts = useMemo(() => {
+    const thisWeek = startOfWeek();
+    return Array.from({ length: TREND_WEEKS }, (_, i) => {
+      const d = new Date(thisWeek);
+      d.setDate(d.getDate() - (TREND_WEEKS - 1 - i) * 7);
+      return d;
+    });
+  }, []);
+
   const load = useCallback(async () => {
+    if (rosterLoading) return;
     setLoading(true);
     try {
       const now = Date.now();
       const since = new Date(now - FETCH_DAYS * DAY_MS);
-      const [list, titles] = await Promise.all([fetchUsageEvents(createClient(), since), fetchDrillTitles()]);
+      const client = createClient();
+      const [list, titles, weekly] = await Promise.all([
+        fetchUsageEvents(client, since, rosterIds),
+        fetchDrillTitles(),
+        rosterIds.length
+          ? fetchWeeklyActivePlayers(client, weekStarts, rosterIds)
+          : Promise.resolve(Array.from({ length: TREND_WEEKS }, () => 0)),
+      ]);
       setDrills(titles);
-      setEvents(list.filter((e) => e.user_id !== viewerId));
+      const roster = new Set(rosterIds);
+      setEvents(list.filter((e) => e.user_id !== viewerId && roster.has(e.user_id)));
+      setWeeklyCounts(weekly);
       setLoadedAt(now);
       setError(null);
     } catch (err) {
@@ -167,7 +196,7 @@ export function CoachingUsage({
     } finally {
       setLoading(false);
     }
-  }, [viewerId]);
+  }, [viewerId, rosterIds, weekStarts, rosterLoading]);
 
   useEffect(() => {
     void load();
@@ -214,16 +243,18 @@ export function CoachingUsage({
   );
 
   const weekly = useMemo(() => {
-    const thisWeek = startOfWeek().getTime();
+    if (weeklyCounts && weeklyCounts.length === TREND_WEEKS) return weeklyCounts;
+    // Fallback until coach_weekly_active_players migration is applied.
     const buckets = Array.from({ length: TREND_WEEKS }, () => new Set<string>());
     for (const e of events) {
       const at = Date.parse(e.at);
       if (!Number.isFinite(at)) continue;
-      const i = Math.floor((thisWeek - startOfWeek(new Date(at)).getTime()) / (7 * DAY_MS));
-      if (i >= 0 && i < TREND_WEEKS) buckets[TREND_WEEKS - 1 - i].add(e.user_id);
+      const weekStart = startOfWeek(new Date(at)).getTime();
+      const i = weekStarts.findIndex((w) => w.getTime() === weekStart);
+      if (i >= 0) buckets[i].add(e.user_id);
     }
     return buckets.map((b) => b.size);
-  }, [events]);
+  }, [events, weeklyCounts, weekStarts]);
   const weeklyMax = Math.max(1, ...weekly);
 
   const features = useMemo(() => tally(actions, featureOf), [actions]);

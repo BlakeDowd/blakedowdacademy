@@ -14,21 +14,40 @@ export const POSE = {
 
 export type Handedness = "right" | "left";
 
-export const WEDGE_CLOCK_CLUBS = [
+/** Full wedge / scoring-iron catalog players can enable. */
+export const WEDGE_CLOCK_CLUB_OPTIONS = [
+  "8-Iron",
+  "9-Iron",
   "PW",
   "GW",
-  "56° Wedge",
-  "60° Wedge",
-  "9-Iron",
-  "8-Iron",
+  "48°",
+  "50°",
+  "52°",
+  "54°",
+  "56°",
+  "58°",
+  "60°",
+  "62°",
+  "SW",
+  "LW",
 ] as const;
 
-/** Common coaching targets (half-hour steps from short chip to full). */
+export type WedgeClockClub = (typeof WEDGE_CLOCK_CLUB_OPTIONS)[number];
+
+/** Sensible starter set until the player customises. */
+export const WEDGE_CLOCK_DEFAULT_CLUBS: WedgeClockClub[] = [
+  "PW",
+  "GW",
+  "52°",
+  "56°",
+  "60°",
+];
+
+/** @deprecated use WEDGE_CLOCK_CLUB_OPTIONS / selected clubs */
+export const WEDGE_CLOCK_CLUBS = WEDGE_CLOCK_CLUB_OPTIONS;
+
+/** Coaching targets: stock mid to full (9 → 12). */
 export const WEDGE_CLOCK_TARGETS = [
-  "7:00",
-  "7:30",
-  "8:00",
-  "8:30",
   "9:00",
   "9:30",
   "10:00",

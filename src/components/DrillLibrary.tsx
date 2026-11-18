@@ -16,6 +16,7 @@ import { fetchDrillsCatalogRows } from "@/lib/fetchDrillsCatalog";
 import { keepElementInView } from "@/hooks/useKeepInView";
 import { SHOW_PDFS } from "@/lib/drillResources";
 import DrillScoringPicker, { useIsCoach } from "@/components/DrillScoringPicker";
+import DrillFinderTagsPicker from "@/components/DrillFinderTagsPicker";
 import { CoachAddDrillForm } from "@/components/drills/CoachAddDrillForm";
 import { DrillGuide, DrillHero, DrillSteps } from "@/components/drills/DrillIntro";
 import { stableDrillKey } from "@/lib/drillPersonalBests";
@@ -240,6 +241,7 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
             </DrillGuide>
           )}
           <DrillScoringRow drill={drill} />
+          <DrillFinderTagsPicker drillKey={stableDrillKey(drill)} />
           <DrillListPicker drill={drill} />
 
           {bunnyVideoId && <DrillBunnyVideo videoId={bunnyVideoId} constrained />}

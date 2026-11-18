@@ -14,6 +14,7 @@ import { useKeepInViewAfterOwnTap } from "@/hooks/useKeepInView";
 import { useDrillProgress } from "@/hooks/useDrillProgress";
 import DrillProgressTracker from "@/components/DrillProgressTracker";
 import DrillScoringPicker from "@/components/DrillScoringPicker";
+import DrillFinderTagsPicker from "@/components/DrillFinderTagsPicker";
 import FaceStrikeDrill from "@/components/FaceStrikeDrill";
 import { FACE_STRIKE_DRILL_KEY, FACE_STRIKE_SCORE_TYPE } from "@/lib/faceStrikeDrill";
 import AlternateTeeHeightDrill from "@/components/AlternateTeeHeightDrill";
@@ -477,6 +478,7 @@ export default function DrillCard({
           {!drill.isCombine && !runnerKey && (
             <DrillScoringPicker drillKey={drillKey} scoring={scoring} hasOverride={coachScoreType != null} />
           )}
+          {!drill.isCombine && !runnerKey && <DrillFinderTagsPicker drillKey={drillKey} />}
           {userId && !drill.isCombine ? (
             <DrillProgressTracker
               progress={progress}

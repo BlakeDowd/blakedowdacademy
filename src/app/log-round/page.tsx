@@ -1166,6 +1166,9 @@ export default function LogRoundPage() {
                     label="Total putts *"
                     info="Only strokes taken once the ball is on the putting surface."
                     text={totalPuttsText}
+                    stepper
+                    min={0}
+                    max={HOLES * 4}
                     onTextChange={(raw) => {
                       setTotalPuttsText(raw);
                       const v = optionalNumberFromInput(raw);

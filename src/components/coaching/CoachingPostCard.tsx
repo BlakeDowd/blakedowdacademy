@@ -63,6 +63,7 @@ export function PostVideo({
   createdAt,
   studentId,
   downloadName,
+  preferHd,
 }: {
   video: CoachingPostVideo;
   compact?: boolean;
@@ -70,6 +71,8 @@ export function PostVideo({
   studentId?: string | null;
   /** Suggested filename when the student (or coach) downloads this video. */
   downloadName?: string;
+  /** Prefer signed 1080p MP4 over Bunny's adaptive iframe (game plans). */
+  preferHd?: boolean;
 }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -110,6 +113,7 @@ export function PostVideo({
         compact={compact}
         createdAt={createdAt}
         paused={analyzing}
+        preferHd={preferHd}
         onAspect={(w, h) => {
           if (w > 0 && h > 0) setAspect(w / h);
         }}
@@ -179,17 +183,21 @@ function PostVideoPlayer({
   compact,
   createdAt,
   paused,
+  preferHd,
   onAspect,
 }: {
   video: CoachingPostVideo;
   compact?: boolean;
   createdAt?: string;
   paused?: boolean;
+  preferHd?: boolean;
   onAspect?: (width: number, height: number) => void;
 }) {
   const [playing, setPlaying] = useState(false);
   if (paused && playing) setPlaying(false);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [hdUrl, setHdUrl] = useState<string | null>(null);
+  const [hdFailed, setHdFailed] = useState(false);
   const [thumbFailed, setThumbFailed] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -205,6 +213,27 @@ function PostVideoPlayer({
     },
     [],
   );
+
+  useEffect(() => {
+    if (!playing || !preferHd || !video.bunny_video_id || hdUrl || hdFailed) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/coaching/video/${encodeURIComponent(video.bunny_video_id!)}/play`, {
+          headers: await authJsonHeaders(),
+        });
+        const body = (await res.json().catch(() => ({}))) as { mp4?: string; hls?: string };
+        if (cancelled) return;
+        if (body.mp4 || body.hls) setHdUrl(body.mp4 || body.hls || null);
+        else setHdFailed(true);
+      } catch {
+        if (!cancelled) setHdFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [playing, preferHd, video.bunny_video_id, hdUrl, hdFailed]);
 
   const onThumbError = () => {
     const age = createdAt ? Date.now() - Date.parse(createdAt) : Infinity;
@@ -277,10 +306,22 @@ function PostVideoPlayer({
     );
   }
 
+  const nativeSrc = isStoredFile ? fileUrl : preferHd && !hdFailed ? hdUrl : null;
+  const showBunny = Boolean(video.bunny_video_id) && (!preferHd || hdFailed);
+
   return (
     <div className={`${frame} bg-black`}>
-      {video.bunny_video_id ? (
-        <BunnyVideoPlayer videoId={video.bunny_video_id} fill autoplay />
+      {nativeSrc ? (
+        <video
+          src={nativeSrc}
+          controls
+          autoPlay
+          playsInline
+          onLoadedMetadata={(e) => onAspect?.(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
+          className="absolute inset-0 h-full w-full object-contain"
+        />
+      ) : showBunny ? (
+        <BunnyVideoPlayer videoId={video.bunny_video_id!} fill autoplay />
       ) : fileUrl ? (
         <video
           src={fileUrl}
@@ -306,6 +347,7 @@ export function PostVideos({
   createdAt,
   studentId,
   downloadBaseName,
+  preferHd,
 }: {
   videos: CoachingPostVideo[];
   compact?: boolean;
@@ -313,6 +355,7 @@ export function PostVideos({
   studentId?: string | null;
   /** Base filename for downloads; index is appended when there are several videos. */
   downloadBaseName?: string;
+  preferHd?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -328,6 +371,7 @@ export function PostVideos({
         createdAt={createdAt}
         studentId={studentId}
         downloadName={nameFor(0)}
+        preferHd={preferHd}
       />
     );
   }
@@ -337,7 +381,14 @@ export function PostVideos({
       <div className="flex gap-2 overflow-x-auto pb-1">
         {videos.map((v, i) => (
           <div key={`${v.bunny_video_id ?? v.storage_path}-${i}`} className="shrink-0">
-            <PostVideo video={v} compact createdAt={createdAt} studentId={studentId} downloadName={nameFor(i)} />
+            <PostVideo
+              video={v}
+              compact
+              createdAt={createdAt}
+              studentId={studentId}
+              downloadName={nameFor(i)}
+              preferHd={preferHd}
+            />
           </div>
         ))}
       </div>
@@ -363,7 +414,13 @@ export function PostVideos({
       >
         {videos.map((v, i) => (
           <div key={`${v.bunny_video_id ?? v.storage_path}-${i}`} className="w-full shrink-0 snap-center snap-always">
-            <PostVideo video={v} createdAt={createdAt} studentId={studentId} downloadName={nameFor(i)} />
+            <PostVideo
+              video={v}
+              createdAt={createdAt}
+              studentId={studentId}
+              downloadName={nameFor(i)}
+              preferHd={preferHd}
+            />
           </div>
         ))}
       </div>
@@ -811,6 +868,7 @@ export function GamePlanRow({ plan }: { plan: CoachingPost }) {
               createdAt={plan.created_at}
               studentId={plan.student_id}
               downloadBaseName={downloadBase}
+              preferHd
             />
           )}
           {plan.body && (
@@ -922,7 +980,11 @@ export function CoachingPostCard({
                 videos={videos}
                 createdAt={post.created_at}
                 studentId={post.student_id}
-                downloadBaseName={(fromCoach ? "coach" : authorName).replace(/[^\w-]+/g, "_")}
+                downloadBaseName={(post.is_game_plan ? post.title || "game-plan" : fromCoach ? "coach" : authorName).replace(
+                  /[^\w-]+/g,
+                  "_",
+                )}
+                preferHd={Boolean(post.is_game_plan)}
               />
             </div>
           )}

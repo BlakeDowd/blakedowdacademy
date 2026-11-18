@@ -24,15 +24,64 @@ export type UsageSource =
 export const USAGE_SETUP_MESSAGE =
   "App usage needs one database step: run supabase/migrations/20261007120000_app_usage.sql in Supabase.";
 
-export async function fetchUsageEvents(supabase: SupabaseClient, since: Date): Promise<UsageEvent[]> {
-  const { data, error } = await supabase.rpc("coach_usage_events", { p_since: since.toISOString() });
+export const WEEKLY_ACTIVE_SETUP_MESSAGE =
+  "Weekly active players needs a database update: run supabase/migrations/20261118120000_coach_weekly_active_stable.sql in Supabase.";
+
+export async function fetchUsageEvents(
+  supabase: SupabaseClient,
+  since: Date,
+  studentIds?: string[],
+): Promise<UsageEvent[]> {
+  const payload =
+    studentIds !== undefined
+      ? { p_since: since.toISOString(), p_student_ids: studentIds }
+      : { p_since: since.toISOString() };
+  const { data, error } = await supabase.rpc("coach_usage_events", payload);
   if (error) {
+    // Older DB still has the 1-arg RPC — retry without roster filter.
+    if (studentIds !== undefined && (error.code === "PGRST202" || /coach_usage_events/.test(error.message ?? ""))) {
+      return fetchUsageEvents(supabase, since);
+    }
     if (error.code === "PGRST202" || error.code === "42883" || /coach_usage_events/.test(error.message ?? "")) {
       throw new Error(USAGE_SETUP_MESSAGE);
     }
     throw new Error(error.message || "Couldn't load app usage.");
   }
   return ((data ?? []) as UsageEvent[]).map((e) => ({ ...e, qty: Number(e.qty) || 1, minutes: Number(e.minutes) || 0 }));
+}
+
+/** Stable Mon–Sun unique-player counts for the Usage weekly chart (oldest → newest). */
+export async function fetchWeeklyActivePlayers(
+  supabase: SupabaseClient,
+  weekStarts: Date[],
+  studentIds: string[],
+): Promise<number[] | null> {
+  if (!weekStarts.length) return [];
+  const { data, error } = await supabase.rpc("coach_weekly_active_players", {
+    p_week_starts: weekStarts.map((d) => d.toISOString()),
+    p_student_ids: studentIds,
+  });
+  if (error) {
+    if (error.code === "PGRST202" || error.code === "42883" || /coach_weekly_active_players/.test(error.message ?? "")) {
+      return null; // caller falls back to client-side buckets until the migration is applied
+    }
+    throw new Error(error.message || "Couldn't load weekly active players.");
+  }
+  const byStart = new Map(
+    ((data ?? []) as { week_start: string; player_count: number }[]).map((r) => [
+      Date.parse(r.week_start),
+      Number(r.player_count) || 0,
+    ]),
+  );
+  return weekStarts.map((d) => {
+    const t = d.getTime();
+    if (byStart.has(t)) return byStart.get(t)!;
+    // Match on nearest start in case of ms/timezone serialization drift.
+    for (const [key, count] of byStart) {
+      if (Math.abs(key - t) < 60_000) return count;
+    }
+    return 0;
+  });
 }
 
 // ---------------------------------------------------------------------------

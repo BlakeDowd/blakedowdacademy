@@ -7,26 +7,37 @@ import { createClient } from "@/lib/supabase/client";
 import { trackToolUse } from "@/lib/appUsage";
 import { getPoseLandmarker } from "@/lib/poseLandmarker";
 import {
-  WEDGE_CLOCK_CLUBS,
+  WEDGE_CLOCK_CLUB_OPTIONS,
+  WEDGE_CLOCK_DEFAULT_CLUBS,
   WEDGE_CLOCK_TARGETS,
-  describeDelta,
   isLikelyFaceOn,
   leadArmPoints,
   measureLeadArmDegrees,
+  parseClockLabel,
   robustPeakDegrees,
   snapClockLabel,
   type Handedness,
+  type WedgeClockClub,
 } from "@/lib/wedgeClock";
+import {
+  chartDistance,
+  loadSelectedWedgeClubs,
+  loadWedgeClockChart,
+  saveSelectedWedgeClubs,
+  saveWedgeClockChart,
+  setChartDistance,
+  type WedgeClockChart,
+} from "@/lib/wedgeClockChart";
 import {
   deleteWedgeClockLog,
   fetchWedgeClockLogs,
-  formatDistanceDelta,
   insertWedgeClockLog,
   loadDistanceUnit,
   saveDistanceUnit,
   type DistanceUnit,
   type WedgeClockLogEntry,
 } from "@/lib/wedgeClockLog";
+import WedgeClockDial from "@/components/practice/WedgeClockDial";
 
 type Mode = "idle" | "camera" | "video";
 
@@ -94,18 +105,20 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
   const [analysing, setAnalysing] = useState(false);
   const [analyseProgress, setAnalyseProgress] = useState(0);
   const [handedness, setHandedness] = useState<Handedness>("right");
+  const [myClubs, setMyClubs] = useState<WedgeClockClub[]>([...WEDGE_CLOCK_DEFAULT_CLUBS]);
+  const [editingClubs, setEditingClubs] = useState(false);
   const [club, setClub] = useState<string>("PW");
   const [targetClock, setTargetClock] = useState<string>("9:00");
   const [unit, setUnit] = useState<DistanceUnit>("m");
-  const [goalText, setGoalText] = useState("");
+  const [chart, setChart] = useState<WedgeClockChart>({});
   const [carryText, setCarryText] = useState("");
   const [live, setLive] = useState<LiveReading | null>(null);
   const [locked, setLocked] = useState<{ degrees: number; label: string } | null>(null);
-  const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [history, setHistory] = useState<WedgeClockLogEntry[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [flowStep, setFlowStep] = useState<1 | 2 | 3>(1);
   const [status, setStatus] = useState<string>(
     "Film side-on so the lead arm is clear. Walk in, hit, walk back — keep the phone still.",
   );
@@ -114,12 +127,41 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
 
   useEffect(() => {
     setUnit(loadDistanceUnit());
+    setChart(loadWedgeClockChart());
+    const selected = loadSelectedWedgeClubs();
+    setMyClubs(selected);
+    setClub((prev) => (selected.includes(prev as WedgeClockClub) ? prev : selected[0] ?? "PW"));
   }, []);
+
+  const toggleMyClub = (c: WedgeClockClub) => {
+    setMyClubs((prev) => {
+      const has = prev.includes(c);
+      let next: WedgeClockClub[];
+      if (has) {
+        if (prev.length <= 1) return prev; // keep at least one
+        next = prev.filter((x) => x !== c);
+      } else {
+        const set = new Set([...prev, c]);
+        next = WEDGE_CLOCK_CLUB_OPTIONS.filter((x) => set.has(x));
+      }
+      saveSelectedWedgeClubs(next);
+      if (!next.includes(club as WedgeClockClub)) setClub(next[0] ?? "PW");
+      return next;
+    });
+  };
 
   const setUnitPersist = (next: DistanceUnit) => {
     setUnit(next);
     saveDistanceUnit(next);
   };
+
+  const lockReading = useCallback((degrees: number, label: string) => {
+    lockedRef.current = true;
+    setLocked({ degrees, label });
+    setTargetClock(label);
+    setFlowStep(3);
+    setStatus(`Backswing ${label}. Enter how far it carried.`);
+  }, []);
 
   const stopLoop = useCallback(() => {
     runningRef.current = false;
@@ -307,9 +349,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
           modeRef.current === "camera"
         ) {
           const peak = peakRef.current;
-          lockedRef.current = true;
-          setLocked({ degrees: peak, label: snapClockLabel(peak) });
-          setStatus(`Backswing locked at ${snapClockLabel(peak)}. Save the shot, then reset for another.`);
+          lockReading(peak, snapClockLabel(peak));
           trackToolUse("wedge-clock");
         }
         setLive({
@@ -321,7 +361,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       }
       drawOverlay(landmarks, degrees, peakRef.current);
     },
-    [drawOverlay],
+    [drawOverlay, lockReading],
   );
 
   /** MediaPipe VIDEO mode requires strictly increasing timestamps across the whole session. */
@@ -479,10 +519,8 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
           );
           setStatus("Stand the camera at trail-hip height, looking across the target line.");
         } else if (peak >= 25 && degreeSamples.length >= 3) {
-          lockedRef.current = true;
-          setLocked({ degrees: peak, label: snapClockLabel(peak) });
           setModelError(null);
-          setStatus(`Backswing length ${snapClockLabel(peak)}. Save the shot, then reset for another.`);
+          lockReading(peak, snapClockLabel(peak));
           trackToolUse("wedge-clock");
         } else if (degreeSamples.length === 0 && poseFrames === 0) {
           setStatus("Couldn't see you — brighter light, full torso, camera side-on.");
@@ -506,7 +544,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
         setBusy(false);
       }
     },
-    [drawOverlay, handedness, nextDetectTs, stopLoop],
+    [drawOverlay, handedness, lockReading, nextDetectTs, stopLoop],
   );
 
   const startCamera = async () => {
@@ -525,6 +563,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
 
     // Mount the preview first so videoRef exists
     setMode("camera");
+    setFlowStep(2);
     scrollPreview();
     setStatus("Starting camera…");
 
@@ -600,6 +639,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
     const url = URL.createObjectURL(file);
     objectUrlRef.current = url;
     setMode("video");
+    setFlowStep(2);
     scrollPreview();
     setStatus(`Loading ${file.name}…`);
 
@@ -638,9 +678,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       setStatus("No clear top yet — swing side-on, or use a clip that shows address to the top.");
       return;
     }
-    lockedRef.current = true;
-    setLocked({ degrees: peak, label: snapClockLabel(peak) });
-    setStatus(`Backswing locked at ${snapClockLabel(peak)}. Save the shot, then reset for another.`);
+    lockReading(peak, snapClockLabel(peak));
     trackToolUse("wedge-clock");
   };
 
@@ -654,16 +692,14 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       setSaveMsg("Sign in to save shots.");
       return;
     }
-    const goalRaw = parseDistText(goalText);
     const carryRaw = parseDistText(carryText);
-    if (goalText.trim() && Number.isNaN(goalRaw as number)) {
-      setSaveMsg("Goal distance must be a number.");
+    if (!carryText.trim() || carryRaw == null || Number.isNaN(carryRaw)) {
+      setSaveMsg("Enter the carry distance.");
       return;
     }
-    if (carryText.trim() && Number.isNaN(carryRaw as number)) {
-      setSaveMsg("Carry distance must be a number.");
-      return;
-    }
+
+    const clockLabel = locked?.label ?? targetClock;
+    const goalRaw = chartDistance(chart, club, clockLabel);
 
     setSaving(true);
     setSaveMsg(null);
@@ -672,11 +708,11 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       club,
       measuredClock: locked?.label ?? null,
       measuredDegrees: locked?.degrees ?? null,
-      targetClock: locked ? targetClock : null,
+      targetClock: clockLabel,
       goalDistance: goalRaw,
       carryDistance: carryRaw,
       distanceUnit: unit,
-      note: note.trim() || null,
+      note: locked ? null : "practice (no film)",
       handedness,
     });
     setSaving(false);
@@ -684,12 +720,19 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
       setSaveMsg(res.error);
       return;
     }
-    setSaveMsg("Saved (numbers only — no video).");
+
+    // Remember this club + clock distance on the dial
+    const nextChart = setChartDistance(chart, club, clockLabel, carryRaw);
+    setChart(nextChart);
+    saveWedgeClockChart(nextChart);
+
+    setSaveMsg("Saved to history.");
     setCarryText("");
-    setNote("");
     clearLockedClock();
     peakRef.current = 0;
     armedRef.current = false;
+    resetSession();
+    setFlowStep(1);
     trackToolUse("wedge-clock");
     void loadHistory();
   };
@@ -705,24 +748,21 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
 
   const displayLabel = locked?.label ?? live?.peakLabel ?? live?.label ?? "—";
   const displayDegrees = locked?.degrees ?? live?.peakDegrees ?? live?.degrees;
-  const clockDelta = locked
-    ? describeDelta(locked.label, targetClock)
-    : live?.peakLabel
-      ? describeDelta(live.peakLabel, targetClock)
-      : null;
-
-  const goalPreview = parseDistText(goalText);
-  const carryPreview = parseDistText(carryText);
-  const distPreview =
-    goalPreview != null &&
-    carryPreview != null &&
-    !Number.isNaN(goalPreview) &&
-    !Number.isNaN(carryPreview)
-      ? formatDistanceDelta(goalPreview, carryPreview, unit)
-      : null;
-
-  const canSave = Boolean(locked || carryText.trim());
+  const canSave = Boolean(carryText.trim());
   const previewActive = mode !== "idle";
+
+  const steps = [
+    { n: 1 as const, label: "Club" },
+    { n: 2 as const, label: "Film" },
+    { n: 3 as const, label: "Log" },
+  ];
+
+  const goLogWithoutFilm = () => {
+    clearLockedClock();
+    setCarryText("");
+    setSaveMsg(null);
+    setFlowStep(3);
+  };
 
   return (
     <div className={compact ? "space-y-3" : "space-y-4"}>
@@ -736,7 +776,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
               </span>
             </p>
             <p className="mt-1 text-xs text-stone-500">
-              Hit to a clock length (e.g. 9:00). Log club, goal, and carry from your radar.
+              Film a swing or just log clock + distance while you practice.
             </p>
           </div>
           <div className="flex shrink-0 rounded-full bg-stone-200/80 p-0.5" role="radiogroup" aria-label="Distance unit">
@@ -762,200 +802,315 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <label className="block text-xs font-medium text-stone-600">
-            Club
-            <select
-              value={club}
-              onChange={(e) => setClub(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900"
-            >
-              {WEDGE_CLOCK_CLUBS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-xs font-medium text-stone-600">
-            Handedness
-            <select
-              value={handedness}
-              onChange={(e) => {
-                const next = e.target.value as Handedness;
-                setHandedness(next);
-                // Don't mix peaks from the other lead arm
-                peakRef.current = 0;
-                armedRef.current = false;
-                lockedRef.current = false;
-                setLocked(null);
-                setLive(null);
-              }}
-              className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900"
-            >
-              <option value="right">Right-handed</option>
-              <option value="left">Left-handed</option>
-            </select>
-          </label>
-          <label className="block text-xs font-medium text-stone-600">
-            Goal ({unit})
-            <input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              max={400}
-              step={1}
-              value={goalText}
-              onChange={(e) => setGoalText(e.target.value)}
-              placeholder={unit === "yd" ? "e.g. 70" : "e.g. 60"}
-              className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900"
+        <ol className="mt-3 flex gap-1">
+          {steps.map((s) => (
+            <li key={s.n} className="min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={() => setFlowStep(s.n)}
+                className={`flex w-full flex-col items-center rounded-xl px-1 py-2 text-center transition ${
+                  flowStep === s.n
+                    ? "bg-[#014421] text-white"
+                    : flowStep > s.n
+                      ? "bg-[#014421]/10 text-[#014421]"
+                      : "bg-white text-stone-500 ring-1 ring-stone-200"
+                }`}
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wide">Step {s.n}</span>
+                <span className="text-xs font-semibold">{s.label}</span>
+              </button>
+            </li>
+          ))}
+        </ol>
+
+        {flowStep === 1 && (
+          <div className="mt-4 space-y-3">
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-medium text-stone-600">Club</p>
+                <button
+                  type="button"
+                  onClick={() => setEditingClubs((v) => !v)}
+                  className="text-[11px] font-semibold text-[#014421] underline"
+                >
+                  {editingClubs ? "Done" : "Choose my clubs"}
+                </button>
+              </div>
+
+              {editingClubs ? (
+                <div className="mt-2 rounded-xl bg-white p-3 ring-1 ring-stone-200">
+                  <p className="text-[11px] text-stone-500">
+                    Tick the wedges you carry — only these show when you practice.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {WEDGE_CLOCK_CLUB_OPTIONS.map((c) => {
+                      const on = myClubs.includes(c);
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => toggleMyClub(c)}
+                          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                            on
+                              ? "bg-[#014421] text-white"
+                              : "bg-stone-100 text-stone-500 ring-1 ring-stone-200"
+                          }`}
+                        >
+                          {c}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-1.5 flex gap-1.5 overflow-x-auto pb-1">
+                  {myClubs.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setClub(c)}
+                      className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                        club === c
+                          ? "bg-[#014421] text-white"
+                          : "bg-white text-stone-700 ring-1 ring-stone-200 hover:text-stone-900"
+                      }`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <WedgeClockDial
+              club={club}
+              selectedClock={locked?.label ?? targetClock}
+              chart={chart}
+              unit={unit}
+              measuredHours={
+                locked
+                  ? parseClockLabel(locked.label)
+                  : live
+                    ? parseClockLabel(live.peakLabel)
+                    : null
+              }
+              onSelectClock={setTargetClock}
             />
-          </label>
-          <label className="block text-xs font-medium text-stone-600">
-            Carry ({unit})
-            <input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              max={400}
-              step={0.1}
-              value={carryText}
-              onChange={(e) => setCarryText(e.target.value)}
-              placeholder="From radar"
-              className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-900"
-            />
-          </label>
-          <label className="col-span-2 block text-xs font-medium text-stone-600">
-            Target clock
-            <select
-              value={targetClock}
-              onChange={(e) => setTargetClock(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900"
-            >
-              {WEDGE_CLOCK_TARGETS.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
 
-        {distPreview && (
-          <p className="mt-2 text-xs font-semibold text-[#014421]">
-            vs goal: {distPreview}
-            {locked ? ` · clock ${locked.label}` : ""}
-          </p>
+            <label className="block text-xs font-medium text-stone-600">
+              Handedness
+              <select
+                value={handedness}
+                onChange={(e) => {
+                  const next = e.target.value as Handedness;
+                  setHandedness(next);
+                  peakRef.current = 0;
+                  armedRef.current = false;
+                  lockedRef.current = false;
+                  setLocked(null);
+                  setLive(null);
+                }}
+                className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900"
+              >
+                <option value="right">Right-handed</option>
+                <option value="left">Left-handed</option>
+              </select>
+            </label>
+
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setFlowStep(2)}
+                className="inline-flex w-full items-center justify-center rounded-2xl bg-[#014421] py-3 text-sm font-bold text-white"
+              >
+                Next · Film swing
+              </button>
+              <button
+                type="button"
+                onClick={goLogWithoutFilm}
+                className="inline-flex w-full items-center justify-center rounded-2xl bg-white py-3 text-sm font-bold text-stone-900 ring-1 ring-stone-200"
+              >
+                Skip film · Log practice
+              </button>
+            </div>
+          </div>
         )}
 
-        <label className="mt-3 block text-xs font-medium text-stone-600">
-          Note (optional)
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            maxLength={500}
-            placeholder="e.g. stock mid-height"
-            className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900"
-          />
-        </label>
-
-        <button
-          type="button"
-          onClick={() => void saveShot()}
-          disabled={saving || !user?.id || !canSave}
-          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#014421] py-3 text-sm font-bold text-white disabled:opacity-60"
-        >
-          {saving ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          ) : (
-            <Save className="h-4 w-4" aria-hidden />
-          )}
-          Save shot
-          {locked ? ` · ${locked.label}` : ""}
-        </button>
-        {!user?.id && (
-          <p className="mt-2 text-xs text-amber-700">Sign in to save shots across sessions.</p>
-        )}
-        {!canSave && user?.id && (
-          <p className="mt-2 text-xs text-stone-500">Enter carry, or lock a clock reading, then save.</p>
-        )}
-        {saveMsg && <p className="mt-2 text-xs text-stone-600">{saveMsg}</p>}
-      </div>
-
-      <div className="rounded-2xl bg-stone-50 p-4 ring-1 ring-stone-100">
-        <p className="text-sm font-semibold text-stone-900">Film your swing</p>
-        <p className="mt-1 text-xs text-stone-500">
-          1. Set the phone side-on at trail-hip height. 2. Record, walk in, hit, walk back. 3. Stop —
-          we&apos;ll show your clock length at the top (e.g. 9:00 / 10:30).
-        </p>
-
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <button
-            type="button"
-            onClick={() => void startCamera()}
-            disabled={loadingModel || busy || analysing}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white disabled:opacity-60"
-          >
-            {loadingModel || (busy && mode !== "video") ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            ) : (
-              <Camera className="h-4 w-4" aria-hidden />
-            )}
-            Record swing
-          </button>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={loadingModel || busy || analysing}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white py-3 text-sm font-bold text-stone-900 ring-1 ring-stone-200 disabled:opacity-60"
-          >
-            {analysing ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            ) : (
-              <Upload className="h-4 w-4" aria-hidden />
-            )}
-            Analyse video
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="video/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0] ?? null;
-              e.target.value = "";
-              void onPickVideo(f);
-            }}
-          />
-        </div>
-
-        {locked && (
-          <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-[#014421]/10 px-3 py-2">
-            <p className="text-sm font-semibold text-[#014421]">
-              Backswing <span className="tabular-nums">{locked.label}</span>
-              {clockDelta ? ` · ${clockDelta}` : ""}
+        {flowStep === 2 && (
+          <div className="mt-4 space-y-3">
+            <p className="text-xs text-stone-500">
+              Optional. Phone side-on at trail-hip height — we lock the clock at the top. Or skip and log by feel.
             </p>
+            <p className="text-sm font-semibold text-stone-800">
+              {club}
+              <span className="font-normal text-stone-500"> · aiming {targetClock}</span>
+            </p>
+
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => void startCamera()}
+                disabled={loadingModel || busy || analysing}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white disabled:opacity-60"
+              >
+                {loadingModel || (busy && mode !== "video") ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <Camera className="h-4 w-4" aria-hidden />
+                )}
+                Record swing
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loadingModel || busy || analysing}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white py-3 text-sm font-bold text-stone-900 ring-1 ring-stone-200 disabled:opacity-60"
+              >
+                {analysing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <Upload className="h-4 w-4" aria-hidden />
+                )}
+                Analyse video
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  e.target.value = "";
+                  void onPickVideo(f);
+                }}
+              />
+            </div>
+
+            {locked && (
+              <div className="flex items-center justify-between gap-2 rounded-xl bg-[#014421]/10 px-3 py-2">
+                <p className="text-sm font-semibold text-[#014421]">
+                  Backswing <span className="tabular-nums">{locked.label}</span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setFlowStep(3)}
+                  className="text-xs font-bold text-[#014421] underline"
+                >
+                  Add distance →
+                </button>
+              </div>
+            )}
+
+            {modelError && <p className="text-xs text-red-600">{modelError}</p>}
+            <p className="text-xs text-stone-500">{status}</p>
+            {analysing && (
+              <div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-stone-200">
+                  <div
+                    className="h-full rounded-full bg-[#014421] transition-all"
+                    style={{ width: `${analyseProgress}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-[11px] text-stone-500">Finding top of swing… {analyseProgress}%</p>
+              </div>
+            )}
+
             <button
               type="button"
-              onClick={clearLockedClock}
-              className="text-xs font-semibold text-[#014421] underline"
+              onClick={goLogWithoutFilm}
+              className="inline-flex w-full items-center justify-center rounded-2xl bg-white py-3 text-sm font-bold text-stone-900 ring-1 ring-stone-200"
             >
-              Clear
+              Skip film · Log {targetClock} practice
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFlowStep(1)}
+              className="text-xs font-semibold text-stone-500 underline"
+            >
+              ← Back to club
             </button>
           </div>
         )}
 
-        {modelError && <p className="mt-2 text-xs text-red-600">{modelError}</p>}
-        <p className="mt-2 text-xs text-stone-500">{status}</p>
-        {analysing && (
-          <div className="mt-2">
-            <div className="h-1.5 overflow-hidden rounded-full bg-stone-200">
-              <div
-                className="h-full rounded-full bg-[#014421] transition-all"
-                style={{ width: `${analyseProgress}%` }}
-              />
+        {flowStep === 3 && (
+          <div className="mt-4 space-y-3">
+            <div className="rounded-xl bg-white px-3 py-3 ring-1 ring-stone-200">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+                {locked ? "Measured clock" : "Clock length"}
+              </p>
+              <p className="text-3xl font-bold tabular-nums text-stone-900">
+                {locked?.label ?? targetClock}
+              </p>
+              <p className="text-xs text-stone-500">
+                {club}
+                {locked ? " · from video" : " · logged without film"}
+              </p>
             </div>
-            <p className="mt-1 text-[11px] text-stone-500">Finding top of swing… {analyseProgress}%</p>
+
+            {!locked && (
+              <div>
+                <p className="text-xs font-medium text-stone-600">Change clock</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {WEDGE_CLOCK_TARGETS.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setTargetClock(t)}
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums ${
+                        targetClock === t
+                          ? "bg-[#014421] text-white"
+                          : "bg-white text-stone-700 ring-1 ring-stone-200"
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <label className="block text-xs font-medium text-stone-600">
+              How far did it go? ({unit})
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                max={400}
+                step={0.1}
+                value={carryText}
+                onChange={(e) => setCarryText(e.target.value)}
+                placeholder={unit === "yd" ? "e.g. 70" : "e.g. 60"}
+                autoFocus
+                className="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-3 text-lg font-semibold text-stone-900"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={() => void saveShot()}
+              disabled={saving || !user?.id || !canSave}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#014421] py-3 text-sm font-bold text-white disabled:opacity-60"
+            >
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Save className="h-4 w-4" aria-hidden />
+              )}
+              Save to history
+            </button>
+            {!user?.id && (
+              <p className="text-xs text-amber-700">Sign in to save shots across sessions.</p>
+            )}
+            {saveMsg && <p className="text-xs text-stone-600">{saveMsg}</p>}
+
+            <button
+              type="button"
+              onClick={() => setFlowStep(2)}
+              className="text-xs font-semibold text-stone-500 underline"
+            >
+              ← Back to film
+            </button>
           </div>
         )}
       </div>
@@ -1001,7 +1156,7 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
             </p>
             <p className="text-3xl font-bold tabular-nums text-white">{displayLabel}</p>
             <p className="text-xs text-stone-400">
-              {clockDelta ?? `Target ${targetClock}`}
+              {club}
               {displayDegrees != null ? ` · ${Math.round(displayDegrees)}° from address` : ""}
               {locked ? " · locked" : live ? " · tracking" : ""}
             </p>
@@ -1060,36 +1215,27 @@ export default function WedgeClockTool({ compact }: { compact?: boolean }) {
           <ul className="mt-2 divide-y divide-stone-200">
             {history.map((row) => {
               const unitLabel = row.distance_unit === "yd" ? "yd" : row.distance_unit === "m" ? "m" : "";
-              const vsDist = formatDistanceDelta(row.goal_distance, row.carry_distance, row.distance_unit);
-              const vsClock =
-                row.measured_clock && row.target_clock
-                  ? describeDelta(row.measured_clock, row.target_clock)
-                  : null;
               return (
                 <li key={row.id} className="flex items-start gap-2 py-2.5">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-stone-900">
-                      {row.club}
-                      {row.measured_clock ? (
-                        <span className="tabular-nums"> · {row.measured_clock}</span>
-                      ) : null}
-                      {row.carry_distance != null ? (
-                        <span className="tabular-nums font-normal text-stone-700">
-                          {" "}
-                          · {row.carry_distance}
-                          {unitLabel}
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="text-sm font-semibold text-stone-900">
+                        {row.club}
+                        <span className="ml-2 tabular-nums text-stone-600">
+                          {row.measured_clock ?? row.target_clock ?? "—"}
                         </span>
-                      ) : null}
-                    </p>
-                    <p className="text-xs text-stone-500">
+                      </p>
+                      {row.carry_distance != null && (
+                        <p className="text-base font-bold tabular-nums text-stone-900">
+                          {row.carry_distance}
+                          <span className="ml-0.5 text-xs font-semibold text-stone-500">{unitLabel}</span>
+                        </p>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-xs text-stone-500">
                       {new Date(row.logged_at).toLocaleString()}
-                      {row.goal_distance != null
-                        ? ` · goal ${row.goal_distance}${unitLabel}`
-                        : ""}
-                      {vsDist ? ` · ${vsDist}` : ""}
-                      {vsClock ? ` · ${vsClock}` : ""}
+                      {!row.measured_clock && row.target_clock ? " · no film" : ""}
                     </p>
-                    {row.note && <p className="mt-0.5 text-xs text-stone-600">{row.note}</p>}
                   </div>
                   <button
                     type="button"

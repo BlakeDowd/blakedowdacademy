@@ -33,6 +33,17 @@ import { bunnyVideoIdForDrill } from "@/lib/bunnyStream";
 import { CARD_HANDICAP_TEST_IDS, COMBINE_TEST_CARDS, type CombineCategoryId } from "@/lib/combineTestsCatalog";
 import { formatHandicap, weakestArea, type PracticeHandicap } from "@/lib/practiceHandicap";
 import { GAME_AREAS, type GameArea } from "@/lib/practiceHandicapBenchmarks";
+import {
+  FINDER_SCORE_BANDS,
+  FINDER_STRUGGLES,
+  FINDER_STYLES,
+  areasFromStruggles,
+  focusesFromStruggles,
+  recordFinderAnswers,
+  type FinderScoreBand,
+  type FinderStruggle,
+  type FinderStyle,
+} from "@/lib/practiceFinder";
 
 export type GuidedSessionDrill = {
   id: string;
@@ -48,8 +59,27 @@ export type GuidedSessionDrill = {
 
 export type GuidedSessionBlock = { area: FacilityType; minutes: number };
 
-type Mode = "log" | "build" | "test";
-type Step = "mode" | "area" | "time" | "day" | "preview" | "test" | "done";
+export type BuildSessionOptions = {
+  focuses?: string[];
+  styleKeywords?: string[];
+  /** Practice Finder score band id (e.g. 80-90). */
+  scoreBandId?: string;
+  /** Practice Finder practice kind ids (mechanics / skill / performance). */
+  styleIds?: string[];
+};
+
+type Mode = "log" | "build" | "test" | "find";
+type Step =
+  | "mode"
+  | "area"
+  | "findScore"
+  | "findStruggle"
+  | "findStyle"
+  | "time"
+  | "day"
+  | "preview"
+  | "test"
+  | "done";
 
 /** Combine tab for each area of the practice handicap. */
 const TEST_AREA_CATEGORY: Record<GameArea, CombineCategoryId> = {
@@ -63,8 +93,8 @@ const TEST_AREA_CATEGORY: Record<GameArea, CombineCategoryId> = {
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const MIN_ROUNDS_FOR_STATS = 3;
-const BUILD_TIME_OPTIONS = [15, 30, 45, 60, 90, 120];
-const LOG_TIME_OPTIONS = [15, 30, 45, 60, 90, 120];
+const BUILD_TIME_OPTIONS = [15, 30, 45, 60, 90, 120, 150, 180, 240];
+const LOG_TIME_OPTIONS = [15, 30, 45, 60, 90, 120, 150, 180, 240];
 const ON_COURSE_HOLE_OPTIONS = [9, 18];
 const MINUTES_PER_HOLE = 15;
 
@@ -114,7 +144,7 @@ type Props = {
   statsAreas: FacilityType[];
   roundsCount: number;
   statsLoading?: boolean;
-  buildSession: (blocks: GuidedSessionBlock[]) => GuidedSessionDrill[];
+  buildSession: (blocks: GuidedSessionBlock[], opts?: BuildSessionOptions) => GuidedSessionDrill[];
   onAddToSchedule: (drillIds: string[], dayIndex: number) => Promise<void>;
   /** Returns XP earned, or null if saving failed. */
   onLogPractice: (area: FacilityType, minutes: number, holes?: number) => Promise<number | null>;
@@ -203,6 +233,9 @@ export function GuidedPracticeSession({
   const [loggedXp, setLoggedXp] = useState<number | null>(null);
   const [expandedDrillKey, setExpandedDrillKey] = useState<string | null>(null);
   const [testArea, setTestArea] = useState<GameArea | null>(null);
+  const [finderScoreBand, setFinderScoreBand] = useState<FinderScoreBand | null>(null);
+  const [finderStruggles, setFinderStruggles] = useState<FinderStruggle[]>([]);
+  const [finderStyles, setFinderStyles] = useState<FinderStyle[]>([]);
   const { user } = useAuth();
   const handicapData = usePracticeHandicap(mode === "test" ? user?.id : null);
   const practiceHcp = handicapData.status === "ready" ? handicapData.practice : null;
@@ -222,7 +255,9 @@ export function GuidedPracticeSession({
       ? ["mode", "area", "time"]
       : mode === "test"
         ? ["mode", "area", "test"]
-        : ["mode", "area", "time", "day", "preview"];
+        : mode === "find"
+          ? ["mode", "findScore", "findStruggle", "findStyle", "time", "day", "preview"]
+          : ["mode", "area", "time", "day", "preview"];
   const stepNumber = Math.max(0, steps.indexOf(step));
 
   const dayOptions = useMemo(() => {
@@ -247,6 +282,9 @@ export function GuidedPracticeSession({
     setLoggedXp(null);
     setExpandedDrillKey(null);
     setTestArea(null);
+    setFinderScoreBand(null);
+    setFinderStruggles([]);
+    setFinderStyles([]);
   };
 
   const chooseTestArea = (a: GameArea) => {
@@ -276,7 +314,65 @@ export function GuidedPracticeSession({
     setMode(m);
     setArea(null);
     setAreaFromStats(false);
+    setFinderScoreBand(null);
+    setFinderStruggles([]);
+    setFinderStyles([]);
+    if (m === "find") {
+      setStep("findScore");
+      return;
+    }
     setStep("area");
+  };
+
+  const chooseFinderScore = (band: FinderScoreBand) => {
+    setFinderScoreBand(band);
+    setFinderStruggles([]);
+    setStep("findStruggle");
+  };
+
+  const toggleFinderStruggle = (s: FinderStruggle) => {
+    setFinderStruggles((prev) => {
+      const has = prev.some((x) => x.id === s.id);
+      if (has) return prev.filter((x) => x.id !== s.id);
+      return FINDER_STRUGGLES.filter((x) => x.id === s.id || prev.some((p) => p.id === x.id));
+    });
+  };
+
+  const confirmFinderStruggles = () => {
+    if (finderStruggles.length === 0) return;
+    const areas = areasFromStruggles(finderStruggles);
+    setArea(areas[0] ?? null);
+    setAreaFromStats(false);
+    setFinderStyles([]);
+    setStep("findStyle");
+  };
+
+  const toggleFinderStyle = (s: FinderStyle) => {
+    setFinderStyles((prev) => {
+      const has = prev.some((x) => x.id === s.id);
+      if (has) return prev.filter((x) => x.id !== s.id);
+      return FINDER_STYLES.filter((x) => x.id === s.id || prev.some((p) => p.id === x.id));
+    });
+  };
+
+  const confirmFinderStyles = () => {
+    if (finderStyles.length === 0) return;
+    setMinutes(null);
+    setStep("time");
+  };
+
+  const finderBuildOpts = (): BuildSessionOptions | undefined => {
+    if (mode !== "find" || finderStruggles.length === 0) return undefined;
+    const keywords = [
+      ...(finderScoreBand?.preferKeywords ?? []),
+      ...finderStyles.flatMap((s) => s.preferKeywords),
+    ];
+    return {
+      focuses: focusesFromStruggles(finderStruggles),
+      styleKeywords: keywords.length > 0 ? keywords : undefined,
+      scoreBandId: finderScoreBand?.id,
+      styleIds: finderStyles.map((s) => s.id),
+    };
   };
 
   const chooseArea = (a: FacilityType, fromStats = false) => {
@@ -288,6 +384,12 @@ export function GuidedPracticeSession({
   };
 
   const chooseTime = async (value: number) => {
+    if (mode === "find") {
+      if (finderStruggles.length === 0) return;
+      setMinutes(value);
+      setStep("day");
+      return;
+    }
     if (!area) return;
     if (mode === "log") {
       const isOnCourse = area === "On-Course";
@@ -307,21 +409,39 @@ export function GuidedPracticeSession({
   };
 
   const sessionBlocks = (): GuidedSessionBlock[] => {
-    if (!area || !minutes) return [];
+    if (!minutes) return [];
+    if (mode === "find" && finderStruggles.length > 0) {
+      const areas = areasFromStruggles(finderStruggles);
+      return areas.length > 1 ? splitStatsMinutes(areas, minutes) : [{ area: areas[0], minutes }];
+    }
+    if (!area) return [];
     return areaFromStats ? splitStatsMinutes(statsAreas, minutes) : [{ area, minutes }];
   };
 
   const chooseDay = (idx: number) => {
-    if (!area || !minutes) return;
+    if (!minutes) return;
+    if (mode === "find") {
+      if (finderStruggles.length === 0) return;
+    } else if (!area) {
+      return;
+    }
     setDayIndex(idx);
-    setSession(buildSession(sessionBlocks()));
+    if (mode === "find" && finderStruggles.length > 0 && finderStyles.length > 0 && finderScoreBand) {
+      recordFinderAnswers({
+        scoreBandId: finderScoreBand.id,
+        struggleIds: finderStruggles.map((s) => s.id),
+        styleIds: finderStyles.map((s) => s.id),
+      });
+    }
+    setSession(buildSession(sessionBlocks(), finderBuildOpts()));
     setExpandedDrillKey(null);
     setStep("preview");
   };
 
   const reshuffle = () => {
-    if (!area || !minutes) return;
-    setSession(buildSession(sessionBlocks()));
+    if (!minutes) return;
+    if (mode === "find" ? finderStruggles.length === 0 : !area) return;
+    setSession(buildSession(sessionBlocks(), finderBuildOpts()));
     setExpandedDrillKey(null);
   };
 
@@ -389,6 +509,22 @@ export function GuidedPracticeSession({
         {step === "mode" && (
           <div className="space-y-3">
             <p className="text-sm font-semibold text-gray-800">What would you like to do?</p>
+            <button type="button" className={optionBtn} onClick={() => chooseMode("find")}>
+              <span className="flex items-center gap-3">
+                <Sparkles className="h-5 w-5 shrink-0 text-[#014421]" aria-hidden />
+                <span>
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    Find practice for me
+                    <span className="rounded bg-[#FFA500]/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#c77c00]">
+                      Beta
+                    </span>
+                  </span>
+                  <span className="block text-xs font-normal text-gray-500">
+                    Short questionnaire — we learn what you need and pick the drills
+                  </span>
+                </span>
+              </span>
+            </button>
             <button type="button" className={optionBtn} onClick={() => chooseMode("build")}>
               <span className="flex items-center gap-3">
                 <CalendarPlus className="h-5 w-5 shrink-0 text-[#014421]" aria-hidden />
@@ -421,6 +557,113 @@ export function GuidedPracticeSession({
                   </span>
                 </span>
               </span>
+            </button>
+          </div>
+        )}
+
+        {step === "findScore" && mode === "find" && (
+          <div>
+            <p className="mb-3 text-sm font-semibold text-gray-800">What scores do you usually shoot?</p>
+            <div className="space-y-2">
+              {FINDER_SCORE_BANDS.map((band) => (
+                <button
+                  key={band.id}
+                  type="button"
+                  className={optionBtn}
+                  onClick={() => chooseFinderScore(band)}
+                >
+                  {band.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {step === "findStruggle" && mode === "find" && (
+          <div>
+            <p className="mb-1 text-sm font-semibold text-gray-800">What&apos;s costing you the most right now?</p>
+            <p className="mb-3 text-xs text-gray-500">Select one or more</p>
+            {statsUnlocked && statsAreas[0] ? (
+              <button
+                type="button"
+                className={`${optionBtn} mb-3`}
+                onClick={() => {
+                  const areaId = statsAreas[0];
+                  const match =
+                    FINDER_STRUGGLES.find((s) => s.areas[0] === areaId) ??
+                    FINDER_STRUGGLES.find((s) => s.areas.includes(areaId));
+                  if (match) {
+                    setFinderStruggles([match]);
+                    setArea(match.areas[0] ?? null);
+                    setAreaFromStats(false);
+                    setFinderStyles([]);
+                    setStep("findStyle");
+                  }
+                }}
+              >
+                Start from my round stats
+              </button>
+            ) : null}
+            <div className="space-y-2">
+              {FINDER_STRUGGLES.map((s) => {
+                const on = finderStruggles.some((x) => x.id === s.id);
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    aria-pressed={on}
+                    className={`${optionBtn} ${on ? "border-[#014421] bg-[#014421]/5" : ""}`}
+                    onClick={() => toggleFinderStruggle(s)}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      {s.label}
+                      {on ? <Check className="h-4 w-4 text-[#014421]" aria-hidden /> : null}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              disabled={finderStruggles.length === 0}
+              onClick={confirmFinderStruggles}
+              className="mt-3 flex w-full items-center justify-center rounded-xl bg-[#014421] px-4 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            >
+              Continue
+            </button>
+          </div>
+        )}
+
+        {step === "findStyle" && mode === "find" && finderStruggles.length > 0 && (
+          <div>
+            <p className="mb-1 text-sm font-semibold text-gray-800">What kind of practice?</p>
+            <p className="mb-3 text-xs text-gray-500">Select one or more</p>
+            <div className="space-y-2">
+              {FINDER_STYLES.map((s) => {
+                const on = finderStyles.some((x) => x.id === s.id);
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    aria-pressed={on}
+                    className={`${optionBtn} ${on ? "border-[#014421] bg-[#014421]/5" : ""}`}
+                    onClick={() => toggleFinderStyle(s)}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      {s.label}
+                      {on ? <Check className="h-4 w-4 text-[#014421]" aria-hidden /> : null}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              disabled={finderStyles.length === 0}
+              onClick={confirmFinderStyles}
+              className="mt-3 flex w-full items-center justify-center rounded-xl bg-[#014421] px-4 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            >
+              Continue
             </button>
           </div>
         )}
@@ -515,8 +758,30 @@ export function GuidedPracticeSession({
           </div>
         )}
 
-        {step === "time" && area && (
+        {step === "time" && (area || (mode === "find" && finderStruggles.length > 0)) && (
           <div>
+            {mode === "find" && finderStruggles.length > 0 ? (
+              <div className="mb-3 flex items-start gap-2 rounded-xl bg-[#014421]/5 p-3 text-xs text-[#014421]">
+                <Sparkles className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                <span>
+                  Plan for a <span className="font-bold">{finderScoreBand?.label ?? "—"}</span> player
+                  {" · "}
+                  <span className="font-bold">
+                    {finderStruggles.map((s) => s.label.toLowerCase()).join(", ")}
+                  </span>
+                  {finderStyles.length > 0 ? (
+                    <>
+                      {" "}
+                      ·{" "}
+                      <span className="font-bold">
+                        {finderStyles.map((s) => s.label.toLowerCase()).join(", ")}
+                      </span>
+                    </>
+                  ) : null}
+                  . Beta — we&apos;ll keep learning from your answers.
+                </span>
+              </div>
+            ) : null}
             {areaFromStats ? (
               <div className="mb-3 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">
                 <BarChart3 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
@@ -589,16 +854,21 @@ export function GuidedPracticeSession({
         {step === "preview" && (
           <div>
             <p className="text-sm font-semibold text-gray-800">
-              {multiArea
-                ? `Your ${sessionAreas.map((a) => labelFor(a).toLowerCase()).join(" + ")} session`
-                : `Your ${areaLabel.toLowerCase()} session`}
+              {mode === "find" && finderStruggles.length > 0
+                ? "Practice picked for you"
+                : multiArea
+                  ? `Your ${sessionAreas.map((a) => labelFor(a).toLowerCase()).join(" + ")} session`
+                  : `Your ${areaLabel.toLowerCase()} session`}
             </p>
             <p className="mb-3 text-xs text-gray-500">
               {dayLabel} · {formatMinutes(sessionMinutes || minutes || 0)}
+              {mode === "find" && finderStruggles.length > 0
+                ? ` · ${finderScoreBand ? `${finderScoreBand.label} · ` : ""}${finderStruggles.map((s) => s.label).join(", ")}${finderStyles.length ? ` · ${finderStyles.map((s) => s.label).join(", ")}` : ""}`
+                : ""}
             </p>
             {session.length === 0 ? (
               <p className="rounded-xl bg-gray-50 p-4 text-center text-sm text-gray-600">
-                No {areaLabel.toLowerCase()} drills fit that time yet. Try a longer session or another area.
+                No drills fit that time yet. Try a longer session or another answer.
               </p>
             ) : (
               <div className="space-y-3">
@@ -739,7 +1009,7 @@ export function GuidedPracticeSession({
               </p>
             )}
             <div className="flex w-full gap-2">
-              {mode === "build" ? (
+              {mode === "build" || mode === "find" ? (
                 <button
                   type="button"
                   onClick={() => onViewSchedule(dayIndex)}
@@ -754,7 +1024,11 @@ export function GuidedPracticeSession({
                 onClick={practiceAnotherArea}
                 className="flex-1 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50"
               >
-                {mode === "build" ? "Practice another area" : "Log another area"}
+                {mode === "find"
+                  ? "Find again"
+                  : mode === "build"
+                    ? "Practice another area"
+                    : "Log another area"}
               </button>
             </div>
           </div>

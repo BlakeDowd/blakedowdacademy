@@ -83,6 +83,11 @@ export function RoundStatNumberField({
   placeholder = "–",
   info,
   decimal = false,
+  /** Show − / + around the field (still typeable). */
+  stepper = false,
+  step = 1,
+  min = 0,
+  max,
 }: {
   label: string;
   text: string;
@@ -90,19 +95,79 @@ export function RoundStatNumberField({
   placeholder?: string;
   info?: ReactNode;
   decimal?: boolean;
+  stepper?: boolean;
+  step?: number;
+  min?: number;
+  max?: number;
 }) {
+  const nudge = (delta: number) => {
+    const raw = Number.parseFloat(text);
+    const base = Number.isFinite(raw) ? raw : min;
+    let next = base + delta;
+    if (min !== undefined) next = Math.max(min, next);
+    if (max !== undefined) next = Math.min(max, next);
+    if (decimal) {
+      const places = String(step).includes(".") ? String(step).split(".")[1]!.length : 2;
+      next = Math.round(next * 10 ** places) / 10 ** places;
+      onTextChange(String(next));
+      return;
+    }
+    onTextChange(String(Math.round(next)));
+  };
+
+  const parsed = Number.parseFloat(text);
+  const atMin = Number.isFinite(parsed) ? parsed <= min : true;
+  const atMax = max !== undefined && Number.isFinite(parsed) && parsed >= max;
+
+  if (!stepper) {
+    return (
+      <div className={ROW}>
+        <RowLabel label={label} info={info} />
+        <input
+          type="text"
+          inputMode={decimal ? "decimal" : "numeric"}
+          aria-label={label}
+          value={text}
+          onChange={(e) => onTextChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-[5.5rem] shrink-0 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-right text-lg font-semibold tabular-nums text-[#014421] placeholder:text-stone-300 focus:border-[#014421] focus:bg-white focus:outline-none"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={ROW}>
       <RowLabel label={label} info={info} />
-      <input
-        type="text"
-        inputMode={decimal ? "decimal" : "numeric"}
-        aria-label={label}
-        value={text}
-        onChange={(e) => onTextChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-[5.5rem] shrink-0 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-right text-lg font-semibold tabular-nums text-[#014421] placeholder:text-stone-300 focus:border-[#014421] focus:bg-white focus:outline-none"
-      />
+      <div className="flex shrink-0 items-center rounded-full bg-stone-100 p-0.5">
+        <button
+          type="button"
+          onClick={() => nudge(-step)}
+          disabled={atMin}
+          className={STEP_BTN}
+          aria-label={`Less ${label}`}
+        >
+          <Minus className="h-4 w-4" />
+        </button>
+        <input
+          type="text"
+          inputMode={decimal ? "decimal" : "numeric"}
+          aria-label={label}
+          value={text}
+          onChange={(e) => onTextChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-12 border-0 bg-transparent py-2 text-center text-lg font-semibold tabular-nums text-[#014421] placeholder:text-stone-300 focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={() => nudge(step)}
+          disabled={atMax}
+          className={STEP_BTN}
+          aria-label={`More ${label}`}
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }

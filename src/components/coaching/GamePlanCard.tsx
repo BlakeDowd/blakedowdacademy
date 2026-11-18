@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ClipboardList, Loader2, Plus, Video, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Camera, ClipboardList, Loader2, Plus, SwitchCamera, Video, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   MAX_VIDEOS_PER_POST,
@@ -15,6 +16,12 @@ import {
   type CoachingVideoRef,
 } from "@/lib/coachingFeed";
 import { GamePlanRow, lessonDate } from "@/components/coaching/CoachingPostCard";
+import {
+  openGamePlanCamera,
+  recorderSupported,
+  startGamePlanRecorder,
+  type GamePlanRecorderHandle,
+} from "@/lib/gamePlanCamera";
 import { holdScreenAwake } from "@/lib/holdScreenAwake";
 import { useWakeLock } from "@/hooks/useWakeLock";
 
@@ -25,6 +32,196 @@ function sizeLabel(bytes: number): string {
   return bytes >= 1024 * 1024 * 1024
     ? `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
     : `${Math.max(1, Math.round(bytes / 1024 / 1024))} MB`;
+}
+
+/** In-app recorder: wide scene, no phone subject-lock, ~1080p bitrate. */
+function GamePlanRecorder({
+  onCaptured,
+  onClose,
+}: {
+  onCaptured: (file: File) => void;
+  onClose: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<GamePlanRecorderHandle | null>(null);
+  const [facing, setFacing] = useState<"environment" | "user">("environment");
+  const [ready, setReady] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const stopTracks = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }, []);
+
+  const attach = useCallback(async (nextFacing: "environment" | "user") => {
+    setReady(false);
+    setError(null);
+    stopTracks();
+    try {
+      const stream = await openGamePlanCamera(nextFacing);
+      streamRef.current = stream;
+      const v = videoRef.current;
+      if (v) {
+        v.srcObject = stream;
+        v.muted = true;
+        v.playsInline = true;
+        v.setAttribute("playsinline", "true");
+        await v.play().catch(() => undefined);
+      }
+      setReady(true);
+    } catch {
+      setError("Couldn't open the camera. Allow camera + mic, or choose a file instead.");
+    }
+  }, [stopTracks]);
+
+  useEffect(() => {
+    void attach(facing);
+    return () => {
+      recorderRef.current = null;
+      stopTracks();
+    };
+    // Only on mount / unmount — facing changes go through flip().
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!recording) return;
+    const started = Date.now();
+    const id = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 250);
+    return () => window.clearInterval(id);
+  }, [recording]);
+
+  const flip = async () => {
+    if (recording || busy) return;
+    const next = facing === "environment" ? "user" : "environment";
+    setFacing(next);
+    await attach(next);
+  };
+
+  const start = () => {
+    if (!streamRef.current || recording || busy) return;
+    try {
+      recorderRef.current = startGamePlanRecorder(streamRef.current);
+      setElapsed(0);
+      setRecording(true);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't start recording.");
+    }
+  };
+
+  const stop = async () => {
+    if (!recorderRef.current || busy) return;
+    setBusy(true);
+    try {
+      const file = await recorderRef.current.stop();
+      recorderRef.current = null;
+      setRecording(false);
+      stopTracks();
+      onCaptured(file);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save the recording.");
+      setBusy(false);
+    }
+  };
+
+  const cancel = () => {
+    if (recording && recorderRef.current) {
+      void recorderRef.current.stop().catch(() => undefined);
+      recorderRef.current = null;
+    }
+    setRecording(false);
+    stopTracks();
+    onClose();
+  };
+
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+  const ss = String(elapsed % 60).padStart(2, "0");
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex flex-col bg-black text-white">
+      <div className="flex items-center justify-between gap-2 px-3 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <button
+          type="button"
+          onClick={cancel}
+          disabled={busy}
+          className="rounded-full bg-white/15 px-3 py-1.5 text-sm font-semibold"
+        >
+          Cancel
+        </button>
+        <p className="text-center text-xs font-medium text-white/80">
+          {recording ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+              {mm}:{ss}
+            </span>
+          ) : (
+            "Wide shot — camera won’t lock on a person"
+          )}
+        </p>
+        <button
+          type="button"
+          onClick={() => void flip()}
+          disabled={recording || busy || !ready}
+          className="rounded-full bg-white/15 p-2 disabled:opacity-40"
+          aria-label="Flip camera"
+        >
+          <SwitchCamera className="h-5 w-5" aria-hidden />
+        </button>
+      </div>
+
+      <div className="relative min-h-0 flex-1 bg-stone-950">
+        <video
+          ref={videoRef}
+          muted
+          playsInline
+          className="absolute inset-0 h-full w-full object-contain"
+        />
+        {!ready && !error && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-white/70" aria-hidden />
+          </div>
+        )}
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-red-200">
+            {error}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-center gap-6 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
+        {recording ? (
+          <button
+            type="button"
+            onClick={() => void stop()}
+            disabled={busy}
+            className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-red-600 disabled:opacity-50"
+            aria-label="Stop recording"
+          >
+            {busy ? <Loader2 className="h-6 w-6 animate-spin" aria-hidden /> : <span className="h-6 w-6 rounded-sm bg-white" />}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={start}
+            disabled={!ready || busy}
+            className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-red-500 disabled:opacity-40"
+            aria-label="Start recording"
+          >
+            <span className="h-12 w-12 rounded-full bg-red-500" />
+          </button>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 /** Coach-only form: one long lesson video (plus optional extras) and the key points in writing. */
@@ -47,9 +244,15 @@ function GamePlanForm({
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState<{ index: number; percent: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [canRecord, setCanRecord] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const limit = maxVideoBytes(true);
   useWakeLock(sending);
+
+  useEffect(() => {
+    setCanRecord(recorderSupported());
+  }, []);
 
   const pick = (files: FileList | null) => {
     if (!files) return;
@@ -58,6 +261,15 @@ function GamePlanForm({
     if (ok.length < picked.length) setError(`Some files were skipped: videos only, up to ${formatVideoLimit(limit)} each.`);
     else setError(null);
     setVideos((prev) => [...prev, ...ok].slice(0, MAX_VIDEOS_PER_POST));
+  };
+
+  const addRecorded = (file: File) => {
+    if (file.size > limit) {
+      setError(`Recording is too large (max ${formatVideoLimit(limit)}).`);
+      return;
+    }
+    setError(null);
+    setVideos((prev) => [...prev, file].slice(0, MAX_VIDEOS_PER_POST));
   };
 
   const post = async () => {
@@ -120,17 +332,40 @@ function GamePlanForm({
           e.target.value = "";
         }}
       />
+      {recording && (
+        <GamePlanRecorder onCaptured={addRecorded} onClose={() => setRecording(false)} />
+      )}
       {videos.length === 0 ? (
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={sending}
-          className="flex w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-[#014421]/30 bg-[#014421]/5 px-4 py-6 text-[#014421] hover:bg-[#014421]/10"
-        >
-          <Video className="h-6 w-6" aria-hidden />
-          <span className="text-sm font-bold">Choose your end-of-lesson video</span>
-          <span className="text-[11px] text-stone-500">Long videos are fine, up to {formatVideoLimit(limit)}</span>
-        </button>
+        <div className="space-y-2">
+          {canRecord && (
+            <button
+              type="button"
+              onClick={() => setRecording(true)}
+              disabled={sending}
+              className="flex w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-[#014421]/30 bg-[#014421]/5 px-4 py-6 text-[#014421] hover:bg-[#014421]/10"
+            >
+              <Camera className="h-6 w-6" aria-hidden />
+              <span className="text-sm font-bold">Record end-of-lesson video</span>
+              <span className="text-[11px] text-stone-500">1080p · won’t lock onto a person</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={sending}
+            className={`flex w-full flex-col items-center justify-center gap-1 rounded-2xl border border-stone-200 bg-stone-50 px-4 ${
+              canRecord ? "py-3" : "border-dashed border-[#014421]/30 bg-[#014421]/5 py-6 text-[#014421]"
+            } text-stone-700 hover:bg-stone-100`}
+          >
+            <Video className={`h-5 w-5 ${canRecord ? "text-stone-500" : "h-6 w-6 text-[#014421]"}`} aria-hidden />
+            <span className={`font-bold ${canRecord ? "text-xs" : "text-sm text-[#014421]"}`}>
+              {canRecord ? "Or choose a video from files" : "Choose your end-of-lesson video"}
+            </span>
+            {!canRecord && (
+              <span className="text-[11px] text-stone-500">Long videos are fine, up to {formatVideoLimit(limit)}</span>
+            )}
+          </button>
+        </div>
       ) : (
         <ul className="space-y-1.5">
           {videos.map((f, i) => (
@@ -159,14 +394,24 @@ function GamePlanForm({
             </li>
           ))}
           {!sending && videos.length < MAX_VIDEOS_PER_POST && (
-            <li>
+            <li className="flex flex-wrap gap-3 px-1">
+              {canRecord && (
+                <button
+                  type="button"
+                  onClick={() => setRecording(true)}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-[#014421]"
+                >
+                  <Camera className="h-3.5 w-3.5" aria-hidden />
+                  Record another
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="inline-flex items-center gap-1 px-1 text-xs font-semibold text-[#014421]"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[#014421]"
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden />
-                Add another video
+                Add from files
               </button>
             </li>
           )}
