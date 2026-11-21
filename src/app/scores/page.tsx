@@ -7,11 +7,19 @@ import { ArrowLeft, Trophy, TrendingUp, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { DeleteRoundButton } from "@/components/DeleteRoundButton";
 
+function formatToPar(score: number | null, coursePar: number | null | undefined): string | null {
+  if (score === null || coursePar == null) return null;
+  const diff = score - coursePar;
+  if (diff === 0) return "E";
+  return diff > 0 ? `+${diff}` : `−${Math.abs(diff)}`;
+}
+
 interface RoundData {
   id?: string;
   created_at?: string;
   date: string;
   course: string;
+  coursePar?: number | null;
   handicap: number | null;
   holes: number;
   score: number | null;
@@ -312,6 +320,12 @@ export default function ScoresPage() {
                         >
                           {round.score}
                         </p>
+                        {formatToPar(round.score, round.coursePar) && (
+                          <p className="mt-0.5 text-xs font-semibold text-stone-600">
+                            {formatToPar(round.score, round.coursePar)}
+                            {round.coursePar != null ? ` · par ${round.coursePar}` : ""}
+                          </p>
+                        )}
                         {round.handicap !== null && (
                           <p className="text-xs text-gray-500 mt-1">
                             HCP {round.handicap.toFixed(1)}

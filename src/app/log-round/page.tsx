@@ -132,6 +132,8 @@ interface RoundData {
   // Scoring
   date: string;
   course: string;
+  /** Total par for the course (e.g. 72). Null until entered. */
+  coursePar: number | null;
   handicap: number | null;
   score: number | null;
   nett: number | null;
@@ -233,6 +235,42 @@ function roundScoreForDb(value: number | null): number | null {
 const pctText = (made: number, total: number) => (total > 0 ? `${Math.round((made / total) * 100)}%` : null);
 
 const ROUND_SHARE_PREF_KEY = "roundShareOnCommunityPref";
+const COURSE_PAR_PREF_KEY = "roundCourseParByName";
+
+/** Format gross vs course par for display (E, +2, −3). */
+function formatToPar(score: number | null, coursePar: number | null): string | null {
+  if (score === null || coursePar === null) return null;
+  const diff = score - coursePar;
+  if (diff === 0) return "E";
+  return diff > 0 ? `+${diff}` : `−${Math.abs(diff)}`;
+}
+
+function loadCourseParMap(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = JSON.parse(localStorage.getItem(COURSE_PAR_PREF_KEY) || "{}") as Record<string, unknown>;
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      const n = Number(v);
+      if (k.trim() && Number.isFinite(n) && n >= 27 && n <= 90) out[k.trim().toLowerCase()] = Math.round(n);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function rememberCoursePar(course: string, coursePar: number | null) {
+  if (typeof window === "undefined" || !course.trim() || coursePar === null) return;
+  if (coursePar < 27 || coursePar > 90) return;
+  const map = loadCourseParMap();
+  map[course.trim().toLowerCase()] = Math.round(coursePar);
+  try {
+    localStorage.setItem(COURSE_PAR_PREF_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore quota */
+  }
+}
 
 /** Newer `rounds` columns; saves retry without any the database doesn't have yet. */
 const OPTIONAL_ROUND_COLUMNS = [
@@ -248,6 +286,7 @@ const OPTIONAL_ROUND_COLUMNS = [
   "event_name",
   "course_rating",
   "slope_rating",
+  "course_par",
 ] as const;
 
 const STAT_LABELS = new Map(ROUND_STAT_GROUPS.flatMap((g) => g.stats.map((s) => [s.key, s.label] as const)));
@@ -345,6 +384,7 @@ export default function LogRoundPage() {
   const [roundData, setRoundData] = useState<RoundData>({
     date: today,
     course: '',
+    coursePar: null,
     handicap: null,
     score: null,
     nett: null,
@@ -416,6 +456,7 @@ export default function LogRoundPage() {
 
   /** Controlled strings so values like `83.` stay editable while still syncing numeric `roundData`. */
   const [scoreText, setScoreText] = useState("");
+  const [courseParText, setCourseParText] = useState("");
   const [handicapText, setHandicapText] = useState("");
   const [totalPuttsText, setTotalPuttsText] = useState("");
   const [stablefordText, setStablefordText] = useState("");
@@ -423,6 +464,19 @@ export default function LogRoundPage() {
   const [backNineText, setBackNineText] = useState("");
   const [puttsPerGirText, setPuttsPerGirText] = useState("");
   const [roundEvent, setRoundEvent] = useState<RoundEventInput>(EMPTY_ROUND_EVENT);
+
+  const onCourseNameChange = (name: string) => {
+    const patch: Partial<RoundData> = { course: name };
+    // Fill course par from the last time this course was logged on this device.
+    if (!courseParText.trim()) {
+      const remembered = loadCourseParMap()[name.trim().toLowerCase()];
+      if (remembered != null) {
+        patch.coursePar = remembered;
+        setCourseParText(String(remembered));
+      }
+    }
+    changeRound(patch);
+  };
 
   const [showAdvancedApproachMatrix, setShowAdvancedApproachMatrix] = useState(false);
   const [selectedApproachHole, setSelectedApproachHole] = useState(1);
@@ -560,10 +614,16 @@ export default function LogRoundPage() {
       // Older columns default to 0, so untracked stats save as 0 and `tracked_stats` says to ignore them.
       const count = (key: RoundStatKey, value: number) => (formStats.has(key) ? value : 0);
       const optional = <T,>(key: RoundStatKey, value: T | null) => (formStats.has(key) ? value : null);
+      const courseParDb =
+        roundData.coursePar !== null && roundData.coursePar >= 27 && roundData.coursePar <= 90
+          ? Math.round(roundData.coursePar)
+          : null;
+
       const insertData: Record<string, unknown> = {
         user_id: currentUserId,
         date: roundData.date || today,
         course_name: roundData.course,
+        course_par: courseParDb,
         handicap: handicapDb,
         holes: HOLES,
         score: scoreDb,
@@ -645,6 +705,7 @@ export default function LogRoundPage() {
 
       console.log('Round saved successfully!', data);
 
+      rememberCoursePar(roundData.course, courseParDb);
       saveShareOnCommunityPref(share);
       setShareOnCommunity(share);
 
@@ -829,7 +890,7 @@ export default function LogRoundPage() {
                   id="round-course"
                   type="text"
                   value={roundData.course}
-                  onChange={(e) => changeRound({ course: e.target.value })}
+                  onChange={(e) => onCourseNameChange(e.target.value)}
                   placeholder="Course name"
                   className={FIELD_INPUT}
                 />
@@ -865,6 +926,20 @@ export default function LogRoundPage() {
                   setScoreText(raw);
                   changeRound({ score: optionalNumberFromInput(raw) });
                 }}
+              />
+              <RoundStatNumberField
+                label="Course par"
+                info="Total par for this course (e.g. 72). Used to show your score to par. Remembered next time you type the same course name."
+                text={courseParText}
+                onTextChange={(raw) => {
+                  setCourseParText(raw);
+                  const n = optionalNumberFromInput(raw);
+                  changeRound({ coursePar: n === null ? null : Math.round(n) });
+                }}
+              />
+              <RoundStatReadout
+                label="To par"
+                value={formatToPar(roundData.score, roundData.coursePar)}
               />
               <RoundStatNumberField
                 label="Handicap"

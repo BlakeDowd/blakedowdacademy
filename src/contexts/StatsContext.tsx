@@ -18,6 +18,8 @@ interface RoundData {
   date: string;
   created_at?: string; // ISO timestamp from database
   course: string;
+  /** Total par for the course played; null when not entered. */
+  coursePar?: number | null;
   handicap: number | null;
   holes: number;
   score: number | null;
@@ -218,6 +220,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     date: round.date,
     created_at: round.created_at,
     course: round.course_name || round.course,
+    coursePar: optionalRoundNumber(round.course_par),
     handicap: round.handicap,
     holes: round.holes,
     score: round.score,
