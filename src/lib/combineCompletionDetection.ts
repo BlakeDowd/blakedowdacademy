@@ -1,12 +1,15 @@
 import { aimpoint6ftCombineConfig } from "@/lib/aimpoint6ftCombineConfig";
 import { aimpointLongRange2040Config } from "@/lib/aimpointLongRange2040Config";
 import { bunker9HoleChallengeConfig } from "@/lib/bunker9HoleChallengeConfig";
+import { bunkerProximityProtocolConfig } from "@/lib/bunkerProximityProtocolConfig";
 import { chippingCombine9Config } from "@/lib/chippingCombine9Config";
 import { ironPrecisionProtocolConfig } from "@/lib/ironPrecisionProtocolConfig";
 import { midRangeSlopeSensingConfig } from "@/lib/midRangeSlopeSensingConfig";
 import { startLineAndSpeedControlTestConfig } from "@/lib/startLineAndSpeedControlTestConfig";
 import { strikeAndSpeedControlTestConfig } from "@/lib/strikeAndSpeedControlTestConfig";
 import { teeShotDispersionCombineConfig } from "@/lib/teeShotDispersionCombineConfig";
+import { teeShotSimConfig } from "@/lib/teeShotSimConfig";
+import { threeStrikesWedgeConfig } from "@/lib/threeStrikesWedgeConfig";
 import { wedgeLateral9Config } from "@/lib/wedgeLateral9Config";
 import { flopShotCombineConfig } from "@/lib/flopShotCombineConfig";
 import { standardChippingCombineConfig } from "@/lib/standardChippingCombineConfig";
@@ -19,6 +22,24 @@ import { driverFlightTestConfig } from "@/lib/driverFlightTestConfig";
 import { bunkerLiesConfig } from "@/lib/bunkerLiesConfig";
 import { mobilityScreenConfig } from "@/lib/mobilityScreenConfig";
 import { approachShotSimConfig } from "@/lib/approachShotSimConfig";
+import { puttingTest9Config } from "@/lib/puttingTest9Config";
+import { puttingTest3To6ftConfig } from "@/lib/puttingTest3To6ftConfig";
+import { puttingTest8To20Config } from "@/lib/puttingTest8To20Config";
+import { puttingTest20To40Config } from "@/lib/puttingTest20To40Config";
+import {
+  clusteredPuttingSessionTotals,
+  isCompletePutting9Session,
+  isCompletePuttingCombineSession,
+  isCompletePuttingTest3To6ftSession,
+  isCompletePuttingTest8To20Session,
+  isCompletePuttingTest20To40Session,
+  parsePutting9HoleSession,
+  parsePuttingHoleSession,
+  parsePuttingTest3To6ftSession,
+  parsePuttingTest8To20Session,
+  parsePuttingTest20To40Session,
+  type ParsedPuttingHole,
+} from "@/lib/puttingTestLeaderboard";
 
 /** `log_type` values written to `practice_logs` by combine protocol runners (leaderboard + completion stats). */
 export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
@@ -40,6 +61,9 @@ export const COMBINE_PRACTICE_LOG_TYPE_VALUES: readonly string[] = [
   driverFlightTestConfig.practiceLogType,
   bunkerLiesConfig.practiceLogType,
   mobilityScreenConfig.practiceLogType,
+  threeStrikesWedgeConfig.practiceLogType,
+  bunkerProximityProtocolConfig.practiceLogType,
+  teeShotSimConfig.practiceLogType,
   "iron_skills",
 ];
 
@@ -75,6 +99,9 @@ const COMBINE_LOG_TYPE_LABELS: Record<string, string> = {
   [driverFlightTestConfig.practiceLogType]: driverFlightTestConfig.testName,
   [bunkerLiesConfig.practiceLogType]: bunkerLiesConfig.testName,
   [mobilityScreenConfig.practiceLogType]: mobilityScreenConfig.testName,
+  [threeStrikesWedgeConfig.practiceLogType]: threeStrikesWedgeConfig.testName,
+  [bunkerProximityProtocolConfig.practiceLogType]: bunkerProximityProtocolConfig.testName,
+  [teeShotSimConfig.practiceLogType]: teeShotSimConfig.testName,
   iron_skills: "Iron Skills Challenge",
 };
 
@@ -88,6 +115,46 @@ const COMBINE_TEST_TYPE_LABELS: Record<string, string> = {
   [bunker9HoleChallengeConfig.testType]: bunker9HoleChallengeConfig.testName,
 };
 
+type PuttingCombineFormat = {
+  practiceType: string;
+  label: string;
+  parse: (row: unknown) => ParsedPuttingHole | null;
+  isComplete: (holes: ParsedPuttingHole[]) => boolean;
+};
+
+const PUTTING_COMBINE_FORMATS: PuttingCombineFormat[] = [
+  {
+    practiceType: "PuttingCombine",
+    label: "Putting Combine",
+    parse: parsePuttingHoleSession,
+    isComplete: isCompletePuttingCombineSession,
+  },
+  {
+    practiceType: puttingTest9Config.practiceType,
+    label: puttingTest9Config.testName,
+    parse: parsePutting9HoleSession,
+    isComplete: isCompletePutting9Session,
+  },
+  {
+    practiceType: puttingTest3To6ftConfig.practiceType,
+    label: puttingTest3To6ftConfig.testName,
+    parse: parsePuttingTest3To6ftSession,
+    isComplete: isCompletePuttingTest3To6ftSession,
+  },
+  {
+    practiceType: puttingTest8To20Config.practiceType,
+    label: puttingTest8To20Config.testName,
+    parse: parsePuttingTest8To20Session,
+    isComplete: isCompletePuttingTest8To20Session,
+  },
+  {
+    practiceType: puttingTest20To40Config.practiceType,
+    label: puttingTest20To40Config.testName,
+    parse: parsePuttingTest20To40Session,
+    isComplete: isCompletePuttingTest20To40Session,
+  },
+];
+
 export type CombineCompletionStats = {
   userId?: string;
   practiceSessions?: any[] | null;
@@ -100,8 +167,8 @@ function rowForUser(row: { user_id?: string | null }, uid: string | undefined): 
 }
 
 /**
- * Logged combine completions: protocol rows in practice_logs and session rows in practice
- * with a known combine test_type (per-hole putting tests that only set `type` are excluded).
+ * Logged combine completions: protocol rows in practice_logs, session rows in practice
+ * with a known combine test_type, and complete putting-test hole clusters.
  */
 export function listUserCombineCompletionEvents(stats: CombineCompletionStats): {
   at: string;
@@ -136,6 +203,26 @@ export function listUserCombineCompletionEvents(stats: CombineCompletionStats): 
         at,
         label: COMBINE_TEST_TYPE_LABELS[tt] ?? "Combine session",
         userId: (row as { user_id?: string }).user_id,
+      });
+    }
+  }
+
+  // Putting combines store one practice row per hole (JSON notes, no test_type).
+  for (const format of PUTTING_COMBINE_FORMATS) {
+    const holes: ParsedPuttingHole[] = [];
+    for (const row of stats.practiceSessions || []) {
+      if (!row || typeof row !== "object") continue;
+      if (!rowForUser(row as { user_id?: string }, uid)) continue;
+      const type = String((row as { type?: string }).type || "");
+      if (type !== format.practiceType) continue;
+      const hole = format.parse(row);
+      if (hole) holes.push(hole);
+    }
+    for (const session of clusteredPuttingSessionTotals(holes, format.isComplete)) {
+      out.push({
+        at: new Date(session.sessionEndMs).toISOString(),
+        label: format.label,
+        userId: uid,
       });
     }
   }

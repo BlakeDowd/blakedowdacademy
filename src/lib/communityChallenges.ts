@@ -5,7 +5,7 @@ export type ChallengeMetric = "practice_hours" | "rounds" | "low_gross" | "low_n
 
 /** Auto-scored challenges, worked out from what players log in the app. */
 export const CHALLENGE_METRICS: { id: ChallengeMetric; label: string; unit: string; lowerIsBetter: boolean }[] = [
-  { id: "practice_hours", label: "Most practice hours", unit: "h", lowerIsBetter: false },
+  { id: "practice_hours", label: "Most practice hours (self-logged)", unit: "h", lowerIsBetter: false },
   { id: "rounds", label: "Most rounds played", unit: "rounds", lowerIsBetter: false },
   { id: "low_gross", label: "Lowest gross (18 holes)", unit: "gross", lowerIsBetter: true },
   { id: "low_nett", label: "Lowest nett (18 holes)", unit: "nett", lowerIsBetter: true },

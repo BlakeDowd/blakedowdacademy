@@ -287,7 +287,11 @@ function ChallengeCard({
   const draw = async () => {
     if (!board || board.length === 0) return;
     const n = board.length;
-    if (!window.confirm(`Draw a random winner from ${n} player${n === 1 ? "" : "s"}? This can only be done once.`)) return;
+    const who =
+      challenge.metric === "practice_hours"
+        ? `${n} player${n === 1 ? "" : "s"} who logged their own practice (coach lessons don’t count)`
+        : `${n} player${n === 1 ? "" : "s"}`;
+    if (!window.confirm(`Draw a random winner from ${who}? This can only be done once.`)) return;
     setBusy(true);
     const { error: err } = await drawChallengeWinner(challenge, board);
     setBusy(false);
@@ -342,20 +346,17 @@ function ChallengeCard({
           {challenge.description && <p className="mb-3 whitespace-pre-wrap text-sm text-stone-700">{challenge.description}</p>}
 
           {challenge.winnerId ? (
-            <div className="mb-3 flex items-center gap-3 rounded-xl bg-[#014421] px-3 py-2.5 text-white">
-              <PartyPopper className="h-5 w-5 shrink-0 text-[#FFC966]" aria-hidden />
-              <ProfileAvatar picture={winner?.picture} name={winner?.name} size={32} />
-              <span className="min-w-0 flex-1">
-                <span className="block text-[10px] font-bold uppercase tracking-wide text-[#FFC966]">Winner</span>
-                <span className="block truncate text-sm font-bold">
-                  {challenge.winnerId === me ? "You!" : (winner?.name ?? "Golfer")}
+            <div className="mb-3 rounded-2xl bg-[#014421] px-4 py-4 text-white">
+              <div className="flex items-center gap-3">
+                <PartyPopper className="h-6 w-6 shrink-0 text-[#FFC966]" aria-hidden />
+                <ProfileAvatar picture={winner?.picture} name={winner?.name} size={44} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[11px] font-bold uppercase tracking-wide text-[#FFC966]">Winner</span>
+                  <span className="mt-0.5 block text-lg font-bold leading-snug break-words">
+                    {winner?.name?.trim() || "Golfer"}
+                  </span>
                 </span>
-              </span>
-              {challenge.entrantCount != null && (
-                <span className="shrink-0 text-[11px] text-white/70">
-                  Drawn from {challenge.entrantCount} player{challenge.entrantCount === 1 ? "" : "s"}
-                </span>
-              )}
+              </div>
             </div>
           ) : (
             state !== "finished" && (

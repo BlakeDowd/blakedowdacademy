@@ -298,8 +298,10 @@ export function HomeCommunityCard() {
           >
             <PartyPopper className="h-4 w-4 shrink-0 text-[#FFA500]" aria-hidden />
             <ProfileAvatar picture={person(lastDrawn.winnerId)?.picture} name={person(lastDrawn.winnerId)?.name} size={22} />
-            <span className="min-w-0 flex-1 truncate">
-              <span className="font-bold">{lastDrawn.winnerId === me ? "You" : (person(lastDrawn.winnerId)?.name ?? "Golfer")}</span>{" "}
+            <span className="min-w-0 flex-1">
+              <span className="font-bold break-words">
+                {person(lastDrawn.winnerId)?.name?.trim() || "Golfer"}
+              </span>{" "}
               won {lastDrawn.title}
             </span>
           </Link>

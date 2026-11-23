@@ -127,22 +127,19 @@ function PostContent({
       const podium = Array.isArray(m.podium) ? (m.podium as Record<string, unknown>[]) : [];
       const winnerId = str(m.winner);
       const winner = winnerId ? people.get(winnerId) : undefined;
-      const entrants = num(m.entrants);
+      const winnerName = str(m.winner_name).trim() || winner?.name?.trim() || "Golfer";
       return (
         <Highlight icon={Trophy} tone="bg-[#FFA500]/10 text-orange-900">
           <p className="font-semibold">{str(m.title)} results</p>
           {winnerId && (
-            <div className="mt-1.5 flex items-center gap-2.5 rounded-lg bg-[#014421] px-2.5 py-2 text-white">
-              <ProfileAvatar picture={winner?.picture} name={winner?.name} size={30} />
-              <span className="min-w-0 flex-1">
-                <span className="block text-[10px] font-bold uppercase tracking-wide text-[#FFC966]">Winner 🎉</span>
-                <span className="block truncate text-sm font-bold">{winner?.name ?? "Golfer"}</span>
-              </span>
-              {entrants != null && (
-                <span className="shrink-0 text-[10px] text-white/70">
-                  Drawn from {entrants} player{entrants === 1 ? "" : "s"}
+            <div className="mt-1.5 rounded-xl bg-[#014421] px-3 py-3 text-white">
+              <div className="flex items-center gap-3">
+                <ProfileAvatar picture={winner?.picture} name={winnerName} size={40} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[11px] font-bold uppercase tracking-wide text-[#FFC966]">Winner 🎉</span>
+                  <span className="mt-0.5 block text-base font-bold leading-snug break-words">{winnerName}</span>
                 </span>
-              )}
+              </div>
             </div>
           )}
           {winnerId && podium.length > 0 && (
@@ -188,8 +185,12 @@ export function postSummary(post: CommunityPost, challenges?: Map<string, Challe
       return `Reached Level ${str(m.level)}`;
     case "challenge":
       return `New challenge: ${challenges?.get(str(m.challenge_id))?.title ?? "check it out"}`;
-    case "challenge_result":
-      return m.winner ? `${str(m.title)}: winner drawn!` : `${str(m.title)} results are in`;
+    case "challenge_result": {
+      const winnerLabel = str(m.winner_name).trim() || (m.winner ? "winner drawn" : "");
+      return m.winner
+        ? `${str(m.title)}: ${winnerLabel || "winner drawn"}!`
+        : `${str(m.title)} results are in`;
+    }
     default:
       return "";
   }
