@@ -5,11 +5,16 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { ChallengeWinnerNotice } from "@/components/community/ChallengeWinnerNotice";
 import { CommunityApprovalsView } from "@/components/community/CommunityApprovalsView";
 import { CommunityChallengesView } from "@/components/community/CommunityChallengesView";
 import { CommunityFeedView } from "@/components/community/CommunityFeedView";
-import { countPendingCommunity, isCommunityCoach } from "@/lib/community";
-import { fetchChallenges, type Challenge } from "@/lib/communityChallenges";
+import { countPendingCommunity, isCommunityCoach, loadPeople, type CommunityPerson } from "@/lib/community";
+import {
+  fetchChallenges,
+  latestActiveWinnerAnnouncement,
+  type Challenge,
+} from "@/lib/communityChallenges";
 
 type Tab = "feed" | "challenges" | "approvals";
 
@@ -30,6 +35,9 @@ function CommunityScreenInner() {
   const [challengeError, setChallengeError] = useState<string | null>(null);
   const [challengesVersion, setChallengesVersion] = useState(0);
   const [pending, setPending] = useState(0);
+  const [people, setPeople] = useState<Map<string, CommunityPerson>>(new Map());
+  const me = user?.id ?? "";
+  const winnerAnnounce = latestActiveWinnerAnnouncement(challenges ?? []);
 
   const selectTab = (t: Tab) => {
     setTab(t);
@@ -54,6 +62,18 @@ function CommunityScreenInner() {
   useEffect(() => {
     if (isCoach) void countPendingCommunity().then(setPending);
   }, [isCoach]);
+
+  useEffect(() => {
+    const winnerId = winnerAnnounce?.winnerId;
+    if (!winnerId) return;
+    let cancelled = false;
+    void loadPeople([winnerId]).then((map) => {
+      if (!cancelled) setPeople(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [winnerAnnounce?.winnerId]);
 
   const challengeMap = useMemo(() => new Map((challenges ?? []).map((c) => [c.id, c])), [challenges]);
 
@@ -95,6 +115,11 @@ function CommunityScreenInner() {
       </header>
 
       <div className="w-full flex-1 px-4 pb-32 pt-3">
+        {winnerAnnounce && me && (
+          <div className="mb-3">
+            <ChallengeWinnerNotice challenges={challenges ?? []} me={me} people={people} />
+          </div>
+        )}
         {loading || !user ? (
           <div className="h-32 animate-pulse rounded-2xl border border-stone-200 bg-white" aria-hidden />
         ) : tab === "feed" ? (

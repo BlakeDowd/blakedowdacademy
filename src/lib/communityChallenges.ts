@@ -92,6 +92,47 @@ export function challengeState(c: Challenge, today = sydneyToday()): "upcoming" 
   return "live";
 }
 
+/** How long the home/community winner announcement stays up after the draw. */
+export const WINNER_ANNOUNCE_MS = 7 * 86_400_000;
+
+export function winnerAnnounceDismissKey(c: Pick<Challenge, "id" | "winnerDrawnAt">): string {
+  return `challengeWinnerAnnounceDismissed:${c.id}:${c.winnerDrawnAt ?? ""}`;
+}
+
+/** True while the draw is within the 7-day announcement window. */
+export function isWinnerAnnounceActive(c: Challenge, now = Date.now()): boolean {
+  if (!c.winnerId || !c.winnerDrawnAt) return false;
+  const drawn = Date.parse(c.winnerDrawnAt);
+  if (!Number.isFinite(drawn)) return false;
+  return now - drawn < WINNER_ANNOUNCE_MS && now >= drawn;
+}
+
+/** Most recent drawn challenge still inside the 7-day announcement window. */
+export function latestActiveWinnerAnnouncement(challenges: Challenge[], now = Date.now()): Challenge | null {
+  let best: Challenge | null = null;
+  let bestAt = 0;
+  for (const c of challenges) {
+    if (!isWinnerAnnounceActive(c, now) || !c.winnerDrawnAt) continue;
+    const at = Date.parse(c.winnerDrawnAt);
+    if (!Number.isFinite(at)) continue;
+    if (!best || at > bestAt) {
+      best = c;
+      bestAt = at;
+    }
+  }
+  return best;
+}
+
+/** Whole days left in the announcement window (1–7), or 0 when expired. */
+export function winnerAnnounceDaysLeft(c: Challenge, now = Date.now()): number {
+  if (!c.winnerDrawnAt) return 0;
+  const drawn = Date.parse(c.winnerDrawnAt);
+  if (!Number.isFinite(drawn)) return 0;
+  const leftMs = drawn + WINNER_ANNOUNCE_MS - now;
+  if (leftMs <= 0) return 0;
+  return Math.max(1, Math.ceil(leftMs / 86_400_000));
+}
+
 export async function fetchChallenges(): Promise<{ challenges: Challenge[]; error: string | null }> {
   const { data, error } = await createClient()
     .from("community_challenges")

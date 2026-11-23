@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Clock, Flag, Flame, HandFist, PartyPopper, Sparkles, Trophy, Users } from "lucide-react";
+import { ChevronRight, Clock, Flag, Flame, HandFist, Sparkles, Trophy, Users } from "lucide-react";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import { postSummary } from "@/components/community/CommunityPostCard";
 import { useAuth } from "@/contexts/AuthContext";
@@ -23,9 +23,11 @@ import {
   fetchChallengeBoard,
   fetchChallenges,
   formatChallengeValue,
+  latestActiveWinnerAnnouncement,
   type BoardRow,
   type Challenge,
 } from "@/lib/communityChallenges";
+import { ChallengeWinnerNotice } from "@/components/community/ChallengeWinnerNotice";
 import { CommunityLessonDrawCompact } from "@/components/community/CommunityLessonDrawCard";
 import { fetchPracticeDrawStatus } from "@/lib/practiceDrawTickets";
 
@@ -119,7 +121,7 @@ export function HomeCommunityCard() {
 
   const live = challenges.find((c) => challengeState(c) === "live") ?? null;
   const upcoming = challenges.filter((c) => challengeState(c) === "upcoming").sort((a, b) => a.startsOn.localeCompare(b.startsOn))[0] ?? null;
-  const lastDrawn = challenges.find((c) => c.winnerId) ?? null;
+  const winnerAnnounce = latestActiveWinnerAnnouncement(challenges);
 
   const week = useMemo(() => {
     const from = weekStartMs();
@@ -176,7 +178,7 @@ export function HomeCommunityCard() {
     ...latestRounds.map((r) => str(r.user_id)),
     ...week.topPractice.map(([id]) => id),
     ...board.slice(0, 3).map((r) => r.userId),
-    lastDrawn?.winnerId ?? "",
+    winnerAnnounce?.winnerId ?? "",
   ]
     .filter(Boolean)
     .sort()
@@ -291,20 +293,10 @@ export function HomeCommunityCard() {
             )}
           </div>
         )}
-        {lastDrawn?.winnerId && (
-          <Link
-            href="/community?tab=challenges"
-            className="mt-2 flex items-center gap-2 rounded-xl bg-[#FFA500]/10 px-3 py-2 text-xs text-orange-900"
-          >
-            <PartyPopper className="h-4 w-4 shrink-0 text-[#FFA500]" aria-hidden />
-            <ProfileAvatar picture={person(lastDrawn.winnerId)?.picture} name={person(lastDrawn.winnerId)?.name} size={22} />
-            <span className="min-w-0 flex-1">
-              <span className="font-bold break-words">
-                {person(lastDrawn.winnerId)?.name?.trim() || "Golfer"}
-              </span>{" "}
-              won {lastDrawn.title}
-            </span>
-          </Link>
+        {winnerAnnounce && (
+          <div className="mt-2">
+            <ChallengeWinnerNotice challenges={challenges} me={me} people={people} />
+          </div>
         )}
 
         {/* Latest rounds */}
