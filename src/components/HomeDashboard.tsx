@@ -209,7 +209,14 @@ export default function HomeDashboard() {
       }
     };
     fetchSnapshot();
-    return () => { mounted = false; };
+    const onHomeRefresh = () => {
+      void fetchSnapshot();
+    };
+    window.addEventListener("homeRefresh", onHomeRefresh);
+    return () => {
+      mounted = false;
+      window.removeEventListener("homeRefresh", onHomeRefresh);
+    };
   }, [user?.id]);
   
   // Removed unused streak RPC fetch since AuthContext manages streak
