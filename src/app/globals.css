@@ -652,3 +652,40 @@ select option {
     animation: none !important;
   }
 }
+
+/* Weight training — fairway logbook */
+.strength-display {
+  font-family: var(--font-strength), ui-sans-serif, system-ui, sans-serif;
+}
+
+.strength-fairway {
+  background:
+    linear-gradient(165deg, #01351a 0%, #014421 42%, #0a5c30 78%, #014421 100%);
+}
+
+.strength-fairway-noise {
+  opacity: 0.22;
+  background-image:
+    radial-gradient(ellipse 80% 55% at 15% 20%, rgba(255, 201, 102, 0.18), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 90% 80%, rgba(0, 0, 0, 0.28), transparent 50%),
+    repeating-linear-gradient(
+      -12deg,
+      transparent 0,
+      transparent 2px,
+      rgba(255, 255, 255, 0.03) 2px,
+      rgba(255, 255, 255, 0.03) 3px
+    );
+}
+
+.strength-log {
+  color: #1c1917;
+}
+
+.strength-panel {
+  border: 1px solid rgba(1, 68, 33, 0.14);
+  background: #fffef9;
+}
+
+.strength-ink-bar {
+  background: #014421;
+}

@@ -38,11 +38,19 @@ function formatWhen(iso: string): string {
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + " · " + time;
 }
 
-export default function SpeedLogging({ hideHeader }: { hideHeader?: boolean }) {
+export default function SpeedLogging({
+  hideHeader,
+  /** When set (e.g. coaching space), lock logging to this player and hide the picker. */
+  lockedPlayer,
+}: {
+  hideHeader?: boolean;
+  lockedPlayer?: { id: string; name: string } | null;
+}) {
   const { user } = useAuth();
   const isCoach = isCoachEmail(user?.email) || user?.role === "coach";
   const [testingFor, setTestingFor] = useState<PlayerOption | null>(null);
-  const playerId = isCoach ? testingFor?.id ?? null : null;
+  const playerId = lockedPlayer?.id ?? (isCoach ? testingFor?.id ?? null : null);
+  const playerName = lockedPlayer?.name ?? testingFor?.name ?? null;
 
   const [clubId, setClubId] = useState<SpeedClubId>("driver");
   const [kind, setKind] = useState<SpeedKind>("on_course");
@@ -91,7 +99,7 @@ export default function SpeedLogging({ hideHeader }: { hideHeader?: boolean }) {
         clubId,
         kind,
         playerId,
-        playerName: testingFor?.name ?? null,
+        playerName,
       }),
     );
     setSpeedText("");
@@ -106,7 +114,7 @@ export default function SpeedLogging({ hideHeader }: { hideHeader?: boolean }) {
         </div>
       )}
 
-      {isCoach && (
+      {isCoach && !lockedPlayer && (
         <TestingForSelect
           value={testingFor}
           onChange={setTestingFor}
@@ -115,6 +123,11 @@ export default function SpeedLogging({ hideHeader }: { hideHeader?: boolean }) {
           selectedTitle={(name) => `Logging for ${name}`}
           selectedHint="Speeds save under their name on this phone."
         />
+      )}
+      {lockedPlayer && (
+        <p className="rounded-xl bg-stone-100 px-3 py-2 text-xs font-medium text-stone-600">
+          Logging speeds for <span className="font-semibold text-stone-900">{lockedPlayer.name}</span> on this phone.
+        </p>
       )}
 
       <section className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-stone-200">

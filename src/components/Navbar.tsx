@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Home,
@@ -30,7 +31,7 @@ export default function Navbar() {
             ? pathname === "/"
             : pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
-          <a
+          <Link
             key={item.href}
             href={item.href}
             className="flex flex-col items-center justify-center gap-1 transition-opacity hover:opacity-80"
@@ -45,7 +46,7 @@ export default function Navbar() {
             >
               {item.label}
             </span>
-          </a>
+          </Link>
         );
       })}
     </nav>

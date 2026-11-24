@@ -104,11 +104,11 @@ export function SpeedTrendChart({ userId }: { userId?: string | null }) {
           <p className="mt-2 text-sm font-semibold text-stone-900">No {kindLabel(kind).toLowerCase()} yet</p>
           <p className="mx-auto mt-1 max-w-xs text-xs text-stone-500">
             {otherHas
-              ? `You have ${kindLabel(otherKind).toLowerCase()} logged — switch above, or log ${kindLabel(kind).toLowerCase()} on Practice.`
-              : "Log driver speeds under Practice → More tools → Speed Logging to track whether you're gaining speed."}
+              ? `You have ${kindLabel(otherKind).toLowerCase()} logged — switch above, or log ${kindLabel(kind).toLowerCase()}.`
+              : "Log driver speeds from your profile to track whether you're gaining speed."}
           </p>
           <Link
-            href="/practice"
+            href="/speed-logging"
             className="mt-4 inline-flex rounded-xl bg-[#014421] px-4 py-2 text-sm font-semibold text-white"
           >
             Open Speed Logging

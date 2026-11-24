@@ -796,7 +796,7 @@ export function ProfilePracticeOverview({ playerGoalRow }: { playerGoalRow: Play
               <h3 id="driver-speed-heading" className="text-base font-semibold text-stone-900">
                 Driver speed
               </h3>
-              <Link href="/practice" className="text-xs font-semibold text-[#014421] hover:underline">
+              <Link href="/speed-logging" className="text-xs font-semibold text-[#014421] hover:underline">
                 Log speeds
               </Link>
             </div>

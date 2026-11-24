@@ -142,6 +142,7 @@ export const TOOL_LABELS = {
   "short-game-tempo": "Short game tempo",
   "putting-calculator": "Putting stroke calculator",
   "speed-logging": "Speed logging",
+  "weight-training": "Gym Planner",
   "feel-log": "Feel log",
   "tee-shot-sim": "Tee shot simulator",
   /** @deprecated Alias — same label as tee-shot-sim for history continuity. */
@@ -200,6 +201,7 @@ const SCREEN_LABELS: Record<string, string> = {
   "full-swing-tempo": "Full swing tempo",
   "putting-calculator": "Putting calculator",
   "speed-logging": "Speed logging",
+  "weight-training": "Gym Planner",
   "practice-speed": "Speed Logging",
   "practice-arcade": "Tee shot simulator",
   "practice-approach": "Approach shot simulator",

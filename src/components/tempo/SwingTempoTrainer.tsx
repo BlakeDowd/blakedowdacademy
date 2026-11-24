@@ -46,7 +46,6 @@ const BRAND_ORANGE = "#FFA500";
 
 const SCHEDULE_AHEAD_SEC = 0.15;
 const HIT_FLASH_SEC = 0.35;
-/** Quiet gap after the hit before the next count-in starts. */
 const SETTLE_SEC = 0.3;
 const START_DELAY_SEC = 0.5;
 const SOUND_MODES: { id: SoundMode; label: string; hint: string; icon: LucideIcon }[] = [
@@ -65,8 +64,8 @@ const PHASE_LABEL: Record<Phase, string> = {
 const DIAL_SIZE = 260;
 const DIAL_C = DIAL_SIZE / 2;
 const DIAL_R = 112;
-const TRACK_CIRC = 2 * Math.PI * DIAL_R;
-const TICKS = 60;
+/** Tick marks along the left semicircle only (bottom → top). */
+const LEFT_TICKS = 31;
 
 export const presetSeconds = (p: TempoPreset) => ({ back: (p.back * FRAME_MS) / 1000, down: (p.down * FRAME_MS) / 1000 });
 const ms = (sec: number) => Math.round(sec * 1000);
@@ -77,6 +76,26 @@ function dialPoint(angleDeg: number, radius: number) {
   const round = (n: number) => Math.round(n * 100) / 100;
   return { x: round(DIAL_C + radius * Math.sin(a)), y: round(DIAL_C - radius * Math.cos(a)) };
 }
+
+/**
+ * Position along the left semicircle: 0 = bottom, 1 = top.
+ * Backswing climbs 0→1; downswing returns 1→0 on the same side.
+ */
+function leftArcU(fraction: number, apexFraction: number): number {
+  const apex = Math.min(0.999, Math.max(0.001, apexFraction));
+  const t = Math.min(1, Math.max(0, fraction));
+  if (t <= apex) return t / apex;
+  return 1 - (t - apex) / (1 - apex);
+}
+
+/** Dial angle on the left arc: 180° bottom → 360° top → 180° bottom. */
+function swingAngle(fraction: number, apexFraction: number): number {
+  return 180 + leftArcU(fraction, apexFraction) * 180;
+}
+
+const LEFT_ARC_LEN = Math.PI * DIAL_R;
+/** Bottom → left → top (clockwise in SVG y-down). */
+const LEFT_ARC_D = `M ${DIAL_C} ${DIAL_C + DIAL_R} A ${DIAL_R} ${DIAL_R} 0 0 1 ${DIAL_C} ${DIAL_C - DIAL_R}`;
 
 export function SwingTempoTrainer({
   config,
@@ -100,8 +119,11 @@ export function SwingTempoTrainer({
 
   const preset = presets[presetIndex] ?? presets[0]!;
   const times = presetSeconds(preset);
-  const apexAngle = (ratio / (ratio + 1)) * 360;
-  const apexTick = { a: dialPoint(apexAngle, DIAL_R - 14), b: dialPoint(apexAngle, DIAL_R + 10) };
+  const apexFraction = ratio / (ratio + 1);
+  const bottomTick = { a: dialPoint(180, DIAL_R - 14), b: dialPoint(180, DIAL_R + 12) };
+  const topTick = { a: dialPoint(0, DIAL_R - 14), b: dialPoint(0, DIAL_R + 12) };
+  const sideLabel = dialPoint(270, DIAL_R - 36);
+  const startPoint = dialPoint(180, DIAL_R);
 
   const ctxRef = useRef<AudioContext | null>(null);
   const masterRef = useRef<GainNode | null>(null);
@@ -111,13 +133,15 @@ export function SwingTempoTrainer({
   const rafRef = useRef<number | null>(null);
   const voiceRef = useRef<VoiceClips | null | undefined>(undefined);
   const dotRef = useRef<SVGCircleElement | null>(null);
-  const arcRef = useRef<SVGCircleElement | null>(null);
+  const backTrailRef = useRef<SVGPathElement | null>(null);
+  const downTrailRef = useRef<SVGPathElement | null>(null);
   const phaseRef = useRef<Phase>("ready");
   const lightRef = useRef<CountLight | null>(null);
   const presetRef = useRef(preset);
   const modeRef = useRef(mode);
   const countInRef = useRef(countIn);
   const onRepRef = useRef(onRep);
+  const apexFracRef = useRef(apexFraction);
 
   useEffect(() => {
     presetRef.current = preset;
@@ -135,11 +159,32 @@ export function SwingTempoTrainer({
     modeRef.current = mode;
   }, [mode]);
 
+  useEffect(() => {
+    apexFracRef.current = apexFraction;
+  }, [apexFraction]);
+
   const drawTracker = (fraction: number) => {
-    const p = dialPoint(fraction * 360, DIAL_R);
+    const apex = apexFracRef.current;
+    const u = leftArcU(fraction, apex);
+    const p = dialPoint(swingAngle(fraction, apex), DIAL_R);
+    const onBack = fraction <= apex;
     dotRef.current?.setAttribute("cx", String(p.x));
     dotRef.current?.setAttribute("cy", String(p.y));
-    arcRef.current?.setAttribute("stroke-dashoffset", String(TRACK_CIRC * (1 - fraction)));
+    dotRef.current?.setAttribute("fill", onBack ? BRAND_ORANGE : BRAND_GREEN);
+    if (onBack) {
+      // Orange grows bottom → current.
+      backTrailRef.current?.setAttribute("stroke-dasharray", String(LEFT_ARC_LEN));
+      backTrailRef.current?.setAttribute("stroke-dashoffset", String(LEFT_ARC_LEN * (1 - u)));
+      downTrailRef.current?.setAttribute("stroke-dasharray", String(LEFT_ARC_LEN));
+      downTrailRef.current?.setAttribute("stroke-dashoffset", String(LEFT_ARC_LEN));
+    } else {
+      // Keep full orange; green reveals from top down to current (u: 1→0).
+      backTrailRef.current?.setAttribute("stroke-dasharray", String(LEFT_ARC_LEN));
+      backTrailRef.current?.setAttribute("stroke-dashoffset", String(0));
+      const shown = LEFT_ARC_LEN * (1 - u);
+      downTrailRef.current?.setAttribute("stroke-dasharray", `${shown} ${LEFT_ARC_LEN}`);
+      downTrailRef.current?.setAttribute("stroke-dashoffset", String(-LEFT_ARC_LEN * u));
+    }
   };
 
   const halt = useCallback(() => {
@@ -152,7 +197,6 @@ export function SwingTempoTrainer({
     const master = masterRef.current;
     masterRef.current = null;
     if (ctx && master) {
-      // Fade out rather than cutting off mid-tone, then drop anything still scheduled.
       master.gain.cancelScheduledValues(ctx.currentTime);
       master.gain.setTargetAtTime(0, ctx.currentTime, 0.01);
       setTimeout(() => master.disconnect(), 120);
@@ -162,10 +206,13 @@ export function SwingTempoTrainer({
 
   const pause = () => {
     halt();
-    const p0 = dialPoint(0, DIAL_R);
-    dotRef.current?.setAttribute("cx", String(p0.x));
-    dotRef.current?.setAttribute("cy", String(p0.y));
-    arcRef.current?.setAttribute("stroke-dashoffset", String(TRACK_CIRC));
+    dotRef.current?.setAttribute("cx", String(startPoint.x));
+    dotRef.current?.setAttribute("cy", String(startPoint.y));
+    dotRef.current?.setAttribute("fill", BRAND_ORANGE);
+    backTrailRef.current?.setAttribute("stroke-dasharray", String(LEFT_ARC_LEN));
+    backTrailRef.current?.setAttribute("stroke-dashoffset", String(LEFT_ARC_LEN));
+    downTrailRef.current?.setAttribute("stroke-dasharray", String(LEFT_ARC_LEN));
+    downTrailRef.current?.setAttribute("stroke-dashoffset", String(LEFT_ARC_LEN));
     phaseRef.current = "ready";
     lightRef.current = null;
     setPhase("ready");
@@ -191,10 +238,8 @@ export function SwingTempoTrainer({
     let clockSeen = -1;
     setReps(0);
 
-    // Preset and sound changes take effect from the next rep so a swing is never cut short.
     const schedule = () => {
       if (!primed) {
-        // The audio clock can stall while the output starts up, which would bunch up the first count-in.
         const ticking = ctx.state === "running" && clockSeen >= 0 && ctx.currentTime > clockSeen;
         clockSeen = ctx.currentTime;
         if (!ticking) return;
@@ -241,7 +286,7 @@ export function SwingTempoTrainer({
           drawTracker(t / total);
           next = t < rep.back ? "back" : "down";
         } else {
-          drawTracker(0);
+          drawTracker(t < total + HIT_FLASH_SEC ? 1 : 0);
           next = t < total + HIT_FLASH_SEC ? "hit" : "reset";
         }
       }
@@ -274,7 +319,6 @@ export function SwingTempoTrainer({
     [halt],
   );
 
-  const start = dialPoint(0, DIAL_R);
   const hit = phase === "hit";
   const centreLabel = light === "red" ? "Ready" : light === "amber" ? "Set" : PHASE_LABEL[phase];
 
@@ -305,8 +349,9 @@ export function SwingTempoTrainer({
 
         <div className="relative mx-auto mt-2 aspect-square w-full max-w-[280px]">
           <svg viewBox={`0 0 ${DIAL_SIZE} ${DIAL_SIZE}`} className="absolute inset-0 h-full w-full" aria-hidden>
-            {Array.from({ length: TICKS }, (_, i) => {
-              const angle = (i / TICKS) * 360;
+            {Array.from({ length: LEFT_TICKS }, (_, i) => {
+              // 180° (bottom) → 360° (top) along the left arc
+              const angle = 180 + (i / (LEFT_TICKS - 1)) * 180;
               const major = i % 5 === 0;
               const a = dialPoint(angle, DIAL_R + 6);
               const b = dialPoint(angle, DIAL_R + (major ? 14 : 10));
@@ -323,40 +368,95 @@ export function SwingTempoTrainer({
                 />
               );
             })}
-            <circle cx={DIAL_C} cy={DIAL_C} r={DIAL_R} fill="none" stroke="#f3f4f6" strokeWidth={6} />
-            <circle
-              ref={arcRef}
-              cx={DIAL_C}
-              cy={DIAL_C}
-              r={DIAL_R}
+
+            {/* Track: left semicircle only */}
+            <path
+              d={LEFT_ARC_D}
+              fill="none"
+              stroke="#e7e5e4"
+              strokeWidth={12}
+              strokeLinecap="round"
+            />
+
+            {/* Backswing trail — bottom → top */}
+            <path
+              ref={backTrailRef}
+              d={LEFT_ARC_D}
+              fill="none"
+              stroke={BRAND_ORANGE}
+              strokeWidth={7}
+              strokeLinecap="round"
+              strokeDasharray={LEFT_ARC_LEN}
+              strokeDashoffset={LEFT_ARC_LEN}
+            />
+
+            {/* Downswing trail — top → bottom on the same left arc */}
+            <path
+              ref={downTrailRef}
+              d={LEFT_ARC_D}
               fill="none"
               stroke={BRAND_GREEN}
-              strokeOpacity={0.3}
-              strokeWidth={6}
+              strokeWidth={7}
               strokeLinecap="round"
-              strokeDasharray={TRACK_CIRC}
-              strokeDashoffset={TRACK_CIRC}
-              transform={`rotate(-90 ${DIAL_C} ${DIAL_C})`}
+              strokeDasharray={LEFT_ARC_LEN}
+              strokeDashoffset={LEFT_ARC_LEN}
             />
+
+            {/* Top = apex */}
             <line
-              x1={apexTick.a.x}
-              y1={apexTick.a.y}
-              x2={apexTick.b.x}
-              y2={apexTick.b.y}
+              x1={topTick.a.x}
+              y1={topTick.a.y}
+              x2={topTick.b.x}
+              y2={topTick.b.y}
               stroke={BRAND_ORANGE}
               strokeWidth={5}
               strokeLinecap="round"
             />
+            {/* Bottom = address / impact */}
             <line
-              x1={DIAL_C}
-              y1={DIAL_C - DIAL_R - 14}
-              x2={DIAL_C}
-              y2={DIAL_C - DIAL_R + 6}
+              x1={bottomTick.a.x}
+              y1={bottomTick.a.y}
+              x2={bottomTick.b.x}
+              y2={bottomTick.b.y}
               stroke="#374151"
-              strokeWidth={3}
+              strokeWidth={4}
               strokeLinecap="round"
             />
-            <circle ref={dotRef} cx={start.x} cy={start.y} r={9} fill={BRAND_GREEN} stroke="white" strokeWidth={3} />
+
+            <text
+              x={sideLabel.x}
+              y={sideLabel.y - 8}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fill={BRAND_ORANGE}
+              fontSize="9"
+              fontWeight="800"
+              letterSpacing="0.04em"
+            >
+              BACK ↑
+            </text>
+            <text
+              x={sideLabel.x}
+              y={sideLabel.y + 8}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fill={BRAND_GREEN}
+              fontSize="9"
+              fontWeight="800"
+              letterSpacing="0.04em"
+            >
+              DOWN ↓
+            </text>
+
+            <circle
+              ref={dotRef}
+              cx={startPoint.x}
+              cy={startPoint.y}
+              r={9}
+              fill={BRAND_ORANGE}
+              stroke="white"
+              strokeWidth={3}
+            />
           </svg>
 
           <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -369,6 +469,22 @@ export function SwingTempoTrainer({
             </p>
             {playing && <p className="text-[10px] font-semibold tabular-nums text-gray-400">Reps {reps}</p>}
           </div>
+        </div>
+
+        <div className="mt-3 flex flex-col items-center gap-1.5 text-[11px] font-semibold">
+          <div className="flex items-center justify-center gap-4">
+            <span className="inline-flex items-center gap-1.5 text-[#c77c00]">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#FFA500]" aria-hidden />
+              Back ↑ ({ratio})
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-[#014421]">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#014421]" aria-hidden />
+              Down ↓ (1)
+            </span>
+          </div>
+          <p className="text-center text-[10px] font-medium text-stone-400">
+            Left arc only · up = backswing · back down = downswing
+          </p>
         </div>
 
         <div className="mt-2 grid grid-cols-3 gap-2 text-center">
@@ -461,6 +577,7 @@ export function SwingTempoTrainer({
           {mode === "voice"
             ? "“One” starts the takeaway, “Two” is the top, “Hit!” is impact."
             : "Low tone starts the takeaway, middle tone is the top (orange mark), high tone is impact."}{" "}
+          The dial uses the left half only: orange up for the backswing, green back down the same side for the downswing.{" "}
           {countIn
             ? "With the count-in, red and amber tick one backswing apart: start the takeaway on green."
             : `${resetSec}s pause between reps to address the ball.`}{" "}
@@ -470,4 +587,3 @@ export function SwingTempoTrainer({
     </div>
   );
 }
-

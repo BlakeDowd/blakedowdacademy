@@ -32,13 +32,14 @@ import {
   MessageSquare,
   Ruler,
   Timer,
-  Gauge,
   Camera,
   Loader2,
+  ChevronDown,
   ChevronRight,
   PersonStanding,
   GraduationCap,
   BookHeart,
+  Dumbbell,
 } from "lucide-react";
 import { AddToHomeScreenGuide } from "@/components/AddToHomeScreenGuide";
 import { InstallAppPrompt } from "@/components/InstallAppPrompt";
@@ -376,6 +377,7 @@ export default function HomeDashboard() {
     ? formatBunnyDuration(bunnyVideoMetadata.lengthSeconds)
     : "";
   const [featuredVideoExpanded, setFeaturedVideoExpanded] = useState(false);
+  const [moreToolsOpen, setMoreToolsOpen] = useState(false);
   const featuredThumbUrl = libraryThumbnailPath(featuredHome.bunnyVideoId);
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [recentTab, setRecentTab] = useState<'activity' | 'myRounds'>('activity');
@@ -777,35 +779,101 @@ export default function HomeDashboard() {
             </button>
           </div>
           <WeeklyGoalsBar href="/goals" />
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { label: 'Combine Tests', icon: Crosshair, onClick: () => router.push('/practice?plan=combine') },
-              { label: 'Drill Library', icon: BookOpen, onClick: () => router.push('/practice?plan=library') },
-              { label: 'My Stats', icon: BarChart3, onClick: () => router.push('/stats') },
-              { label: 'Fuel Planner', icon: Apple, onClick: () => router.push('/practice?plan=fuel') },
-              { label: 'Mobility Screen', icon: PersonStanding, onClick: () => router.push('/practice/mobility-screen') },
-              { label: 'Virtual Caddie', icon: Bot, onClick: () => router.push('/virtual-caddie') },
-              { label: 'Putt Calculator', icon: Ruler, onClick: () => router.push('/putting-calculator') },
-              { label: 'Swing Tempo', icon: Timer, onClick: () => router.push('/full-swing-tempo') },
-              { label: 'Chip Tempo', icon: Flag, onClick: () => router.push('/short-game-tempo') },
-              { label: 'Speed Logging', icon: Gauge, onClick: () => router.push('/speed-logging') },
-              { label: 'Feel Log', icon: BookHeart, onClick: () => router.push('/feel-log') },
-              {
-                label: 'Approach Shot Sim',
-                icon: Target,
-                onClick: () => router.push('/practice/approach-shot-simulator'),
-              },
-            ].map(({ label, icon: Icon, onClick }) => (
-              <button
-                key={label}
-                type="button"
-                onClick={onClick}
-                className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-gray-100 bg-white px-1 py-3 text-center text-xs font-semibold leading-tight text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
-              >
-                <Icon className="h-5 w-5 text-[#014421]" aria-hidden />
-                {label}
-              </button>
-            ))}
+
+          <div>
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-stone-400">Tools</p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: 'Combine Tests', icon: Crosshair, onClick: () => router.push('/practice?plan=combine') },
+                { label: 'My Stats', icon: BarChart3, onClick: () => router.push('/stats') },
+                { label: 'Gym Planner', icon: Dumbbell, onClick: () => router.push('/weight-training') },
+              ].map(({ label, icon: Icon, onClick }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={onClick}
+                  className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-gray-100 bg-white px-1 py-3 text-center text-xs font-semibold leading-tight text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+                >
+                  <Icon className="h-5 w-5 text-[#014421]" aria-hidden />
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMoreToolsOpen((open) => !open)}
+              aria-expanded={moreToolsOpen}
+              className="mt-2 flex w-full items-center justify-between rounded-xl border border-stone-200 bg-white px-3.5 py-3 text-left shadow-sm transition-colors hover:bg-stone-50"
+            >
+              <span>
+                <span className="block text-sm font-bold text-stone-900">More tools</span>
+                <span className="block text-xs text-stone-500">Library, caddie, tempo, fuel and more</span>
+              </span>
+              <ChevronDown
+                className={`h-5 w-5 shrink-0 text-stone-400 transition-transform ${moreToolsOpen ? 'rotate-180' : ''}`}
+                aria-hidden
+              />
+            </button>
+
+            {moreToolsOpen && (
+              <div className="mt-2 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
+                {(
+                  [
+                    {
+                      title: 'Practice',
+                      items: [
+                        { label: 'Drill Library', icon: BookOpen, href: '/practice?plan=library' },
+                        { label: 'Fuel Planner', icon: Apple, href: '/practice?plan=fuel' },
+                        { label: 'Mobility Screen', icon: PersonStanding, href: '/practice/mobility-screen' },
+                      ],
+                    },
+                    {
+                      title: 'On-course',
+                      items: [
+                        { label: 'Virtual Caddie', icon: Bot, href: '/virtual-caddie' },
+                        { label: 'Putt Calculator', icon: Ruler, href: '/putting-calculator' },
+                        { label: 'Approach Shot Sim', icon: Target, href: '/practice/approach-shot-simulator' },
+                      ],
+                    },
+                    {
+                      title: 'Tempo & feel',
+                      items: [
+                        { label: 'Swing Tempo', icon: Timer, href: '/full-swing-tempo' },
+                        { label: 'Chip Tempo', icon: Flag, href: '/short-game-tempo' },
+                        { label: 'Feel Log', icon: BookHeart, href: '/feel-log' },
+                      ],
+                    },
+                  ] as const
+                ).map((group, groupIndex) => (
+                  <div
+                    key={group.title}
+                    className={groupIndex > 0 ? 'border-t border-stone-100' : undefined}
+                  >
+                    <p className="bg-stone-50 px-3.5 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-stone-400">
+                      {group.title}
+                    </p>
+                    <ul>
+                      {group.items.map(({ label, icon: Icon, href }) => (
+                        <li key={label} className="border-t border-stone-100 first:border-t-0">
+                          <button
+                            type="button"
+                            onClick={() => router.push(href)}
+                            className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-stone-50"
+                          >
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#014421]/8">
+                              <Icon className="h-4 w-4 text-[#014421]" aria-hidden />
+                            </span>
+                            <span className="min-w-0 flex-1 text-sm font-semibold text-stone-800">{label}</span>
+                            <ChevronRight className="h-4 w-4 shrink-0 text-stone-300" aria-hidden />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
