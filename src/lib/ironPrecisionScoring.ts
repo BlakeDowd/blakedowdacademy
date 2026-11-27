@@ -14,13 +14,28 @@ export function isValidFingerStep(value: number): boolean {
   return (FINGER_STEPS as readonly number[]).includes(value);
 }
 
-/** Base points from lateral dispersion (fingers). Outside / wider than 4 ⇒ 0 (same as greater than 4.0). */
-export function fingerBandPoints(fingers: IronFingerMiss): number {
+/**
+ * Longer carries get slightly wider finger bands (same visual miss looks bigger in fingers at short range).
+ * ~40 m → 0.9×, ~100 m → 1.0×, ~180 m → 1.25×, 220 m+ → ~1.35×.
+ */
+export function fingerToleranceScale(carryM?: number | null): number {
+  if (carryM == null || !Number.isFinite(carryM) || carryM <= 0) return 1;
+  const t = Math.min(1, Math.max(0, (carryM - 40) / 180));
+  return Math.round((0.9 + t * 0.45) * 100) / 100;
+}
+
+/**
+ * Base points from lateral dispersion (fingers). Outside / wider than 4 ⇒ 0.
+ * Pass carry (m) when known so long irons / driver aren't graded like wedges.
+ */
+export function fingerBandPoints(fingers: IronFingerMiss, carryM?: number | null): number {
   if (fingers === "outside") return 0;
-  if (fingers <= 0.5) return 10;
-  if (fingers <= 1.5) return 7;
-  if (fingers <= 2.5) return 4;
-  if (fingers <= 4.0) return 1;
+  const scale = fingerToleranceScale(carryM);
+  const effective = fingers / Math.max(0.5, scale);
+  if (effective <= 0.5) return 10;
+  if (effective <= 1.5) return 7;
+  if (effective <= 2.5) return 4;
+  if (effective <= 4.0) return 1;
   return 0;
 }
 
@@ -36,19 +51,25 @@ export function shotPoints(
   fingers: IronFingerMiss,
   strike: IronStrike | string,
   contact: IronContact,
+  carryM?: number | null,
 ): number {
-  return fingerBandPoints(fingers) + qualityBonusPoints(strike, contact);
+  return fingerBandPoints(fingers, carryM) + qualityBonusPoints(strike, contact);
 }
 
 export type IronShotInput = {
   fingers: IronFingerMiss;
   strike: IronStrike | string;
   contact: IronContact;
+  /** Optional carry (m) — widens finger bands on longer shots. */
+  carryM?: number | null;
 };
 
 /** Sum of per-shot points (theory max 9×12 with all solid + middle + best bands; dispersion-only max is 90). */
 export function totalSessionPoints(shots: IronShotInput[]): number {
-  return shots.reduce((sum, s) => sum + shotPoints(s.fingers, s.strike, s.contact), 0);
+  return shots.reduce(
+    (sum, s) => sum + shotPoints(s.fingers, s.strike, s.contact, s.carryM),
+    0,
+  );
 }
 
 /** Shot consistency: average points per shot. */

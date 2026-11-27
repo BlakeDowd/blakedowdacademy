@@ -14,7 +14,11 @@ export default function AppFrame({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const isLibrary = pathname === "/library";
+  const isBooking = pathname.startsWith("/book");
+
+  if (isBooking) {
+    return <div className="min-h-screen w-full bg-[#f7f8f7]">{children}</div>;
+  }
 
   return (
     <div

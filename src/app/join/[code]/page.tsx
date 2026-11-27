@@ -12,6 +12,7 @@ import {
   acceptInvite,
   clearPendingInvite,
   fetchInvitePreview,
+  loginHrefForInvite,
   normalizeInviteCode,
   rememberPendingInvite,
   type InvitePreview,
@@ -212,10 +213,10 @@ function JoinCadet({ code }: { code: string }) {
 
       {!isAuthenticated ? (
         <div className="space-y-2">
-          <Link href="/login?mode=signup" className={primary}>
+          <Link href={loginHrefForInvite(code, "signup")} className={primary}>
             Create account &amp; join Cadets
           </Link>
-          <Link href="/login" className={secondary}>
+          <Link href={loginHrefForInvite(code)} className={secondary}>
             I already have an account
           </Link>
         </div>
@@ -378,10 +379,10 @@ function JoinFamily({ code }: { code: string }) {
 
       {!isAuthenticated ? (
         <div className="space-y-2">
-          <Link href="/login?mode=signup" className={primary}>
+          <Link href={loginHrefForInvite(code, "signup")} className={primary}>
             Create the family login
           </Link>
-          <Link href="/login" className={secondary}>
+          <Link href={loginHrefForInvite(code)} className={secondary}>
             I already have an account
           </Link>
         </div>
@@ -567,10 +568,10 @@ function JoinSpace({ code }: { code: string }) {
 
       {!isAuthenticated ? (
         <div className="space-y-2">
-          <Link href="/login?mode=signup" className={primary}>
+          <Link href={loginHrefForInvite(code, "signup")} className={primary}>
             Create my account
           </Link>
-          <Link href="/login" className={secondary}>
+          <Link href={loginHrefForInvite(code)} className={secondary}>
             I already have an account
           </Link>
         </div>

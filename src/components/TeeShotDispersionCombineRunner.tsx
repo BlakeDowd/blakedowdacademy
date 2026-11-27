@@ -42,10 +42,10 @@ import {
   BreakdownBar,
   BreakdownCard,
   EveryShotList,
-  FocusCard,
   RateRow,
   ValueRow,
 } from "@/components/combine/CombineBreakdown";
+import { CombineTakeaway } from "@/components/combine/CombineTakeaway";
 import { CARD_ART_CLASS, HERO_ART_CLASS, TeeShotDiagram } from "@/components/combine/CombineArt";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
@@ -500,7 +500,7 @@ export function TeeShotDispersionCombineRunner() {
       strike_vertical: row,
       strike_horizontal: col,
       strike_quadrant: strikeQuadrantLabel(row, col),
-      points: shotPointsForTeeDispersionShot(direction, selection, row, col),
+      points: shotPointsForTeeDispersionShot(direction, selection, row, col, carry),
     };
     const next = [...shots, entry];
     setShots(next);
@@ -582,7 +582,7 @@ export function TeeShotDispersionCombineRunner() {
           ]}
         />
 
-        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+        <CombineTakeaway theme="driver_dispersion" title={summary.focus.title} lines={summary.focus.lines} />
 
         <BreakdownCard title="Where your drives finished" aside={`L ${summary.left} · On line ${total - summary.left - summary.right} · R ${summary.right}`}>
           <FairwayMap shots={shots} />
@@ -676,7 +676,10 @@ export function TeeShotDispersionCombineRunner() {
   const carryM = parseCarryMeters(carryInput);
   const carryInvalid = carryInput.trim() !== "" && carryM === null;
   const effFingers: TeeShotFingerDispersion | null = direction === "straight" ? 0 : fingers;
-  const liveScore = effFingers === null ? null : shotPointsForTeeDispersionShot(direction, toSelection(effFingers), row, col);
+  const liveScore =
+    effFingers === null
+      ? null
+      : shotPointsForTeeDispersionShot(direction, toSelection(effFingers), row, col, carryM);
   const canRecord = carryM !== null && liveScore !== null;
   const liveMiss =
     effFingers === null ? (direction === "left" ? "Left" : "Right") : missLabel({ direction, finger_dispersion: effFingers });

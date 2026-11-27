@@ -115,10 +115,14 @@ export function shotPointsForTeeDispersionShot(
   selection: TeeShotFingerSelection,
   row: FaceRow,
   col: FaceCol,
+  carryM?: number | null,
 ): number {
   if (selection.mode === "outside") return 0;
   const band = fingerBandInput(direction, selection);
-  const base = fingerBandPoints(band);
+  const base = fingerBandPoints(
+    band,
+    carryM ?? teeShotDispersionCombineConfig.referenceCarryDistanceM,
+  );
   const bonus = isMiddleMiddle(row, col) ? teeShotDispersionCombineConfig.middleMiddleBonus : 0;
   return base + bonus;
 }

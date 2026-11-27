@@ -5,6 +5,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { EMAIL_TAKEN_MESSAGE } from "@/lib/emailTaken";
+import { postLoginPath } from "@/lib/coachingSpaces";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 interface User {
@@ -1027,9 +1028,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error('Failed to initialize Supabase client.');
     }
 
+    const emailRedirectTo =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(postLoginPath())}`
+        : undefined;
+
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
+      options: emailRedirectTo ? { emailRedirectTo } : undefined,
     });
 
     if (error) {

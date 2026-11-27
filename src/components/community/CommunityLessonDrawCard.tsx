@@ -11,9 +11,13 @@ import {
 
 function waysToEarn(status: PracticeDrawStatus): { label: string; live: boolean }[] {
   const r = status.earnRules;
-  return [
+  const hourLabel =
+    r.practiceMinutesPerTicket === 60
+      ? "Log 1 hour of practice = 1 ticket"
+      : `Log ${r.practiceMinutesPerTicket} min practice = 1 ticket`;
+  const ways: { label: string; live: boolean }[] = [
     {
-      label: `Log ${r.practiceMinutesPerTicket} min practice = 1 ticket`,
+      label: hourLabel,
       live: r.practiceMinutesPerTicket > 0,
     },
     {
@@ -26,18 +30,18 @@ function waysToEarn(status: PracticeDrawStatus): { label: string; live: boolean 
     {
       label:
         r.drillTickets > 0
-          ? `Finish drills = ${r.drillTickets} ticket${r.drillTickets === 1 ? "" : "s"}`
-          : "Drills (coming soon)",
+          ? `Complete a drill = ${r.drillTickets} ticket${r.drillTickets === 1 ? "" : "s"}`
+          : "Complete a drill (coming soon)",
       live: r.drillTickets > 0,
     },
-    {
-      label:
-        r.toolTickets > 0
-          ? `Use training tools = ${r.toolTickets} ticket${r.toolTickets === 1 ? "" : "s"}`
-          : "Training tools (coming soon)",
-      live: r.toolTickets > 0,
-    },
   ];
+  if (r.toolTickets > 0) {
+    ways.push({
+      label: `Use training tools = ${r.toolTickets} ticket${r.toolTickets === 1 ? "" : "s"}`,
+      live: true,
+    });
+  }
+  return ways;
 }
 
 function useLessonDrawStatus() {
@@ -100,7 +104,7 @@ export function CommunityLessonDrawCompact() {
         <div className="min-w-0">
           <p className="truncate text-[15px] font-bold">{status.prize} draw</p>
           <p className="mt-0.5 text-xs text-white/75">
-            Log 1 hour of practice = 1 ticket. Combines, drills &amp; tools coming soon.
+            1 hour practice, 1 combine, or 1 drill = 1 ticket.
           </p>
         </div>
         <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-semibold">
@@ -164,7 +168,7 @@ export function CommunityLessonDrawCard() {
           <p className="text-[11px] font-bold uppercase tracking-wide text-[#FFA500]">Community draw</p>
           <h3 className="text-base font-bold text-stone-900">{status.prize}</h3>
           <p className="mt-0.5 text-xs text-stone-500">
-            Tickets go into a random draw. More tickets = better odds.
+            Any one of these earns a ticket. More tickets = better odds.
           </p>
         </div>
       </div>
@@ -214,12 +218,20 @@ export function CommunityLessonDrawCard() {
         ))}
       </ul>
 
-      <Link
-        href="/practice"
-        className="mt-3 flex w-full items-center justify-center rounded-xl bg-[#014421] py-2.5 text-sm font-bold text-white"
-      >
-        Log practice
-      </Link>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Link
+          href="/practice"
+          className="flex items-center justify-center rounded-xl bg-[#014421] py-2.5 text-sm font-bold text-white"
+        >
+          Practice / drills
+        </Link>
+        <Link
+          href="/practice?plan=combine"
+          className="flex items-center justify-center rounded-xl border border-[#014421]/25 bg-white py-2.5 text-sm font-bold text-[#014421]"
+        >
+          Combines
+        </Link>
+      </div>
     </article>
   );
 }

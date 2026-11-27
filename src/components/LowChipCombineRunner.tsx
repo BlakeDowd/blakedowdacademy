@@ -6,13 +6,14 @@ import { useCombineUser } from "@/hooks/useCombineUser";
 import { lowChipCombineConfig } from "@/lib/lowChipCombineConfig";
 import {
   LOW_CHIP_MAX_TOTAL_POINTS,
-  lowChipPointsFromMetres,
+  lowChipPointsFromMetresAtStation,
   roundLowChipPointsOneDecimal,
 } from "@/lib/lowChipCombineScoring";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
+import { CombineGradeSummary } from "@/components/combine/CombineGradeSummary";
 import { performanceGradeFromOutOf150 } from "@/lib/combinePerformanceGrade";
-import { CombinePerformanceGradeBadge } from "@/components/CombinePerformanceGradeBadge";
+import { useCombineSelfCompare } from "@/hooks/useCombineSelfCompare";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import {
   CombineHero,
@@ -29,7 +30,8 @@ import {
   type TrackItem,
 } from "@/components/combine/PuttingCombineUi";
 import { Segmented } from "@/components/combine/IronCombineUi";
-import { BreakdownBar, BreakdownCard, EveryShotList, FocusCard, ValueRow } from "@/components/combine/CombineBreakdown";
+import { BreakdownBar, BreakdownCard, EveryShotList, ValueRow } from "@/components/combine/CombineBreakdown";
+import { CombineTakeaway } from "@/components/combine/CombineTakeaway";
 import { CARD_ART_CLASS, ChipShotDiagram, HERO_ART_CLASS } from "@/components/combine/CombineArt";
 import { FINISH_LABEL, FinishMap, FinishPicker, type Finish } from "@/components/combine/FinishCross";
 
@@ -83,8 +85,8 @@ function parseMetres(raw: string): number | null {
   return n;
 }
 
-function shotPoints(metres: number): number {
-  return Math.max(0, lowChipPointsFromMetres(metres));
+function shotPoints(metres: number, station: Station): number {
+  return Math.max(0, lowChipPointsFromMetresAtStation(metres, station));
 }
 
 function sessionTotal(shots: ChipShot[]): number {
@@ -300,7 +302,7 @@ export function LowChipCombineRunner() {
     const metres = finish === "holed" ? 0 : parseMetres(distance);
     const station = SEQUENCE[shots.length];
     if (metres === null || station === undefined) return;
-    const next = [...shots, { station, finish, metres, strike, points: shotPoints(metres) }];
+    const next = [...shots, { station, finish, metres, strike, points: shotPoints(metres, station) }];
     setShots(next);
     resetShot();
     if (next.length >= TOTAL_SHOTS) {
@@ -319,6 +321,7 @@ export function LowChipCombineRunner() {
   }, [status, shots]);
 
   const summary = useMemo(() => (status === "complete" ? breakdown(shots) : null), [status, shots]);
+  const lowChipSelfCompare = useCombineSelfCompare("low_chip", summary?.total ?? null);
 
   if (status === "intro") {
     return (
@@ -345,7 +348,8 @@ export function LowChipCombineRunner() {
             <li>Further than 4 m: 0 pts</li>
             <li>The closer it finishes, the more it scores. Side and strike don&apos;t change your score, they power your breakdown.</li>
             <li className="font-semibold text-gray-900">
-              Best possible is {LOW_CHIP_MAX_TOTAL_POINTS} points. Higher is better.
+              Best possible is {LOW_CHIP_MAX_TOTAL_POINTS} points. Grades: Tour Pro / Scratch / Single Digit /
+              Mid-Handicap / Needs Work.
             </li>
           </ul>
         </ScoringGuide>
@@ -365,12 +369,10 @@ export function LowChipCombineRunner() {
             value={fmtPts(summary.total)}
             caption={`of ${LOW_CHIP_MAX_TOTAL_POINTS} points`}
           />
-          <div className="mt-3 inline-flex max-w-full rounded-xl bg-white">
-            <CombinePerformanceGradeBadge gradeId={grade.id} label={grade.label} />
-          </div>
           <p className="mt-2 text-xs text-white/70">
             {holed} holed · higher is better
           </p>
+          <CombineGradeSummary grade={grade} selfCompare={lowChipSelfCompare} />
         </ResultHero>
 
         <StatTiles
@@ -381,7 +383,7 @@ export function LowChipCombineRunner() {
           ]}
         />
 
-        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+        <CombineTakeaway theme="chipping_closer" title={summary.focus.title} lines={summary.focus.lines} />
 
         <BreakdownCard title="Where your points went" aside={`${fmtPts(summary.total)} of ${LOW_CHIP_MAX_TOTAL_POINTS}`}>
           <BreakdownBar
@@ -465,7 +467,7 @@ export function LowChipCombineRunner() {
   const ofStation = (index % PER_STATION) + 1;
   const nextStation = SEQUENCE[index + 1];
   const metres = finish === "holed" ? 0 : parseMetres(distance);
-  const liveScore = finish !== null && metres !== null ? shotPoints(metres) : null;
+  const liveScore = finish !== null && metres !== null ? shotPoints(metres, station) : null;
   const track: TrackItem[] = SEQUENCE.map((d, i) => {
     const s = shots[i];
     return s ? { label: fmtPts(s.points), tone: pointsTone(s.points), ariaLabel: `Shot ${i + 1} (${d} m): ${fmtPts(s.points)} points` } : null;

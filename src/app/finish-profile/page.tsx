@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
 import { User, CheckCircle2 } from "lucide-react";
 import HandicapField from "@/components/HandicapField";
+import { postLoginPath } from "@/lib/coachingSpaces";
 
 export default function FinishProfile() {
   const { user, isAuthenticated, loading, profileLoading, refreshUser } = useAuth();
@@ -79,9 +80,9 @@ export default function FinishProfile() {
 
         // Profile lives in `profiles`; avoid `refreshSession()` here (races auto-refresh → invalid refresh token).
         await refreshUser();
-        
-        // Force a router refresh (panic redirect to / removed - stay on page)
-        router.refresh();
+
+        // Resume a coaching/family/cadet invite if one is waiting, otherwise profile.
+        window.location.assign(postLoginPath());
       }
     } catch (err: any) {
       console.error("Error updating profile:", err);

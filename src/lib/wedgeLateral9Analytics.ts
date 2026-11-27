@@ -23,10 +23,11 @@ export function wedgeLateral9ShotPoints(
   dispersion: number,
   strike: IronStrike | string,
   contact: IronContact,
+  targetM?: number | null,
 ): number {
   const v = normalizeLegacyVerticalStrike(strike);
   const bonus = v === "solid" && contact === "middle" ? 2 : 0;
-  return fingerBandPoints(dispersion) + bonus;
+  return fingerBandPoints(dispersion, targetM) + bonus;
 }
 
 export type WedgeLateral9Aggregates = {
@@ -50,7 +51,13 @@ export function totalPointsFromWedgeShotsJson(shots: unknown): number | null {
     const contact = sh.contact;
     if (contact !== "heel" && contact !== "middle" && contact !== "toe") continue;
     const strike = String(sh.strike ?? "solid");
-    sum += wedgeLateral9ShotPoints(disp, strike, contact);
+    const target =
+      typeof sh.target_m === "number"
+        ? sh.target_m
+        : Number.isFinite(Number(sh.target_m))
+          ? Number(sh.target_m)
+          : null;
+    sum += wedgeLateral9ShotPoints(disp, strike, contact, target);
     n++;
   }
   return n > 0 ? sum : null;
@@ -59,7 +66,7 @@ export function totalPointsFromWedgeShotsJson(shots: unknown): number | null {
 export function buildWedgeLateral9Aggregates(shots: WedgeLateral9ShotLog[]): WedgeLateral9Aggregates {
   const n = shots.length;
   const total_points = shots.reduce(
-    (s, sh) => s + wedgeLateral9ShotPoints(sh.dispersion, sh.strike, sh.contact),
+    (s, sh) => s + wedgeLateral9ShotPoints(sh.dispersion, sh.strike, sh.contact, sh.target_m),
     0,
   );
   const solid_middle_bonus_count = shots.filter(

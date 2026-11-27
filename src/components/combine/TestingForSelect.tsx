@@ -39,6 +39,7 @@ export function TestingForSelect({
   promptHint = "Yourself, or search a player in your lesson",
   selectedTitle = (name: string) => `Testing ${name}`,
   selectedHint = "Pick a combine. Their score saves to their profile.",
+  selfOption,
 }: {
   value: PlayerOption | null;
   onChange: (player: PlayerOption | null) => void;
@@ -46,9 +47,15 @@ export function TestingForSelect({
   promptHint?: string;
   selectedTitle?: (name: string) => string;
   selectedHint?: string;
+  /** When set, shows a one-tap "Myself" choice (speed logging / self combines). */
+  selfOption?: PlayerOption | null;
 }) {
+  const { user } = useAuth();
   const [players, setPlayers] = useState<PlayerOption[] | null>(null);
   const [query, setQuery] = useState("");
+  const myself: PlayerOption | null =
+    selfOption ??
+    (user?.id ? { id: user.id, name: user.fullName?.trim() || "Myself" } : null);
 
   useEffect(() => {
     if (value) return;
@@ -108,6 +115,15 @@ export function TestingForSelect({
           <p className="text-[11px] text-gray-500">{promptHint}</p>
         </div>
       </div>
+      {myself && (
+        <button
+          type="button"
+          onClick={() => choose(myself)}
+          className="w-full rounded-xl bg-stone-100 px-3 py-2.5 text-left text-sm font-semibold text-stone-800 hover:bg-stone-200"
+        >
+          Myself
+        </button>
+      )}
       <label className="flex items-center gap-2 rounded-xl bg-gray-100 px-3 py-2">
         <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
         <input

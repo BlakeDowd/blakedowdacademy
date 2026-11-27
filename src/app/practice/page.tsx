@@ -614,7 +614,7 @@ function plannerCombineFromDrillId(drillId: string | null | undefined): PlannerC
 
 import { logActivity } from "@/lib/activity";
 import { addProfileXp } from "@/lib/addProfileXp";
-import { awardPracticeDrawMinutes } from "@/lib/practiceDrawTickets";
+import { awardDrawTickets, awardPracticeDrawMinutes } from "@/lib/practiceDrawTickets";
 
 async function updateUserXP(userId: string, points: number): Promise<void> {
   await addProfileXp(userId, points);
@@ -2806,20 +2806,41 @@ export default function PracticePage() {
           await updateUserXP(user.id, xpEarned);
           console.log(`Practice: Added ${xpEarned} XP for drill completion`);
 
+          // Community draw: 1 drill = 1 ticket (plus practice minutes banked toward the hour ticket).
+          const drillSourceId =
+            typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+              ? crypto.randomUUID()
+              : null;
+          const drillTicketResult = await awardDrawTickets("drill", 1, drillSourceId);
+
+          let minutesResult = {
+            ticketsAwarded: 0,
+            ticketsTotal: drillTicketResult.ticketsTotal,
+            minutesToNext: drillTicketResult.minutesToNext,
+            prize: drillTicketResult.prize,
+            campaignId: drillTicketResult.campaignId,
+          };
           if (durationMinutes > 0) {
-            const drawResult = await awardPracticeDrawMinutes(durationMinutes);
-            if (drawResult.ticketsAwarded > 0 || drawResult.campaignId) {
-              setDrawNotification({
-                show: true,
-                ticketsAwarded: drawResult.ticketsAwarded,
-                ticketsTotal: drawResult.ticketsTotal,
-                minutesToNext: drawResult.minutesToNext,
-                prize: drawResult.prize,
-              });
-              setTimeout(() => {
-                setDrawNotification((prev) => ({ ...prev, show: false }));
-              }, 4000);
-            }
+            minutesResult = await awardPracticeDrawMinutes(durationMinutes);
+          }
+
+          const ticketsAwarded =
+            drillTicketResult.ticketsAwarded + (minutesResult.ticketsAwarded || 0);
+          const ticketsTotal = Math.max(
+            drillTicketResult.ticketsTotal || 0,
+            minutesResult.ticketsTotal || 0,
+          );
+          if (ticketsAwarded > 0 || minutesResult.campaignId || drillTicketResult.campaignId) {
+            setDrawNotification({
+              show: true,
+              ticketsAwarded,
+              ticketsTotal,
+              minutesToNext: minutesResult.minutesToNext ?? drillTicketResult.minutesToNext,
+              prize: minutesResult.prize ?? drillTicketResult.prize,
+            });
+            setTimeout(() => {
+              setDrawNotification((prev) => ({ ...prev, show: false }));
+            }, 4000);
           }
 
           await refreshDrills();
@@ -4363,7 +4384,7 @@ export default function PracticePage() {
                     </span>
                   </span>
                   <span className="block text-xs text-gray-500">
-                    Script each part of the game · rehearse with voice start / stop
+                    Time your routine · plan stages when you want
                   </span>
                 </span>
                 <ChevronDown

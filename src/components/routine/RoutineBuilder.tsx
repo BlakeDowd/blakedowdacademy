@@ -21,32 +21,46 @@ import { useVoiceTimerCommands } from "@/hooks/useVoiceTimerCommands";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import {
   ROUTINE_GAME_PARTS,
+  ROUTINE_PHASES,
   ROUTINE_QUIZ_QUESTIONS,
   answersHaveContent,
   appendRoutineTimeLog,
   blankAnswers,
   buildStepsFromAnswers,
+  consistencyForPart,
   consistencyForStep,
+  consistencyGradeLabel,
+  consistencyGradeTone,
   formatRoutineClock,
   formatRoutineTimePrecise,
   getOrCreateRoutine,
   hasStepDetails,
   loadRoutineStore,
   normalizeAnswers,
+  overallConsistency,
   reorderStageIds,
   routineFilledCount,
+  routinePhaseLabel,
   saveRoutineStore,
   secondsFromMs,
   starterRoutine,
   stepDetailEntries,
   systemStagesFromAnswers,
   upsertRoutine,
+  type ConsistencyStat,
   type GameRoutine,
   type RoutineAnswers,
   type RoutineExtra,
   type RoutineGamePartId,
+  type RoutinePhase,
   type RoutineTimeLog,
 } from "@/lib/routineBuilder";
+
+const PHASE_TONE: Record<RoutinePhase, string> = {
+  physical: "bg-[#014421]/10 text-[#014421]",
+  mental: "bg-[#FFA500]/20 text-[#9a6700]",
+  post: "bg-stone-200 text-stone-700",
+};
 
 type Mode = "parts" | "quiz" | "system" | "rehearse" | "history";
 
@@ -111,7 +125,7 @@ function QuizView({
           className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-[#014421]"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden />
-          All parts
+          Timer
         </button>
         <div className="flex items-center gap-2">
           <button
@@ -128,16 +142,47 @@ function QuizView({
         </div>
       </div>
 
+      <div className="flex gap-1.5">
+        {ROUTINE_PHASES.map((p) => {
+          const active = q.phase === p.id;
+          return (
+            <span
+              key={p.id}
+              className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${
+                active ? PHASE_TONE[p.id] : "bg-stone-100 text-stone-400"
+              }`}
+            >
+              {p.label}
+            </span>
+          );
+        })}
+      </div>
+
       <div className="flex gap-1" aria-hidden>
-        {ROUTINE_QUIZ_QUESTIONS.map((_, i) => (
+        {ROUTINE_QUIZ_QUESTIONS.map((qq, i) => (
           <span
             key={i}
-            className={`h-1 flex-1 rounded-full ${i <= quizIndex ? "bg-[#014421]" : "bg-gray-200"}`}
+            className={`h-1 flex-1 rounded-full ${
+              i <= quizIndex
+                ? qq.phase === "mental"
+                  ? "bg-[#FFA500]"
+                  : qq.phase === "post"
+                    ? "bg-stone-500"
+                    : "bg-[#014421]"
+                : "bg-gray-200"
+            }`}
           />
         ))}
       </div>
 
       <div className="rounded-2xl bg-white p-4 ring-1 ring-gray-200">
+        <p
+          className={`mb-2 text-[10px] font-bold uppercase tracking-wide ${
+            q.phase === "mental" ? "text-[#9a6700]" : q.phase === "post" ? "text-stone-700" : "text-[#014421]"
+          }`}
+        >
+          {routinePhaseLabel(q.phase)}
+        </p>
         <p className="text-sm font-semibold text-gray-900">{q.prompt}</p>
         <div className="mt-3 flex flex-wrap gap-1.5">
           {q.chips.map((chip) => {
@@ -286,6 +331,13 @@ function SystemView({
     onReorder(reorderStageIds(ids, index, direction));
   };
 
+  const phaseBlocks = ROUTINE_PHASES.map((p) => ({
+    ...p,
+    items: stages
+      .map((stage, index) => ({ stage, index }))
+      .filter(({ stage }) => stage.phase === p.id),
+  })).filter((b) => b.items.length > 0);
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -295,7 +347,7 @@ function SystemView({
           className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-[#014421]"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden />
-          All parts
+          Timer
         </button>
         <div className="flex items-center gap-2">
           <button
@@ -311,55 +363,67 @@ function SystemView({
       </div>
 
       <div className="rounded-2xl bg-[#014421] px-4 py-3 text-white">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-white/70">Your system</p>
-        <p className="mt-0.5 text-sm font-semibold">Same order, every shot — drag with the arrows</p>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-white/70">Plan stages</p>
+        <p className="mt-0.5 text-sm font-semibold">Physical → Mental → Post-shot — then time it</p>
       </div>
 
-      <ol className="space-y-0">
-        {stages.map((stage, i) => (
-          <li key={stage.id} className="relative flex gap-3 pb-4 last:pb-0">
-            {i < stages.length - 1 && (
-              <span
-                className="absolute left-[15px] top-8 bottom-0 w-0.5 bg-[#014421]/20"
-                aria-hidden
-              />
-            )}
-            <span className="relative z-[1] flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#014421] text-xs font-bold text-white">
-              {i + 1}
-            </span>
-            <div className="min-w-0 flex-1 rounded-xl bg-white px-3 py-2.5 ring-1 ring-gray-200">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#014421]">
-                    {stage.title}
-                  </p>
-                  <p className="mt-0.5 text-sm font-semibold text-gray-900">{stage.detail}</p>
-                </div>
-                <div className="flex shrink-0 flex-col gap-0.5">
-                  <button
-                    type="button"
-                    disabled={i === 0}
-                    onClick={() => move(i, -1)}
-                    className="rounded-md p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
-                    aria-label={`Move ${stage.title} up`}
-                  >
-                    <ChevronUp className="h-4 w-4" aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={i >= stages.length - 1}
-                    onClick={() => move(i, 1)}
-                    className="rounded-md p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
-                    aria-label={`Move ${stage.title} down`}
-                  >
-                    <ChevronDown className="h-4 w-4" aria-hidden />
-                  </button>
-                </div>
-              </div>
+      <div className="space-y-4">
+        {phaseBlocks.map((block) => (
+          <div key={block.id} className="space-y-2">
+            <div className="flex items-baseline justify-between gap-2 px-0.5">
+              <p className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${PHASE_TONE[block.id]}`}>
+                {block.label}
+              </p>
+              <p className="text-[10px] text-stone-400">{block.hint}</p>
             </div>
-          </li>
+            <ol className="space-y-0">
+              {block.items.map(({ stage, index: i }, localIdx) => (
+                <li key={stage.id} className="relative flex gap-3 pb-3 last:pb-0">
+                  {localIdx < block.items.length - 1 && (
+                    <span
+                      className="absolute left-[15px] top-8 bottom-0 w-0.5 bg-[#014421]/15"
+                      aria-hidden
+                    />
+                  )}
+                  <span className="relative z-[1] flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#014421] text-xs font-bold text-white">
+                    {i + 1}
+                  </span>
+                  <div className="min-w-0 flex-1 rounded-xl bg-white px-3 py-2.5 ring-1 ring-gray-200">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-[#014421]">
+                          {stage.title}
+                        </p>
+                        <p className="mt-0.5 text-sm font-semibold text-gray-900">{stage.detail}</p>
+                      </div>
+                      <div className="flex shrink-0 flex-col gap-0.5">
+                        <button
+                          type="button"
+                          disabled={i === 0}
+                          onClick={() => move(i, -1)}
+                          className="rounded-md p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+                          aria-label={`Move ${stage.title} up`}
+                        >
+                          <ChevronUp className="h-4 w-4" aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={i >= stages.length - 1}
+                          onClick={() => move(i, 1)}
+                          className="rounded-md p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+                          aria-label={`Move ${stage.title} down`}
+                        >
+                          <ChevronDown className="h-4 w-4" aria-hidden />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
         ))}
-      </ol>
+      </div>
 
       <div className="grid grid-cols-2 gap-2">
         <button
@@ -375,9 +439,56 @@ function SystemView({
           className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#014421] py-3 text-sm font-bold text-white"
         >
           <Play className="h-4 w-4" aria-hidden />
-          Rehearse
+          Back to timer
         </button>
       </div>
+    </div>
+  );
+}
+
+function ConsistencyCard({ stat }: { stat: ConsistencyStat }) {
+  const trendLabel =
+    stat.trend == null
+      ? null
+      : Math.abs(stat.trend) < 0.05
+        ? "Steady"
+        : stat.trend < 0
+          ? "Getting tighter"
+          : "Getting looser";
+
+  return (
+    <div className="rounded-xl bg-white px-3 py-2.5 ring-1 ring-gray-200">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-gray-900">{stat.stepTitle}</p>
+          <p className={`mt-0.5 text-[11px] font-bold ${consistencyGradeTone(stat.grade)}`}>
+            {consistencyGradeLabel(stat.grade)}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className={`text-sm font-extrabold tabular-nums ${consistencyGradeTone(stat.grade)}`}>
+            ±{formatRoutineTimePrecise(stat.spread)}
+          </p>
+          <p className="text-[10px] text-gray-400">spread</p>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2 border-t border-stone-100 pt-2 text-center">
+        <div>
+          <p className="text-[10px] text-gray-400">Avg</p>
+          <p className="text-xs font-bold tabular-nums text-gray-900">{formatRoutineTimePrecise(stat.avg)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-400">Latest</p>
+          <p className="text-xs font-bold tabular-nums text-gray-900">{formatRoutineTimePrecise(stat.latest)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-400">Reps</p>
+          <p className="text-xs font-bold tabular-nums text-gray-900">{stat.count}</p>
+        </div>
+      </div>
+      {trendLabel && (
+        <p className="mt-1.5 text-[10px] font-medium text-stone-500">{trendLabel}</p>
+      )}
     </div>
   );
 }
@@ -395,11 +506,12 @@ function HistoryView({
 }) {
   const partLabel = ROUTINE_GAME_PARTS.find((p) => p.id === partId)?.label ?? "Routine";
   const rows = history.filter((h) => h.gamePart === partId);
-  const titles = [...new Set(rows.map((r) => r.stepTitle.trim()).filter(Boolean))];
-  const stats = titles
-    .map((t) => consistencyForStep(rows, partId, t))
-    .filter((s): s is NonNullable<typeof s> => s != null)
-    .sort((a, b) => a.spread - b.spread);
+  const stats = consistencyForPart(history, partId);
+  const overall = overallConsistency(stats);
+  const [filter, setFilter] = useState<string>("all");
+  const stageFilters = ["all", ...stats.map((s) => s.stepTitle)];
+  const visibleRows =
+    filter === "all" ? rows : rows.filter((r) => r.stepTitle.trim() === filter);
 
   return (
     <div className="space-y-3">
@@ -410,77 +522,100 @@ function HistoryView({
           className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-[#014421]"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden />
-          Back
+          Timer
         </button>
         <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-          {partLabel} · times
+          {partLabel} · history
         </p>
       </div>
 
       <div className="rounded-xl bg-[#014421] px-3 py-3 text-white">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-white/70">Why this matters</p>
-        <p className="mt-1 text-sm leading-snug text-white/95">
-          Elite routines repeat the same rhythm — down to about a{" "}
-          <span className="font-bold text-[#FFC966]">hundredth of a second</span>. Shrink the spread.
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-white/70">Consistency</p>
+        {overall ? (
+          <>
+            <p className="mt-1 text-lg font-extrabold text-[#FFC966]">
+              {consistencyGradeLabel(overall.grade)}
+            </p>
+            <p className="mt-0.5 text-xs text-white/80">
+              Avg spread ±{formatRoutineTimePrecise(overall.avgSpread)} across {stats.length} stage
+              {stats.length === 1 ? "" : "s"} · {overall.reps} reps
+            </p>
+          </>
+        ) : (
+          <p className="mt-1 text-sm text-white/90">
+            Time each stage at least twice to see how consistent you are.
+          </p>
+        )}
+        <p className="mt-2 text-[11px] leading-snug text-white/70">
+          Elite routines keep the same rhythm — aim for under half a second of spread.
         </p>
       </div>
 
       {stats.length > 0 && (
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-            Consistency (last reps)
+            By stage
           </p>
           {stats.map((s) => (
-            <div
-              key={s.stepTitle}
-              className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 ring-1 ring-gray-200"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-gray-900">{s.stepTitle}</p>
-                <p className="text-[11px] text-gray-500">
-                  Avg {formatRoutineTimePrecise(s.avg)} · {s.count} reps
-                </p>
-              </div>
-              <div className="shrink-0 text-right">
-                <p
-                  className={`text-sm font-extrabold tabular-nums ${
-                    s.spread <= 0.5 ? "text-green-700" : s.spread <= 1.5 ? "text-[#014421]" : "text-orange-700"
-                  }`}
-                >
-                  ±{formatRoutineTimePrecise(s.spread)}
-                </p>
-                <p className="text-[10px] text-gray-400">spread</p>
-              </div>
-            </div>
+            <ConsistencyCard key={s.stepTitle} stat={s} />
           ))}
         </div>
       )}
 
       {rows.length === 0 ? (
         <p className="rounded-xl bg-white px-3 py-4 text-center text-sm text-gray-500 ring-1 ring-gray-200">
-          No times yet. Rehearse and tap Stop — times save to hundredths.
+          No times yet. Rehearse and tap Stop &amp; save — every rep is kept here.
         </p>
       ) : (
-        <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl bg-white ring-1 ring-gray-200">
-          {rows.slice(0, 40).map((row) => (
-            <li key={row.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-gray-900">{row.stepTitle || "Step"}</p>
-                <p className="text-[11px] text-gray-400">
-                  {new Date(row.at).toLocaleString(undefined, {
-                    day: "numeric",
-                    month: "short",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+              Time history
+            </p>
+            <p className="text-[10px] text-gray-400">{rows.length} logged</p>
+          </div>
+          {stageFilters.length > 2 && (
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+              {stageFilters.map((f) => {
+                const active = filter === f;
+                return (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => setFilter(f)}
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                      active
+                        ? "bg-[#014421] text-white"
+                        : "bg-stone-100 text-stone-600"
+                    }`}
+                  >
+                    {f === "all" ? "All stages" : f}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl bg-white ring-1 ring-gray-200">
+            {visibleRows.slice(0, 60).map((row) => (
+              <li key={row.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-gray-900">{row.stepTitle || "Step"}</p>
+                  <p className="text-[11px] text-gray-400">
+                    {new Date(row.at).toLocaleString(undefined, {
+                      day: "numeric",
+                      month: "short",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                </div>
+                <p className="shrink-0 text-base font-extrabold tabular-nums text-[#014421]">
+                  {formatRoutineTimePrecise(row.seconds)}
                 </p>
-              </div>
-              <p className="shrink-0 text-base font-extrabold tabular-nums text-[#014421]">
-                {formatRoutineTimePrecise(row.seconds)}
-              </p>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {rows.length > 0 && (
@@ -500,24 +635,37 @@ function HistoryView({
 
 function RehearseView({
   routine,
+  history,
   onBack,
   onSaveStepTime,
   onOpenHistory,
+  onPlanStages,
 }: {
   routine: GameRoutine;
+  history: RoutineTimeLog[];
   onBack: () => void;
   onSaveStepTime: (stepId: string, stepTitle: string, seconds: number) => void;
   onOpenHistory: () => void;
+  onPlanStages: () => void;
 }) {
   const steps = routine.steps;
   const [index, setIndex] = useState(0);
   const [running, setRunning] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [voiceOn, setVoiceOn] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const elapsedRef = useRef(0);
   const step = steps[index];
   const stepIdRef = useRef(step?.id);
   stepIdRef.current = step?.id;
+  const stepStat = useMemo(
+    () =>
+      step?.title
+        ? consistencyForStep(history, routine.gamePart, step.title)
+        : null,
+    [history, routine.gamePart, step?.title],
+  );
+  const partTimes = history.filter((h) => h.gamePart === routine.gamePart).length;
 
   useEffect(() => {
     if (!running) return;
@@ -530,19 +678,26 @@ function RehearseView({
     return () => window.clearInterval(id);
   }, [running]);
 
-  const start = useCallback(() => {
-    setRunning(true);
-  }, []);
-
   const stepTitleRef = useRef(step?.title ?? "");
   stepTitleRef.current = step?.title ?? "";
+
+  /** Fresh take every Start — clears the clock then runs. */
+  const start = useCallback(() => {
+    setJustSaved(false);
+    elapsedRef.current = 0;
+    setElapsedMs(0);
+    setRunning(true);
+  }, []);
 
   const stop = useCallback(() => {
     setRunning((was) => {
       const id = stepIdRef.current;
       if (was && id) {
         const secs = secondsFromMs(elapsedRef.current);
-        onSaveStepTime(id, stepTitleRef.current, secs);
+        if (secs > 0) {
+          onSaveStepTime(id, stepTitleRef.current, secs);
+          setJustSaved(true);
+        }
       }
       return false;
     });
@@ -550,6 +705,7 @@ function RehearseView({
 
   const { listening, supported, error } = useVoiceTimerCommands({
     enabled: voiceOn,
+    running,
     onStart: start,
     onStop: stop,
   });
@@ -558,12 +714,14 @@ function RehearseView({
 
   const resetClock = () => {
     setRunning(false);
+    setJustSaved(false);
     elapsedRef.current = 0;
     setElapsedMs(0);
   };
 
   const go = (next: number) => {
     if (running) stop();
+    setJustSaved(false);
     elapsedRef.current = 0;
     setElapsedMs(0);
     setIndex(next);
@@ -587,6 +745,13 @@ function RehearseView({
   const seconds = Math.floor(elapsedMs / 1000);
   const partLabel =
     ROUTINE_GAME_PARTS.find((p) => p.id === routine.gamePart)?.label ?? "Routine";
+  const hint = running
+    ? voiceOn
+      ? 'Running — say “stop” or tap Stop'
+      : "Running — tap Stop when done"
+    : voiceOn
+      ? 'Ready — say “start” or tap Start'
+      : "Ready — tap Start to time this stage";
 
   return (
     <div className="space-y-3">
@@ -597,43 +762,104 @@ function RehearseView({
           className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-[#014421]"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden />
-          Your system
+          All parts
         </button>
-        <div className="flex items-center gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+          {partLabel} · {index + 1}/{steps.length}
+        </p>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onPlanStages}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-700 ring-1 ring-gray-200"
+        >
+          <ListOrdered className="h-3.5 w-3.5 text-[#014421]" aria-hidden />
+          Plan stages
+        </button>
+        <button
+          type="button"
+          onClick={onOpenHistory}
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-700 ring-1 ring-gray-200"
+        >
+          <History className="h-3.5 w-3.5" aria-hidden />
+          History{partTimes > 0 ? ` (${partTimes})` : ""}
+        </button>
+      </div>
+
+      {stepStat && !running && (
+        <button
+          type="button"
+          onClick={onOpenHistory}
+          className="flex w-full items-center justify-between gap-2 rounded-xl bg-white px-3 py-2.5 text-left ring-1 ring-gray-200"
+        >
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+              This stage
+            </p>
+            <p className={`text-xs font-bold ${consistencyGradeTone(stepStat.grade)}`}>
+              {consistencyGradeLabel(stepStat.grade)} · ±{formatRoutineTimePrecise(stepStat.spread)}
+            </p>
+          </div>
+          <div className="shrink-0 text-right text-[11px] text-gray-500">
+            <p>
+              Avg {formatRoutineTimePrecise(stepStat.avg)} · last{" "}
+              {formatRoutineTimePrecise(stepStat.latest)}
+            </p>
+            <p className="text-[#014421] font-semibold">{stepStat.count} reps →</p>
+          </div>
+        </button>
+      )}
+
+      {/* Stage dots */}
+      <div className="flex flex-wrap justify-center gap-1.5">
+        {steps.map((s, i) => (
           <button
+            key={s.id}
             type="button"
-            onClick={onOpenHistory}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-[#014421]"
-          >
-            <History className="h-3.5 w-3.5" aria-hidden />
-            Times
-          </button>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-            {partLabel} · {index + 1}/{steps.length}
-          </p>
-        </div>
+            onClick={() => go(i)}
+            className={`h-2.5 rounded-full transition-all ${
+              i === index ? "w-6 bg-[#014421]" : "w-2.5 bg-gray-200 hover:bg-gray-300"
+            }`}
+            aria-label={`Stage ${i + 1}: ${s.title || "Untitled"}`}
+            aria-current={i === index ? "step" : undefined}
+          />
+        ))}
       </div>
 
       <div
-        className={`rounded-2xl px-4 py-5 text-center ring-1 ${
+        className={`rounded-2xl px-4 py-6 text-center ring-1 transition-colors ${
           running ? "bg-[#014421] text-white ring-[#014421]" : "bg-white text-gray-900 ring-gray-200"
         }`}
       >
         <p
-          className={`text-[10px] font-semibold uppercase tracking-wide ${
+          className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+            running ? "bg-white/15 text-white" : PHASE_TONE[step.phase ?? "physical"]
+          }`}
+        >
+          {routinePhaseLabel(step.phase ?? "physical")}
+        </p>
+        <p
+          className={`mt-2 text-[10px] font-semibold uppercase tracking-wide ${
             running ? "text-white/70" : "text-gray-400"
           }`}
         >
           {step.title.trim() || `Stage ${index + 1}`}
         </p>
-        <p className="mt-1 text-5xl font-extrabold tabular-nums leading-none">
+        <p className="mt-2 text-5xl font-extrabold tabular-nums leading-none tracking-tight">
           {running ? formatRoutineTimePrecise(elapsedMs / 1000) : formatRoutineClock(seconds)}
         </p>
-        <p className={`mt-2 text-xs ${running ? "text-white/75" : "text-gray-500"}`}>
-          {running ? "Say “stop” or tap Stop" : "Say “start” or tap Start"}
+        <p className={`mt-3 text-sm font-medium ${running ? "text-white/85" : "text-gray-600"}`}>
+          {hint}
         </p>
+        {justSaved && !running && (
+          <p className={`mt-1.5 text-xs font-semibold ${running ? "text-white/70" : "text-[#014421]"}`}>
+            Time saved for this stage
+          </p>
+        )}
         {wake.supported && (
-          <p className={`mt-1.5 text-[10px] ${running ? "text-white/55" : "text-gray-400"}`}>
+          <p className={`mt-2 text-[10px] ${running ? "text-white/55" : "text-gray-400"}`}>
             {wake.active ? "Screen stays on while you rehearse" : "Trying to keep screen on…"}
           </p>
         )}
@@ -658,41 +884,47 @@ function RehearseView({
       )}
 
       <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={start}
-          disabled={running}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#014421] px-3 py-3.5 text-sm font-extrabold text-white disabled:opacity-40"
-        >
-          <Play className="h-4 w-4" aria-hidden />
-          Start
-        </button>
-        <button
-          type="button"
-          onClick={stop}
-          disabled={!running}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-gray-200 bg-white px-3 py-3.5 text-sm font-extrabold text-gray-800 disabled:opacity-40"
-        >
-          <Square className="h-4 w-4 text-red-500" aria-hidden />
-          Stop
-        </button>
+        {!running ? (
+          <button
+            type="button"
+            onClick={start}
+            className="col-span-2 inline-flex items-center justify-center gap-2 rounded-xl bg-[#014421] px-3 py-4 text-base font-extrabold text-white shadow-sm active:scale-[0.99]"
+          >
+            <Play className="h-5 w-5 fill-current" aria-hidden />
+            Start
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={stop}
+            className="col-span-2 inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-3 py-4 text-base font-extrabold text-white shadow-sm active:scale-[0.99]"
+          >
+            <Square className="h-5 w-5 fill-current" aria-hidden />
+            Stop &amp; save
+          </button>
+        )}
       </div>
 
-      <button
-        type="button"
-        onClick={() => setVoiceOn((v) => !v)}
-        className={`flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold ring-1 ${
-          voiceOn
-            ? "bg-[#FFA500]/15 text-orange-900 ring-[#FFA500]/40"
-            : "bg-white text-gray-700 ring-gray-200"
-        }`}
-      >
-        {voiceOn ? <Mic className="h-4 w-4" aria-hidden /> : <MicOff className="h-4 w-4" aria-hidden />}
-        {voiceOn ? (listening ? "Listening for start / stop" : "Voice on…") : "Voice start / stop"}
-      </button>
-      {!supported && (
+      {supported ? (
+        <button
+          type="button"
+          onClick={() => setVoiceOn((v) => !v)}
+          className={`flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold ring-1 ${
+            voiceOn
+              ? "bg-[#FFA500]/15 text-orange-900 ring-[#FFA500]/40"
+              : "bg-white text-gray-700 ring-gray-200"
+          }`}
+        >
+          {voiceOn ? <Mic className="h-4 w-4" aria-hidden /> : <MicOff className="h-4 w-4" aria-hidden />}
+          {voiceOn
+            ? listening
+              ? "Mic on — say “start” or “stop”"
+              : "Mic on — connecting…"
+            : "Turn mic on for voice commands"}
+        </button>
+      ) : (
         <p className="text-center text-[11px] text-gray-400">
-          Voice works best in Chrome or Edge. Buttons always work.
+          Voice needs Chrome or Edge. Use the Start / Stop buttons.
         </p>
       )}
       {error && <p className="text-center text-[11px] text-red-600">{error}</p>}
@@ -705,7 +937,7 @@ function RehearseView({
           className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-gray-600 disabled:opacity-30"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden />
-          Prev
+          Prev stage
         </button>
         <button
           type="button"
@@ -713,7 +945,7 @@ function RehearseView({
           className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500"
         >
           <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-          Reset clock
+          Reset
         </button>
         <button
           type="button"
@@ -721,7 +953,7 @@ function RehearseView({
           onClick={() => go(index + 1)}
           className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-gray-600 disabled:opacity-30"
         >
-          Next
+          Next stage
           <ChevronRight className="h-4 w-4" aria-hidden />
         </button>
       </div>
@@ -729,7 +961,7 @@ function RehearseView({
   );
 }
 
-/** Questionnaire → system view → rehearse timer for each part of the game. */
+/** Timer first — plan stages when you want to customise. */
 export default function RoutineBuilder({ compact = false }: { compact?: boolean }) {
   const [mode, setMode] = useState<Mode>("parts");
   const [partId, setPartId] = useState<RoutineGamePartId>("tee");
@@ -774,6 +1006,10 @@ export default function RoutineBuilder({ compact = false }: { compact?: boolean 
     setMode("system");
   }, [answers, persistAnswers]);
 
+  const openPlanStages = useCallback(() => {
+    setMode(answersHaveContent(answers) ? "system" : "quiz");
+  }, [answers]);
+
   const logStepTime = useCallback(
     (stepId: string, stepTitle: string, seconds: number) => {
       const store0 = loadRoutineStore();
@@ -801,9 +1037,18 @@ export default function RoutineBuilder({ compact = false }: { compact?: boolean 
     const store = loadRoutineStore();
     return ROUTINE_GAME_PARTS.map((p) => {
       const r = store.routines[p.id];
-      return { ...p, filled: r ? routineFilledCount(r) : 0, steps: r?.steps.length ?? 0 };
+      const times = (store.history ?? []).filter((h) => h.gamePart === p.id).length;
+      const stats = consistencyForPart(store.history ?? [], p.id);
+      const overall = overallConsistency(stats);
+      return {
+        ...p,
+        filled: r ? routineFilledCount(r) : 0,
+        steps: r?.steps.length ?? 0,
+        times,
+        consistency: overall,
+      };
     });
-  }, [hydrated, routine]);
+  }, [hydrated, routine, history]);
 
   const partLabel = ROUTINE_GAME_PARTS.find((p) => p.id === partId)?.label ?? "Routine";
   const partTimes = history.filter((h) => h.gamePart === partId).length;
@@ -813,7 +1058,7 @@ export default function RoutineBuilder({ compact = false }: { compact?: boolean 
       <HistoryView
         history={history}
         partId={partId}
-        onBack={() => setMode(answersHaveContent(answers) ? "system" : "quiz")}
+        onBack={() => setMode("rehearse")}
         onClear={() => {
           const store = loadRoutineStore();
           const next = {
@@ -831,9 +1076,11 @@ export default function RoutineBuilder({ compact = false }: { compact?: boolean 
     return (
       <RehearseView
         routine={routine}
-        onBack={() => setMode("system")}
+        history={history}
+        onBack={() => setMode("parts")}
         onSaveStepTime={logStepTime}
         onOpenHistory={() => setMode("history")}
+        onPlanStages={openPlanStages}
       />
     );
   }
@@ -845,7 +1092,7 @@ export default function RoutineBuilder({ compact = false }: { compact?: boolean 
         answers={answers}
         onEditQuiz={() => setMode("quiz")}
         onRehearse={() => setMode("rehearse")}
-        onBack={() => setMode("parts")}
+        onBack={() => setMode("rehearse")}
         onOpenHistory={() => setMode("history")}
         onReorder={(nextOrder) => {
           persistAnswers({ ...answers, stageOrder: nextOrder });
@@ -861,7 +1108,7 @@ export default function RoutineBuilder({ compact = false }: { compact?: boolean 
         partLabel={partLabel}
         answers={answers}
         onChange={persistAnswers}
-        onBack={() => setMode("parts")}
+        onBack={() => setMode("rehearse")}
         onBuild={buildSystem}
         onOpenHistory={() => setMode("history")}
         partTimes={partTimes}
@@ -880,35 +1127,39 @@ export default function RoutineBuilder({ compact = false }: { compact?: boolean 
             </span>
           </h3>
           <p className="mt-0.5 text-xs leading-snug text-gray-500">
-            Answer a few questions, see your system, then rehearse it on a timer.
+            Time your pre-shot routine. Plan the stages when you want to customise.
           </p>
         </div>
       )}
 
       <div className="space-y-2">
         {(storeSummary ?? ROUTINE_GAME_PARTS).map((p) => {
-          const filled = "filled" in p ? p.filled : 0;
-          const has = filled > 0;
+          const steps = "steps" in p ? p.steps : 0;
+          const times = "times" in p ? p.times : 0;
+          const consistency = "consistency" in p ? p.consistency : null;
           return (
             <button
               key={p.id}
               type="button"
               onClick={() => {
                 setPartId(p.id as RoutineGamePartId);
-                const store = loadRoutineStore();
-                const r = store.routines[p.id as RoutineGamePartId];
-                const a = normalizeAnswers(r?.answers);
-                setMode(answersHaveContent(a) ? "system" : "quiz");
+                setMode("rehearse");
               }}
               className="flex w-full items-center gap-3 rounded-xl bg-white p-3 text-left ring-1 ring-gray-200 transition-colors hover:ring-[#014421]/40"
             >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
-                <ListOrdered className="h-4 w-4 text-[#014421]" aria-hidden />
+                <Play className="h-4 w-4 text-[#014421]" aria-hidden />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold text-gray-900">{p.label}</span>
                 <span className="block text-xs text-gray-500">
-                  {has ? `${filled} stage system` : "Answer questions to build your system"}
+                  {consistency
+                    ? `${consistencyGradeLabel(consistency.grade)} · ±${formatRoutineTimePrecise(consistency.avgSpread)} · ${times} reps`
+                    : times > 0
+                      ? `${times} timed · keep going for consistency`
+                      : steps > 0
+                        ? `${steps} stages · tap to start timing`
+                        : "Tap to start timing"}
                 </span>
               </span>
               <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" aria-hidden />

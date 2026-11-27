@@ -331,9 +331,23 @@ const LOADERS: Partial<Record<CombineReportId, Loader>> = {
       return pct != null ? `${pct.toFixed(1)}%` : points(notes?.total_points);
     }),
   chipping_combine_9: (supabase, playerId) =>
-    loadPracticeScores(supabase, playerId, chippingCombine9Config.testType, (notes) => points(notes?.total_points)),
+    loadPracticeScores(supabase, playerId, chippingCombine9Config.testType, (notes) => {
+      const pct = finite(notes?.session_score_pct);
+      if (pct != null) return `${pct.toFixed(1)}%`;
+      const total = finite(notes?.total_points);
+      const max = finite(notes?.max_session_points);
+      if (total != null && max != null && max > 0) return `${((total / max) * 100).toFixed(1)}%`;
+      return points(notes?.total_points);
+    }),
   bunker_9_hole_challenge: (supabase, playerId) =>
-    loadPracticeScores(supabase, playerId, bunker9HoleChallengeConfig.testType, (notes) => points(notes?.total_points)),
+    loadPracticeScores(supabase, playerId, bunker9HoleChallengeConfig.testType, (notes) => {
+      const pct = finite(notes?.session_score_pct);
+      if (pct != null) return `${pct.toFixed(1)}%`;
+      const total = finite(notes?.total_points);
+      const max = finite(notes?.max_session_points);
+      if (total != null && max != null && max > 0) return `${((total / max) * 100).toFixed(1)}%`;
+      return points(notes?.total_points);
+    }),
   tee_shot_dispersion_combine: (supabase, playerId) =>
     loadPracticeScores(supabase, playerId, teeShotDispersionCombineConfig.testType, (notes) => points(notes?.total_points)),
   flop_shot: (supabase, playerId) =>

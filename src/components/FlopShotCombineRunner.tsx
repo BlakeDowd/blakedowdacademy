@@ -6,13 +6,14 @@ import { useCombineUser } from "@/hooks/useCombineUser";
 import { flopShotCombineConfig } from "@/lib/flopShotCombineConfig";
 import {
   FLOP_SHOT_MAX_TOTAL_POINTS,
-  flopShotPointsFromCm,
+  flopShotPointsFromCmAtStation,
   roundFlopPointsOneDecimal,
 } from "@/lib/flopShotCombineScoring";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
+import { CombineGradeSummary } from "@/components/combine/CombineGradeSummary";
 import { performanceGradeFromOutOf150 } from "@/lib/combinePerformanceGrade";
-import { CombinePerformanceGradeBadge } from "@/components/CombinePerformanceGradeBadge";
+import { useCombineSelfCompare } from "@/hooks/useCombineSelfCompare";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import {
   CombineHero,
@@ -29,7 +30,8 @@ import {
   type TrackItem,
 } from "@/components/combine/PuttingCombineUi";
 import { Segmented } from "@/components/combine/IronCombineUi";
-import { BreakdownBar, BreakdownCard, EveryShotList, FocusCard, ValueRow } from "@/components/combine/CombineBreakdown";
+import { BreakdownBar, BreakdownCard, EveryShotList, ValueRow } from "@/components/combine/CombineBreakdown";
+import { CombineTakeaway } from "@/components/combine/CombineTakeaway";
 import { CARD_ART_CLASS, ChipShotDiagram, HERO_ART_CLASS } from "@/components/combine/CombineArt";
 import { FINISH_LABEL, FinishMap, FinishPicker, type Finish } from "@/components/combine/FinishCross";
 
@@ -288,7 +290,7 @@ export function FlopShotCombineRunner() {
     const cm = finish === "holed" ? 0 : parseCm(distance);
     const station = SEQUENCE[shots.length];
     if (cm === null || station === undefined) return;
-    const next = [...shots, { station, finish, cm, strike, points: flopShotPointsFromCm(cm) }];
+    const next = [...shots, { station, finish, cm, strike, points: flopShotPointsFromCmAtStation(cm, station) }];
     setShots(next);
     resetShot();
     if (next.length >= TOTAL_SHOTS) {
@@ -307,6 +309,10 @@ export function FlopShotCombineRunner() {
   }, [status, shots]);
 
   const summary = useMemo(() => (status === "complete" ? breakdown(shots) : null), [status, shots]);
+  const flopSelfCompare = useCombineSelfCompare(
+    "flop_shot",
+    summary?.total ?? null,
+  );
 
   if (status === "intro") {
     return (
@@ -333,7 +339,8 @@ export function FlopShotCombineRunner() {
             <li>Further than 3 m: 0 pts</li>
             <li>The closer it finishes, the more it scores. Side and strike don&apos;t change your score, they power your breakdown.</li>
             <li className="font-semibold text-gray-900">
-              Best possible is {FLOP_SHOT_MAX_TOTAL_POINTS} points. Higher is better.
+              Best possible is {FLOP_SHOT_MAX_TOTAL_POINTS} points. Grades: Tour Pro / Scratch / Single Digit /
+              Mid-Handicap / Needs Work.
             </li>
           </ul>
         </ScoringGuide>
@@ -353,12 +360,10 @@ export function FlopShotCombineRunner() {
             value={fmtPts(summary.total)}
             caption={`of ${FLOP_SHOT_MAX_TOTAL_POINTS} points`}
           />
-          <div className="mt-3 inline-flex max-w-full rounded-xl bg-white">
-            <CombinePerformanceGradeBadge gradeId={grade.id} label={grade.label} />
-          </div>
           <p className="mt-2 text-xs text-white/70">
             {holed} holed · higher is better
           </p>
+          <CombineGradeSummary grade={grade} selfCompare={flopSelfCompare} />
         </ResultHero>
 
         <StatTiles
@@ -369,7 +374,7 @@ export function FlopShotCombineRunner() {
           ]}
         />
 
-        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+        <CombineTakeaway theme="flop_proximity" title={summary.focus.title} lines={summary.focus.lines} />
 
         <BreakdownCard title="Where your points went" aside={`${fmtPts(summary.total)} of ${FLOP_SHOT_MAX_TOTAL_POINTS}`}>
           <BreakdownBar
@@ -453,7 +458,7 @@ export function FlopShotCombineRunner() {
   const ofStation = (index % PER_STATION) + 1;
   const nextStation = SEQUENCE[index + 1];
   const cm = finish === "holed" ? 0 : parseCm(distance);
-  const liveScore = finish !== null && cm !== null ? flopShotPointsFromCm(cm) : null;
+  const liveScore = finish !== null && cm !== null ? flopShotPointsFromCmAtStation(cm, station) : null;
   const track: TrackItem[] = SEQUENCE.map((d, i) => {
     const s = shots[i];
     return s ? { label: fmtPts(s.points), tone: pointsTone(s.points), ariaLabel: `Shot ${i + 1} (${d} m): ${fmtPts(s.points)} points` } : null;

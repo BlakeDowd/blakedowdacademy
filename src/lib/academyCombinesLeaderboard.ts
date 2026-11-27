@@ -22,6 +22,13 @@ import { teeShotHazardConfig, TEE_SHOT_HAZARD_MAX_POINTS } from "@/lib/teeShotHa
 import { driverFlightTestConfig } from "@/lib/driverFlightTestConfig";
 import { BUNKER_LIES_PAR, bunkerLiesConfig, formatToPar } from "@/lib/bunkerLiesConfig";
 import { approachShotSimConfig } from "@/lib/approachShotSimConfig";
+import { teeShotSimConfig } from "@/lib/teeShotSimConfig";
+import { lowChipCombineConfig } from "@/lib/lowChipCombineConfig";
+import { teeShotDispersionCombineConfig } from "@/lib/teeShotDispersionCombineConfig";
+import { bunker9HoleChallengeConfig } from "@/lib/bunker9HoleChallengeConfig";
+import { strikeAndSpeedControlTestConfig } from "@/lib/strikeAndSpeedControlTestConfig";
+import { startLineAndSpeedControlTestConfig } from "@/lib/startLineAndSpeedControlTestConfig";
+import { MAX_SESSION_POINTS as TEE_DISPERSION_MAX } from "@/lib/teeShotDispersionCombineAnalytics";
 
 export type CombineLeaderboardTestId =
   | "ironPrecisionProtocol"
@@ -37,6 +44,7 @@ export type CombineLeaderboardTestId =
   | "puttingTest20To40"
   | "flop_shot"
   | "chipping"
+  | "low_chip"
   | "survival_20"
   | "iron_face_control"
   | "iron_safe_side"
@@ -44,10 +52,14 @@ export type CombineLeaderboardTestId =
   | "approach_shot_sim"
   | "three_strikes"
   | "bunker_protocol"
+  | "bunker_9_hole_challenge"
   | "tee_shot_hazard"
   | "tee_shot_sim"
+  | "tee_shot_dispersion_combine"
   | "driver_flight_control"
-  | "bunker_lies";
+  | "bunker_lies"
+  | "strike_speed_control"
+  | "start_line_speed_test";
 
 /** Resolved in Academy via getLeaderboardData — practice table builder skips these. */
 const LEADERBOARD_DRIVEN_COMBINE_IDS: CombineLeaderboardTestId[] = [
@@ -107,7 +119,14 @@ export const COMBINE_LEADERBOARD_OPTIONS: CombineLeaderboardTestOption[] = [
     label: "9-Hole Chipping Combine",
     source: "practice",
     higherIsBetter: true,
-    scoreHeader: "Accuracy %",
+    scoreHeader: "Score %",
+  },
+  {
+    id: "bunker_9_hole_challenge",
+    label: bunker9HoleChallengeConfig.testName,
+    source: "practice",
+    higherIsBetter: true,
+    scoreHeader: "Score %",
   },
   {
     id: "wedge_lateral_9",
@@ -166,11 +185,32 @@ export const COMBINE_LEADERBOARD_OPTIONS: CombineLeaderboardTestOption[] = [
     scoreHeader: "Total Pts",
   },
   {
+    id: "low_chip",
+    label: lowChipCombineConfig.testName,
+    source: "practice_logs",
+    higherIsBetter: true,
+    scoreHeader: "Total Pts",
+  },
+  {
     id: "survival_20",
     label: survival20Config.testName,
     source: "practice_logs",
     higherIsBetter: true,
     scoreHeader: "Shots survived",
+  },
+  {
+    id: "strike_speed_control",
+    label: strikeAndSpeedControlTestConfig.testName,
+    source: "practice_logs",
+    higherIsBetter: false,
+    scoreHeader: "Index (lower better)",
+  },
+  {
+    id: "start_line_speed_test",
+    label: startLineAndSpeedControlTestConfig.testName,
+    source: "practice_logs",
+    higherIsBetter: false,
+    scoreHeader: "Index (lower better)",
   },
   {
     id: "iron_face_control",
@@ -220,6 +260,20 @@ export const COMBINE_LEADERBOARD_OPTIONS: CombineLeaderboardTestOption[] = [
     source: "practice_logs",
     higherIsBetter: true,
     scoreHeader: `Score (/${TEE_SHOT_HAZARD_MAX_POINTS})`,
+  },
+  {
+    id: "tee_shot_sim",
+    label: teeShotSimConfig.testName,
+    source: "practice_logs",
+    higherIsBetter: true,
+    scoreHeader: `Score (/${teeShotSimConfig.maxSessionPoints})`,
+  },
+  {
+    id: "tee_shot_dispersion_combine",
+    label: teeShotDispersionCombineConfig.testName,
+    source: "practice",
+    higherIsBetter: true,
+    scoreHeader: `Score (/${TEE_DISPERSION_MAX})`,
   },
   {
     id: "driver_flight_control",
@@ -306,10 +360,26 @@ type PracticeMetadataCombineId = Exclude<
   | "puttingTest20To40"
   | "flop_shot"
   | "chipping"
+  | "low_chip"
   | "survival_20"
   | "iron_face_control"
   | "approach_shot_sim"
+  | "tee_shot_sim"
+  | "strike_speed_control"
+  | "start_line_speed_test"
 >;
+
+function layoutScorePctFromAggregates(ag: Record<string, unknown> | null): number | null {
+  if (!ag) return null;
+  const sessionPct = num(ag.session_score_pct);
+  if (sessionPct != null) return sessionPct;
+  const total = num(ag.total_points);
+  const max = num(ag.max_session_points);
+  if (total != null && max != null && max > 0) return (total / max) * 100;
+  const pr = num(ag.proximity_rating);
+  if (pr != null) return pr <= 1 ? pr * 100 : pr;
+  return null;
+}
 
 function extractPracticeScore(
   testId: PracticeMetadataCombineId,
@@ -329,12 +399,9 @@ function extractPracticeScore(
     if (pct == null) return null;
     return { sortValue: pct, display: `${pct.toFixed(1)}%` };
   }
-  if (testId === "chipping_combine_9") {
-    const pr = num(ag?.proximity_rating);
-    if (pr != null) {
-      const pct = pr <= 1 ? pr * 100 : pr;
-      return { sortValue: pct, display: `${pct.toFixed(1)}%` };
-    }
+  if (testId === "chipping_combine_9" || testId === "bunker_9_hole_challenge") {
+    const pct = layoutScorePctFromAggregates(ag);
+    if (pct != null) return { sortValue: pct, display: `${pct.toFixed(1)}%` };
     const tp = num(ag?.total_points);
     if (tp != null) return { sortValue: tp, display: `${Math.round(tp)} Pts` };
     return null;
@@ -346,6 +413,18 @@ function extractPracticeScore(
     const tp = recomputed ?? stored;
     if (tp != null) return { sortValue: tp, display: `${Math.round(tp)} Pts` };
     return null;
+  }
+  if (testId === "tee_shot_dispersion_combine") {
+    const meta = metadataFromPractice(row);
+    const notes = parseNotesObject(row);
+    const ts =
+      num(meta?.total_score) ??
+      num(ag?.total_score) ??
+      num(ag?.total_points) ??
+      num(notes?.total_score) ??
+      num(notes?.total_points);
+    if (ts == null) return null;
+    return { sortValue: ts, display: `${Math.round(ts)} Pts` };
   }
   return null;
 }
@@ -478,6 +557,56 @@ export function collectCombineAttempts(
       const tp = num(row.score) ?? num(row.total_points);
       if (tp == null) continue;
       add(uid, tp, `${tp.toFixed(1)} Pts`, parseLeaderboardEventMs(row.created_at) ?? 0);
+    }
+  } else if (testId === "low_chip") {
+    const wantSub = lowChipCombineConfig.practiceLogSubType.toLowerCase();
+    const rows = (practiceLogs || []).filter((r) => {
+      if (String(r?.log_type ?? "").trim().toLowerCase() !== "chipping") return false;
+      return String(r?.sub_type ?? "").trim().toLowerCase() === wantSub;
+    });
+    for (const row of rows) {
+      if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
+      const uid = row.user_id;
+      if (!uid) continue;
+      const tp = num(row.score) ?? num(row.total_points);
+      if (tp == null) continue;
+      add(uid, tp, `${tp.toFixed(1)} Pts`, parseLeaderboardEventMs(row.created_at) ?? 0);
+    }
+  } else if (testId === "tee_shot_sim") {
+    const want = teeShotSimConfig.practiceLogType.toLowerCase();
+    for (const row of practiceLogs || []) {
+      if (String(row?.log_type ?? "").trim().toLowerCase() !== want) continue;
+      if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
+      const uid = row.user_id;
+      if (!uid) continue;
+      const tp = num(row.score) ?? num(row.total_points);
+      if (tp == null || tp < 0 || tp > teeShotSimConfig.maxSessionPoints) continue;
+      add(uid, tp, `${Math.round(tp)} / 100`, parseLeaderboardEventMs(row.created_at) ?? 0);
+    }
+  } else if (testId === "strike_speed_control" || testId === "start_line_speed_test") {
+    const want =
+      testId === "strike_speed_control"
+        ? strikeAndSpeedControlTestConfig.practiceLogType.toLowerCase()
+        : startLineAndSpeedControlTestConfig.practiceLogType.toLowerCase();
+    for (const row of practiceLogs || []) {
+      if (String(row?.log_type ?? "").trim().toLowerCase() !== want) continue;
+      if (!rowInTimeWindow({ created_at: row.created_at }, timeFilter)) continue;
+      const uid = row.user_id;
+      if (!uid) continue;
+      const idx =
+        num(row.matrix_score_average) ??
+        num(row.score) ??
+        num(row.total_points) ??
+        (() => {
+          const meta =
+            row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+              ? (row.metadata as Record<string, unknown>)
+              : null;
+          return num(meta?.matrix_score_average) ?? num(meta?.strike_speed_index);
+        })();
+      if (idx == null || idx < 0) continue;
+      // Lower index is better — rank on negative so higher sortValue wins.
+      add(uid, -idx, `${idx.toFixed(1)} idx`, parseLeaderboardEventMs(row.created_at) ?? 0);
     }
   } else if (testId === "survival_20") {
     const want = survival20Config.practiceLogType.toLowerCase();

@@ -14,6 +14,7 @@ import {
   fetchChallengeBoard,
   fetchMyEntry,
   formatChallengeValue,
+  nextWeekRange,
   submitChallengeEntry,
   sydneyToday,
   type BoardRow,
@@ -29,24 +30,29 @@ const INPUT =
 const niceDate = (d: string) =>
   new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 
-function addDays(day: string, n: number): string {
-  const d = new Date(`${day}T00:00:00`);
-  d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 function NewChallengeForm({ onCreated, onCancel }: { onCreated: () => void; onCancel: () => void }) {
-  const today = sydneyToday();
-  const [title, setTitle] = useState("");
+  const week = nextWeekRange();
+  const [title, setTitle] = useState("Combine week");
   const [description, setDescription] = useState("");
   const [mode, setMode] = useState<"auto" | "manual">("auto");
-  const [metric, setMetric] = useState<ChallengeMetric>("practice_hours");
+  const [metric, setMetric] = useState<ChallengeMetric>("combines");
   const [unit, setUnit] = useState("");
   const [lowerIsBetter, setLowerIsBetter] = useState(false);
-  const [startsOn, setStartsOn] = useState(today);
-  const [endsOn, setEndsOn] = useState(addDays(today, 6));
+  const [startsOn, setStartsOn] = useState(week.startsOn);
+  const [endsOn, setEndsOn] = useState(week.endsOn);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const pickMetric = (id: ChallengeMetric) => {
+    setMetric(id);
+    const m = challengeMetric(id);
+    if (!title.trim() || title === "Combine week" || title === "Drill week" || title === "Practice week") {
+      if (id === "combines") setTitle("Combine week");
+      else if (id === "drills") setTitle("Drill week");
+      else if (id === "practice_hours") setTitle("Practice week");
+    }
+    if (m) setLowerIsBetter(m.lowerIsBetter);
+  };
 
   const save = async () => {
     if (!title.trim()) return setError("Give the challenge a name.");
@@ -61,10 +67,15 @@ function NewChallengeForm({ onCreated, onCancel }: { onCreated: () => void; onCa
 
   return (
     <section className="space-y-3 rounded-2xl border border-[#014421]/30 bg-white p-4 shadow-sm">
-      <h3 className="text-sm font-bold text-stone-900">New challenge</h3>
+      <div>
+        <h3 className="text-sm font-bold text-stone-900">Timed challenge</h3>
+        <p className="mt-0.5 text-xs text-stone-500">
+          Race for next week — pick what counts. Ticket draw above stays separate.
+        </p>
+      </div>
       <label className="block text-xs font-medium text-stone-500">
         Name
-        <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} placeholder="e.g. Practice Week Blitz" className={INPUT} />
+        <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} placeholder="e.g. Combine week" className={INPUT} />
       </label>
       <label className="block text-xs font-medium text-stone-500">
         What to do (optional)
@@ -83,7 +94,7 @@ function NewChallengeForm({ onCreated, onCancel }: { onCreated: () => void; onCa
         <div className="mt-1 grid grid-cols-2 gap-1.5">
           {(
             [
-              ["auto", "Automatically", "From practice, rounds, drills, combines and lessons logged in the app"],
+              ["auto", "Automatically", "From combines, drills, practice, rounds logged in the app"],
               ["manual", "Players submit", "Players enter a score or tick it off; you confirm each one"],
             ] as const
           ).map(([id, label, hint]) => (
@@ -104,16 +115,25 @@ function NewChallengeForm({ onCreated, onCancel }: { onCreated: () => void; onCa
       </div>
 
       {mode === "auto" ? (
-        <label className="block text-xs font-medium text-stone-500">
-          Leaderboard
-          <select value={metric} onChange={(e) => setMetric(e.target.value as ChallengeMetric)} className={INPUT}>
+        <div>
+          <p className="text-xs font-medium text-stone-500">What wins the leaderboard</p>
+          <div className="mt-1.5 grid grid-cols-2 gap-1.5">
             {CHALLENGE_METRICS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => pickMetric(m.id)}
+                aria-pressed={metric === m.id}
+                className={`rounded-xl border px-3 py-2.5 text-left ${
+                  metric === m.id ? "border-[#014421] bg-[#014421]/[0.05] ring-1 ring-[#014421]" : "border-stone-200"
+                }`}
+              >
+                <span className="block text-sm font-semibold text-stone-900">{m.shortLabel}</span>
+                <span className="block text-[11px] leading-snug text-stone-500">{m.label}</span>
+              </button>
             ))}
-          </select>
-        </label>
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
           <label className="block text-xs font-medium text-stone-500">
@@ -144,6 +164,17 @@ function NewChallengeForm({ onCreated, onCancel }: { onCreated: () => void; onCa
           <input type="date" value={endsOn} min={startsOn} onChange={(e) => setEndsOn(e.target.value)} className={INPUT} />
         </label>
       </div>
+      <button
+        type="button"
+        onClick={() => {
+          const next = nextWeekRange();
+          setStartsOn(next.startsOn);
+          setEndsOn(next.endsOn);
+        }}
+        className="text-xs font-semibold text-[#014421] underline-offset-2 hover:underline"
+      >
+        Use next week ({niceDate(week.startsOn)} – {niceDate(week.endsOn)})
+      </button>
 
       {error && <p className="text-xs font-medium text-red-600">{error}</p>}
       <div className="flex gap-2">
@@ -469,38 +500,23 @@ export function CommunityChallengesView({
     <div className="space-y-3">
       <CommunityLessonDrawCard />
 
-      {isCoach &&
-        (creating ? (
-          <NewChallengeForm
-            onCancel={() => setCreating(false)}
-            onCreated={() => {
-              setCreating(false);
-              onReload();
-            }}
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#014421]/30 bg-white py-3 text-sm font-bold text-[#014421]"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            New challenge
-          </button>
-        ))}
-
       {error ? (
         <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">{error}</p>
       ) : challenges === null ? (
         <div className="h-24 animate-pulse rounded-2xl border border-stone-200 bg-white" aria-hidden />
       ) : challenges.length === 0 ? (
-        <div className="rounded-2xl border border-stone-200 bg-white py-10 text-center">
-          <Trophy className="mx-auto h-8 w-8 text-stone-300" aria-hidden />
-          <p className="mt-2 text-sm font-semibold text-stone-700">No challenges yet</p>
-          <p className="text-xs text-stone-500">{isCoach ? "Start one above." : "Your coaches will post challenges here."}</p>
-        </div>
+        isCoach ? null : (
+          <div className="rounded-2xl border border-stone-200 bg-white py-8 text-center">
+            <Trophy className="mx-auto h-8 w-8 text-stone-300" aria-hidden />
+            <p className="mt-2 text-sm font-semibold text-stone-700">No timed challenges yet</p>
+            <p className="mx-auto mt-1 max-w-[16rem] text-xs text-stone-500">
+              Your coaches can post timed races here. Tickets above are automatic.
+            </p>
+          </div>
+        )
       ) : (
         <>
+          <h2 className="px-1 pt-1 text-xs font-bold uppercase tracking-wide text-stone-400">Timed challenges</h2>
           {live.map((c, i) => (
             <ChallengeCard
               key={c.id}
@@ -530,6 +546,26 @@ export function CommunityChallengesView({
           )}
         </>
       )}
+
+      {isCoach &&
+        (creating ? (
+          <NewChallengeForm
+            onCancel={() => setCreating(false)}
+            onCreated={() => {
+              setCreating(false);
+              onReload();
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#014421]/30 bg-white py-3 text-sm font-bold text-[#014421]"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            Timed challenge (optional)
+          </button>
+        ))}
     </div>
   );
 }

@@ -8,7 +8,8 @@ export const puttingTest8To20Config = {
   /** Shuffled each run */
   distances: [8, 10, 12, 14, 15, 16, 17, 18, 19, 20] as const,
   holeCount: 10,
-  straightCount: 2,
-  leftToRightCount: 4,
+  /** Only the 8 ft putt can be straight (hard to find flat lines longer than that). */
+  straightCount: 1,
+  leftToRightCount: 5,
   rightToLeftCount: 4,
 } as const;

@@ -4,14 +4,20 @@ import { communityError, loadPeople, type CommunityPerson, type ReviewStatus } f
 export type ChallengeMetric = "practice_hours" | "rounds" | "low_gross" | "low_nett" | "drills" | "combines" | "lessons";
 
 /** Auto-scored challenges, worked out from what players log in the app. */
-export const CHALLENGE_METRICS: { id: ChallengeMetric; label: string; unit: string; lowerIsBetter: boolean }[] = [
-  { id: "practice_hours", label: "Most practice hours (self-logged)", unit: "h", lowerIsBetter: false },
-  { id: "rounds", label: "Most rounds played", unit: "rounds", lowerIsBetter: false },
-  { id: "low_gross", label: "Lowest gross (18 holes)", unit: "gross", lowerIsBetter: true },
-  { id: "low_nett", label: "Lowest nett (18 holes)", unit: "nett", lowerIsBetter: true },
-  { id: "drills", label: "Most drills completed", unit: "drills", lowerIsBetter: false },
-  { id: "combines", label: "Most combines completed", unit: "combines", lowerIsBetter: false },
-  { id: "lessons", label: "Most Library lessons", unit: "lessons", lowerIsBetter: false },
+export const CHALLENGE_METRICS: {
+  id: ChallengeMetric;
+  label: string;
+  shortLabel: string;
+  unit: string;
+  lowerIsBetter: boolean;
+}[] = [
+  { id: "combines", label: "Most combines completed", shortLabel: "Combines", unit: "combines", lowerIsBetter: false },
+  { id: "drills", label: "Most drills completed", shortLabel: "Drills", unit: "drills", lowerIsBetter: false },
+  { id: "practice_hours", label: "Most practice hours (self-logged)", shortLabel: "Practice hours", unit: "h", lowerIsBetter: false },
+  { id: "rounds", label: "Most rounds played", shortLabel: "Rounds", unit: "rounds", lowerIsBetter: false },
+  { id: "low_gross", label: "Lowest gross (18 holes)", shortLabel: "Low gross", unit: "gross", lowerIsBetter: true },
+  { id: "low_nett", label: "Lowest nett (18 holes)", shortLabel: "Low nett", unit: "nett", lowerIsBetter: true },
+  { id: "lessons", label: "Most Library lessons", shortLabel: "Lessons", unit: "lessons", lowerIsBetter: false },
 ];
 
 export const challengeMetric = (id: unknown) => CHALLENGE_METRICS.find((m) => m.id === id) ?? null;
@@ -84,6 +90,24 @@ function toEntry(r: Row): ChallengeEntry {
 /** Today in Sydney as YYYY-MM-DD, matching how challenge dates are stored. */
 export function sydneyToday(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date());
+}
+
+/** Next Mon–Sun in Sydney (skips to the following Monday if today is already Monday). */
+export function nextWeekRange(today = sydneyToday()): { startsOn: string; endsOn: string } {
+  const d = new Date(`${today}T12:00:00`);
+  const day = d.getDay(); // 0 Sun … 1 Mon
+  const daysUntilMon = day === 1 ? 7 : (8 - day) % 7 || 7;
+  d.setDate(d.getDate() + daysUntilMon);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const startsOn = `${y}-${m}-${dd}`;
+  const end = new Date(d);
+  end.setDate(end.getDate() + 6);
+  const ey = end.getFullYear();
+  const em = String(end.getMonth() + 1).padStart(2, "0");
+  const ed = String(end.getDate()).padStart(2, "0");
+  return { startsOn, endsOn: `${ey}-${em}-${ed}` };
 }
 
 export function challengeState(c: Challenge, today = sydneyToday()): "upcoming" | "live" | "finished" {

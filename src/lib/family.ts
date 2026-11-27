@@ -137,16 +137,17 @@ export async function shareFamilyInvite(
   coachName: string,
 ): Promise<"shared" | "copied" | "cancelled"> {
   const url = inviteUrl(code);
-  const text = `Hi, ${coachName} has set up "${familyName}" on the golf app. Sign up here so the kids can log their practice and see their progress:`;
+  // URL only in text — passing `url` as well makes many apps show the link twice.
+  const text = `Hi, ${coachName} has set up "${familyName}" on the golf app. Sign up here so the kids can log their practice and see their progress:\n${url}`;
   if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
     try {
-      await navigator.share({ title: "Join your family on the golf app", text, url });
+      await navigator.share({ title: "Join your family on the golf app", text });
       return "shared";
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return "cancelled";
     }
   }
-  await navigator.clipboard.writeText(`${text} ${url}`);
+  await navigator.clipboard.writeText(text);
   return "copied";
 }
 

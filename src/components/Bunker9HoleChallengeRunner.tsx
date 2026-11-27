@@ -2,6 +2,9 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { CircleDot, MapPin, Ruler } from "lucide-react";
+import { CombineGradeSummary } from "@/components/combine/CombineGradeSummary";
+import { ProximityPresets } from "@/components/combine/ProximityPresets";
+import { useCombineSelfCompare } from "@/hooks/useCombineSelfCompare";
 import { useCombineUser } from "@/hooks/useCombineUser";
 import { bunker9HoleChallengeConfig } from "@/lib/bunker9HoleChallengeConfig";
 import type { ChipResultLabel } from "@/lib/chippingCombine9Analytics";
@@ -10,14 +13,17 @@ import {
   type BunkerVerticalStrike,
   averageBunkerProximityCm,
   buildBunkerAggregates,
-  bunkerPointsFromProximityCm,
+  bunkerPointsFromProximityCmAtDistance,
+  bunkerSessionScorePct,
   bunkerSessionTotalPoints,
   bunkerZoneFromProximityCm,
   bunkerMissDiagnosisText,
+  maxBunkerChipPointsForHoles,
+  maxBunkerSessionPointsForHoles,
   totalBunkerChipPoints,
   MAX_SESSION_POINTS,
-  MAX_BUNKER_SESSION_CHIP,
 } from "@/lib/bunker9HoleChallengeAnalytics";
+import { performanceGradeFromSessionTotal } from "@/lib/combinePerformanceGrade";
 import { PRIMARY_MISS_LABELS, type PrimaryMissReason } from "@/lib/puttingTestMissDiagnostics";
 import { type PuttingTestMissCategory, PUTTING_TEST_MISS_CATEGORY_LABELS } from "@/lib/puttingTestMissScoring";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
@@ -42,10 +48,11 @@ import {
   BreakdownBar,
   BreakdownCard,
   EveryShotList,
-  FocusCard,
   RateRow,
   ValueRow,
 } from "@/components/combine/CombineBreakdown";
+import { CombineDetailsDisclosure, CombineTakeaway } from "@/components/combine/CombineTakeaway";
+import type { CombineFocusTheme } from "@/lib/combineDrillSuggestions";
 import { BunkerShotDiagram, CARD_ART_CLASS, HERO_ART_CLASS } from "@/components/combine/CombineArt";
 
 const PUTT_BONUS = bunker9HoleChallengeConfig.scramblePuttBonus;
@@ -151,7 +158,7 @@ function buildHole(form: HoleForm, hole: number): BunkerHoleLog | null {
     distance_m: distance,
     proximity_cm: cm,
     zone: bunkerZoneFromProximityCm(cm),
-    bunker_chip_points: bunkerPointsFromProximityCm(cm),
+    bunker_chip_points: bunkerPointsFromProximityCmAtDistance(cm, distance),
     strike_vertical: form.strike,
   };
   if (cm === 0) return { ...base, holed: true, putt_points: 0 };
@@ -185,6 +192,10 @@ function breakdown(holes: BunkerHoleLog[]) {
   const n = holes.length;
   const total = bunkerSessionTotalPoints(holes);
   const chipPts = totalBunkerChipPoints(holes);
+  const chipMax = maxBunkerChipPointsForHoles(holes);
+  const sessionMax = maxBunkerSessionPointsForHoles(holes);
+  const scorePct = bunkerSessionScorePct(holes);
+  const grade = performanceGradeFromSessionTotal(total, sessionMax);
   const puttPts = holes.reduce((s, h) => s + h.putt_points, 0);
   const holed = holes.filter((h) => h.holed).length;
   const needPutt = holes.filter((h) => !h.holed);
@@ -239,14 +250,16 @@ function breakdown(holes: BunkerHoleLog[]) {
   const proximityLoss = needPutt.reduce((s, h) => s + Math.max(0, 15 - h.bunker_chip_points), 0);
   const puttLoss = puttsMissed * PUTT_BONUS;
 
-  let focus: { title: string; lines: string[] };
+  let focus: { theme: CombineFocusTheme; title: string; lines: string[] };
   if (saves === n) {
     focus = {
+      theme: "perfect",
       title: "Every hole up and down",
       lines: [`${plural(holed, "hole")} holed from the sand and ${plural(puttsMade, "putt")} made.`, "Try tougher lies or longer shots next time."],
     };
   } else if (outside3m >= 2) {
     focus = {
+      theme: "bunker_green",
       title: "Focus next: getting it on the green",
       lines: [
         `${outside3m} of ${n} bunker shots finished more than 3 m away and scored nothing.`,
@@ -255,6 +268,7 @@ function breakdown(holes: BunkerHoleLog[]) {
     };
   } else if (puttLoss > proximityLoss) {
     focus = {
+      theme: "bunker_putt",
       title: "Focus next: holing the putt",
       lines: [
         `You made ${puttsMade} of ${needPutt.length} putts after the bunker shot. The misses cost you ${puttLoss} pts.`,
@@ -263,6 +277,7 @@ function breakdown(holes: BunkerHoleLog[]) {
     };
   } else {
     focus = {
+      theme: strikeMissCount >= 3 ? "bunker_strike" : "chipping_closer",
       title: "Focus next: getting it closer",
       lines: [`Your average finish was ${fmtCm(avgCm)}, and ${insideClub} of ${n} finished inside a club length.`],
     };
@@ -279,6 +294,10 @@ function breakdown(holes: BunkerHoleLog[]) {
   return {
     total,
     chipPts,
+    chipMax,
+    sessionMax,
+    scorePct,
+    grade,
     puttPts,
     holed,
     needPutt: needPutt.length,
@@ -352,12 +371,21 @@ async function persistSession(userId: string, holes: BunkerHoleLog[]): Promise<s
         quadrant: h.first_putt_miss_quadrant ?? null,
         primary_reason: h.putt_miss_primary_reason ?? null,
       }));
+    const sessionMax =
+      typeof aggregates.max_session_points === "number" && aggregates.max_session_points > 0
+        ? (aggregates.max_session_points as number)
+        : maxBunkerSessionPointsForHoles(holes);
+    const grade = performanceGradeFromSessionTotal(
+      aggregates.total_points as number,
+      sessionMax,
+    );
     const payload = {
       version: 1,
       proximity_scores: proximityScores,
       miss_categories: missCategories,
       holes,
       aggregates,
+      performance_grade: grade.label,
     };
 
     const { error } = await supabase.from("practice").insert({
@@ -449,6 +477,11 @@ export function Bunker9HoleChallengeRunner() {
   }, [status, holes]);
 
   const summary = useMemo(() => (status === "complete" && holes.length >= total ? breakdown(holes) : null), [status, holes, total]);
+  const selfCompare = useCombineSelfCompare(
+    "bunker_9_hole_challenge",
+    summary?.scorePct ?? null,
+    { unit: "%", higherIsBetter: true },
+  );
 
   if (status === "intro") {
     return (
@@ -468,12 +501,15 @@ export function Bunker9HoleChallengeRunner() {
         />
         <ScoringGuide title="How points work">
           <ul className="space-y-1.5">
-            <li>Holed from the sand: 20 pts</li>
+            <li>Holed from the sand: 20 pts (base) · longer starts score more</li>
             <li>Inside a club length (90 cm): 15 to 11 pts, closer scores more</li>
             <li>Inside 6 ft (183 cm): 10 to 6 pts · inside 3 m: 5 to 1 pts</li>
             <li>Further than 3 m: 0 pts</li>
             <li>Didn&apos;t hole it? Make the putt for +{PUTT_BONUS}.</li>
-            <li className="font-semibold text-gray-900">Scored out of {MAX_SESSION_POINTS}. Higher is better.</li>
+            <li className="font-semibold text-gray-900">
+              Your max depends on the distances you play (up to ~{MAX_SESSION_POINTS} at longest).
+              Grades use % of that layout — Tour Pro / Scratch / Single Digit / Mid-Handicap / Needs Work.
+            </li>
           </ul>
         </ScoringGuide>
         <PrimaryButton onClick={startTest}>Start the test</PrimaryButton>
@@ -485,10 +521,15 @@ export function Bunker9HoleChallengeRunner() {
     return (
       <div className="space-y-4">
         <ResultHero>
-          <ScoreRing pct={summary.total / MAX_SESSION_POINTS} value={fmt(summary.total)} caption={`of ${MAX_SESSION_POINTS} points`} />
+          <ScoreRing
+            pct={summary.total / Math.max(1, summary.sessionMax)}
+            value={fmt(summary.total)}
+            caption={`of ${fmt(summary.sessionMax)} for this layout`}
+          />
           <p className="mt-2 text-xs text-white/70">
-            {summary.saves} of {total} up and down · higher is better
+            {Math.round(summary.scorePct)}% of layout max · {summary.saves}/{total} up and down
           </p>
+          <CombineGradeSummary grade={summary.grade} selfCompare={selfCompare} />
         </ResultHero>
 
         <StatTiles
@@ -503,92 +544,103 @@ export function Bunker9HoleChallengeRunner() {
           ]}
         />
 
-        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+        <CombineTakeaway
+          theme={summary.focus.theme}
+          title={summary.focus.title}
+          lines={summary.focus.lines}
+        />
 
-        <BreakdownCard title="Where your points went" aside={`${fmt(summary.total)} pts`}>
-          <BreakdownBar
-            segments={[
-              { label: "Bunker shots", value: summary.chipPts, tone: "bg-[#014421]" },
-              { label: "Putts", value: summary.puttPts, tone: "bg-[#FFA500]" },
-              { label: "Lost: missed putts", value: summary.puttLoss, tone: "bg-red-400" },
-              { label: "Lost: proximity", value: Math.round((MAX_BUNKER_SESSION_CHIP - summary.chipPts) * 10) / 10, tone: "bg-amber-300" },
-            ]}
-          />
-        </BreakdownCard>
+        <CombineDetailsDisclosure label="Full breakdown">
+          <BreakdownCard title="Where your points went" aside={`${fmt(summary.total)} pts`}>
+            <BreakdownBar
+              segments={[
+                { label: "Bunker shots", value: summary.chipPts, tone: "bg-[#014421]" },
+                { label: "Putts", value: summary.puttPts, tone: "bg-[#FFA500]" },
+                { label: "Lost: missed putts", value: summary.puttLoss, tone: "bg-red-400" },
+                { label: "Lost: proximity", value: Math.round((summary.chipMax - summary.chipPts) * 10) / 10, tone: "bg-amber-300" },
+              ]}
+            />
+          </BreakdownCard>
 
-        <BreakdownCard title="Bunker shots" aside={`Avg ${fmtCm(summary.avgCm)}`}>
-          <BreakdownBar
-            segments={[
-              { label: "Holed", value: summary.zones.Holed, tone: "bg-[#014421]" },
-              { label: "Club length", value: summary.zones["Inside Club Length"], tone: "bg-green-400" },
-              { label: "6 ft", value: summary.zones["Inside 6ft"], tone: "bg-amber-300" },
-              { label: "3 m", value: summary.zones["Safety Zone"], tone: "bg-orange-400" },
-              { label: "Further", value: summary.outside3m, tone: "bg-red-400" },
-            ]}
-          />
-          <div className="mt-3 space-y-3">
-            <RateRow label="Inside 6 ft" made={summary.inside6ft} total={total} />
-            {summary.byBand.map((b) => (
-              <ValueRow
-                key={b.label}
-                label={b.label}
-                value={b.avgCm}
-                max={300}
-                lowerIsBetter
-                display={`${fmtCm(b.avgCm)} · ${plural(b.n, "shot")}`}
-                flag={b.label === summary.worstBand ? "Work on" : null}
-              />
-            ))}
-          </div>
-        </BreakdownCard>
-
-        <BreakdownCard title="Up and down" aside={`${summary.saves}/${total}`}>
-          <div className="space-y-3">
-            <RateRow label="Sand saves" made={summary.saves} total={total} />
-            {summary.needPutt > 0 && <RateRow label="Putts made" made={summary.puttsMade} total={summary.needPutt} />}
-            {summary.puttsMissed > 0 && (
-              <>
-                <BreakdownBar
-                  label="Why putts missed"
-                  segments={[
-                    { label: "Read", value: summary.reasons.read, tone: "bg-sky-400" },
-                    { label: "Speed", value: summary.reasons.speed, tone: "bg-[#FFA500]" },
-                    { label: "Start line", value: summary.reasons.startLine, tone: "bg-violet-400" },
-                  ]}
+          <BreakdownCard title="Bunker shots" aside={`Avg ${fmtCm(summary.avgCm)}`}>
+            <BreakdownBar
+              segments={[
+                { label: "Holed", value: summary.zones.Holed, tone: "bg-[#014421]" },
+                { label: "Club length", value: summary.zones["Inside Club Length"], tone: "bg-green-400" },
+                { label: "6 ft", value: summary.zones["Inside 6ft"], tone: "bg-amber-300" },
+                { label: "3 m", value: summary.zones["Safety Zone"], tone: "bg-orange-400" },
+                { label: "Further", value: summary.outside3m, tone: "bg-red-400" },
+              ]}
+            />
+            <div className="mt-3 space-y-3">
+              <RateRow label="Inside 6 ft" made={summary.inside6ft} total={total} />
+              {summary.byBand.map((b) => (
+                <ValueRow
+                  key={b.label}
+                  label={b.label}
+                  value={b.avgCm}
+                  max={300}
+                  lowerIsBetter
+                  display={`${fmtCm(b.avgCm)} · ${plural(b.n, "shot")}`}
+                  flag={b.label === summary.worstBand ? "Work on" : null}
                 />
-                <p className="text-xs text-gray-600">{summary.diagnosis}</p>
-              </>
+              ))}
+            </div>
+          </BreakdownCard>
+
+          <BreakdownCard title="Up and down" aside={`${summary.saves}/${total}`}>
+            <div className="space-y-3">
+              <RateRow label="Sand saves" made={summary.saves} total={total} />
+              {summary.needPutt > 0 && <RateRow label="Putts made" made={summary.puttsMade} total={summary.needPutt} />}
+              {summary.puttsMissed > 0 && (
+                <>
+                  <BreakdownBar
+                    label="Why putts missed"
+                    segments={[
+                      { label: "Read", value: summary.reasons.read, tone: "bg-sky-400" },
+                      { label: "Speed", value: summary.reasons.speed, tone: "bg-[#FFA500]" },
+                      { label: "Start line", value: summary.reasons.startLine, tone: "bg-violet-400" },
+                    ]}
+                  />
+                  <p className="text-xs text-gray-600">{summary.diagnosis}</p>
+                </>
+              )}
+            </div>
+          </BreakdownCard>
+
+          <BreakdownCard title="Sand contact">
+            <BreakdownBar
+              segments={[
+                { label: "Solid", value: summary.strikes.solid, tone: "bg-[#014421]" },
+                { label: "Fat", value: summary.strikes.fat, tone: "bg-amber-500" },
+                { label: "Thin", value: summary.strikes.thin, tone: "bg-sky-400" },
+              ]}
+            />
+            {summary.solidAvgCm !== null && summary.missHitAvgCm !== null && (
+              <p className="mt-2 text-xs text-gray-600">
+                Solid shots finished {fmtCm(summary.solidAvgCm)} away on average, fat and thin ones{" "}
+                {fmtCm(summary.missHitAvgCm)}.
+              </p>
             )}
-          </div>
-        </BreakdownCard>
+          </BreakdownCard>
 
-        <BreakdownCard title="Sand contact">
-          <BreakdownBar
-            segments={[
-              { label: "Solid", value: summary.strikes.solid, tone: "bg-[#014421]" },
-              { label: "Fat", value: summary.strikes.fat, tone: "bg-amber-500" },
-              { label: "Thin", value: summary.strikes.thin, tone: "bg-sky-400" },
-            ]}
-          />
-          {summary.solidAvgCm !== null && summary.missHitAvgCm !== null && (
-            <p className="mt-2 text-xs text-gray-600">
-              Solid shots finished {fmtCm(summary.solidAvgCm)} away on average, fat and thin ones {fmtCm(summary.missHitAvgCm)}.
-            </p>
-          )}
-        </BreakdownCard>
-
-        <EveryShotList title="Every hole">
-          {holes.map((h) => (
-            <li key={h.hole} className="flex items-center gap-3 py-2 text-sm">
-              <span className="w-9 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">H{h.hole}</span>
-              <span className="min-w-0 flex-1 truncate text-gray-600">
-                {fmt(h.distance_m)} m · {h.holed ? "Holed" : fmtCm(h.proximity_cm)} · {STRIKE_LABEL[h.strike_vertical]}
-                {h.holed ? "" : h.putt_made ? " · Putt made" : " · Putt missed"}
-              </span>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${holeTone(h)}`}>{fmt(holePoints(h))}</span>
-            </li>
-          ))}
-        </EveryShotList>
+          <EveryShotList title="Every hole">
+            {holes.map((h) => (
+              <li key={h.hole} className="flex items-center gap-3 py-2 text-sm">
+                <span className="w-9 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">
+                  H{h.hole}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-gray-600">
+                  {fmt(h.distance_m)} m · {h.holed ? "Holed" : fmtCm(h.proximity_cm)} · {STRIKE_LABEL[h.strike_vertical]}
+                  {h.holed ? "" : h.putt_made ? " · Putt made" : " · Putt missed"}
+                </span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${holeTone(h)}`}>
+                  {fmt(holePoints(h))}
+                </span>
+              </li>
+            ))}
+          </EveryShotList>
+        </CombineDetailsDisclosure>
 
         <SaveStatus saved={saved} error={saveError} onRetry={userId ? () => void save(holes) : undefined} />
         <PlayAgainButton onClick={startTest} />
@@ -599,7 +651,8 @@ export function Bunker9HoleChallengeRunner() {
   const distance = parseDistanceM(form.distance);
   const cm = parseProximityCm(form.proximity);
   const holedOut = cm === 0;
-  const chipPts = cm !== null ? bunkerPointsFromProximityCm(cm) : null;
+  const chipPts =
+    cm !== null && distance !== null ? bunkerPointsFromProximityCmAtDistance(cm, distance) : null;
   const runningTotal = bunkerSessionTotalPoints(holes);
   const track: TrackItem[] = Array.from({ length: total }, (_, i) => (holes[i] ? holeTrackItem(holes[i]!) : null));
   const hint =
@@ -666,6 +719,10 @@ export function Bunker9HoleChallengeRunner() {
 
       <div className="space-y-2">
         <p className="text-base font-bold text-gray-900">How close did it finish?</p>
+        <ProximityPresets
+          valueCm={cm}
+          onSelect={(presetCm) => setForm((f) => ({ ...f, proximity: String(presetCm) }))}
+        />
         <NumberChips
           values={FINISH_CHIPS_CM}
           value={form.proximity}

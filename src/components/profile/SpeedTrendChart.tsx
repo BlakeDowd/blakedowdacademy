@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight, Gauge } from "lucide-react";
 import { Segmented } from "@/components/profile/ProfileStatsParts";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   SPEED_KINDS,
   kindLabel,
@@ -31,11 +32,9 @@ const fullDayLabel = (d: Date) =>
 
 const avg = (vals: number[]) => (vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 0);
 
-function readLogs(userId: string | null | undefined): SpeedLogEntry[] {
-  return loadSpeedLogForProfile(userId);
-}
-
 export function SpeedTrendChart({ userId }: { userId?: string | null }) {
+  const { user } = useAuth();
+  const viewerUserId = user?.id ?? null;
   const [kind, setKind] = useState<SpeedKind>("on_course");
   const [unit, setUnit] = useState<CarryUnit>("m");
   const [entries, setEntries] = useState<SpeedLogEntry[]>([]);
@@ -43,7 +42,7 @@ export function SpeedTrendChart({ userId }: { userId?: string | null }) {
   const plotRef = useRef<SVGRectElement>(null);
 
   const refresh = () => {
-    setEntries(readLogs(userId));
+    setEntries(loadSpeedLogForProfile(userId, { viewerUserId }));
     setUnit(loadCarryUnit());
   };
 
@@ -63,7 +62,7 @@ export function SpeedTrendChart({ userId }: { userId?: string | null }) {
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("storage", onStorage);
     };
-  }, [userId]);
+  }, [userId, viewerUserId]);
 
   const points = useMemo(() => speedTrendPoints(entries, kind), [entries, kind]);
   const recent = points.slice(-MAX_POINTS);

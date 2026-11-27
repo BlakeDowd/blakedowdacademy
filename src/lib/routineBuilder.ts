@@ -1,4 +1,4 @@
-/** Pre-shot / game-part routines: script each stage, then rehearse on a timer. */
+/** Pre-shot / game-part routines: time first, refine stages when ready. */
 
 export const ROUTINE_GAME_PARTS = [
   { id: "tee", label: "Tee shot" },
@@ -14,6 +14,8 @@ export type RoutineGamePartId = (typeof ROUTINE_GAME_PARTS)[number]["id"];
 export type RoutineStep = {
   id: string;
   title: string;
+  /** Physical / mental / post-shot. */
+  phase: RoutinePhase;
   /** Cue / thought / what you do for this stage. */
   thoughts: string;
   /** How many / what kind of practice swings. */
@@ -45,6 +47,23 @@ export type RoutineExtra = {
   value: string;
 };
 
+/** Where a stage sits in the full routine. */
+export type RoutinePhase = "physical" | "mental" | "post";
+
+export const ROUTINE_PHASES: readonly {
+  id: RoutinePhase;
+  label: string;
+  hint: string;
+}[] = [
+  { id: "physical", label: "Physical", hint: "Body, walk-in, setup" },
+  { id: "mental", label: "Mental", hint: "Thoughts before you go" },
+  { id: "post", label: "Post-shot", hint: "After the ball is gone" },
+] as const;
+
+export function routinePhaseLabel(phase: RoutinePhase): string {
+  return ROUTINE_PHASES.find((p) => p.id === phase)?.label ?? phase;
+}
+
 /** Answers from the routine questionnaire (one set per game part). */
 export type RoutineAnswers = {
   walkInSteps: string;
@@ -67,6 +86,14 @@ export type RoutineAnswers = {
   /** Trigger that starts the swing. */
   goTrigger: string;
   goThought: string;
+  /** One clear mental cue / focus word. */
+  mentalFocus: string;
+  /** Immediate reaction after the shot (accept / no judgment). */
+  postReact: string;
+  /** What you notice or learn — one sentence. */
+  postLearn: string;
+  /** How you reset before the next shot. */
+  postReset: string;
   extras: RoutineExtra[];
   /** Custom order of system stage ids (optional). */
   stageOrder?: string[];
@@ -85,6 +112,7 @@ export type RoutineSystemStage = {
   id: string;
   title: string;
   detail: string;
+  phase: RoutinePhase;
 };
 
 export const blankAnswers = (): RoutineAnswers => ({
@@ -104,113 +132,165 @@ export const blankAnswers = (): RoutineAnswers => ({
   club: "",
   goTrigger: "",
   goThought: "",
+  mentalFocus: "",
+  postReact: "",
+  postLearn: "",
+  postReset: "",
   extras: [],
   stageOrder: undefined,
 });
 
 export type QuizQuestion = {
   id: keyof Omit<RoutineAnswers, "extras" | "stageOrder">;
+  phase: RoutinePhase;
   prompt: string;
   chips: string[];
   placeholder: string;
 };
 
 export const ROUTINE_QUIZ_QUESTIONS: QuizQuestion[] = [
+  // —— Physical ——
   {
-    id: "walkInSteps",
-    prompt: "How many steps in your walk-in?",
-    chips: ["0", "1", "2", "3", "4", "5"],
-    placeholder: "Or type a number",
-  },
-  {
-    id: "stepPace",
-    prompt: "What pace are your steps?",
-    chips: ["Slow", "Even", "Deliberate", "Quick"],
-    placeholder: "Or describe the pace",
-  },
-  {
-    id: "breaths",
-    prompt: "How many breaths before you go?",
-    chips: ["0", "1", "2", "3"],
-    placeholder: "Or describe your breath",
+    id: "club",
+    phase: "physical",
+    prompt: "Club?",
+    chips: ["Commit to club", "Look at face", "One waggle", "Behind the ball"],
+    placeholder: "What you do with the club",
   },
   {
     id: "targeting",
+    phase: "physical",
     prompt: "How do you target?",
     chips: ["Intermediate target", "Final target", "Spot on ground", "Tree / edge"],
     placeholder: "Or describe your target",
   },
   {
     id: "looks",
+    phase: "physical",
     prompt: "How many looks at the target?",
     chips: ["1", "2", "3", "None"],
     placeholder: "Or describe your looks",
   },
   {
     id: "practiceSwings",
+    phase: "physical",
     prompt: "How many practice swings?",
     chips: ["0", "1", "2", "3"],
     placeholder: "Or describe them",
   },
   {
-    id: "club",
-    prompt: "Club?",
-    chips: ["Commit to club", "Look at face", "One waggle", "Behind the ball"],
-    placeholder: "What you do with the club",
+    id: "walkInSteps",
+    phase: "physical",
+    prompt: "How many steps in your walk-in?",
+    chips: ["0", "1", "2", "3", "4", "5"],
+    placeholder: "Or type a number",
+  },
+  {
+    id: "stepPace",
+    phase: "physical",
+    prompt: "What pace are your steps?",
+    chips: ["Slow", "Even", "Deliberate", "Quick"],
+    placeholder: "Or describe the pace",
   },
   {
     id: "gripHands",
+    phase: "physical",
     prompt: "Grip — one hand or two?",
     chips: ["Bottom hand first", "Top hand first", "Both on together", "Glove hand only then both"],
     placeholder: "How you take your grip",
   },
   {
     id: "gripPressure",
+    phase: "physical",
     prompt: "Grip pressure?",
     chips: ["Light", "Medium", "Firm", "3/10", "4/10", "5/10"],
     placeholder: "Or your own feel",
   },
   {
     id: "setFirst",
+    phase: "physical",
     prompt: "What do you set first?",
     chips: ["Clubface", "Feet", "Shoulders", "Grip", "Ball position", "Aim"],
     placeholder: "First thing you set at address",
   },
   {
     id: "aim",
+    phase: "physical",
     prompt: "Aim?",
     chips: ["Face to target", "Face to intermediate", "Body parallel", "Open body"],
     placeholder: "How you aim",
   },
   {
     id: "feet",
+    phase: "physical",
     prompt: "Feet?",
     chips: ["Square", "Open", "Closed", "Narrow", "Wide"],
     placeholder: "Foot position",
   },
   {
     id: "shoulders",
+    phase: "physical",
     prompt: "Shoulders?",
     chips: ["Square", "Open", "Closed", "Match feet", "Aim left / right"],
     placeholder: "Shoulder line",
   },
   {
     id: "ballPosition",
+    phase: "physical",
     prompt: "Ball position?",
     chips: ["Back", "Centre", "Forward", "Off left heel"],
     placeholder: "Optional",
   },
+  // —— Mental ——
+  {
+    id: "breaths",
+    phase: "mental",
+    prompt: "How many breaths before you go?",
+    chips: ["0", "1", "2", "3"],
+    placeholder: "Or describe your breath",
+  },
+  {
+    id: "mentalFocus",
+    phase: "mental",
+    prompt: "What’s your one mental cue?",
+    chips: ["Target", "Smooth", "Commit", "Soft hands", "Trust it", "Nothing"],
+    placeholder: "One word or short phrase",
+  },
   {
     id: "goTrigger",
+    phase: "mental",
     prompt: "What is your trigger to go?",
     chips: ["Forward press", "Waggle then go", "Look then go", "Breath out", "Knee nudge", "Nothing — just go"],
     placeholder: "The move that starts the swing",
   },
   {
     id: "goThought",
+    phase: "mental",
     prompt: "Final thought before go?",
     chips: ["Trust it", "Smooth", "Target", "Nothing"],
     placeholder: "Optional",
+  },
+  // —— Post-shot ——
+  {
+    id: "postReact",
+    phase: "post",
+    prompt: "Right after the shot — what’s your reaction rule?",
+    chips: ["Accept it", "No judgment", "Watch it finish", "One breath", "Stay still"],
+    placeholder: "How you react in the first second",
+  },
+  {
+    id: "postLearn",
+    phase: "post",
+    prompt: "What do you notice or learn?",
+    chips: ["One sentence", "Feel only", "Start line", "Contact", "Skip — move on"],
+    placeholder: "Optional quick note to yourself",
+  },
+  {
+    id: "postReset",
+    phase: "post",
+    prompt: "How do you reset for the next shot?",
+    chips: ["Walk with purpose", "Club in bag", "Breathe", "Clear the mind", "Next target"],
+    placeholder: "Your reset habit",
   },
 ];
 
@@ -264,10 +344,15 @@ function newId(): string {
   return `step-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function blankStep(title = ""): RoutineStep {
+function coercePhase(raw: unknown): RoutinePhase {
+  return raw === "mental" || raw === "post" || raw === "physical" ? raw : "physical";
+}
+
+export function blankStep(title = "", phase: RoutinePhase = "physical"): RoutineStep {
   return {
     id: newId(),
     title,
+    phase,
     thoughts: "",
     practiceSwings: "",
     walkingTempo: "",
@@ -284,10 +369,11 @@ export function blankStep(title = ""): RoutineStep {
 
 /** Fill missing fields from older saved steps. */
 export function normalizeStep(raw: Partial<RoutineStep> & { id?: string; title?: string }): RoutineStep {
-  const base = blankStep(typeof raw.title === "string" ? raw.title : "");
+  const base = blankStep(typeof raw.title === "string" ? raw.title : "", coercePhase(raw.phase));
   return {
     ...base,
     id: typeof raw.id === "string" && raw.id ? raw.id : base.id,
+    phase: coercePhase(raw.phase),
     thoughts: typeof raw.thoughts === "string" ? raw.thoughts : "",
     practiceSwings: typeof raw.practiceSwings === "string" ? raw.practiceSwings : "",
     walkingTempo: typeof raw.walkingTempo === "string" ? raw.walkingTempo : "",
@@ -344,6 +430,10 @@ export function normalizeAnswers(raw: Partial<RoutineAnswers> | null | undefined
     club: typeof raw.club === "string" ? raw.club : "",
     goTrigger: typeof raw.goTrigger === "string" ? raw.goTrigger : "",
     goThought: typeof raw.goThought === "string" ? raw.goThought : "",
+    mentalFocus: typeof raw.mentalFocus === "string" ? raw.mentalFocus : "",
+    postReact: typeof raw.postReact === "string" ? raw.postReact : "",
+    postLearn: typeof raw.postLearn === "string" ? raw.postLearn : "",
+    postReset: typeof raw.postReset === "string" ? raw.postReset : "",
     extras,
     stageOrder: stageOrder && stageOrder.length > 0 ? stageOrder : undefined,
   };
@@ -368,6 +458,10 @@ export function answersHaveContent(a: RoutineAnswers): boolean {
       a.club,
       a.goTrigger,
       a.goThought,
+      a.mentalFocus,
+      a.postReact,
+      a.postLearn,
+      a.postReset,
     ].some((v) => v.trim())
   ) {
     return true;
@@ -375,30 +469,52 @@ export function answersHaveContent(a: RoutineAnswers): boolean {
   return a.extras.some((e) => e.label.trim() || e.value.trim());
 }
 
+/** Simple stages so you can time a full routine before filling the questionnaire. */
+export const STARTER_TIMING_STAGES: readonly RoutineSystemStage[] = [
+  { id: "target", title: "Target", detail: "Pick your target", phase: "physical" },
+  { id: "swings", title: "Practice swings", detail: "Feel the shot", phase: "physical" },
+  { id: "walk", title: "Walk in", detail: "Same pace every time", phase: "physical" },
+  { id: "setup", title: "Setup", detail: "Aim, grip, ball", phase: "physical" },
+  { id: "focus", title: "Mental cue", detail: "One clear thought", phase: "mental" },
+  { id: "go", title: "Go", detail: "Commit and swing", phase: "mental" },
+  { id: "react", title: "React", detail: "Accept the shot", phase: "post" },
+  { id: "reset", title: "Reset", detail: "Clear and walk on", phase: "post" },
+] as const;
+
 /** Build default stages (before custom order). */
 function defaultSystemStages(a: RoutineAnswers): RoutineSystemStage[] {
+  // No answers yet — give a ready-to-time skeleton, then refine via Plan stages.
+  if (!answersHaveContent(a)) {
+    return STARTER_TIMING_STAGES.map((s) => ({ ...s }));
+  }
+
   const stages: RoutineSystemStage[] = [];
+  const push = (stage: RoutineSystemStage) => stages.push(stage);
+
+  // Physical
   if (a.club.trim()) {
-    stages.push({ id: "club", title: "Club", detail: a.club.trim() });
+    push({ id: "club", title: "Club", detail: a.club.trim(), phase: "physical" });
   }
   if (a.targeting.trim()) {
-    stages.push({ id: "target", title: "Target", detail: a.targeting.trim() });
+    push({ id: "target", title: "Target", detail: a.targeting.trim(), phase: "physical" });
   }
   if (a.looks.trim()) {
-    stages.push({
+    push({
       id: "looks",
       title: "Looks",
       detail:
         /^\d+$/.test(a.looks.trim())
           ? `${a.looks.trim()} look${a.looks.trim() === "1" ? "" : "s"}`
           : a.looks.trim(),
+      phase: "physical",
     });
   }
   if (a.practiceSwings.trim()) {
-    stages.push({
+    push({
       id: "swings",
       title: "Practice swings",
       detail: a.practiceSwings.trim(),
+      phase: "physical",
     });
   }
   if (a.walkInSteps.trim() || a.stepPace.trim()) {
@@ -406,53 +522,76 @@ function defaultSystemStages(a: RoutineAnswers): RoutineSystemStage[] {
       a.walkInSteps.trim() ? `${a.walkInSteps.trim()} step${a.walkInSteps.trim() === "1" ? "" : "s"}` : "",
       a.stepPace.trim(),
     ].filter(Boolean);
-    stages.push({ id: "walk", title: "Walk in", detail: bits.join(" · ") });
+    push({ id: "walk", title: "Walk in", detail: bits.join(" · "), phase: "physical" });
   }
   if (a.gripHands.trim() || a.gripPressure.trim()) {
     const bits = [a.gripHands.trim(), a.gripPressure.trim() ? `Pressure ${a.gripPressure.trim()}` : ""].filter(
       Boolean,
     );
-    stages.push({ id: "grip", title: "Grip", detail: bits.join(" · ") });
+    push({ id: "grip", title: "Grip", detail: bits.join(" · "), phase: "physical" });
   }
   if (a.setFirst.trim()) {
-    stages.push({ id: "set-first", title: "Set first", detail: a.setFirst.trim() });
+    push({ id: "set-first", title: "Set first", detail: a.setFirst.trim(), phase: "physical" });
   }
   if (a.aim.trim()) {
-    stages.push({ id: "aim", title: "Aim", detail: a.aim.trim() });
+    push({ id: "aim", title: "Aim", detail: a.aim.trim(), phase: "physical" });
   }
   if (a.feet.trim()) {
-    stages.push({ id: "feet", title: "Feet", detail: a.feet.trim() });
+    push({ id: "feet", title: "Feet", detail: a.feet.trim(), phase: "physical" });
   }
   if (a.shoulders.trim()) {
-    stages.push({ id: "shoulders", title: "Shoulders", detail: a.shoulders.trim() });
+    push({ id: "shoulders", title: "Shoulders", detail: a.shoulders.trim(), phase: "physical" });
   }
   if (a.ballPosition.trim()) {
-    stages.push({ id: "ball", title: "Ball", detail: a.ballPosition.trim() });
+    push({ id: "ball", title: "Ball", detail: a.ballPosition.trim(), phase: "physical" });
   }
+
+  // Mental
   if (a.breaths.trim()) {
-    stages.push({
+    push({
       id: "breath",
       title: "Breath",
       detail:
         /^\d+$/.test(a.breaths.trim())
           ? `${a.breaths.trim()} breath${a.breaths.trim() === "1" ? "" : "s"}`
           : a.breaths.trim(),
+      phase: "mental",
     });
+  }
+  if (a.mentalFocus.trim()) {
+    push({ id: "focus", title: "Mental cue", detail: a.mentalFocus.trim(), phase: "mental" });
   }
   for (const extra of a.extras) {
     if (!extra.label.trim() && !extra.value.trim()) continue;
-    stages.push({
+    push({
       id: `extra-${extra.id}`,
       title: extra.label.trim() || "Extra",
       detail: extra.value.trim() || "—",
+      phase: "mental",
     });
   }
   const goBits = [a.goTrigger.trim(), a.goThought.trim()].filter(Boolean);
-  stages.push({
+  push({
     id: "go",
     title: "Go",
     detail: goBits.length > 0 ? goBits.join(" · ") : "Commit and swing",
+    phase: "mental",
   });
+
+  // Post-shot
+  if (a.postReact.trim()) {
+    push({ id: "react", title: "React", detail: a.postReact.trim(), phase: "post" });
+  }
+  if (a.postLearn.trim()) {
+    push({ id: "learn", title: "Learn", detail: a.postLearn.trim(), phase: "post" });
+  }
+  if (a.postReset.trim()) {
+    push({ id: "reset", title: "Reset", detail: a.postReset.trim(), phase: "post" });
+  } else if (a.postReact.trim() || a.postLearn.trim()) {
+    // Always close the loop if they started a post-shot routine.
+    push({ id: "reset", title: "Reset", detail: "Clear and walk on", phase: "post" });
+  }
+
   return stages;
 }
 
@@ -507,7 +646,7 @@ export function buildStepsFromAnswers(
   const a = normalizeAnswers(answers);
   return stages.map((stage) => {
     const prev = byTitle.get(stage.title.toLowerCase());
-    const step = blankStep(stage.title);
+    const step = blankStep(stage.title, stage.phase);
     step.thoughts = stage.detail;
     if (stage.id === "club") step.club = a.club;
     if (stage.id === "target") step.targeting = a.targeting;
@@ -524,13 +663,16 @@ export function buildStepsFromAnswers(
       step.alignment = stage.detail;
     }
     if (stage.id === "breath") step.breath = a.breaths;
-    if (stage.id === "go") {
-      step.thoughts = stage.detail;
-    }
+    if (stage.id === "focus") step.thoughts = a.mentalFocus.trim() || stage.detail;
+    if (stage.id === "go") step.thoughts = stage.detail;
+    if (stage.id === "react") step.thoughts = a.postReact.trim() || stage.detail;
+    if (stage.id === "learn") step.thoughts = a.postLearn.trim() || stage.detail;
+    if (stage.id === "reset") step.thoughts = a.postReset.trim() || stage.detail;
     if (prev) {
       step.id = prev.id;
       step.lastSeconds = prev.lastSeconds;
     }
+    step.phase = stage.phase;
     return step;
   });
 }
@@ -673,13 +815,40 @@ export function formatRoutineTimePrecise(totalSeconds: number): string {
   return `${m}:${rem.toFixed(2).padStart(5, "0")}`;
 }
 
+export type ConsistencyGrade = "elite" | "solid" | "loose";
+
 export type ConsistencyStat = {
   stepTitle: string;
   count: number;
   avg: number;
   best: number;
+  latest: number;
+  /** Max − min over the window (seconds). */
   spread: number;
+  /** Population stdev of the window (seconds). */
+  stdev: number;
+  grade: ConsistencyGrade;
+  /** Negative = getting tighter vs older half of the window. */
+  trend: number | null;
 };
+
+export function consistencyGrade(spread: number): ConsistencyGrade {
+  if (spread <= 0.5) return "elite";
+  if (spread <= 1.5) return "solid";
+  return "loose";
+}
+
+export function consistencyGradeLabel(grade: ConsistencyGrade): string {
+  if (grade === "elite") return "Very consistent";
+  if (grade === "solid") return "Fairly consistent";
+  return "Needs work";
+}
+
+export function consistencyGradeTone(grade: ConsistencyGrade): string {
+  if (grade === "elite") return "text-green-700";
+  if (grade === "solid") return "text-[#014421]";
+  return "text-orange-700";
+}
 
 /** Consistency for a step title within a game part (newest logs first). */
 export function consistencyForStep(
@@ -696,13 +865,65 @@ export function consistencyForStep(
   const values = rows.map((r) => r.seconds);
   const avg = values.reduce((a, b) => a + b, 0) / values.length;
   const best = Math.min(...values);
+  const latest = values[0]!;
   const spread = Math.max(...values) - Math.min(...values);
+  const variance = values.reduce((s, v) => s + (v - avg) ** 2, 0) / values.length;
+  const stdev = Math.sqrt(variance);
+
+  let trend: number | null = null;
+  if (values.length >= 4) {
+    const half = Math.floor(values.length / 2);
+    const recent = values.slice(0, half);
+    const older = values.slice(half);
+    const recentSpread = Math.max(...recent) - Math.min(...recent);
+    const olderSpread = Math.max(...older) - Math.min(...older);
+    trend = Math.round((recentSpread - olderSpread) * 100) / 100;
+  }
+
   return {
     stepTitle: rows[0]!.stepTitle,
     count: values.length,
     avg: Math.round(avg * 100) / 100,
     best: Math.round(best * 100) / 100,
+    latest: Math.round(latest * 100) / 100,
     spread: Math.round(spread * 100) / 100,
+    stdev: Math.round(stdev * 100) / 100,
+    grade: consistencyGrade(spread),
+    trend,
+  };
+}
+
+/** All stage consistency stats for a game part, tightest first. */
+export function consistencyForPart(
+  history: readonly RoutineTimeLog[],
+  gamePart: RoutineGamePartId,
+  window = 8,
+): ConsistencyStat[] {
+  const titles = [
+    ...new Set(
+      history
+        .filter((h) => h.gamePart === gamePart)
+        .map((h) => h.stepTitle.trim())
+        .filter(Boolean),
+    ),
+  ];
+  return titles
+    .map((t) => consistencyForStep(history, gamePart, t, window))
+    .filter((s): s is ConsistencyStat => s != null)
+    .sort((a, b) => a.spread - b.spread);
+}
+
+/** Overall grade from stage stats (average spread). */
+export function overallConsistency(
+  stats: readonly ConsistencyStat[],
+): { grade: ConsistencyGrade; avgSpread: number; reps: number } | null {
+  if (stats.length === 0) return null;
+  const avgSpread = stats.reduce((s, x) => s + x.spread, 0) / stats.length;
+  const reps = stats.reduce((s, x) => s + x.count, 0);
+  return {
+    grade: consistencyGrade(avgSpread),
+    avgSpread: Math.round(avgSpread * 100) / 100,
+    reps,
   };
 }
 

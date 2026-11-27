@@ -166,14 +166,23 @@ export function kindLabel(kind: SpeedKind): string {
 }
 
 /**
- * Profile chart: merge "self" phone logs with entries keyed by the user's id
- * (coach logging for that player on this device).
+ * Profile chart: load speeds for one person on this device.
+ * Merges the phone "self" bucket only when viewing your own profile — never for
+ * other players (that was leaking one shared log onto every student chart).
  */
-export function loadSpeedLogForProfile(userId?: string | null): SpeedLogEntry[] {
+export function loadSpeedLogForProfile(
+  userId?: string | null,
+  opts?: { viewerUserId?: string | null },
+): SpeedLogEntry[] {
   const byId = new Map<string, SpeedLogEntry>();
-  for (const e of loadSpeedLog(null)) byId.set(e.id, e);
-  if (userId?.trim()) {
-    for (const e of loadSpeedLog(userId)) byId.set(e.id, e);
+  const uid = userId?.trim() || null;
+  const viewer = opts?.viewerUserId?.trim() || null;
+  const viewingOwn = !uid || (!!viewer && viewer === uid);
+  if (viewingOwn) {
+    for (const e of loadSpeedLog(null)) byId.set(e.id, e);
+  }
+  if (uid) {
+    for (const e of loadSpeedLog(uid)) byId.set(e.id, e);
   }
   return [...byId.values()].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 }

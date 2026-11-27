@@ -340,12 +340,12 @@ export async function shareInvite(
   coachName: string,
 ): Promise<"shared" | "copied" | "cancelled"> {
   const url = inviteUrl(code);
-  // Put the URL in the text body — many apps (WhatsApp, iMessage) ignore the separate `url` field
-  // and players then sign up from the App Store with no invite → empty space, missing videos.
+  // Put the URL only in `text` — never also pass `url`, or WhatsApp/iMessage paste the link twice.
+  // Players who ignore the join link and sign up from the App Store never attach to the space.
   const text = `Hi ${playerName.split(" ")[0]}, ${coachName} has set up a private coaching space for you on Blake Dowd Golf.\n\nOpen this link to join (don't just download the app):\n${url}`;
   if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
     try {
-      await navigator.share({ title: "Join your coaching space", text, url });
+      await navigator.share({ title: "Join your coaching space", text });
       return "shared";
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return "cancelled";
@@ -353,6 +353,17 @@ export async function shareInvite(
   }
   await navigator.clipboard.writeText(text);
   return "copied";
+}
+
+/** Query on /login so signup/login keep the invite even if localStorage is cleared. */
+export const INVITE_QUERY_PARAM = "invite";
+
+/** Login/signup href that carries the invite code through auth. */
+export function loginHrefForInvite(code: string, mode?: "signup" | "login"): string {
+  const q = new URLSearchParams();
+  if (mode === "signup") q.set("mode", "signup");
+  q.set(INVITE_QUERY_PARAM, normalizeInviteCode(code));
+  return `/login?${q.toString()}`;
 }
 
 const PENDING_INVITE_KEY = "coaching_pending_invite";

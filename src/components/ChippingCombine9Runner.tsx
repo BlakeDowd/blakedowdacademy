@@ -2,20 +2,25 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { CircleDot, Flag, Ruler } from "lucide-react";
-import { CombinePerformanceGradeBadge } from "@/components/CombinePerformanceGradeBadge";
+import { CombineGradeSummary } from "@/components/combine/CombineGradeSummary";
+import { ProximityPresets } from "@/components/combine/ProximityPresets";
 import { performanceGradeFromSessionTotal } from "@/lib/combinePerformanceGrade";
+import { useCombineSelfCompare } from "@/hooks/useCombineSelfCompare";
 import { useCombineUser } from "@/hooks/useCombineUser";
 import { chippingCombine9Config } from "@/lib/chippingCombine9Config";
 import {
   type ChipResultLabel,
   type ChippingCombineHoleLog,
-  MAX_CHIP_SESSION,
+  CHIP_PUTT_BONUS,
   MAX_SESSION_POINTS,
   averageProximityCm,
   buildAggregates,
-  chipPointsFromProximityCm,
+  chipPointsFromProximityCmAtDistance,
   chipResultLabelFromProximityCm,
+  maxChipPointsForHoles,
+  maxSessionPointsForHoles,
   missDiagnosisText,
+  sessionScorePct,
   sessionTotalPoints,
   totalChipPoints,
 } from "@/lib/chippingCombine9Analytics";
@@ -43,16 +48,17 @@ import {
   BreakdownBar,
   BreakdownCard,
   EveryShotList,
-  FocusCard,
   RateRow,
   ValueRow,
 } from "@/components/combine/CombineBreakdown";
+import { CombineDetailsDisclosure, CombineTakeaway } from "@/components/combine/CombineTakeaway";
+import type { CombineFocusTheme } from "@/lib/combineDrillSuggestions";
 import { CARD_ART_CLASS, ChipShotDiagram, HERO_ART_CLASS } from "@/components/combine/CombineArt";
 
 type MissQuadrant = Exclude<PuttingTestMissCategory, "lipOut">;
 type PuttOutcome = "made" | "missed";
 
-const PUTT_POINTS = 10;
+const PUTT_POINTS = CHIP_PUTT_BONUS;
 const SIX_FT_CM = 183;
 const PROXIMITY_CHIPS_CM = [0, 30, 60, 90, 120, 150, 180, 240, 300] as const;
 
@@ -161,9 +167,12 @@ function breakdown(holes: ChippingCombineHoleLog[]) {
   const n = holes.length;
   const total = sessionTotalPoints(holes);
   const chipPts = totalChipPoints(holes);
+  const chipMax = maxChipPointsForHoles(holes);
+  const sessionMax = maxSessionPointsForHoles(holes);
+  const scorePct = sessionScorePct(holes);
   const made = holes.filter((h) => h.putt_made).length;
   const puttPts = holes.reduce((s, h) => s + h.putt_points, 0);
-  const chipLost = Math.round((MAX_CHIP_SESSION - chipPts) * 10) / 10;
+  const chipLost = Math.round((chipMax - chipPts) * 10) / 10;
   const puttLost = (n - made) * PUTT_POINTS;
   const avgCm = averageProximityCm(holes);
 
@@ -197,19 +206,22 @@ function breakdown(holes: ChippingCombineHoleLog[]) {
   const outsideSixFt = holes.filter((h) => (h.proximity_cm ?? 0) > SIX_FT_CM).length;
   const shortMisses = misses.filter((h) => (h.proximity_cm ?? 0) <= SIX_FT_CM).length;
 
-  let focus: { title: string; lines: string[] };
+  let focus: { theme: CombineFocusTheme; title: string; lines: string[] };
   if (misses.length === 0 && outsideSixFt === 0) {
     focus = {
+      theme: "perfect",
       title: "Perfect round",
       lines: ["Every chip inside 6 ft and every putt holed. Try it from further back next time."],
     };
   } else if (shortMisses >= 2 && shortMisses >= outsideSixFt) {
     focus = {
+      theme: "chipping_short_putts",
       title: "Focus next: short putts",
       lines: [`You missed ${shortMisses} putts from inside 6 ft, worth ${shortMisses * PUTT_POINTS} pts.`, reasonTip],
     };
   } else if (outsideSixFt > 0) {
     focus = {
+      theme: "chipping_closer",
       title: "Focus next: chipping closer",
       lines: [`${outsideSixFt} of ${n} chips finished outside 6 ft, which makes the putt a long shot.`],
     };
@@ -219,6 +231,7 @@ function breakdown(holes: ChippingCombineHoleLog[]) {
     focus.lines.push("Pick a landing spot about a metre onto the green and let it roll out like a putt.");
   } else {
     focus = {
+      theme: "chipping_holing_out",
       title: "Focus next: holing out",
       lines: [
         `Your chipping was sharp, but ${misses.length === 1 ? "one missed putt" : `${misses.length} missed putts`} cost ${puttLost} pts.`,
@@ -230,6 +243,9 @@ function breakdown(holes: ChippingCombineHoleLog[]) {
   return {
     total,
     chipPts,
+    chipMax,
+    sessionMax,
+    scorePct,
     puttPts,
     chipLost,
     puttLost,
@@ -243,7 +259,7 @@ function breakdown(holes: ChippingCombineHoleLog[]) {
     quadrants,
     topReason,
     diagnosis: missDiagnosisText(holes),
-    grade: performanceGradeFromSessionTotal(total, MAX_SESSION_POINTS),
+    grade: performanceGradeFromSessionTotal(total, sessionMax),
     track: holes.map(holeTrackItem),
     focus,
   };
@@ -274,7 +290,11 @@ async function persistSession(
         primary_reason: h.putt_miss_primary_reason ?? null,
       }));
 
-    const grade = performanceGradeFromSessionTotal(aggregates.total_points as number, MAX_SESSION_POINTS);
+    const sessionMax =
+      typeof aggregates.max_session_points === "number" && aggregates.max_session_points > 0
+        ? (aggregates.max_session_points as number)
+        : maxSessionPointsForHoles(holes);
+    const grade = performanceGradeFromSessionTotal(aggregates.total_points as number, sessionMax);
     const payload = {
       version: 1,
       distances_m: distancesM,
@@ -384,7 +404,7 @@ export function ChippingCombine9Runner() {
       distance_m: distanceThisHole,
       proximity_cm: cm,
       chip_result: chipResultLabelFromProximityCm(cm),
-      chip_points: chipPointsFromProximityCm(cm),
+      chip_points: chipPointsFromProximityCmAtDistance(cm, distanceThisHole),
     };
     const entry: ChippingCombineHoleLog =
       puttMade || quadrant === null || reason === ""
@@ -418,6 +438,11 @@ export function ChippingCombine9Runner() {
   }, [status, holes]);
 
   const summary = useMemo(() => (status === "complete" ? breakdown(holes) : null), [status, holes]);
+  const selfCompare = useCombineSelfCompare(
+    "chipping_combine_9",
+    summary?.scorePct ?? null,
+    { unit: "%", higherIsBetter: true },
+  );
 
   if (status === "intro") {
     return (
@@ -446,13 +471,14 @@ export function ChippingCombine9Runner() {
         />
         <ScoringGuide title="How points work">
           <ul className="space-y-1.5">
-            <li>Holed chip: 20 pts</li>
+            <li>Holed chip: 20 pts (base) · longer starts score more</li>
             <li>Inside a club length (up to 90 cm): 15 down to 11 pts</li>
             <li>Inside 6 ft (91 to 183 cm): 10 down to 6 pts</li>
             <li>Inside 3 m: 5 down to 1 pt · 3 m or more: 0</li>
             <li>Hole the putt: +{PUTT_POINTS}</li>
             <li className="font-semibold text-gray-900">
-              Up to 30 per hole, {MAX_SESSION_POINTS} in total. Higher is better.
+              Your max is based on the distances you draw (not a fixed {MAX_SESSION_POINTS}).
+              Grades use your % of that layout max — Tour Pro / Scratch / Single Digit / Mid-Handicap / Needs Work.
             </li>
           </ul>
         </ScoringGuide>
@@ -467,107 +493,115 @@ export function ChippingCombine9Runner() {
       <div className="space-y-4">
         <ResultHero>
           <ScoreRing
-            pct={summary.total / MAX_SESSION_POINTS}
+            pct={summary.total / Math.max(1, summary.sessionMax)}
             value={formatPts(summary.total)}
-            caption={`of ${MAX_SESSION_POINTS} points`}
+            caption={`of ${formatPts(summary.sessionMax)} for this layout`}
           />
-          <p className="mt-2 text-xs text-white/70">Chip and putt score · higher is better</p>
-          <span className="mt-3 inline-block rounded-xl bg-white">
-            <CombinePerformanceGradeBadge gradeId={summary.grade.id} label={summary.grade.label} />
-          </span>
+          <p className="mt-2 text-xs text-white/70">
+            {Math.round(summary.scorePct)}% of layout max · chip + putt · higher is better
+          </p>
+          <CombineGradeSummary grade={summary.grade} selfCompare={selfCompare} />
         </ResultHero>
 
         <StatTiles
           stats={[
             { label: "Up and downs", value: `${summary.made}/${total}`, sub: `${Math.round((summary.made / total) * 100)}%` },
             { label: "Avg finish", value: summary.avgCm != null ? formatCm(summary.avgCm) : "—", sub: "from the hole" },
-            { label: "Chip points", value: formatPts(summary.chipPts), sub: `of ${MAX_CHIP_SESSION}` },
+            { label: "Chip points", value: formatPts(summary.chipPts), sub: `of ${formatPts(summary.chipMax)}` },
           ]}
         />
 
-        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+        <CombineTakeaway
+          theme={summary.focus.theme}
+          title={summary.focus.title}
+          lines={summary.focus.lines}
+        />
 
-        <BreakdownCard title="Where your points went" aside={`${formatPts(summary.total)} of ${MAX_SESSION_POINTS}`}>
-          <BreakdownBar
-            segments={[
-              { label: "Chips", value: summary.chipPts, tone: "bg-[#014421]" },
-              { label: "Putts", value: summary.puttPts, tone: "bg-green-400" },
-              { label: "Lost on chips", value: summary.chipLost, tone: "bg-[#FFA500]" },
-              { label: "Lost on putts", value: summary.puttLost, tone: "bg-red-400" },
-            ]}
-          />
-        </BreakdownCard>
-
-        <BreakdownCard title="Where your chips finished" aside="Shots">
-          <BreakdownBar segments={summary.zones.map((z) => ({ label: z.short, value: z.n, tone: z.tone }))} />
-          {missZones.length > 0 && (
-            <div className="mt-3 space-y-3 border-t border-gray-100 pt-3">
-              <p className="text-xs font-semibold text-gray-500">Putts holed from each spot</p>
-              {missZones.map((z) => (
-                <RateRow key={z.label} label={z.from} made={z.made} total={z.n} />
-              ))}
-            </div>
-          )}
-        </BreakdownCard>
-
-        <BreakdownCard title="Proximity by distance" aside="Avg finish">
-          <div className="space-y-3">
-            {summary.bands.map((b) => (
-              <ValueRow
-                key={b.label}
-                label={`${b.label}${b.n > 0 ? ` · ${b.n} chip${b.n === 1 ? "" : "s"}` : ""}`}
-                value={b.avgCm ?? 0}
-                max={300}
-                display={b.avgCm != null ? formatCm(b.avgCm) : "—"}
-                lowerIsBetter
-                flag={summary.worstBand?.label === b.label ? "Work on" : null}
-              />
-            ))}
-          </div>
-        </BreakdownCard>
-
-        {summary.misses > 0 && (
-          <BreakdownCard title="Missed putts" aside={`${summary.misses} missed`}>
+        <CombineDetailsDisclosure label="Full breakdown">
+          <BreakdownCard title="Where your points went" aside={`${formatPts(summary.total)} of ${formatPts(summary.sessionMax)}`}>
             <BreakdownBar
-              label="Why they missed"
               segments={[
-                { label: "Read", value: summary.reasons.read, tone: "bg-sky-400" },
-                { label: "Speed", value: summary.reasons.speed, tone: "bg-[#FFA500]" },
-                { label: "Start line", value: summary.reasons.startLine, tone: "bg-violet-400" },
+                { label: "Chips", value: summary.chipPts, tone: "bg-[#014421]" },
+                { label: "Putts", value: summary.puttPts, tone: "bg-green-400" },
+                { label: "Lost on chips", value: summary.chipLost, tone: "bg-[#FFA500]" },
+                { label: "Lost on putts", value: summary.puttLost, tone: "bg-red-400" },
               ]}
             />
-            <p className="mb-1 mt-3 text-xs font-semibold text-gray-800">Where they finished</p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {QUADRANTS.map((q) => (
-                <div key={q.key} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
-                  <span className="text-xs font-semibold text-gray-600">{q.title}</span>
-                  <span className="text-sm font-extrabold tabular-nums text-gray-900">{summary.quadrants[q.key]}</span>
-                </div>
+          </BreakdownCard>
+
+          <BreakdownCard title="Where your chips finished" aside="Shots">
+            <BreakdownBar segments={summary.zones.map((z) => ({ label: z.short, value: z.n, tone: z.tone }))} />
+            {missZones.length > 0 && (
+              <div className="mt-3 space-y-3 border-t border-gray-100 pt-3">
+                <p className="text-xs font-semibold text-gray-500">Putts holed from each spot</p>
+                {missZones.map((z) => (
+                  <RateRow key={z.label} label={z.from} made={z.made} total={z.n} />
+                ))}
+              </div>
+            )}
+          </BreakdownCard>
+
+          <BreakdownCard title="Proximity by distance" aside="Avg finish">
+            <div className="space-y-3">
+              {summary.bands.map((b) => (
+                <ValueRow
+                  key={b.label}
+                  label={`${b.label}${b.n > 0 ? ` · ${b.n} chip${b.n === 1 ? "" : "s"}` : ""}`}
+                  value={b.avgCm ?? 0}
+                  max={300}
+                  display={b.avgCm != null ? formatCm(b.avgCm) : "—"}
+                  lowerIsBetter
+                  flag={summary.worstBand?.label === b.label ? "Work on" : null}
+                />
               ))}
             </div>
-            <p className="mt-2 text-xs text-gray-500">{summary.diagnosis}</p>
           </BreakdownCard>
-        )}
 
-        <EveryShotList title="Every hole">
-          {holes.map((h) => (
-            <li key={h.hole} className="flex items-center gap-3 py-2 text-sm">
-              <span className="w-12 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">
-                {h.distance_m} m
-              </span>
-              <span className="min-w-0 flex-1 truncate text-gray-600">
-                {h.proximity_cm === 0
-                  ? "Holed the chip"
-                  : `${h.proximity_cm != null ? formatCm(h.proximity_cm) : h.chip_result} · ${
-                      h.putt_made ? "Putt holed" : `Missed${h.putt_miss_primary_reason ? `, ${PRIMARY_MISS_LABELS[h.putt_miss_primary_reason].toLowerCase()}` : ""}`
-                    }`}
-              </span>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${holeTone(h)}`}>
-                {formatPts(holePoints(h))}
-              </span>
-            </li>
-          ))}
-        </EveryShotList>
+          {summary.misses > 0 && (
+            <BreakdownCard title="Missed putts" aside={`${summary.misses} missed`}>
+              <BreakdownBar
+                label="Why they missed"
+                segments={[
+                  { label: "Read", value: summary.reasons.read, tone: "bg-sky-400" },
+                  { label: "Speed", value: summary.reasons.speed, tone: "bg-[#FFA500]" },
+                  { label: "Start line", value: summary.reasons.startLine, tone: "bg-violet-400" },
+                ]}
+              />
+              <p className="mb-1 mt-3 text-xs font-semibold text-gray-800">Where they finished</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {QUADRANTS.map((q) => (
+                  <div key={q.key} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
+                    <span className="text-xs font-semibold text-gray-600">{q.title}</span>
+                    <span className="text-sm font-extrabold tabular-nums text-gray-900">{summary.quadrants[q.key]}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-gray-500">{summary.diagnosis}</p>
+            </BreakdownCard>
+          )}
+
+          <EveryShotList title="Every hole">
+            {holes.map((h) => (
+              <li key={h.hole} className="flex items-center gap-3 py-2 text-sm">
+                <span className="w-12 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">
+                  {h.distance_m} m
+                </span>
+                <span className="min-w-0 flex-1 truncate text-gray-600">
+                  {h.proximity_cm === 0
+                    ? "Holed the chip"
+                    : `${h.proximity_cm != null ? formatCm(h.proximity_cm) : h.chip_result} · ${
+                        h.putt_made
+                          ? "Putt holed"
+                          : `Missed${h.putt_miss_primary_reason ? `, ${PRIMARY_MISS_LABELS[h.putt_miss_primary_reason].toLowerCase()}` : ""}`
+                      }`}
+                </span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${holeTone(h)}`}>
+                  {formatPts(holePoints(h))}
+                </span>
+              </li>
+            ))}
+          </EveryShotList>
+        </CombineDetailsDisclosure>
 
         <SaveStatus saved={saved} error={saveError} onRetry={userId ? () => void save(holes) : undefined} />
         <PlayAgainButton onClick={startTest} />
@@ -577,7 +611,7 @@ export function ChippingCombine9Runner() {
 
   const runningTotal = sessionTotalPoints(holes);
   const track: TrackItem[] = Array.from({ length: total }, (_, i) => (holes[i] ? holeTrackItem(holes[i]!) : null));
-  const chipPts = cm !== null ? chipPointsFromProximityCm(cm) : null;
+  const chipPts = cm !== null ? chipPointsFromProximityCmAtDistance(cm, distanceThisHole) : null;
   const liveScore = chipPts !== null && canRecord ? chipPts + (puttMade ? PUTT_POINTS : 0) : null;
 
   return (
@@ -609,6 +643,10 @@ export function ChippingCombine9Runner() {
 
       <div className="space-y-2">
         <p className="text-base font-bold text-gray-900">How close did the chip finish?</p>
+        <ProximityPresets
+          valueCm={cm}
+          onSelect={(presetCm) => setProximityInput(String(presetCm))}
+        />
         <NumberChips
           values={PROXIMITY_CHIPS_CM}
           value={proximityInput}
@@ -621,7 +659,7 @@ export function ChippingCombine9Runner() {
           <p className="text-xs text-gray-500">
             {holedChip
               ? "Chip-in! That's 20 pts and counts as a holed putt too."
-              : `Chip scores ${formatPts(chipPts)} pts`}
+              : `Chip scores ${formatPts(chipPts)} pts at ${distanceThisHole} m`}
           </p>
         )}
       </div>

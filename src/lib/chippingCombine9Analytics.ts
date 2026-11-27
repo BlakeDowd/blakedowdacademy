@@ -1,6 +1,20 @@
 import { chippingCombine9Config } from "@/lib/chippingCombine9Config";
+import {
+  applyStartDistanceDifficulty,
+  maxPointsAtDistance,
+  maxPointsAtLongest,
+  sessionMaxFromDistances,
+} from "@/lib/combineDistanceDifficulty";
 import type { PuttingTestMissCategory } from "@/lib/puttingTestMissScoring";
 import type { PrimaryMissReason } from "@/lib/puttingTestMissDiagnostics";
+
+const CHIP_DISTANCE_RANGE = {
+  minM: chippingCombine9Config.distanceMinM,
+  maxM: chippingCombine9Config.distanceMaxM,
+} as const;
+
+const BASE_CHIP_MAX = 20;
+export const CHIP_PUTT_BONUS = 10;
 
 /** Persisted zone labels; "Outside Zone" kept for legacy rows. */
 export type ChipResultLabel =
@@ -69,6 +83,16 @@ export function chipPointsFromProximityCm(cm: number): number {
   return roundChipPoints1(chipProximityPointsRaw(cm));
 }
 
+/** Proximity points scaled by start distance (longer chips score more). */
+export function chipPointsFromProximityCmAtDistance(cm: number, startDistanceM: number): number {
+  return applyStartDistanceDifficulty(chipPointsFromProximityCm(cm), startDistanceM, CHIP_DISTANCE_RANGE);
+}
+
+/** Max chip points for one hole at a given start distance. */
+export function maxChipPointsAtDistance(startDistanceM: number): number {
+  return maxPointsAtDistance(BASE_CHIP_MAX, startDistanceM, CHIP_DISTANCE_RANGE);
+}
+
 export function chipResultLabelFromProximityCm(cm: number): ChipResultLabel {
   if (!Number.isFinite(cm) || cm < 0) return "Missed Zone";
   if (cm === 0) return "Holed";
@@ -83,8 +107,27 @@ export function suggestedChipFromProximityCm(cm: number | null): ChipResultLabel
   return chipResultLabelFromProximityCm(cm);
 }
 
-const MAX_CHIP_PER_HOLE = 20;
-export const MAX_CHIP_SESSION = chippingCombine9Config.holeCount * MAX_CHIP_PER_HOLE;
+/** Theoretical ceiling if every hole were at max distance (intro copy / legacy fallback). */
+export const MAX_CHIP_PER_HOLE_LONGEST = maxPointsAtLongest(BASE_CHIP_MAX, CHIP_DISTANCE_RANGE);
+export const MAX_CHIP_SESSION = chippingCombine9Config.holeCount * MAX_CHIP_PER_HOLE_LONGEST;
+export const MAX_SESSION_POINTS =
+  chippingCombine9Config.holeCount * (MAX_CHIP_PER_HOLE_LONGEST + CHIP_PUTT_BONUS);
+
+/** Layout-specific chip max for the distances actually played. */
+export function maxChipPointsForHoles(holes: Pick<ChippingCombineHoleLog, "distance_m">[]): number {
+  return sessionMaxFromDistances(
+    holes.map((h) => h.distance_m),
+    BASE_CHIP_MAX,
+    CHIP_DISTANCE_RANGE,
+    holes.length || chippingCombine9Config.holeCount,
+  );
+}
+
+/** Layout-specific session max (chip + scramble putt) for the distances played. */
+export function maxSessionPointsForHoles(holes: Pick<ChippingCombineHoleLog, "distance_m">[]): number {
+  if (holes.length === 0) return MAX_SESSION_POINTS;
+  return roundChipPoints1(maxChipPointsForHoles(holes) + holes.length * CHIP_PUTT_BONUS);
+}
 
 /** Legacy rows without proximity_cm: rough midpoint by zone. Prefer {@link chipPointsFromProximityCm}. */
 export function chipPointsForResult(result: ChipResultLabel): number {
@@ -115,9 +158,20 @@ export function scrambleRate(holes: ChippingCombineHoleLog[]): number {
   return onePutts / holes.length;
 }
 
+/** Chip accuracy vs the layout you actually drew (not a fixed longest-hole ceiling). */
 export function proximityRating(holes: ChippingCombineHoleLog[]): number {
   if (holes.length === 0) return 0;
-  return totalChipPoints(holes) / MAX_CHIP_SESSION;
+  const max = maxChipPointsForHoles(holes);
+  if (max <= 0) return 0;
+  return totalChipPoints(holes) / max;
+}
+
+/** Full-test score % (chip + putt) vs layout max — primary grade / leaderboard metric. */
+export function sessionScorePct(holes: ChippingCombineHoleLog[]): number {
+  if (holes.length === 0) return 0;
+  const max = maxSessionPointsForHoles(holes);
+  if (max <= 0) return 0;
+  return (sessionTotalPoints(holes) / max) * 100;
 }
 
 export function missDiagnosisText(holes: ChippingCombineHoleLog[]): string {
@@ -150,9 +204,6 @@ export function sessionTotalPoints(holes: ChippingCombineHoleLog[]): number {
   return roundChipPoints1(holes.reduce((s, h) => s + h.chip_points + h.putt_points, 0));
 }
 
-const MAX_PER_HOLE = 30;
-export const MAX_SESSION_POINTS = chippingCombine9Config.holeCount * MAX_PER_HOLE;
-
 export function averageProximityCm(holes: ChippingCombineHoleLog[]): number | null {
   const vals = holes
     .map((h) => h.proximity_cm)
@@ -168,16 +219,23 @@ export function buildAggregates(holes: ChippingCombineHoleLog[]): Record<string,
     const k = h.miss_category!;
     counts[k] = (counts[k] ?? 0) + 1;
   }
+  const chipMax = maxChipPointsForHoles(holes);
+  const sessionMax = maxSessionPointsForHoles(holes);
+  const scorePct = sessionScorePct(holes);
   return {
     scramble_rate: scrambleRate(holes),
     one_putts: holes.filter((h) => h.putt_made).length,
     proximity_rating: proximityRating(holes),
     proximity_chip_points: totalChipPoints(holes),
-    proximity_max_points: MAX_CHIP_SESSION,
+    proximity_max_points: chipMax,
+    /** @deprecated Prefer proximity_max_points (layout-specific). */
+    proximity_max_points_longest: MAX_CHIP_SESSION,
     average_proximity_cm: averageProximityCm(holes),
     diagnosis: missDiagnosisText(holes),
     miss_categories: counts,
     total_points: sessionTotalPoints(holes),
-    max_session_points: MAX_SESSION_POINTS,
+    max_session_points: sessionMax,
+    /** Primary % for grade / leaderboard / practice handicap. */
+    session_score_pct: scorePct,
   };
 }

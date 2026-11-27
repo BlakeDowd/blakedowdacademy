@@ -106,7 +106,17 @@ export function extractPracticeScoreForHighlight(
     if (pct == null) return null;
     return { sortValue: pct, display: `${pct.toFixed(1)}%` };
   }
-  if (testType === "chipping_combine_9") {
+  if (testType === "chipping_combine_9" || testType === "bunker_9_hole_challenge") {
+    const sessionPct = num(ag?.session_score_pct);
+    if (sessionPct != null) {
+      return { sortValue: sessionPct, display: `${sessionPct.toFixed(1)}%` };
+    }
+    const total = num(ag?.total_points);
+    const max = num(ag?.max_session_points);
+    if (total != null && max != null && max > 0) {
+      const pct = (total / max) * 100;
+      return { sortValue: pct, display: `${pct.toFixed(1)}%` };
+    }
     const pr = num(ag?.proximity_rating);
     if (pr != null) {
       const pct = pr <= 1 ? pr * 100 : pr;

@@ -94,32 +94,67 @@ export async function POST(request: Request) {
         .maybeSingle();
       name = String(profile?.full_name || "").trim();
     }
+    if (!name) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", user.id)
+        .maybeSingle();
+      name = String(profile?.full_name || "").trim();
+    }
     if (!name) name = user.email || "Academy member";
     const email = user.email ?? null;
 
     const emailResult = await sendFeedbackEmail({ name, email, message });
     if (!emailResult.sent) console.error("Feedback email not sent:", emailResult.error);
 
+    const row = {
+      user_id: user.id,
+      name,
+      email,
+      message,
+      emailed: emailResult.sent,
+    };
+
     let saved = false;
+    let saveError: string | undefined;
+
     if (service) {
-      const { error } = await service.from("app_feedback").insert({
-        user_id: user.id,
-        name,
-        email,
-        message,
-        emailed: emailResult.sent,
-      });
-      if (error) console.error("Feedback not saved:", error.message);
-      else saved = true;
+      const { error } = await service.from("app_feedback").insert(row);
+      if (error) {
+        console.error("Feedback not saved (service role):", error.message);
+        saveError = error.message;
+      } else {
+        saved = true;
+      }
+    } else {
+      saveError = "SUPABASE_SERVICE_ROLE_KEY is not set";
+      console.error("Feedback not saved:", saveError);
+    }
+
+    // Fallback: signed-in user insert (needs app_feedback_insert_own policy).
+    if (!saved) {
+      const { error } = await supabase.from("app_feedback").insert(row);
+      if (error) {
+        console.error("Feedback not saved (user insert):", error.message);
+        saveError = error.message;
+      } else {
+        saved = true;
+      }
     }
 
     if (!emailResult.sent && !saved) {
       return NextResponse.json(
-        { error: "Couldn't send your feedback right now. Please try again later." },
+        {
+          error: "Couldn't send your feedback right now. Please try again later.",
+          ...(process.env.NODE_ENV !== "production"
+            ? { detail: { email: emailResult.error, save: saveError } }
+            : {}),
+        },
         { status: 500 },
       );
     }
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, emailed: emailResult.sent, saved });
   } catch (err: unknown) {
     console.error("Feedback route failed:", err);
     return NextResponse.json(

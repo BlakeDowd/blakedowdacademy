@@ -16,9 +16,9 @@ export default function ProfileGuard({ children }: { children: React.ReactNode }
     // We only care about authenticated users
     if (!isAuthenticated || !user) return;
 
-    // Paths that don't require a complete profile
+    // Paths that don't require a complete profile (invite join must run before finish-profile)
     const allowedPaths = ["/login", "/finish-profile", "/auth/signout", "/reset-password"];
-    if (allowedPaths.includes(pathname)) return;
+    if (allowedPaths.includes(pathname) || pathname.startsWith("/join/") || pathname.startsWith("/book")) return;
 
     // Check if profile is incomplete
     // Based on user request: only redirect if fullName is explicitly null or empty string

@@ -34,7 +34,8 @@ import {
   type TrackItem,
 } from "@/components/combine/PuttingCombineUi";
 import { IronHeroArt, IronShotDiagram, MissSidePicker, Segmented } from "@/components/combine/IronCombineUi";
-import { BreakdownBar, BreakdownCard, EveryShotList, FocusCard, ValueRow } from "@/components/combine/CombineBreakdown";
+import { BreakdownBar, BreakdownCard, EveryShotList, ValueRow } from "@/components/combine/CombineBreakdown";
+import { CombineTakeaway } from "@/components/combine/CombineTakeaway";
 import { CARD_ART_CLASS } from "@/components/combine/CombineArt";
 
 const DISPERSION_STEPS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
@@ -53,7 +54,7 @@ async function persistSession(userId: string, targetsM: number[], shots: WedgeLa
       return {
         ...s,
         strike,
-        points: wedgeLateral9ShotPoints(s.dispersion, strike, s.contact),
+        points: wedgeLateral9ShotPoints(s.dispersion, strike, s.contact, s.target_m),
       };
     });
     const aggregates = buildWedgeLateral9Aggregates(shotsNormalized);
@@ -118,14 +119,14 @@ export function parseWedgeLateral9Shots(notes: unknown): WedgeLateral9ShotLog[] 
       dispersion: eff,
       strike,
       contact,
-      points: wedgeLateral9ShotPoints(eff, strike, contact),
+      points: wedgeLateral9ShotPoints(eff, strike, contact, target),
     });
   }
   return shots;
 }
 
 function shotScore(s: WedgeLateral9ShotLog): number {
-  return wedgeLateral9ShotPoints(s.dispersion, s.strike, s.contact);
+  return wedgeLateral9ShotPoints(s.dispersion, s.strike, s.contact, s.target_m);
 }
 
 function pointsTone(points: number): string {
@@ -316,7 +317,7 @@ export function WedgeLateral9Report({ shots }: { shots: WedgeLateral9ShotLog[] }
         ]}
       />
 
-      <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+      <CombineTakeaway theme="wedge_dispersion" title={summary.focus.title} lines={summary.focus.lines} />
 
       <BreakdownCard title="Where your points went" aside={`${summary.total} of ${max}`}>
         <BreakdownBar
@@ -456,7 +457,7 @@ export function WedgeLateral9Runner() {
       dispersion: effDispersion,
       strike,
       contact,
-      points: wedgeLateral9ShotPoints(effDispersion, strike, contact),
+      points: wedgeLateral9ShotPoints(effDispersion, strike, contact, targetM),
     };
     const nextLog = [...completedShots, record];
     setCompletedShots(nextLog);
@@ -534,7 +535,14 @@ export function WedgeLateral9Runner() {
   }
 
   const canRecord = direction === "straight" || dispersion !== null;
-  const liveScore = canRecord ? wedgeLateral9ShotPoints(direction === "straight" ? 0 : (dispersion as number), strike, contact) : null;
+  const liveScore = canRecord
+    ? wedgeLateral9ShotPoints(
+        direction === "straight" ? 0 : (dispersion as number),
+        strike,
+        contact,
+        targetM,
+      )
+    : null;
   const runningTotal = completedShots.reduce((sum, s) => sum + shotScore(s), 0);
   const nextTarget = targetsM[shotIndex + 1];
   const track: TrackItem[] = Array.from({ length: total }, (_, i) => {

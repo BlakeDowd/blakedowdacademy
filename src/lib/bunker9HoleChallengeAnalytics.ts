@@ -1,7 +1,17 @@
 import { bunker9HoleChallengeConfig } from "@/lib/bunker9HoleChallengeConfig";
 import type { ChipResultLabel } from "@/lib/chippingCombine9Analytics";
+import {
+  applyStartDistanceDifficulty,
+  maxPointsAtDistance,
+  maxPointsAtLongest,
+  sessionMaxFromDistances,
+} from "@/lib/combineDistanceDifficulty";
 import type { PrimaryMissReason } from "@/lib/puttingTestMissDiagnostics";
 import type { PuttingTestMissCategory } from "@/lib/puttingTestMissScoring";
+
+/** Typical greenside → short-sided bunker carries used for difficulty scaling. */
+const BUNKER_DISTANCE_RANGE = { minM: 5, maxM: 40 } as const;
+const BASE_CHIP_MAX = 20;
 
 export type BunkerVerticalStrike = "thin" | "solid" | "fat";
 
@@ -54,6 +64,15 @@ export function bunkerPointsFromProximityCm(cm: number): number {
   return roundPoints1(bunkerProximityPointsRaw(cm));
 }
 
+/** Proximity points scaled by start distance (longer bunker shots score more). */
+export function bunkerPointsFromProximityCmAtDistance(cm: number, startDistanceM: number): number {
+  return applyStartDistanceDifficulty(bunkerPointsFromProximityCm(cm), startDistanceM, BUNKER_DISTANCE_RANGE);
+}
+
+export function maxBunkerChipPointsAtDistance(startDistanceM: number): number {
+  return maxPointsAtDistance(BASE_CHIP_MAX, startDistanceM, BUNKER_DISTANCE_RANGE);
+}
+
 export function bunkerZoneFromProximityCm(cm: number): ChipResultLabel {
   if (!Number.isFinite(cm) || cm < 0) return "Missed Zone";
   if (cm === 0) return "Holed";
@@ -63,11 +82,27 @@ export function bunkerZoneFromProximityCm(cm: number): ChipResultLabel {
   return "Missed Zone";
 }
 
-const MAX_CHIP_PER_HOLE = 20;
+const MAX_CHIP_PER_HOLE_LONGEST = maxPointsAtLongest(BASE_CHIP_MAX, BUNKER_DISTANCE_RANGE);
 const MAX_PUTT_PER_HOLE = bunker9HoleChallengeConfig.scramblePuttBonus;
-export const MAX_BUNKER_SESSION_CHIP = bunker9HoleChallengeConfig.holeCount * MAX_CHIP_PER_HOLE;
+/** Theoretical ceilings (intro / legacy). */
+export const MAX_BUNKER_SESSION_CHIP =
+  bunker9HoleChallengeConfig.holeCount * MAX_CHIP_PER_HOLE_LONGEST;
 export const MAX_SESSION_POINTS =
-  bunker9HoleChallengeConfig.holeCount * (MAX_CHIP_PER_HOLE + MAX_PUTT_PER_HOLE);
+  bunker9HoleChallengeConfig.holeCount * (MAX_CHIP_PER_HOLE_LONGEST + MAX_PUTT_PER_HOLE);
+
+export function maxBunkerChipPointsForHoles(holes: Pick<BunkerHoleLog, "distance_m">[]): number {
+  return sessionMaxFromDistances(
+    holes.map((h) => h.distance_m),
+    BASE_CHIP_MAX,
+    BUNKER_DISTANCE_RANGE,
+    holes.length || bunker9HoleChallengeConfig.holeCount,
+  );
+}
+
+export function maxBunkerSessionPointsForHoles(holes: Pick<BunkerHoleLog, "distance_m">[]): number {
+  if (holes.length === 0) return MAX_SESSION_POINTS;
+  return roundPoints1(maxBunkerChipPointsForHoles(holes) + holes.length * MAX_PUTT_PER_HOLE);
+}
 
 export function totalBunkerChipPoints(holes: BunkerHoleLog[]): number {
   return roundPoints1(holes.reduce((s, h) => s + h.bunker_chip_points, 0));
@@ -83,7 +118,16 @@ export function bunkerScrambleRate(holes: BunkerHoleLog[]): number {
 
 export function bunkerProximityRating(holes: BunkerHoleLog[]): number {
   if (holes.length === 0) return 0;
-  return totalBunkerChipPoints(holes) / MAX_BUNKER_SESSION_CHIP;
+  const max = maxBunkerChipPointsForHoles(holes);
+  if (max <= 0) return 0;
+  return totalBunkerChipPoints(holes) / max;
+}
+
+export function bunkerSessionScorePct(holes: BunkerHoleLog[]): number {
+  if (holes.length === 0) return 0;
+  const max = maxBunkerSessionPointsForHoles(holes);
+  if (max <= 0) return 0;
+  return (bunkerSessionTotalPoints(holes) / max) * 100;
 }
 
 export function bunkerMissDiagnosisText(holes: BunkerHoleLog[]): string {
@@ -135,18 +179,22 @@ export function buildBunkerAggregates(holes: BunkerHoleLog[]): Record<string, un
   for (const h of holes) {
     strikeCounts[h.strike_vertical] = (strikeCounts[h.strike_vertical] ?? 0) + 1;
   }
+  const chipMax = maxBunkerChipPointsForHoles(holes);
+  const sessionMax = maxBunkerSessionPointsForHoles(holes);
   return {
     scramble_rate: bunkerScrambleRate(holes),
     one_putts: holes.filter((h) => !h.holed && h.putt_made).length,
     holed_count: holes.filter((h) => h.holed).length,
     proximity_rating: bunkerProximityRating(holes),
     bunker_chip_points: totalBunkerChipPoints(holes),
-    bunker_chip_max: MAX_BUNKER_SESSION_CHIP,
+    bunker_chip_max: chipMax,
+    bunker_chip_max_longest: MAX_BUNKER_SESSION_CHIP,
     average_proximity_cm: averageBunkerProximityCm(holes),
     diagnosis: bunkerMissDiagnosisText(holes),
     miss_categories: counts,
     strike_vertical: strikeCounts,
     total_points: bunkerSessionTotalPoints(holes),
-    max_session_points: MAX_SESSION_POINTS,
+    max_session_points: sessionMax,
+    session_score_pct: bunkerSessionScorePct(holes),
   };
 }

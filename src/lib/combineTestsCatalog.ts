@@ -67,6 +67,7 @@ export const CARD_HANDICAP_TEST_IDS: Partial<Record<string, CombineLeaderboardTe
   "aimpoint-long-20-40": "aimpoint_long_40ft",
   "chipping-combine-9": "chipping_combine_9",
   "standard-chipping-combine": "chipping",
+  "low-chip-combine": "low_chip",
   "flop-shot-combine": "flop_shot",
   "wedge-lateral-9": "wedge_lateral_9",
   "survival-20": "survival_20",
@@ -78,9 +79,13 @@ export const CARD_HANDICAP_TEST_IDS: Partial<Record<string, CombineLeaderboardTe
   "approach-shot-sim": "approach_shot_sim",
   "tee-shot-hazard": "tee_shot_hazard",
   "tee-shot-sim": "tee_shot_sim",
+  "tee-shot-dispersion-combine": "tee_shot_dispersion_combine",
   "driver-flight-test": "driver_flight_control",
   "bunker-proximity-protocol": "bunker_protocol",
+  "bunker-9-hole-challenge": "bunker_9_hole_challenge",
   "bunker-lies": "bunker_lies",
+  "strike-speed": "strike_speed_control",
+  "start-line-speed": "start_line_speed_test",
 };
 
 /**

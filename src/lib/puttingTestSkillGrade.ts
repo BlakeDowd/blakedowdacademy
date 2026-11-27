@@ -58,3 +58,69 @@ export function getPuttingTestSkillGrade(
   if (points >= 50) return { grade: "Mid-Handicap", showTrophy: false };
   return { grade: "Needs Work", showTrophy: false };
 }
+
+/** Thresholds for the variant, best-first (points needed to hold that label). */
+export function puttingGradeThresholds(variant: PuttingTestGradeVariant): {
+  grade: string;
+  minPoints: number;
+}[] {
+  if (variant === "8to20") {
+    return [
+      { grade: "Tour Pro", minPoints: 85 },
+      { grade: "Scratch", minPoints: 72 },
+      { grade: "Single Digit", minPoints: 55 },
+      { grade: "Mid-Handicap", minPoints: 35 },
+      { grade: "Needs Work", minPoints: 0 },
+    ];
+  }
+  if (variant === "20to40") {
+    return [
+      { grade: "Tour Pro", minPoints: 70 },
+      { grade: "Scratch", minPoints: 58 },
+      { grade: "Single Digit", minPoints: 42 },
+      { grade: "Mid-Handicap", minPoints: 22 },
+      { grade: "Needs Work", minPoints: 0 },
+    ];
+  }
+  if (variant === 10) {
+    return [
+      { grade: "Tour Pro", minPoints: 95 },
+      { grade: "Scratch", minPoints: 85 },
+      { grade: "Single Digit", minPoints: 70 },
+      { grade: "Mid-Handicap", minPoints: 50 },
+      { grade: "Needs Work", minPoints: 0 },
+    ];
+  }
+  if (variant === 9) {
+    return [
+      { grade: "Tour Pro", minPoints: 73 },
+      { grade: "Scratch", minPoints: 60 },
+      { grade: "Single Digit", minPoints: 45 },
+      { grade: "Mid-Handicap", minPoints: 25 },
+      { grade: "Needs Work", minPoints: 0 },
+    ];
+  }
+  return [
+    { grade: "Tour Pro", minPoints: 145 },
+    { grade: "Scratch", minPoints: 120 },
+    { grade: "Single Digit", minPoints: 90 },
+    { grade: "Mid-Handicap", minPoints: 50 },
+    { grade: "Needs Work", minPoints: 0 },
+  ];
+}
+
+/** “Why this grade” for putting combines — same label language as other Academy tests. */
+export function explainPuttingTestGrade(
+  points: number,
+  variant: PuttingTestGradeVariant,
+): string {
+  const bands = puttingGradeThresholds(variant);
+  const { grade } = getPuttingTestSkillGrade(points, variant);
+  const idx = bands.findIndex((b) => b.grade === grade);
+  const floor = bands[idx]?.minPoints ?? 0;
+  const next = idx > 0 ? bands[idx - 1] : null;
+  if (!next) {
+    return `${grade} — top band (${floor}+ pts). You scored ${Math.round(points)}.`;
+  }
+  return `${grade} — ${floor}+ pts. You scored ${Math.round(points)}. Need ${next.minPoints} for ${next.grade}.`;
+}

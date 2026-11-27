@@ -731,6 +731,19 @@ export default function HomeDashboard() {
         {(['bdowd@pgamember.org.au', 'allendowd86@gmail.com'].includes((user?.email || '').toLowerCase().trim())) && (
           <div className="mb-4 w-full space-y-2 px-4">
             <Link
+              href="/dashboard/coach/bookings"
+              className="flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:bg-stone-50"
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                <Calendar className="h-5 w-5 text-[#014421]" aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-base font-bold text-stone-900">Diary</span>
+                <span className="block truncate text-xs text-stone-500">Day, week, and month. Not open to students yet</span>
+              </span>
+              <ChevronRight className="h-5 w-5 shrink-0 text-stone-300" aria-hidden />
+            </Link>
+            <Link
               href="/dashboard/coach"
               className="flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:bg-stone-50"
             >

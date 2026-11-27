@@ -16,7 +16,9 @@ import {
   FlagTriangleRight,
   Gauge,
   History,
+  Minus,
   PlayCircle,
+  Plus,
   RefreshCw,
   Sparkles,
   Target,
@@ -95,8 +97,13 @@ const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satu
 const MIN_ROUNDS_FOR_STATS = 3;
 const BUILD_TIME_OPTIONS = [15, 30, 45, 60, 90, 120, 150, 180, 240];
 const LOG_TIME_OPTIONS = [15, 30, 45, 60, 90, 120, 150, 180, 240];
-const ON_COURSE_HOLE_OPTIONS = [9, 18];
+const ON_COURSE_HOLE_PRESETS = [1, 3, 6, 9, 12, 15, 18] as const;
+const ON_COURSE_MIN_HOLES = 1;
+const ON_COURSE_MAX_HOLES = 18;
 const MINUTES_PER_HOLE = 15;
+
+const clampOnCourseHoles = (n: number) =>
+  Math.min(ON_COURSE_MAX_HOLES, Math.max(ON_COURSE_MIN_HOLES, Math.round(n)));
 
 const AREAS: { id: FacilityType; label: string; icon: LucideIcon }[] = [
   { id: "Driving", label: "Driving", icon: Target },
@@ -806,34 +813,89 @@ export function GuidedPracticeSession({
                   : `How long did you practise ${areaLabel.toLowerCase()}?`
                 : "How much time do you have?"}
             </p>
-            <div className="grid grid-cols-3 gap-2">
-              {(mode === "log"
-                ? area === "On-Course"
-                  ? ON_COURSE_HOLE_OPTIONS
-                  : LOG_TIME_OPTIONS
-                : BUILD_TIME_OPTIONS
-              ).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={gridBtn}
-                  disabled={busy}
-                  onClick={() => void chooseTime(value)}
-                >
-                  {mode === "log" && area === "On-Course" ? (
-                    <>
-                      <Flag className="h-4 w-4 text-[#014421]" aria-hidden />
-                      {value} holes
-                    </>
-                  ) : (
-                    <>
-                      <Clock className="h-4 w-4 text-[#014421]" aria-hidden />
-                      {formatMinutes(value)}
-                    </>
-                  )}
-                </button>
-              ))}
-            </div>
+            {mode === "log" && area === "On-Course" ? (
+              (() => {
+                const selected = clampOnCourseHoles(holes ?? 9);
+                const mins = selected * MINUTES_PER_HOLE;
+                return (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-center gap-4">
+                      <button
+                        type="button"
+                        disabled={busy || selected <= ON_COURSE_MIN_HOLES}
+                        onClick={() => setHoles(clampOnCourseHoles(selected - 1))}
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border-2 border-gray-200 text-gray-700 hover:border-[#014421] hover:bg-gray-50 disabled:opacity-40"
+                        aria-label="Fewer holes"
+                      >
+                        <Minus className="h-5 w-5" aria-hidden />
+                      </button>
+                      <div className="min-w-[5rem] text-center">
+                        <p className="text-4xl font-bold tabular-nums text-gray-900">{selected}</p>
+                        <p className="text-xs font-medium text-gray-500">
+                          hole{selected === 1 ? "" : "s"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={busy || selected >= ON_COURSE_MAX_HOLES}
+                        onClick={() => setHoles(clampOnCourseHoles(selected + 1))}
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border-2 border-gray-200 text-gray-700 hover:border-[#014421] hover:bg-gray-50 disabled:opacity-40"
+                        aria-label="More holes"
+                      >
+                        <Plus className="h-5 w-5" aria-hidden />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {ON_COURSE_HOLE_PRESETS.map((preset) => {
+                        const active = selected === preset;
+                        return (
+                          <button
+                            key={preset}
+                            type="button"
+                            disabled={busy}
+                            onClick={() => setHoles(preset)}
+                            className={`rounded-full px-3 py-1.5 text-xs font-semibold border-2 transition-colors ${
+                              active
+                                ? "border-[#014421] bg-[#014421] text-white"
+                                : "border-gray-200 bg-gray-50 text-gray-700 hover:border-[#014421]"
+                            }`}
+                          >
+                            {preset}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-center text-xs text-gray-500">
+                      {mins} minutes · {MINUTES_PER_HOLE} min per hole
+                    </p>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void chooseTime(selected)}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#014421] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      <Flag className="h-4 w-4" aria-hidden />
+                      Log {selected} hole{selected === 1 ? "" : "s"}
+                    </button>
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {(mode === "log" ? LOG_TIME_OPTIONS : BUILD_TIME_OPTIONS).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={gridBtn}
+                    disabled={busy}
+                    onClick={() => void chooseTime(value)}
+                  >
+                    <Clock className="h-4 w-4 text-[#014421]" aria-hidden />
+                    {formatMinutes(value)}
+                  </button>
+                ))}
+              </div>
+            )}
             {busy ? <p className="mt-3 text-center text-xs text-gray-500">Saving…</p> : null}
           </div>
         )}

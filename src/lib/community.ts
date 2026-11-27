@@ -55,6 +55,12 @@ export function communityError(error: { message?: string; code?: string } | null
   if (error.code === "42P01" || error.code === "PGRST205" || /community_|does not exist|schema cache/i.test(msg)) {
     return `Community isn't set up yet. Run ${COMMUNITY_MIGRATION} in Supabase.`;
   }
+  if (
+    error.code === "42501" ||
+    /permission denied|row-level security|rls|violates row-level/i.test(msg)
+  ) {
+    return "Only coaches can do that. Sign in with a coach account and try again.";
+  }
   return msg;
 }
 

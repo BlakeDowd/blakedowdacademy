@@ -49,8 +49,13 @@ export default function SpeedLogging({
   const { user } = useAuth();
   const isCoach = isCoachEmail(user?.email) || user?.role === "coach";
   const [testingFor, setTestingFor] = useState<PlayerOption | null>(null);
-  const playerId = lockedPlayer?.id ?? (isCoach ? testingFor?.id ?? null : null);
-  const playerName = lockedPlayer?.name ?? testingFor?.name ?? null;
+  // Coaches: never write the shared "self" bucket — use the selected player, or their own id.
+  const playerId =
+    lockedPlayer?.id ?? testingFor?.id ?? (isCoach ? user?.id ?? null : null);
+  const playerName =
+    lockedPlayer?.name ??
+    testingFor?.name ??
+    (isCoach && !lockedPlayer && !testingFor ? user?.fullName || "You" : null);
 
   const [clubId, setClubId] = useState<SpeedClubId>("driver");
   const [kind, setKind] = useState<SpeedKind>("on_course");
@@ -91,8 +96,11 @@ export default function SpeedLogging({
     saveCarryUnit(next);
   };
 
+  const needsPlayerPick = isCoach && !lockedPlayer && !testingFor;
+  const canLog = Boolean(estimate) && !needsPlayerPick;
+
   const logSwing = () => {
-    if (!estimate) return;
+    if (!estimate || needsPlayerPick) return;
     trackToolUse("speed-logging");
     setLog(
       addSpeedLogEntry(estimate, {
@@ -250,11 +258,13 @@ export default function SpeedLogging({
         <button
           type="button"
           onClick={logSwing}
-          disabled={!estimate}
+          disabled={!canLog}
           className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FFA500] py-3 text-sm font-bold text-[#3d2600] disabled:opacity-40"
         >
           <Plus className="h-4 w-4" aria-hidden />
-          Log {kind === "max" ? "max" : "on-course"} speed
+          {needsPlayerPick
+            ? "Pick a player first"
+            : `Log ${kind === "max" ? "max" : "on-course"} speed`}
         </button>
       </section>
 

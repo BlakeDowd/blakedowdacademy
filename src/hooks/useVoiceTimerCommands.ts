@@ -6,7 +6,10 @@ type SpeechRec = {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
-  onresult: ((ev: { results: ArrayLike<{ 0: { transcript: string }; isFinal?: boolean }> }) => void) | null;
+  onresult: ((ev: {
+    resultIndex: number;
+    results: ArrayLike<{ 0: { transcript: string }; isFinal?: boolean }>;
+  }) => void) | null;
   onerror: ((ev: { error?: string }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
@@ -23,19 +26,23 @@ function getSpeechRecognition(): (new () => SpeechRec) | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-const START_RE = /\b(start|begin|go)\b/i;
-const STOP_RE = /\b(stop|end|finish|pause)\b/i;
+/** Avoid "go" — too easy to collide with golf talk / stage name "Go". */
+const START_RE = /\b(start|begin)\b/i;
+const STOP_RE = /\b(stop|pause|finish)\b/i;
 
 /**
- * Listens for spoken "start" / "stop" (and a few aliases) to drive a timer.
- * No transcription is stored — commands only.
+ * Listens for spoken "start" / "stop" to drive a timer.
+ * Only the latest utterance is matched (never the full cumulative transcript).
  */
 export function useVoiceTimerCommands({
   enabled,
+  running,
   onStart,
   onStop,
 }: {
   enabled: boolean;
+  /** When true, only "stop" is accepted; when false, only "start". */
+  running: boolean;
   onStart: () => void;
   onStop: () => void;
 }): { listening: boolean; supported: boolean; error: string | null } {
@@ -44,12 +51,18 @@ export function useVoiceTimerCommands({
   const supported = typeof window !== "undefined" && getSpeechRecognition() != null;
   const onStartRef = useRef(onStart);
   const onStopRef = useRef(onStop);
+  const runningRef = useRef(running);
   const lastCmdAt = useRef(0);
+  const lastHeardRef = useRef("");
 
   useEffect(() => {
     onStartRef.current = onStart;
     onStopRef.current = onStop;
   }, [onStart, onStop]);
+
+  useEffect(() => {
+    runningRef.current = running;
+  }, [running]);
 
   useEffect(() => {
     if (!enabled) {
@@ -70,25 +83,64 @@ export function useVoiceTimerCommands({
 
     const fire = (kind: "start" | "stop") => {
       const now = Date.now();
-      if (now - lastCmdAt.current < 900) return;
+      if (now - lastCmdAt.current < 1000) return;
       lastCmdAt.current = now;
       if (kind === "start") onStartRef.current();
       else onStopRef.current();
     };
 
-    const attach = () => {
+    const handleUtterance = (raw: string) => {
+      const text = raw.trim().toLowerCase();
+      if (!text || text === lastHeardRef.current) return;
+      lastHeardRef.current = text;
+
+      const wantsStop = STOP_RE.test(text);
+      const wantsStart = START_RE.test(text);
+      if (!wantsStop && !wantsStart) return;
+
+      if (runningRef.current) {
+        if (wantsStop) fire("stop");
+      } else if (wantsStart) {
+        fire("start");
+      }
+    };
+
+    const scheduleRestart = () => {
+      if (!alive || !rec) return;
+      if (restartTimer) clearTimeout(restartTimer);
+      restartTimer = setTimeout(() => {
+        if (!alive || !rec) return;
+        try {
+          rec.start();
+          // Keep listening=true — don't flicker the UI on every browser restart.
+          setListening(true);
+        } catch {
+          // Instance is dead; rebuild once.
+          try {
+            build();
+          } catch {
+            setListening(false);
+          }
+        }
+      }, 400);
+    };
+
+    const build = () => {
       if (!alive) return;
+      try {
+        rec?.abort();
+      } catch {
+        /* ignore */
+      }
       rec = new Ctor();
       rec.continuous = true;
-      rec.interimResults = true;
+      rec.interimResults = false;
       rec.lang = "en-AU";
       rec.onresult = (ev) => {
-        let text = "";
-        for (let i = 0; i < ev.results.length; i++) {
-          text += ` ${ev.results[i][0]?.transcript ?? ""}`;
-        }
-        if (STOP_RE.test(text)) fire("stop");
-        else if (START_RE.test(text)) fire("start");
+        const chunk = ev.results[ev.resultIndex];
+        const transcript = chunk?.[0]?.transcript ?? "";
+        if (!transcript.trim()) return;
+        if (chunk?.isFinal) handleUtterance(transcript);
       };
       rec.onerror = (ev) => {
         if (!alive) return;
@@ -99,21 +151,12 @@ export function useVoiceTimerCommands({
           alive = false;
           return;
         }
-        // "no-speech" / "aborted" are normal — we restart below.
+        // no-speech / aborted / network — quiet restart, no UI flicker
       };
       rec.onend = () => {
         if (!alive) return;
-        setListening(false);
-        restartTimer = setTimeout(() => {
-          if (!alive) return;
-          try {
-            attach();
-            rec?.start();
-            setListening(true);
-          } catch {
-            /* ignore rapid restart races */
-          }
-        }, 250);
+        lastHeardRef.current = "";
+        scheduleRestart();
       };
       try {
         rec.start();
@@ -125,7 +168,7 @@ export function useVoiceTimerCommands({
       }
     };
 
-    attach();
+    build();
 
     return () => {
       alive = false;

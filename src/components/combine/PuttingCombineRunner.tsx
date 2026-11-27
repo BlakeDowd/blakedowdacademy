@@ -12,6 +12,7 @@ import {
   scorePuttingTestMissHole,
 } from "@/lib/puttingTestMissScoring";
 import {
+  explainPuttingTestGrade,
   getPuttingTestSkillGrade,
   PUTTING_TEST_MAX_POINTS,
   PUTTING_TEST_PGA_TOUR_AVERAGE_POINTS,
@@ -34,7 +35,9 @@ import {
   StepDots,
   type HoleResult,
 } from "@/components/combine/PuttingCombineUi";
-import { BreakdownBar, BreakdownCard, EveryShotList, FocusCard, RateRow } from "@/components/combine/CombineBreakdown";
+import { BreakdownBar, BreakdownCard, EveryShotList, RateRow } from "@/components/combine/CombineBreakdown";
+import { CombineDetailsDisclosure, CombineTakeaway } from "@/components/combine/CombineTakeaway";
+import type { CombineFocusTheme } from "@/lib/combineDrillSuggestions";
 
 type ShapeKey = (typeof puttingTestConfig.shapes)[number];
 type MissCategory = "highLong" | "highShort" | "lowLong" | "lowShort" | "lipOut";
@@ -60,7 +63,10 @@ export type PuttingCombineFormat = {
   gradeVariant: PuttingTestGradeVariant;
   title: string;
   distances: readonly number[];
-  /** How many of each break; must add up to holeCount. */
+  /**
+   * How many of each break; should add up to holeCount.
+   * Straight is only assigned to putts ≤8 ft; extras convert to LTR/RTL.
+   */
   shapeCounts: { straight: number; leftToRight: number; rightToLeft: number };
   distanceRange: string;
   duration: string;
@@ -103,16 +109,60 @@ function shuffle<T>(items: T[]): T[] {
   return a;
 }
 
+/** Straight putts over 8 ft are hard to find on a real green — only allow them at ≤8 ft. */
+const MAX_STRAIGHT_PUTT_FT = 8;
+
+function nextBreak(i: number): ShapeKey {
+  return i % 2 === 0 ? "Left-to-Right" : "Right-to-Left";
+}
+
 function buildHoles(format: PuttingCombineFormat): HoleSetup[] {
   const distances = shuffle([...format.distances]);
-  const { straight, leftToRight, rightToLeft } = format.shapeCounts;
-  const shapePool: ShapeKey[] = [
-    ...Array<ShapeKey>(straight).fill("Straight"),
-    ...Array<ShapeKey>(leftToRight).fill("Left-to-Right"),
-    ...Array<ShapeKey>(rightToLeft).fill("Right-to-Left"),
-  ];
-  const shapes = shuffle(shapePool);
-  return distances.map((distance, i) => ({ distance, shape: shapes[i]! }));
+  const shortIdx = distances
+    .map((d, i) => (d <= MAX_STRAIGHT_PUTT_FT ? i : -1))
+    .filter((i) => i >= 0);
+  const longIdx = distances
+    .map((d, i) => (d > MAX_STRAIGHT_PUTT_FT ? i : -1))
+    .filter((i) => i >= 0);
+
+  const straightWanted = Math.max(0, format.shapeCounts.straight);
+  const straightCount = Math.min(straightWanted, shortIdx.length);
+  const converted = straightWanted - straightCount;
+
+  let ltr = Math.max(0, format.shapeCounts.leftToRight);
+  let rtl = Math.max(0, format.shapeCounts.rightToLeft);
+  for (let i = 0; i < converted; i++) {
+    if (i % 2 === 0) ltr += 1;
+    else rtl += 1;
+  }
+
+  // Breaking putts needed for: remaining short holes + every long hole.
+  const breakNeeded = shortIdx.length - straightCount + longIdx.length;
+  while (ltr + rtl < breakNeeded) {
+    if (ltr <= rtl) ltr += 1;
+    else rtl += 1;
+  }
+
+  const breakPool = shuffle([
+    ...Array<ShapeKey>(ltr).fill("Left-to-Right"),
+    ...Array<ShapeKey>(rtl).fill("Right-to-Left"),
+  ]);
+
+  const shapes: ShapeKey[] = new Array(distances.length);
+  const straightSlots = new Set(shuffle([...shortIdx]).slice(0, straightCount));
+  let breakI = 0;
+
+  for (const i of shortIdx) {
+    shapes[i] = straightSlots.has(i) ? "Straight" : breakPool[breakI++] ?? nextBreak(breakI);
+  }
+  for (const i of longIdx) {
+    shapes[i] = breakPool[breakI++] ?? nextBreak(breakI);
+  }
+
+  return distances.map((distance, i) => ({
+    distance,
+    shape: shapes[i] ?? nextBreak(i),
+  }));
 }
 
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
@@ -351,7 +401,10 @@ export function PuttingSessionReport({
           {showTrophy && <Trophy className="h-4 w-4 text-[#FFA500]" aria-hidden />}
           {grade}
         </span>
-        <p className="mt-2 text-sm text-white/80">
+        <p className="mt-2 text-[11px] leading-snug text-white/75">
+          {explainPuttingTestGrade(totalPoints, format.gradeVariant)}
+        </p>
+        <p className="mt-1.5 text-sm text-white/80">
           {tourGap >= 0
             ? `${signed(tourGap)} on the Tour average (${TOUR_AVERAGE})`
             : `${Math.abs(tourGap)} pts off the Tour average (${TOUR_AVERAGE})`}
@@ -367,106 +420,113 @@ export function PuttingSessionReport({
         ]}
       />
 
-      <FocusCard title={b.focus.title} lines={b.focus.lines} />
+      <CombineTakeaway theme={b.focus.theme} title={b.focus.title} lines={b.focus.lines} />
 
-      {b.totalLost > 0 && (
-        <BreakdownCard title="Where you dropped points" aside={`${b.totalLost} pts`}>
-          <BreakdownBar
-            segments={LEAKS.filter((l) => format.allowLipOut || l.key !== "lipOut").map((l) => ({
-              label: l.label,
-              value: b.lost[l.key],
-              tone: l.tone,
-            }))}
-          />
-          <p className="mt-2 text-[11px] text-gray-400">Points short of holing every putt first time.</p>
-        </BreakdownCard>
-      )}
-
-      <BreakdownCard
-        title="Hole by hole"
-        aside={HOLES === 18 ? `Front ${signed(nineTotal(0, 9))} · Back ${signed(nineTotal(9, 18))}` : undefined}
-      >
-        <HoleTrack results={trackResults} current={-1} />
-      </BreakdownCard>
-
-      <BreakdownCard title="Holed first time" aside="Made / putts">
-        <div className="space-y-3">
-          {b.bands.map((band) => (
-            <RateRow
-              key={band.label}
-              label={band.label}
-              made={band.made}
-              total={band.n}
-              flag={band.label === b.weakBand?.label ? "Work on" : null}
-            />
-          ))}
-        </div>
-        {b.byShape.length > 1 && (
-          <>
-            <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-gray-400">By break</p>
-            <div className="space-y-3">
-              {b.byShape.map((s) => (
-                <RateRow key={s.shape} label={puttShapeLabel(s.shape)} made={s.made} total={s.n} />
-              ))}
-            </div>
-          </>
-        )}
-      </BreakdownCard>
-
-      {b.misses > 0 && (
-        <BreakdownCard title="Your misses" aside={`${b.misses} ${b.misses === 1 ? "miss" : "misses"}`}>
-          <div className="space-y-3">
+      <CombineDetailsDisclosure label="Full breakdown">
+        {b.totalLost > 0 && (
+          <BreakdownCard title="Where you dropped points" aside={`${b.totalLost} pts`}>
             <BreakdownBar
-              label="Pace"
-              segments={[
-                { label: "Short", value: b.short, tone: "bg-red-400" },
-                { label: "Past", value: b.past, tone: "bg-[#014421]" },
-                ...(format.allowLipOut ? [{ label: "Lip out", value: b.lipOuts, tone: "bg-green-300" }] : []),
-              ]}
+              segments={LEAKS.filter((l) => format.allowLipOut || l.key !== "lipOut").map((l) => ({
+                label: l.label,
+                value: b.lost[l.key],
+                tone: l.tone,
+              }))}
             />
-            {b.highSide + b.lowSide > 0 && (
-              <BreakdownBar
-                label="Side, on breaking putts"
-                segments={[
-                  { label: "High side", value: b.highSide, tone: "bg-[#014421]" },
-                  { label: "Low side", value: b.lowSide, tone: "bg-amber-500" },
-                ]}
-              />
-            )}
-            {b.causes.read + b.causes.speed + b.causes.startLine > 0 && (
-              <BreakdownBar
-                label="What caused it"
-                segments={[
-                  { label: "Read", value: b.causes.read, tone: "bg-sky-400" },
-                  { label: "Speed", value: b.causes.speed, tone: "bg-[#FFA500]" },
-                  { label: "Start line", value: b.causes.startLine, tone: "bg-violet-400" },
-                ]}
-              />
-            )}
-            <RateRow label="Holed the next putt" made={b.nextHoled} total={b.misses} />
-            {b.avgLeave != null && (
-              <p className="text-xs text-gray-600">
-                After a miss you left yourself <span className="font-bold tabular-nums">{b.avgLeave.toFixed(1)} ft</span> on average.
-              </p>
-            )}
-          </div>
-        </BreakdownCard>
-      )}
+            <p className="mt-2 text-[11px] text-gray-400">Points short of holing every putt first time.</p>
+          </BreakdownCard>
+        )}
 
-      <EveryShotList title="Every hole">
-        {ordered.map((h) => (
-          <li key={h.holeIndex} className="flex items-center gap-3 py-2">
-            <span className="w-9 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">{h.holeIndex + 1}</span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold text-gray-800">
-                {h.distance} ft · {puttShapeShort(h.shape)}
+        <BreakdownCard
+          title="Hole by hole"
+          aside={HOLES === 18 ? `Front ${signed(nineTotal(0, 9))} · Back ${signed(nineTotal(9, 18))}` : undefined}
+        >
+          <HoleTrack results={trackResults} current={-1} />
+        </BreakdownCard>
+
+        <BreakdownCard title="Holed first time" aside="Made / putts">
+          <div className="space-y-3">
+            {b.bands.map((band) => (
+              <RateRow
+                key={band.label}
+                label={band.label}
+                made={band.made}
+                total={band.n}
+                flag={band.label === b.weakBand?.label ? "Work on" : null}
+              />
+            ))}
+          </div>
+          {b.byShape.length > 1 && (
+            <>
+              <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-gray-400">By break</p>
+              <div className="space-y-3">
+                {b.byShape.map((s) => (
+                  <RateRow key={s.shape} label={puttShapeLabel(s.shape)} made={s.made} total={s.n} />
+                ))}
+              </div>
+            </>
+          )}
+        </BreakdownCard>
+
+        {b.misses > 0 && (
+          <BreakdownCard title="Your misses" aside={`${b.misses} ${b.misses === 1 ? "miss" : "misses"}`}>
+            <div className="space-y-3">
+              <BreakdownBar
+                label="Pace"
+                segments={[
+                  { label: "Short", value: b.short, tone: "bg-red-400" },
+                  { label: "Past", value: b.past, tone: "bg-[#014421]" },
+                  ...(format.allowLipOut ? [{ label: "Lip out", value: b.lipOuts, tone: "bg-green-300" }] : []),
+                ]}
+              />
+              {b.highSide + b.lowSide > 0 && (
+                <BreakdownBar
+                  label="Side, on breaking putts"
+                  segments={[
+                    { label: "High side", value: b.highSide, tone: "bg-[#014421]" },
+                    { label: "Low side", value: b.lowSide, tone: "bg-amber-500" },
+                  ]}
+                />
+              )}
+              {b.causes.read + b.causes.speed + b.causes.startLine > 0 && (
+                <BreakdownBar
+                  label="What caused it"
+                  segments={[
+                    { label: "Read", value: b.causes.read, tone: "bg-sky-400" },
+                    { label: "Speed", value: b.causes.speed, tone: "bg-[#FFA500]" },
+                    { label: "Start line", value: b.causes.startLine, tone: "bg-violet-400" },
+                  ]}
+                />
+              )}
+              <RateRow label="Holed the next putt" made={b.nextHoled} total={b.misses} />
+              {b.avgLeave != null && (
+                <p className="text-xs text-gray-600">
+                  After a miss you left yourself{" "}
+                  <span className="font-bold tabular-nums">{b.avgLeave.toFixed(1)} ft</span> on average.
+                </p>
+              )}
+            </div>
+          </BreakdownCard>
+        )}
+
+        <EveryShotList title="Every hole">
+          {ordered.map((h) => (
+            <li key={h.holeIndex} className="flex items-center gap-3 py-2">
+              <span className="w-9 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">
+                {h.holeIndex + 1}
               </span>
-              <span className="block text-xs text-gray-500">{holeDetail(h)}</span>
-            </span>
-            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${scoreTone(h)}`}>{signed(h.points)}</span>
-          </li>
-        ))}
-      </EveryShotList>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-gray-800">
+                  {h.distance} ft · {puttShapeShort(h.shape)}
+                </span>
+                <span className="block text-xs text-gray-500">{holeDetail(h)}</span>
+              </span>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${scoreTone(h)}`}>
+                {signed(h.points)}
+              </span>
+            </li>
+          ))}
+        </EveryShotList>
+      </CombineDetailsDisclosure>
 
       {onPlayAgain && <PlayAgainButton onClick={onPlayAgain} />}
     </div>
@@ -519,11 +579,16 @@ function puttingBreakdown(holes: PuttingCombineHoleRecord[], holeCount: number) 
     .map((k) => ({ k, n: count[k], lost: lost[k] }))
     .sort((a, b) => b.lost - a.lost)[0]!;
 
-  let focus: { title: string; lines: string[] };
+  let focus: { theme: CombineFocusTheme; title: string; lines: string[] };
   if (holed === holes.length) {
-    focus = { title: "Perfect round", lines: ["You holed every putt first time. Move the balls further back next time."] };
+    focus = {
+      theme: "perfect",
+      title: "Perfect round",
+      lines: ["You holed every putt first time. Move the balls further back next time."],
+    };
   } else if (fixable.lost === 0) {
     focus = {
+      theme: "putting_holing",
       title: "Focus next: holing more",
       lines: [
         `You holed ${holed} of ${holes.length} first time, and every miss was a good one.`,
@@ -532,6 +597,7 @@ function puttingBreakdown(holes: PuttingCombineHoleRecord[], holeCount: number) 
     };
   } else if (fixable.k === "threePutt") {
     focus = {
+      theme: "putting_three_putt",
       title: "Focus next: no more three putts",
       lines: [
         `${plural(fixable.n, "three putt")} cost you ${fixable.lost} pts.`,
@@ -541,6 +607,7 @@ function puttingBreakdown(holes: PuttingCombineHoleRecord[], holeCount: number) 
     if (avgLeave != null && avgLeave >= 3) focus.lines.push(`Your misses left you ${avgLeave.toFixed(1)} ft on average.`);
   } else if (fixable.k === "short") {
     focus = {
+      theme: "putting_speed",
       title: "Focus next: getting it to the hole",
       lines: [
         `You left ${plural(fixable.n, "putt")} short, which cost you ${fixable.lost} pts.`,
@@ -548,11 +615,15 @@ function puttingBreakdown(holes: PuttingCombineHoleRecord[], holeCount: number) 
       ],
     };
   } else {
+    const startLineHeavy = causes.startLine >= causes.read && causes.startLine > 0;
     focus = {
-      title: "Focus next: playing more break",
+      theme: startLineHeavy ? "putting_start_line" : "putting_break",
+      title: startLineHeavy ? "Focus next: start line" : "Focus next: playing more break",
       lines: [
         `${plural(fixable.n, "breaking putt")} slid by on the low side, costing ${fixable.lost} pts.`,
-        "Aim higher than looks right. A putt on the high side always has a chance to fall in.",
+        startLineHeavy
+          ? "Most misses were start line. Gate your start and trust a higher aim point."
+          : "Aim higher than looks right. A putt on the high side always has a chance to fall in.",
       ],
     };
   }
@@ -726,7 +797,11 @@ export function PuttingCombineRunner({ format }: { format: PuttingCombineFormat 
 
         <IntroSteps
           steps={[
-            { icon: <ListChecks className="h-5 w-5" aria-hidden />, title: `Set up ${HOLES} putts`, hint: "We give you a mix of distances and breaks" },
+            {
+              icon: <ListChecks className="h-5 w-5" aria-hidden />,
+              title: `Set up ${HOLES} putts`,
+              hint: "Mix of distances and breaks — straight only on putts 8 ft and under",
+            },
             { icon: <CircleDot className="h-5 w-5" aria-hidden />, title: "Hit each putt once", hint: "Tap Holed or Missed" },
             { icon: <Crosshair className="h-5 w-5" aria-hidden />, title: "Missed? Tap where it finished", hint: "Then finish the hole. We do the scoring" },
           ]}

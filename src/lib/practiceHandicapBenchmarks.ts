@@ -43,14 +43,22 @@ export const PRACTICE_HANDICAP_BENCHMARKS: Partial<Record<CombineLeaderboardTest
   three_strikes: { area: "wedges", anchors: [[-4, 15], [0, 10], [9, 6], [18, 3], [28, 1]] },
   survival_20: { area: "wedges", anchors: [[-4, 25], [0, 15], [9, 9], [18, 5], [28, 2]] },
 
-  // Chipping
+  // Chipping — 9-hole / bunker 9 use layout score %; flop/standard/low use points /150.
   chipping_combine_9: { area: "chipping", anchors: [[-4, 90], [0, 77], [9, 60], [18, 40], [28, 23]] },
   flop_shot: { area: "chipping", anchors: [[-4, 135], [0, 115], [9, 90], [18, 60], [28, 35]] },
   chipping: { area: "chipping", anchors: [[-4, 120], [0, 105], [9, 85], [18, 60], [28, 35]] },
+  low_chip: { area: "chipping", anchors: [[-4, 125], [0, 108], [9, 88], [18, 62], [28, 36]] },
 
   // Bunkers
   bunker_protocol: { area: "bunkers", anchors: [[-4, 85], [0, 65], [9, 40], [18, 15], [28, -15]] },
+  bunker_9_hole_challenge: { area: "bunkers", anchors: [[-4, 88], [0, 74], [9, 56], [18, 38], [28, 22]] },
   bunker_lies: { area: "bunkers", anchors: [[-4, 21], [0, 24], [9, 28], [18, 32], [28, 37]] },
+
+  // Driving extras
+  tee_shot_dispersion_combine: {
+    area: "driving",
+    anchors: [[-4, 150], [0, 125], [9, 95], [18, 65], [28, 35]],
+  },
 
   // Putting
   puttingCombine: { area: "putting", anchors: [[-4, 145], [0, 120], [9, 90], [18, 50], [28, 25]] },
@@ -61,6 +69,9 @@ export const PRACTICE_HANDICAP_BENCHMARKS: Partial<Record<CombineLeaderboardTest
   aimpoint_6ft_combine: { area: "putting", anchors: [[-4, 90], [0, 80], [9, 65], [18, 50], [28, 35]] },
   slope_mid_20ft: { area: "putting", anchors: [[-4, 85], [0, 72], [9, 58], [18, 45], [28, 30]] },
   aimpoint_long_40ft: { area: "putting", anchors: [[-4, 80], [0, 65], [9, 50], [18, 38], [28, 25]] },
+  // Matrix index — lower is better
+  strike_speed_control: { area: "putting", anchors: [[-4, 8], [0, 14], [9, 28], [18, 45], [28, 70]] },
+  start_line_speed_test: { area: "putting", anchors: [[-4, 8], [0, 14], [9, 28], [18, 45], [28, 70]] },
 };
 
 /** Handicaps every benchmark sets a score for, best first. */

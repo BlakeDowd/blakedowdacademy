@@ -78,6 +78,7 @@ const PERCENT_COMBINES = new Set<CombineLeaderboardTestId>([
   "slope_mid_20ft",
   "aimpoint_long_40ft",
   "chipping_combine_9",
+  "bunker_9_hole_challenge",
 ]);
 
 function playerAttempts(
@@ -102,8 +103,12 @@ function playerAttempts(
   const higherIsBetter = COMBINE_LEADERBOARD_OPTIONS.find((o) => o.id === id)?.higherIsBetter ?? true;
   return collectCombineAttempts(id, sessions, logs, "allTime")
     .filter((a) => a.userId === playerId)
-    // Older 9-hole chipping rows saved raw points instead of a percentage.
-    .filter((a) => id !== "chipping_combine_9" || a.display.endsWith("%"))
+    // Older 9-hole chipping / bunker rows saved raw points instead of a percentage.
+    .filter(
+      (a) =>
+        (id !== "chipping_combine_9" && id !== "bunker_9_hole_challenge") ||
+        a.display.endsWith("%"),
+    )
     .map((a) => ({ score: higherIsBetter ? a.sortValue : -a.sortValue, dateMs: a.dateMs }));
 }
 

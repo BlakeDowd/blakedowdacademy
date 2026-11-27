@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ChevronRight, GraduationCap, Loader2, Plus, Search, Sparkles, UserPlus } from "lucide-react";
+import { ArrowLeft, Calendar, ChevronRight, GraduationCap, Loader2, Plus, Search, Sparkles, UserPlus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { initials } from "@/components/coach/CoachReportParts";
@@ -144,6 +144,19 @@ export default function CoachesDashboard() {
         <p className="mt-0.5 text-sm text-stone-500">
           {busy ? "Loading players…" : `${players.length} ${players.length === 1 ? "player" : "players"} · tap one for their full report`}
         </p>
+        <Link
+          href="/dashboard/coach/bookings"
+          className="mt-3 flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 shadow-sm transition-colors hover:bg-stone-50"
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+            <Calendar className="h-5 w-5 text-[#014421]" aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-bold text-stone-900">Diary</span>
+            <span className="block truncate text-xs text-stone-500">Day, week, and month calendar</span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-stone-300" aria-hidden />
+        </Link>
         <Link
           href="/dashboard/coach/cadet"
           className="mt-3 flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 shadow-sm transition-colors hover:bg-stone-50"

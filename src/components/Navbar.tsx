@@ -39,7 +39,7 @@ export default function Navbar() {
     refreshPracticeLogs,
   } = useStats();
 
-  const refreshHome = () => {
+  const refreshCurrentTab = (href: string) => {
     scrollAppToTop();
     void refreshUser();
     refreshRounds();
@@ -49,7 +49,10 @@ export default function Navbar() {
     refreshPracticeLogs();
     window.dispatchEvent(new Event("roundsUpdated"));
     window.dispatchEvent(new Event("practiceActivityUpdated"));
-    window.dispatchEvent(new Event("homeRefresh"));
+    window.dispatchEvent(new CustomEvent("navTabRefresh", { detail: { href } }));
+    if (href === "/") {
+      window.dispatchEvent(new Event("homeRefresh"));
+    }
     router.refresh();
   };
 
@@ -64,14 +67,16 @@ export default function Navbar() {
           item.href === "/"
             ? pathname === "/"
             : pathname === item.href || pathname.startsWith(`${item.href}/`);
+        // Only treat as "same tab" on the tab root — nested routes (e.g. /practice/…) still navigate up.
+        const onSameTab = pathname === item.href;
         return (
           <Link
             key={item.href}
             href={item.href}
             onClick={(e) => {
-              if (item.href === "/" && pathname === "/") {
+              if (onSameTab) {
                 e.preventDefault();
-                refreshHome();
+                refreshCurrentTab(item.href);
               }
             }}
             className="flex flex-col items-center justify-center gap-1 transition-opacity hover:opacity-80"

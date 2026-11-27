@@ -7,7 +7,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import IconPicker from "@/components/IconPicker";
 import ForgotPasswordPanel from "@/components/ForgotPasswordPanel";
 import HandicapField from "@/components/HandicapField";
-import { pendingInviteName, postLoginPath } from "@/lib/coachingSpaces";
+import {
+  INVITE_QUERY_PARAM,
+  normalizeInviteCode,
+  pendingInviteName,
+  postLoginPath,
+  rememberPendingInvite,
+} from "@/lib/coachingSpaces";
 import { EMAIL_TAKEN_MESSAGE, isEmailRegistered } from "@/lib/emailTaken";
 
 export default function LoginPage() {
@@ -37,11 +43,15 @@ export default function LoginPage() {
     setError("");
   };
 
-  // Show success message when returning from password reset
+  // Show success message when returning from password reset; keep invite through signup/login.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("mode") === "signup") setIsSignUp(true);
+    const inviteCode = params.get(INVITE_QUERY_PARAM);
+    if (inviteCode) {
+      rememberPendingInvite(normalizeInviteCode(inviteCode), pendingInviteName() || "");
+    }
     const invitedName = pendingInviteName();
     if (invitedName) setFullName((current) => current || invitedName);
     if (params.get("reset") === "success") {

@@ -1,7 +1,6 @@
 /**
- * Community lesson draw tickets.
- * Live: every N logged practice minutes = 1 ticket.
- * Ready for later: combine / drill / tool flat tickets via awardDrawTickets + earn_rules.
+ * Community lesson draw tickets (in-app challenge).
+ * Live: 60 practice minutes = 1 ticket · 1 combine = 1 ticket · 1 drill = 1 ticket.
  */
 
 export type DrawTicketSource = "practice" | "combine" | "drill" | "tool";

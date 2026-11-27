@@ -7,12 +7,13 @@ import { standardChippingCombineConfig } from "@/lib/standardChippingCombineConf
 import {
   STANDARD_CHIPPING_MAX_TOTAL_POINTS,
   roundStandardChippingPointsOneDecimal,
-  standardChippingPointsFromMetres,
+  standardChippingPointsFromMetresAtStation,
 } from "@/lib/standardChippingScoring";
 import { formatSupabaseWriteError } from "@/lib/formatSupabaseWriteError";
 import { awardCombineCompletionXp } from "@/lib/combineXp";
+import { CombineGradeSummary } from "@/components/combine/CombineGradeSummary";
 import { performanceGradeFromOutOf150 } from "@/lib/combinePerformanceGrade";
-import { CombinePerformanceGradeBadge } from "@/components/CombinePerformanceGradeBadge";
+import { useCombineSelfCompare } from "@/hooks/useCombineSelfCompare";
 import { CombineFlowBackControl } from "@/components/CombineFlowBackControl";
 import {
   CombineHero,
@@ -32,10 +33,10 @@ import {
   BreakdownBar,
   BreakdownCard,
   EveryShotList,
-  FocusCard,
   RateRow,
   ValueRow,
 } from "@/components/combine/CombineBreakdown";
+import { CombineTakeaway } from "@/components/combine/CombineTakeaway";
 import { CARD_ART_CLASS, ChipShotDiagram, HERO_ART_CLASS } from "@/components/combine/CombineArt";
 
 type StationM = (typeof standardChippingCombineConfig.distancesMetres)[number];
@@ -73,12 +74,14 @@ function parseMetres(raw: string): number | null {
   return n;
 }
 
-function shotPoints(metres: number): number {
-  return Math.max(0, standardChippingPointsFromMetres(metres));
+function shotPoints(metres: number, station: StationM): number {
+  return Math.max(0, standardChippingPointsFromMetresAtStation(metres, station));
 }
 
 function sessionTotal(shots: ChipShot[]): number {
-  return roundStandardChippingPointsOneDecimal(shots.reduce((acc, s) => acc + shotPoints(s.metres), 0));
+  return roundStandardChippingPointsOneDecimal(
+    shots.reduce((acc, s) => acc + shotPoints(s.metres, s.station), 0),
+  );
 }
 
 function formatPts(n: number): string {
@@ -98,7 +101,7 @@ function pointsTone(points: number): string {
 }
 
 function trackItem(s: ChipShot): NonNullable<TrackItem> {
-  const p = shotPoints(s.metres);
+  const p = shotPoints(s.metres, s.station);
   return { label: String(Math.round(p)), tone: pointsTone(p), ariaLabel: `Shot ${s.shot} (${s.station} m): ${formatPts(p)} points` };
 }
 
@@ -112,7 +115,9 @@ function breakdown(shots: ChipShot[]) {
   const total = sessionTotal(shots);
   const stations = STATIONS.map((station) => {
     const at = shots.filter((s) => s.station === station);
-    const pts = roundStandardChippingPointsOneDecimal(at.reduce((acc, s) => acc + shotPoints(s.metres), 0));
+    const pts = roundStandardChippingPointsOneDecimal(
+      at.reduce((acc, s) => acc + shotPoints(s.metres, s.station), 0),
+    );
     return {
       station,
       n: at.length,
@@ -257,6 +262,7 @@ export function StandardChippingCombineRunner() {
   }, [status, shots]);
 
   const summary = useMemo(() => (status === "complete" ? breakdown(shots) : null), [status, shots]);
+  const standardSelfCompare = useCombineSelfCompare("chipping", summary?.total ?? null);
 
   if (status === "intro") {
     return (
@@ -282,7 +288,8 @@ export function StandardChippingCombineRunner() {
             <li>2.5 to 4.5 m: 5 down to 1 pt</li>
             <li>Past 4.5 m: 0</li>
             <li className="font-semibold text-gray-900">
-              Up to {MAX_SHOT_POINTS} per shot, {STANDARD_CHIPPING_MAX_TOTAL_POINTS} in total. Higher is better.
+              Up to {MAX_SHOT_POINTS} per shot, {STANDARD_CHIPPING_MAX_TOTAL_POINTS} in total. Grades: Tour Pro /
+              Scratch / Single Digit / Mid-Handicap / Needs Work.
             </li>
           </ul>
         </ScoringGuide>
@@ -301,9 +308,7 @@ export function StandardChippingCombineRunner() {
             caption={`of ${STANDARD_CHIPPING_MAX_TOTAL_POINTS} points`}
           />
           <p className="mt-2 text-xs text-white/70">Chipping score · higher is better</p>
-          <span className="mt-3 inline-block rounded-xl bg-white">
-            <CombinePerformanceGradeBadge gradeId={summary.grade.id} label={summary.grade.label} />
-          </span>
+          <CombineGradeSummary grade={summary.grade} selfCompare={standardSelfCompare} />
         </ResultHero>
 
         <StatTiles
@@ -314,7 +319,7 @@ export function StandardChippingCombineRunner() {
           ]}
         />
 
-        <FocusCard title={summary.focus.title} lines={summary.focus.lines} />
+        <CombineTakeaway theme="chipping_closer" title={summary.focus.title} lines={summary.focus.lines} />
 
         <BreakdownCard
           title="Where your points went"
@@ -360,7 +365,7 @@ export function StandardChippingCombineRunner() {
 
         <EveryShotList>
           {shots.map((s) => {
-            const p = shotPoints(s.metres);
+            const p = shotPoints(s.metres, s.station);
             return (
               <li key={s.shot} className="flex items-center gap-3 py-2 text-sm">
                 <span className="w-12 shrink-0 rounded-lg bg-gray-100 py-1 text-center text-xs font-bold text-gray-800">
@@ -385,7 +390,7 @@ export function StandardChippingCombineRunner() {
 
   const runningTotal = sessionTotal(shots);
   const track: TrackItem[] = SEQUENCE.map((_, i) => (shots[i] ? trackItem(shots[i]!) : null));
-  const liveScore = metres !== null ? shotPoints(metres) : null;
+  const liveScore = metres !== null ? shotPoints(metres, station) : null;
   const ballAtStation = (shotIndex % PER_STATION) + 1;
   const nextStation = SEQUENCE[shotIndex + 1];
   const hint =

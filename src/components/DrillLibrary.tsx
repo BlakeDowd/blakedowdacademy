@@ -273,41 +273,43 @@ function DrillDetailModal({ drill, onClose, onAssignToDay }: DrillDetailModalPro
             </div>
           )}
 
-          {showDayPicker && (
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <p className="text-sm font-medium text-gray-700 mb-3">Assign to day</p>
+        </div>
+        <div className="shrink-0 border-t border-gray-200 bg-white p-4">
+          {!showDayPicker ? (
+            <button
+              type="button"
+              onClick={() => setShowDayPicker(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-4 text-base font-bold text-white shadow-md transition-colors"
+              style={{ backgroundColor: "#014421" }}
+            >
+              <UserPlus className="h-5 w-5" />
+              Assign to Day
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-bold text-gray-900">Add to which day?</p>
+                <button
+                  type="button"
+                  onClick={() => setShowDayPicker(false)}
+                  className="text-xs font-semibold text-gray-500 hover:text-gray-800"
+                >
+                  Cancel
+                </button>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 {DAY_NAMES.map((dayName, dayIndex) => (
                   <button
                     key={dayName}
                     type="button"
                     onClick={() => handleAssign(dayIndex)}
-                    className="py-2.5 px-3 rounded-lg border-2 border-gray-200 hover:border-[#014421] hover:bg-green-50 text-sm font-medium text-gray-700 transition-colors"
+                    className="rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-800 transition-colors hover:border-[#014421] hover:bg-[#014421]/[0.05]"
                   >
                     {dayName}
                   </button>
                 ))}
               </div>
             </div>
-          )}
-        </div>
-        <div className="shrink-0 border-t border-gray-200 bg-white p-4">
-          {!showDayPicker ? (
-            <button
-              onClick={() => setShowDayPicker(true)}
-              className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl text-base font-bold text-white shadow-md transition-colors"
-              style={{ backgroundColor: "#014421" }}
-            >
-              <UserPlus className="w-5 h-5" />
-              Assign to Day
-            </button>
-          ) : (
-            <button
-              onClick={() => setShowDayPicker(false)}
-              className="w-full py-2.5 px-4 rounded-xl font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
-            >
-              Cancel
-            </button>
           )}
         </div>
       </div>
