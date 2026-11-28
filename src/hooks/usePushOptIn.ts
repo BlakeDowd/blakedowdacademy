@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { pushSupported, subscribeToPush } from "@/lib/pushClient";
+import { fetchVapidPublicKey, pushSupported, subscribeToPush } from "@/lib/pushClient";
 
 export type PushOptInState = "loading" | "ready" | "on" | "denied" | "no_key" | "unsupported" | "error";
 
@@ -11,7 +11,6 @@ const DISMISS_KEY = "push-opt-in-dismissed";
 function readDismissed(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    // Migrate: older builds used permanent localStorage dismiss.
     window.localStorage.removeItem(DISMISS_KEY);
     return window.sessionStorage.getItem(DISMISS_KEY) === "1";
   } catch {
@@ -28,7 +27,8 @@ export function usePushOptIn() {
 
   const refresh = useCallback(async () => {
     setDismissed(readDismissed());
-    if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim()) {
+    const publicKey = await fetchVapidPublicKey();
+    if (!publicKey) {
       setState("no_key");
       return;
     }
@@ -46,7 +46,6 @@ export function usePushOptIn() {
         (await navigator.serviceWorker.getRegistration("/sw.js")) ??
         (await navigator.serviceWorker.getRegistration());
       const sub = await reg?.pushManager.getSubscription();
-      // Only treat as "on" after a successful server save (local flag).
       const saved = typeof window !== "undefined" && window.localStorage.getItem("push-opt-in") === "1";
       if (Notification.permission === "granted" && sub && saved) {
         setState("on");
@@ -91,7 +90,7 @@ export function usePushOptIn() {
   const dismiss = useCallback(() => {
     try {
       window.sessionStorage.setItem(DISMISS_KEY, "1");
-      window.localStorage.removeItem(DISMISS_KEY); // clear older permanent dismiss
+      window.localStorage.removeItem(DISMISS_KEY);
     } catch {
       /* ignore */
     }

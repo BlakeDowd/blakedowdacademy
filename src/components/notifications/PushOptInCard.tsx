@@ -56,7 +56,7 @@ export function PushOptInCard() {
               {state === "denied"
                 ? "Blocked in browser settings — allow notifications, then try again."
                 : state === "no_key"
-                  ? "Push keys aren’t on this server yet (add VAPID in Vercel / .env.local)."
+                  ? "Phone alerts aren’t set up on the server yet."
                   : "Ping when a coaching video lands or you win a prize."}
             </p>
             {error && <p className="mt-1 text-[11px] font-medium text-[#FFC966]">{error}</p>}

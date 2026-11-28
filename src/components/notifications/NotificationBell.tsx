@@ -107,11 +107,6 @@ export function NotificationBell() {
                 </button>
               </div>
             )}
-            {pushState === "no_key" && (
-              <p className="border-b border-stone-100 px-3 py-2 text-[11px] text-amber-700">
-                Push keys not loaded — restart npm run dev after saving VAPID in .env.local.
-              </p>
-            )}
             <ul className="max-h-80 overflow-y-auto">
               {items.length === 0 ? (
                 <li className="px-3 py-8 text-center text-xs text-stone-400">No notifications yet</li>
