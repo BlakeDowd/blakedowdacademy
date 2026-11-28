@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireNotificationUser } from "@/lib/notificationAuth";
 import { createServiceRoleSupabase } from "@/lib/supabaseServiceRole";
 
+export const runtime = "nodejs";
+
 type Body = {
   endpoint?: string;
   keys?: { p256dh?: string; auth?: string };

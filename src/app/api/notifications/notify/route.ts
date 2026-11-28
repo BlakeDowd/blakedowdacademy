@@ -5,6 +5,8 @@ import type { NotificationKind } from "@/lib/notifications";
 import { requireNotificationUser } from "@/lib/notificationAuth";
 import { createServiceRoleSupabase } from "@/lib/supabaseServiceRole";
 
+export const runtime = "nodejs";
+
 type Body = {
   userId?: string;
   kind?: NotificationKind;

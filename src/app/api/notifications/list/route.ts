@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireNotificationUser } from "@/lib/notificationAuth";
 import { createServiceRoleSupabase } from "@/lib/supabaseServiceRole";
 
+export const runtime = "nodejs";
+
 export async function GET(req: Request) {
   const user = await requireNotificationUser(req);
   if (!user) return NextResponse.json({ error: "Sign in required" }, { status: 401 });

@@ -30,11 +30,20 @@ export function vapidPublicKey(): string | null {
 export async function requestNotify(payload: NotifyPayload): Promise<void> {
   try {
     const { notificationAuthHeaders } = await import("@/lib/notificationAuthClient");
-    await fetch("/api/notifications/notify", {
+    const headers = await notificationAuthHeaders();
+    if (!("Authorization" in (headers as Record<string, string>))) {
+      console.warn("[notifications] notify skipped — no auth token");
+      return;
+    }
+    const res = await fetch("/api/notifications/notify", {
       method: "POST",
-      headers: await notificationAuthHeaders(),
+      headers,
       body: JSON.stringify(payload),
     });
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      console.warn("[notifications] notify failed", res.status, err.error);
+    }
   } catch (e) {
     console.warn("[notifications] notify failed", e);
   }
