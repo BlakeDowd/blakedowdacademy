@@ -5,12 +5,15 @@ import { pushSupported, subscribeToPush } from "@/lib/pushClient";
 
 export type PushOptInState = "loading" | "ready" | "on" | "denied" | "no_key" | "unsupported" | "error";
 
+/** Session-only — “Not now” hides for this visit; shows again next time they open the app. */
 const DISMISS_KEY = "push-opt-in-dismissed";
 
 function readDismissed(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return window.localStorage.getItem(DISMISS_KEY) === "1";
+    // Migrate: older builds used permanent localStorage dismiss.
+    window.localStorage.removeItem(DISMISS_KEY);
+    return window.sessionStorage.getItem(DISMISS_KEY) === "1";
   } catch {
     return false;
   }
@@ -68,6 +71,7 @@ export function usePushOptIn() {
     if (result.ok) {
       try {
         window.localStorage.setItem("push-opt-in", "1");
+        window.sessionStorage.removeItem(DISMISS_KEY);
         window.localStorage.removeItem(DISMISS_KEY);
       } catch {
         /* ignore */
@@ -86,7 +90,8 @@ export function usePushOptIn() {
 
   const dismiss = useCallback(() => {
     try {
-      window.localStorage.setItem(DISMISS_KEY, "1");
+      window.sessionStorage.setItem(DISMISS_KEY, "1");
+      window.localStorage.removeItem(DISMISS_KEY); // clear older permanent dismiss
     } catch {
       /* ignore */
     }

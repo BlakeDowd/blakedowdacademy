@@ -10,10 +10,11 @@ export function PushOptInCard() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (dismissed || state === "loading" || state === "on" || state === "unsupported" || state === "no_key") {
+    if (dismissed || state === "loading" || state === "on" || state === "unsupported") {
       setOpen(false);
       return;
     }
+    // Show for ready/denied/error; also for no_key so missing Vercel env is obvious.
     const t = window.setTimeout(() => setOpen(true), 600);
     return () => window.clearTimeout(t);
   }, [dismissed, state]);
@@ -54,23 +55,27 @@ export function PushOptInCard() {
             <p className="mt-0.5 text-[11px] leading-snug text-white/75">
               {state === "denied"
                 ? "Blocked in browser settings — allow notifications, then try again."
-                : "Ping when a coaching video lands or you win a prize."}
+                : state === "no_key"
+                  ? "Push keys aren’t on this server yet (add VAPID in Vercel / .env.local)."
+                  : "Ping when a coaching video lands or you win a prize."}
             </p>
             {error && <p className="mt-1 text-[11px] font-medium text-[#FFC966]">{error}</p>}
             <div className="mt-2.5 flex items-center gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  void (async () => {
-                    const result = await enable();
-                    if (result === "granted") setOpen(false);
-                  })();
-                }}
-                className="rounded-lg bg-[#FFA500] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
-              >
-                {busy ? "…" : state === "denied" || state === "error" ? "Try again" : "Enable"}
-              </button>
+              {state !== "no_key" && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    void (async () => {
+                      const result = await enable();
+                      if (result === "granted") setOpen(false);
+                    })();
+                  }}
+                  className="rounded-lg bg-[#FFA500] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                >
+                  {busy ? "…" : state === "denied" || state === "error" ? "Try again" : "Enable"}
+                </button>
+              )}
               <button
                 type="button"
                 disabled={busy}
