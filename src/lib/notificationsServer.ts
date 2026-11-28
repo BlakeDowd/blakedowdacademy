@@ -1,4 +1,4 @@
-import webpush from "web-push";
+import { sendNotification, setVapidDetails } from "web-push";
 import { createServiceRoleSupabase } from "@/lib/supabaseServiceRole";
 import type { NotifyPayload } from "@/lib/notifications";
 
@@ -14,7 +14,7 @@ function configureWebPush(): boolean {
   const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
   const subject = process.env.VAPID_SUBJECT?.trim() || "mailto:bdowd@pgamember.org.au";
   if (!publicKey || !privateKey) return false;
-  webpush.setVapidDetails(subject, publicKey, privateKey);
+  setVapidDetails(subject, publicKey, privateKey);
   return true;
 }
 
@@ -66,7 +66,7 @@ export async function deliverNotification(payload: NotifyPayload): Promise<{ ok:
   await Promise.all(
     rows.map(async (sub) => {
       try {
-        await webpush.sendNotification(
+        await sendNotification(
           {
             endpoint: sub.endpoint,
             keys: { p256dh: sub.p256dh, auth: sub.auth },
