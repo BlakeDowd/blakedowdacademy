@@ -708,6 +708,7 @@ function RehearseView({
     running,
     onStart: start,
     onStop: stop,
+    onDenied: () => setVoiceOn(false),
   });
 
   const wake = useWakeLock(true);
@@ -918,7 +919,9 @@ function RehearseView({
           {voiceOn ? <Mic className="h-4 w-4" aria-hidden /> : <MicOff className="h-4 w-4" aria-hidden />}
           {voiceOn
             ? listening
-              ? "Mic on — say “start” or “stop”"
+              ? running
+                ? "Mic on — say “stop”"
+                : "Mic on — say “start”"
               : "Mic on — connecting…"
             : "Turn mic on for voice commands"}
         </button>

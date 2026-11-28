@@ -323,5 +323,16 @@ export async function drawChallengeWinner(
     }
     return { winnerId: null, error: communityError(error) };
   }
-  return { winnerId: data ? str(data) : null, error: null };
+  const winnerId = data ? str(data) : null;
+  if (winnerId) {
+    const { requestNotify } = await import("@/lib/notifications");
+    void requestNotify({
+      userId: winnerId,
+      kind: "prize",
+      title: "You won!",
+      body: `You were drawn as the winner of “${c.title}”.`,
+      href: "/community?tab=challenges",
+    });
+  }
+  return { winnerId, error: null };
 }

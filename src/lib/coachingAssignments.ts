@@ -200,13 +200,24 @@ export async function createAssignments(
 ): Promise<CoachingAssignment[]> {
   const note = input.note.trim();
   const list = input.items.map((i) => `• ${i.title}`).join("\n");
+  const body = `📋 Assigned ${input.items.length === 1 ? "a drill" : `${input.items.length} drills`}:\n${list}${
+    note ? `\n\n${note}` : ""
+  }\n\nYou'll find ${input.items.length === 1 ? "it" : "them"} under "Assigned by your coach".`;
   const post = await createPost(supabase, {
     studentId: input.studentId,
     authorId: input.coachId,
-    body: `📋 Assigned ${input.items.length === 1 ? "a drill" : `${input.items.length} drills`}:\n${list}${
-      note ? `\n\n${note}` : ""
-    }\n\nYou'll find ${input.items.length === 1 ? "it" : "them"} under "Assigned by your coach".`,
+    body,
   });
+  if (input.studentId !== input.coachId) {
+    const { requestNotify } = await import("@/lib/notifications");
+    void requestNotify({
+      userId: input.studentId,
+      kind: "coaching",
+      title: input.items.length === 1 ? "New drill assigned" : "New drills assigned",
+      body: note || `${input.items.length} drill${input.items.length === 1 ? "" : "s"} from your coach.`,
+      href: "/profile?tab=coaching",
+    });
+  }
   const { data, error } = await supabase
     .from("coaching_assignments")
     .insert(

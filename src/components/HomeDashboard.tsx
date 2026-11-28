@@ -69,7 +69,7 @@ import { useBunnyVideoMetadata } from "@/hooks/useBunnyVideoMetadata";
 import { HallOfFameLeaderboard } from "@/components/academy/HallOfFameLeaderboard";
 import { HomeCommunityCard } from "@/components/community/HomeCommunityCard";
 import { HomeGoldenFeelsCard } from "@/components/feel/HomeGoldenFeelsCard";
-
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 const INSTALL_BANNER_DISMISSED_KEY = 'homeInstallBannerDismissed';
 const RECENT_ITEMS_SHOWN = 3;
 
@@ -710,18 +710,21 @@ export default function HomeDashboard() {
             </div>
           </div>
           
-          {/* Streak stays on the right — not overlaid on the logo. */}
-          <div 
-            className="shrink-0 px-3 py-1.5 rounded-full flex items-center gap-1.5"
-            style={{ 
-              backgroundColor: '#FFA500',
-              boxShadow: '0 2px 8px rgba(255, 165, 0, 0.2)'
-            }}
-          >
-            <Flame className="w-3.5 h-3.5 text-white" />
-            <span className="text-white text-sm font-semibold">
-              {(profile?.currentStreak || 0)} day{(profile?.currentStreak || 0) !== 1 ? 's' : ''}
-            </span>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <NotificationBell />
+            {/* Streak stays on the right — not overlaid on the logo. */}
+            <div
+              className="px-3 py-1.5 rounded-full flex items-center gap-1.5"
+              style={{
+                backgroundColor: "#FFA500",
+                boxShadow: "0 2px 8px rgba(255, 165, 0, 0.2)",
+              }}
+            >
+              <Flame className="w-3.5 h-3.5 text-white" />
+              <span className="text-white text-sm font-semibold">
+                {(profile?.currentStreak || 0)} day{(profile?.currentStreak || 0) !== 1 ? "s" : ""}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -828,7 +831,7 @@ export default function HomeDashboard() {
             >
               <span>
                 <span className="block text-sm font-bold text-stone-900">More tools</span>
-                <span className="block text-xs text-stone-500">Library, caddie, tempo, fuel and more</span>
+                <span className="block text-xs text-stone-500">Year calendar, library, caddie, tempo and more</span>
               </span>
               <ChevronDown
                 className={`h-5 w-5 shrink-0 text-stone-400 transition-transform ${moreToolsOpen ? 'rotate-180' : ''}`}
@@ -843,6 +846,7 @@ export default function HomeDashboard() {
                     {
                       title: 'Practice',
                       items: [
+                        { label: 'Year Calendar', icon: Calendar, href: '/practice/year-calendar' },
                         { label: 'Drill Library', icon: BookOpen, href: '/practice?plan=library' },
                         { label: 'Fuel Planner', icon: Apple, href: '/practice?plan=fuel' },
                         { label: 'Mobility Screen', icon: PersonStanding, href: '/practice/mobility-screen' },

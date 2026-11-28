@@ -4406,6 +4406,17 @@ export default function PracticePage() {
               )}
             </div>
 
+            <Link href="/practice/year-calendar" className="flex items-center gap-3 rounded-xl bg-gray-50 p-3 text-left">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
+                <Calendar className="h-4 w-4 text-[#014421]" aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-gray-900">Year Calendar</span>
+                <span className="block text-xs text-gray-500">Vardon, JOM, JNJG — pick the events you want to play</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+            </Link>
+
             <Link href="/practice/mobility-screen" className="flex items-center gap-3 rounded-xl bg-gray-50 p-3 text-left">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#014421]/10">
                 <PersonStanding className="h-4 w-4 text-[#014421]" aria-hidden />

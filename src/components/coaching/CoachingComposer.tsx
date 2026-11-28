@@ -120,6 +120,17 @@ async function submit(input: SubmitInput): Promise<SubmitResult> {
     contactInfo: hasVideo ? input.notes?.contact : undefined,
     directionalMisses: hasVideo ? input.notes?.directional : undefined,
   });
+  if (input.authorIsCoach && input.studentId !== input.authorId) {
+    const { coachingNotifyFromPost, requestNotify } = await import("@/lib/notifications");
+    const payload = coachingNotifyFromPost({
+      studentId: input.studentId,
+      authorId: input.authorId,
+      authorIsCoach: true,
+      hasVideo,
+      body: input.body,
+    });
+    if (payload) void requestNotify(payload);
+  }
   return { post, failed, firstError };
 }
 

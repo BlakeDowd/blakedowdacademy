@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "Blake Dowd",
     description: "Your personal golf training companion",
     start_url: "/",
-    display: "browser",
+    display: "standalone",
     background_color: "#ffffff",
     theme_color: "#014421",
     icons: [

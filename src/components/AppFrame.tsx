@@ -1,12 +1,14 @@
 "use client";
 
-import { Suspense } from "react";
-import { usePathname } from "next/navigation";
+import { Suspense, useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { CombineForParamSync } from "@/hooks/useCombineUser";
 import ConditionalNavbar from "./ConditionalNavbar";
 import ScreenTracker from "./ScreenTracker";
 import { CoachTestingBanner } from "./combine/CoachTestingBanner";
 import { FamilySwitcher } from "./family/FamilySwitcher";
+import { PushEnableBanner } from "@/components/notifications/PushEnableBanner";
+import { registerPushWorker } from "@/lib/pushClient";
 
 export default function AppFrame({
   children,
@@ -14,7 +16,21 @@ export default function AppFrame({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const isBooking = pathname.startsWith("/book");
+
+  useEffect(() => {
+    void registerPushWorker();
+    if (!("serviceWorker" in navigator)) return;
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; href?: string } | undefined;
+      if (data?.type === "notification-click" && data.href) {
+        router.push(data.href);
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, [router]);
 
   if (isBooking) {
     return <div className="min-h-screen w-full bg-[#f7f8f7]">{children}</div>;
@@ -34,6 +50,7 @@ export default function AppFrame({
         </Suspense>
         <CoachTestingBanner />
         <FamilySwitcher />
+        <PushEnableBanner />
         <main
           className="app-frame-main flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-clip pb-36"
           style={{ overflowX: "clip" }}
